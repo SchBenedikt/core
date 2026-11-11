@@ -60,10 +60,11 @@ Do not log request bodies, private keys or sealed payloads.
 
 ## Current scope
 
-Implemented: posts and timelines, the follow graph, outbound ActivityPub with
-signed delivery, the HTTP contract and the platform ports. Not implemented:
-inbound `POST /inbox`, actor documents, WebFinger, `Accept`/`Undo`, local
-follows, media. See `docs/roadmap.md` before starting a large feature.
+Implemented: posts and timelines, the follow graph, inbound and outbound
+ActivityPub (signed `POST /inbox`, `Follow`/`Undo`, `Accept`), the HTTP
+contract and the platform ports. Not implemented: inbound `Create`/`Delete`,
+actor documents, WebFinger, local follows, media. See `docs/roadmap.md` before
+starting a large feature.
 
 ## What not to do
 

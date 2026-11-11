@@ -14,6 +14,9 @@ Status of the core, not a promise about dates.
   signed POSTs, idempotent activity ids.
 - Follow graph: follower storage (in-memory and SQL), inbox resolution, three
   endpoints, isolated per account.
+- Inbound federation: `POST /inbox` with signature verification, actor-key
+  resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay
+  guard.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
 - Security: AES-256-GCM secret box.
 - Documentation and CI across PHP 8.3, 8.4, 8.5.
@@ -22,8 +25,7 @@ Status of the core, not a promise about dates.
 
 | Item | Seam |
 | --- | --- |
-| Inbound `POST /inbox` with signature verification | `Http` + `Protocol` |
-| `Follow` → `Accept`, `Undo(Follow)` | `FollowerService` + `Protocol` |
+| Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
 | Actor document and `followers`/`following` collections | new `Api` handlers |
 | WebFinger | host routing + a small handler |
 | Local follows and a real home timeline | `Domain\Federation` + a local follow table |

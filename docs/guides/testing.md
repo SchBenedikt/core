@@ -51,7 +51,7 @@ need a fake; everything else has an in-memory implementation.
 ## What to test
 
 - Every new branch and every refusal: validation, 401/403/404, expired
-  signature, changed body.
+  signature, changed body, replayed activity, actor mismatch.
 - Every new port implementation against the existing contract case.
 - A new endpoint end to end: request in, response out, side effect visible.
 

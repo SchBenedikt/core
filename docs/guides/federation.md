@@ -66,13 +66,19 @@ queueing and sending must not change what a retry sends. The worker signs each
 request and treats a non-2xx answer as a retryable failure; the queue backs off
 and eventually dead-letters.
 
+## Inbound
+
+The other direction is implemented too: `POST /inbox` verifies the signature
+of a remote actor and applies `Follow` and `Undo(Follow)`. See
+[inbound federation](inbound-federation.md) for the order of checks and
+[inbox activities](../reference/inbox-activities.md) for the refusal table.
+
 ## Not implemented yet
 
-- inbound `POST /inbox` and signature verification of remote requests;
-- `Accept`/`Reject` of a `Follow`, and `Undo`;
+- inbound `Create`/`Delete`/`Announce`, and fetching remote posts;
 - actor documents, `followers`/`following` collections, WebFinger;
 - delivery to shared inboxes;
-- fetching remote posts (this core only publishes).
+- a key cache (the HTTP resolver fetches per request).
 
 The seams are named in [the architecture](../architecture.md#what-is-not-here-yet),
 so each of these is an addition, not a rewrite.

@@ -17,9 +17,11 @@ This document is the checklist that host is built against.
 6. **Repositories** — `PdoPostRepository`, `PdoFollowerRepository`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`.
-8. **Handlers and kernel** — register every handler from the route manifest and
+8. **Inbound** — `HttpActorResolver` over the HTTP client, a durable
+   `ActivityLog`, and `InboxService`. Without all three the inbox answers 503.
+9. **Handlers and kernel** — register every handler from the route manifest and
    fail at boot if one is missing.
-9. **Worker** — a process or cron entry calling `JobWorker::runOnce()`.
+10. **Worker** — a process or cron entry calling `JobWorker::runOnce()`.
 
 Steps 1–8 are what `Application::inMemory()` does with in-memory adapters; the
 server repeats it with real ones.
@@ -34,6 +36,7 @@ server repeats it with real ones.
 | Migrations | The mechanism differs per host; schemas are shared |
 | Media processing | ffmpeg and image libraries are deployment choices |
 | Scheduler and queue persistence | A systemd timer, cron or a queue service |
+| Durable `ActivityLog` | A table or Redis shared by all workers; the in-memory one is per process |
 | TLS, proxy headers, rate limiting | Deployment, not application logic |
 
 ## Scheduler

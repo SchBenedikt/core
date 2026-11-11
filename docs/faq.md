@@ -46,6 +46,21 @@ A retry must send what the first attempt meant to send. Rebuilding at delivery
 time would let an edit change the payload between attempts and make the
 receiver's idempotency checks meaningless.
 
+### How is an inbound activity authenticated?
+
+By its HTTP signature over `(request-target) host date digest`. The `keyid` is
+resolved to an actor through the `ActorResolver` port, the signature is
+verified against that actor's key, and the activity's `actor` must be that
+same actor. A session cookie plays no part. See
+[inbound federation](guides/inbound-federation.md).
+
+### Why is a replayed activity refused?
+
+Because a valid signature stays valid for five minutes. Without an
+`ActivityLog`, anybody who captured a request could deliver it again — a
+second Follow would be harmless, but the principle is not. Accepted activity
+ids are remembered for a day.
+
 ### Why does a repeated Follow return 200 instead of 201?
 
 The actor was already a follower; only the inbox may have changed. 200 says

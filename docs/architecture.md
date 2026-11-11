@@ -79,6 +79,24 @@ delivery time: an edit between queueing and sending must not change what a
 retry sends. Its ids are derived from the instance URL and the post id, so a
 retry is idempotent for the receiving server.
 
+## Receiving an activity
+
+```
+POST /inbox
+  └─ InboxHandler          JSON, then delegate
+      └─ InboxService      signature → actor → replay → apply
+          ├─ ActorResolver::resolveByKeyId   (HTTP or fixture)
+          ├─ HttpSignature::verify           raw body, signed headers
+          ├─ ActivityLog::claim              replay guard
+          ├─ FollowerService::follow         Follow → edge
+          └─ JobQueue::push                  Accept → follower inbox
+```
+
+Every refusal is an `InboxRejectedException` with a stable reason; the handler
+is the only place that maps a reason to an HTTP status. The inbox is enabled
+only when an actor resolver, an HTTP client and a signing key are all present —
+otherwise it answers 503 instead of pretending.
+
 ## Data invariants
 
 - **UTC, second precision.** `Support\Time` is the only formatter. Stored
@@ -111,7 +129,8 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| inbound `POST /inbox`, actor documents, WebFinger | new `Api` handlers over `Protocol` |
+| inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
+| actor documents and WebFinger | new `Api` handlers over `Protocol` |
 | local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |

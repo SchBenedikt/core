@@ -16,6 +16,7 @@ and versioned under `/api/v1` except the liveness probe.
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
+| `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -129,6 +130,21 @@ DELETE /api/v1/followers/{id}
 
 `204`, or `404` when the follower does not exist **or belongs to another
 account** — the answer must not reveal the difference.
+
+## Inbox
+
+```http
+POST /inbox
+Signature: keyId="…",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="…"
+
+{"id":"https://remote.example/activities/follow-1","type":"Follow",
+ "actor":"https://remote.example/users/bob","object":"https://social.example/@alice"}
+```
+
+`202 {"status": "accepted"}`. The signature is the authentication. Supported
+activities and every refusal are listed in
+[inbox activities](inbox-activities.md). `503 inbox_not_configured` means the
+host did not provide an actor resolver, an HTTP client and a signing key.
 
 ## Route parameters
 

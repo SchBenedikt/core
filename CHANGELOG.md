@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Inbound `POST /inbox`: signature verification against an actor resolved by
+  key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
+  replay guard. The endpoint stays at 503 without a configured resolver.
+- `ActorResolver` / `HttpActorResolver`, `RemoteActor`, `ActivityLog` /
+  `InMemoryActivityLog` and `FollowerRepository::removeByActor` as the ports
+  and domain pieces behind the inbox.
 - Follow graph: `Follower` entity, in-memory and SQL repositories behind one
   contract test, `FollowerSchema`, and `FollowerInboxResolver`.
 - `FollowerService` with idempotent follow, per-account isolation and cursor

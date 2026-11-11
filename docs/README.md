@@ -21,6 +21,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
 | [Follow graph](guides/follow-graph.md) | Followers, inbox resolution and why delivery is idempotent |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
+| [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow and Undo |
 | [Jobs and delivery](guides/jobs-and-delivery.md) | The queue contract, retries, backoff and dead letters |
 | [Database](guides/database.md) | The SQL port, schemas, timestamps and transactions |
 | [Storage](guides/storage.md) | Blob paths, the local store and the in-memory store |
@@ -32,6 +33,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | Reference | Content |
 | --- | --- |
 | [Routes](reference/routes.md) | Every endpoint with auth, rate limit, request and response |
+| [Inbox activities](reference/inbox-activities.md) | Supported activity types and every refusal with its status |
 | [Error codes](reference/error-codes.md) | Every `error.code`, its status and when it appears |
 | [Configuration](reference/configuration.md) | The configuration keys the core reads, and its limits |
 
@@ -40,6 +42,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | Document | Content |
 | --- | --- |
 | [The standalone host](operations/standalone-host.md) | What the future server has to provide and in which order it boots |
+| [Keys and clocks](operations/keys-and-clocks.md) | Key resolution, caching, clock skew and replay windows |
 | [Roadmap](roadmap.md) | Done, next, later |
 | [FAQ](faq.md) | Short answers to the questions that keep coming back |
 

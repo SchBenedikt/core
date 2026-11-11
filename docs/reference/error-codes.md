@@ -16,6 +16,16 @@ change. `fields` appears only when an error belongs to specific input.
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
 | `forbidden` | 403 | The user is known but may not do this (deleting somebody else's post) |
 | `not_found` | 404 | Missing — or private and therefore indistinguishable from missing |
+| `unknown_actor` | 404 | An inbox request signed with a key id that does not resolve to an actor |
+| `unknown_object` | 404 | An inbox activity does not address an actor on this instance |
+| `actor_mismatch` | 403 | A valid inbox signature whose activity claims another actor |
+| `signature_required` | 401 | An inbox request without a `Signature` header |
+| `invalid_signature` | 401 | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
+| `signature_expired` | 401 | The signed `Date` is outside the 300-second window |
+| `invalid_activity` | 400 | An inbox activity without `id`, `type` or `actor`, or with a malformed object |
+| `unsupported_activity` | 400 | An inbox activity type the core does not apply |
+| `replayed_activity` | 400 | An activity id that was already accepted |
+| `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |

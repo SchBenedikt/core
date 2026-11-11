@@ -67,18 +67,24 @@ post (alice)  ──► inboxesFor("alice") ──► one delivery job per inbox
 Inbox URLs are de-duplicated: two actors that share an inbox receive one
 request per post, not two identical ones.
 
+## How edges arrive
+
+Two paths write the graph:
+
+1. the local API (`POST /api/v1/followers`), for a host that has already
+   resolved and trusted an actor document;
+2. inbound federation: a signed `Follow` on `POST /inbox` creates the edge and
+   queues the `Accept`; a signed `Undo(Follow)` removes it. See
+   [inbound federation](inbound-federation.md).
+
+Either way the actor and its inbox come from the actor document, never from an
+unauthenticated request body.
+
 ## What is missing
 
-The graph stores the result of a Follow; it does not yet implement the
-ActivityPub side of it:
-
-- no `POST /inbox` endpoint that receives a `Follow` and answers `Accept`;
-- no actor document that publishes `followers` and `following` collections;
-- no `Undo(Follow)` handling;
-- no verification that the inbox actually belongs to the actor (the host must
-  fetch the actor document and pass its inbox).
-
-Until then, a host (or an admin tool) records followers through the API after
-resolving and trusting the actor document. That boundary is explicit on
-purpose: accepting an unverified `inbox` straight from an unauthenticated
-request would let anyone point deliveries at a third party.
+- an actor document that publishes the `followers` and `following`
+  collections;
+- WebFinger, so a `@user@host` handle resolves to the actor;
+- a policy for approving Follows instead of accepting every valid one;
+- local follows (accounts on this instance following each other), which the
+  home timeline would need.
