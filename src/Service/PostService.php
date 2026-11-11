@@ -83,6 +83,30 @@ final class PostService
 	}
 
 	/**
+	 * Reads a post as a particular viewer.
+	 *
+	 * A post that is not publicly visible must not be readable just because
+	 * somebody guessed its id. The answer is `not found` rather than
+	 * `forbidden`, so the existence of a non-public post does not leak either.
+	 *
+	 * @throws PostNotFoundException when the post is missing, deleted or not visible to the viewer
+	 */
+	public function getVisible(string $postId, ?string $viewerId): Post
+	{
+		$post = $this->get($postId);
+
+		if ($post->visibility->isPubliclyVisible()) {
+			return $post;
+		}
+
+		if ($viewerId !== null && $post->authorId === $viewerId) {
+			return $post;
+		}
+
+		throw new PostNotFoundException($postId);
+	}
+
+	/**
 	 * Deletes a post the actor owns.
 	 *
 	 * @throws PostNotFoundException      when the post does not exist

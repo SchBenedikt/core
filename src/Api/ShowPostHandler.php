@@ -31,7 +31,7 @@ final class ShowPostHandler implements Handler
 		$id = (string) $request->attribute('id', '');
 
 		try {
-			$post = $this->posts->get($id);
+			$post = $this->posts->getVisible($id, $request->userId);
 		} catch (PostNotFoundException) {
 			throw HttpException::notFound('Post not found.');
 		}
