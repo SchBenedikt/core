@@ -13,7 +13,8 @@ about the host, and everything a host must provide is an interface in
             │                transactions, fan-out)        │
             │                 │            │               │
             │                 ▼            ▼               │
-            │          Domain/Repository  JobQueue         │
+            │       Domain/Repositories  JobQueue        │
+            │       InboxResolver                        │
             └─────────────────┬────────────┬───────────────┘
                               │            │
                    ┌──────────▼──┐   ┌─────▼─────────┐
@@ -34,6 +35,10 @@ about the host, and everything a host must provide is an interface in
 | `Protocol` | ActivityStreams documents, RSA, HTTP signatures | read the database |
 | `Jobs` | queue contract, worker loop, retry rules | know what a job means |
 | `Platform` | ports a host implements | import a host |
+
+`Domain\Federation` holds the follow graph and the `InboxResolver` seam. It is
+a domain port, not a platform port: the question "where does this audience
+live?" belongs to the application, only the inbox URLs are data.
 
 ## Request lifecycle
 
@@ -63,6 +68,11 @@ JobWorker::runOnce ────────────────────�
       ├─ HttpSignature::sign   (request-target) host date digest
       └─ HttpClient::request   non-2xx → retry with backoff, then dead letter
 ```
+
+The inbox list comes from the follow graph: `FollowerInboxResolver` asks
+`FollowerRepository::inboxesFor()` for the author's stored followers. Each row
+carries the inbox URL, so delivery needs no network lookup at post time, and
+inbox URLs are de-duplicated before a job is queued.
 
 The activity is built at write time and stored in the job, not rebuilt at
 delivery time: an edit between queueing and sending must not change what a
@@ -101,7 +111,8 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| follow graph and follower inboxes | `Domain\Federation\InboxResolver` (already the seam) |
+| inbound `POST /inbox`, actor documents, WebFinger | new `Api` handlers over `Protocol` |
+| local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
@@ -114,8 +125,9 @@ genuinely owns the capability.
 
 - **Unit** for value objects, formatting and validation.
 - **Contract tests** — one abstract case run against every implementation of a
-  port (`BlobStoreTestCase`, `PostRepositoryTestCase`). A new adapter is only
-  done when it passes the shared case.
+  port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
+  `FollowerRepositoryTestCase`). A new adapter is only done when it passes the
+  shared case.
 - **Protocol vectors** — a signature is verified by the same code that produced
   it *and* rejected for a changed body, a changed header, a stale date, an
   unsigned digest and a foreign key.

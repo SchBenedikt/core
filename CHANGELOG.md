@@ -1,0 +1,48 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Follow graph: `Follower` entity, in-memory and SQL repositories behind one
+  contract test, `FollowerSchema`, and `FollowerInboxResolver`.
+- `FollowerService` with idempotent follow, per-account isolation and cursor
+  pagination.
+- Routes `followers.list`, `followers.follow`, `followers.unfollow` (10 in
+  total).
+- End-to-end delivery to real followers: a followed actor's inbox receives the
+  signed `Create` of the next post.
+- Documentation: concept guides, a route reference, an error-code reference, a
+  configuration reference, an operations checklist, a roadmap, an FAQ and
+  contributor/security/conduct documents.
+
+### Fixed
+
+- A post with `followers` visibility was readable by anyone who knew its id.
+  Single-post reads now apply visibility and answer 404 to non-authors.
+
+### Changed
+
+- The reference assembly federates to the stored follow graph when an HTTP
+  client and a signing key are provided; without them it reports no audience,
+  so no delivery is queued that could not be signed.
+
+## [0.1.0] - 2026-11-11
+
+### Added
+
+- Platform ports: clock, configuration, blob storage, SQL connection, HTTP
+  client, each with an in-memory and a production adapter.
+- Posts and visibility, soft deletion, public and home timelines with stable
+  cursor pagination.
+- ActivityPub: RSA key pairs, HTTP signatures (sign and verify), `Create` and
+  `Delete` documents, audience mapping.
+- Delivery queue with retry backoff, dead letters and a worker; signed POSTs.
+- HTTP kernel, parameterised router, middleware, one JSON error shape.
+- A single route manifest with a JSON export, and a host-neutrality guard.
+- AES-256-GCM secret box.
+- 284 tests; CI on PHP 8.3, 8.4 and 8.5.

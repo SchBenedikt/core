@@ -28,7 +28,8 @@ php bin/core-demo
 php bin/export-routes
 ```
 
-PHP 8.3+ is required; see `docs/development.md` for a rootless setup.
+PHP 8.3+ is required; see `docs/development.md` for a rootless setup. The
+full documentation index is `docs/README.md`.
 
 ## Conventions
 
@@ -43,6 +44,8 @@ PHP 8.3+ is required; see `docs/development.md` for a rootless setup.
   implementation must pass the existing contract test (`BlobStoreTestCase`,
   `PostRepositoryTestCase`).
 - Conventional Commits with a scope: `feat(posts): …`, `fix(signature): …`.
+- Commits carry no tool or AI attribution trailers; the author is the human
+  who submits the work.
 - No dead code, no unused imports, no commented-out blocks.
 - Comments explain *why* — invariants, security decisions, workarounds.
 
@@ -54,6 +57,13 @@ refusal always has a stable `reason`; keep it stable, tests and logs depend on
 it.
 
 Do not log request bodies, private keys or sealed payloads.
+
+## Current scope
+
+Implemented: posts and timelines, the follow graph, outbound ActivityPub with
+signed delivery, the HTTP contract and the platform ports. Not implemented:
+inbound `POST /inbox`, actor documents, WebFinger, `Accept`/`Undo`, local
+follows, media. See `docs/roadmap.md` before starting a large feature.
 
 ## What not to do
 
