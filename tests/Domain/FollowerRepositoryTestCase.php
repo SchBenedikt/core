@@ -74,6 +74,19 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertNull($repository->find('f1'));
 	}
 
+	public function testRemoveByActorIsScopedToTheLocalUser(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower('f1', 'alice', 'https://remote.example/users/bob'));
+
+		self::assertFalse($repository->removeByActor('carol', 'https://remote.example/users/bob'));
+		self::assertNotNull($repository->find('f1'));
+
+		self::assertTrue($repository->removeByActor('alice', 'https://remote.example/users/bob'));
+		self::assertNull($repository->find('f1'));
+		self::assertFalse($repository->removeByActor('alice', 'https://remote.example/users/bob'));
+	}
+
 	public function testFollowersAreNewestFirstWithIdAsTieBreak(): void
 	{
 		$repository = $this->repository();

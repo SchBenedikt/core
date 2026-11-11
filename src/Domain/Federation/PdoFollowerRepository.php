@@ -82,6 +82,15 @@ final class PdoFollowerRepository implements FollowerRepository
 		) > 0;
 	}
 
+	public function removeByActor(string $localUserId, string $actorId): bool
+	{
+		return $this->db->execute(
+			'DELETE FROM ' . FollowerSchema::TABLE
+			. ' WHERE local_user_id = :local_user_id AND actor_id = :actor_id',
+			['local_user_id' => $localUserId, 'actor_id' => $actorId],
+		) > 0;
+	}
+
 	public function followers(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE

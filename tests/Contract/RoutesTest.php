@@ -22,9 +22,10 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(10, $manifest->routes());
+		self::assertCount(11, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
+		self::assertNotNull($manifest->find('inbox'));
 	}
 
 	public function testEveryHandlerExistsAndImplementsTheContract(): void
@@ -44,7 +45,9 @@ final class RoutesTest extends TestCase
 	public function testEveryApiRouteIsVersioned(): void
 	{
 		foreach (Routes::manifest()->routes() as $route) {
-			if ($route->name === 'health') {
+			// The liveness probe and the ActivityPub inbox are protocol
+			// endpoints, not part of the versioned client API.
+			if (in_array($route->name, ['health', 'inbox'], true)) {
 				continue;
 			}
 
@@ -71,13 +74,23 @@ final class RoutesTest extends TestCase
 		}
 	}
 
+	public function testTheInboxIsPublicButRateLimited(): void
+	{
+		$route = Routes::manifest()->find('inbox');
+
+		self::assertNotNull($route);
+		self::assertFalse($route->requiresAuth, 'The inbox authenticates by signature, not by session.');
+		self::assertSame('120/60', $route->rateLimit);
+		self::assertSame('/inbox', $route->path);
+	}
+
 	public function testTheManifestExportsAStableJsonDocument(): void
 	{
 		$decoded = json_decode(Routes::manifest()->toJson(), true, 512, JSON_THROW_ON_ERROR);
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(10, $decoded['routes']);
+		self::assertCount(11, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -87,6 +100,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(10, $app->routes->routes());
+		self::assertCount(11, $app->routes->routes());
 	}
 }

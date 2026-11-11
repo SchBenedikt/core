@@ -15,6 +15,7 @@ use AlohaSocial\Core\Api\FollowHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
+use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
@@ -120,6 +121,15 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/900',
 				summary: 'Forget a follower and stop delivering to it.',
+			),
+			new Route(
+				name: 'inbox',
+				method: 'POST',
+				path: '/inbox',
+				handler: InboxHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Receive a signed ActivityPub activity from a remote server.',
 			),
 		);
 	}

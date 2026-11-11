@@ -144,6 +144,34 @@ final class ActivityFactory
 	}
 
 	/**
+	 * An Accept of a remote Follow.
+	 *
+	 * The original Follow is embedded unchanged, so the peer can match the
+	 * Accept to its request without having stored the activity id itself.
+	 *
+	 * @param array<string, mixed> $follow
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function acceptFollow(string $localUserId, string $followerId, array $follow): array
+	{
+		$activity = [
+			'@context' => self::CONTEXT,
+			'id' => $this->baseUrl() . '/api/v1/followers/' . rawurlencode($followerId) . '/accept',
+			'type' => 'Accept',
+			'actor' => $this->actorId($localUserId),
+			'object' => $follow,
+		];
+
+		$target = $follow['actor'] ?? null;
+		if (is_string($target) && $target !== '') {
+			$activity['to'] = [$target];
+		}
+
+		return $activity;
+	}
+
+	/**
 	 * @return array{to: list<string>, cc: list<string>}
 	 */
 	private function audience(Post $post): array

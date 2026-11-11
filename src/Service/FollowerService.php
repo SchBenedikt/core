@@ -104,6 +104,16 @@ final class FollowerService
 	}
 
 	/**
+	 * Removes the edge for an actor, for an inbound Undo(Follow).
+	 *
+	 * @return bool whether the actor was a follower
+	 */
+	public function unfollowByActor(string $localUserId, string $actorId): bool
+	{
+		return $this->followers->removeByActor($localUserId, $actorId);
+	}
+
+	/**
 	 * @return list<Follower>
 	 *
 	 * @throws InvalidCursorException

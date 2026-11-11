@@ -15,13 +15,17 @@ use AlohaSocial\Core\Api\FollowHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
+use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Contract\Routes;
+use AlohaSocial\Core\Domain\Federation\ActivityLog;
+use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
+use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -45,6 +49,7 @@ use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
+use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\PostService;
@@ -70,6 +75,7 @@ final readonly class Application
 		public PostService $posts,
 		public TimelineService $timelines,
 		public FollowerService $followers,
+		public ?InboxService $inbox,
 		public JobWorker $worker,
 		public JobQueue $queue,
 	) {
@@ -81,6 +87,8 @@ final readonly class Application
 		?HttpClient $httpClient = null,
 		?RsaKeyPair $signingKey = null,
 		?InboxResolver $inboxResolver = null,
+		?ActorResolver $actorResolver = null,
+		?ActivityLog $activityLog = null,
 		?LoggerInterface $logger = null,
 		bool $debug = false,
 	): self {
@@ -92,6 +100,7 @@ final readonly class Application
 			],
 		]);
 		$logger ??= new NullLogger();
+		$activityLog ??= new InMemoryActivityLog();
 
 		$ids = new RandomIdGenerator();
 		$repository = new InMemoryPostRepository();
@@ -126,6 +135,13 @@ final readonly class Application
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$instance = new InstanceInfo($config);
 
+		// Inbound federation needs a way to resolve a key id, a client to
+		// reach the peer and a key to sign the Accept. Missing any of them
+		// leaves the endpoint honestly at 503 rather than half-working.
+		$inboxService = ($actorResolver !== null && $httpClient !== null && $signingKey !== null)
+			? new InboxService($actorResolver, $followerService, $activityLog, $activities, $queue, $clock)
+			: null;
+
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
@@ -136,7 +152,8 @@ final readonly class Application
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
-			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService));
+			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
+			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($httpClient !== null && $signingKey !== null) {
@@ -177,6 +194,7 @@ final readonly class Application
 			$postService,
 			$timelines,
 			$followerService,
+			$inboxService,
 			new JobWorker($queue, $jobHandlers, $clock, $logger),
 			$queue,
 		);

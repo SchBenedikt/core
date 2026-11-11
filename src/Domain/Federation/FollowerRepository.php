@@ -39,6 +39,16 @@ interface FollowerRepository
 	public function remove(string $id, string $localUserId): bool;
 
 	/**
+	 * Deletes the edge for an actor, whatever its local id.
+	 *
+	 * An inbound Undo knows the actor and the local account, not the id this
+	 * instance assigned to the follower.
+	 *
+	 * @return bool whether a row was removed
+	 */
+	public function removeByActor(string $localUserId, string $actorId): bool;
+
+	/**
 	 * Newest followers first, with the id as the tie-break.
 	 *
 	 * @return list<Follower>

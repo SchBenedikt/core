@@ -89,6 +89,18 @@ call(
 
 call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/followers', userId: 'alice'));
 
+// No actor resolver and no signing key in the reference assembly: the inbox
+// says so instead of accepting activities it could neither verify nor answer.
+call(
+	$app,
+	'POST /inbox (not configured)',
+	new Request(
+		method: 'POST',
+		path: '/inbox',
+		body: '{"type":"Follow"}',
+	),
+);
+
 call($app, 'POST /api/v1/posts (invalid)', new Request(
 	method: 'POST',
 	path: '/api/v1/posts',

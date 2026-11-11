@@ -64,6 +64,19 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return true;
 	}
 
+	public function removeByActor(string $localUserId, string $actorId): bool
+	{
+		foreach ($this->followers as $id => $follower) {
+			if ($follower->localUserId === $localUserId && $follower->actorId === $actorId) {
+				unset($this->followers[$id]);
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	public function followers(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$matching = array_values(array_filter(
