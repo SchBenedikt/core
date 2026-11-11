@@ -131,6 +131,16 @@ final class FollowerService
 	}
 
 	/**
+	 * Every follower actor id, newest first, for the public collection.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIds(string $localUserId): array
+	{
+		return $this->followers->actorIds($localUserId);
+	}
+
+	/**
 	 * @throws InvalidCursorException
 	 */
 	private function cursor(?string $before): ?DateTimeImmutable

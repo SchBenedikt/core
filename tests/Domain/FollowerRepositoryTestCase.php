@@ -130,6 +130,21 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testActorIdsAreNewestFirstAndScoped(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower('aaa', 'alice', 'https://a.example/users/one', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->follower('cccc', 'alice', 'https://c.example/users/three', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->follower('bbb', 'alice', 'https://b.example/users/two', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->follower('other', 'carol', 'https://d.example/users/four', '2026-11-11T10:03:00Z'));
+
+		self::assertSame(
+			['https://c.example/users/three', 'https://b.example/users/two', 'https://a.example/users/one'],
+			$repository->actorIds('alice'),
+		);
+		self::assertSame([], $repository->actorIds('dave'));
+	}
+
 	public function testInboxesAreDistinctAndSorted(): void
 	{
 		$repository = $this->repository();

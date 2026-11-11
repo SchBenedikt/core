@@ -9,9 +9,11 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Contract;
 
+use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
@@ -130,6 +132,24 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'Receive a signed ActivityPub activity from a remote server.',
+			),
+			new Route(
+				name: 'actors.get',
+				method: 'GET',
+				path: '/@{handle}',
+				handler: ActorHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'ActivityStreams actor document of a local account.',
+			),
+			new Route(
+				name: 'actors.followers',
+				method: 'GET',
+				path: '/@{handle}/followers',
+				handler: FollowersCollectionHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'OrderedCollection of the actors following a local account.',
 			),
 		);
 	}

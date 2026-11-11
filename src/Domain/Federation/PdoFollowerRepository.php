@@ -110,6 +110,18 @@ final class PdoFollowerRepository implements FollowerRepository
 		);
 	}
 
+	public function actorIds(string $localUserId): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT actor_id FROM ' . FollowerSchema::TABLE
+			. ' WHERE local_user_id = :local_user_id'
+			. ' ORDER BY followed_at DESC, id DESC',
+			['local_user_id' => $localUserId],
+		);
+
+		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
+	}
+
 	public function inboxesFor(string $localUserId): array
 	{
 		$rows = $this->db->fetchAll(

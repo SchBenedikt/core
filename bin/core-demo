@@ -89,6 +89,11 @@ call(
 
 call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/followers', userId: 'alice'));
 
+// No signing key, no actor directory: the document routes say so instead of
+// publishing an actor whose key and inbox nobody could use.
+call($app, 'GET /@alice (not configured)', new Request('GET', '/@alice'));
+call($app, 'GET /@alice/followers (not configured)', new Request('GET', '/@alice/followers'));
+
 // No actor resolver and no signing key in the reference assembly: the inbox
 // says so instead of accepting activities it could neither verify nor answer.
 call(

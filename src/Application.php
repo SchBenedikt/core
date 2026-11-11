@@ -9,9 +9,11 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core;
 
+use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
@@ -26,8 +28,10 @@ use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
+use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
@@ -48,6 +52,7 @@ use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -89,6 +94,7 @@ final readonly class Application
 		?InboxResolver $inboxResolver = null,
 		?ActorResolver $actorResolver = null,
 		?ActivityLog $activityLog = null,
+		?LocalActorDirectory $localActors = null,
 		?LoggerInterface $logger = null,
 		bool $debug = false,
 	): self {
@@ -142,6 +148,12 @@ final readonly class Application
 			? new InboxService($actorResolver, $followerService, $activityLog, $activities, $queue, $clock)
 			: null;
 
+		// An actor document needs a key to publish and a directory to answer
+		// whether a handle exists. Missing either keeps the routes at 503.
+		$actorDocuments = ($signingKey !== null && $localActors !== null)
+			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService)
+			: null;
+
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
@@ -153,7 +165,9 @@ final readonly class Application
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
-			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService));
+			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
+			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
+			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($httpClient !== null && $signingKey !== null) {

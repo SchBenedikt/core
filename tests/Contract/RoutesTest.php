@@ -22,10 +22,12 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(11, $manifest->routes());
+		self::assertCount(13, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
+		self::assertNotNull($manifest->find('actors.get'));
+		self::assertNotNull($manifest->find('actors.followers'));
 	}
 
 	public function testEveryHandlerExistsAndImplementsTheContract(): void
@@ -47,7 +49,7 @@ final class RoutesTest extends TestCase
 		foreach (Routes::manifest()->routes() as $route) {
 			// The liveness probe and the ActivityPub inbox are protocol
 			// endpoints, not part of the versioned client API.
-			if (in_array($route->name, ['health', 'inbox'], true)) {
+			if (in_array($route->name, ['health', 'inbox', 'actors.get', 'actors.followers'], true)) {
 				continue;
 			}
 
@@ -84,13 +86,27 @@ final class RoutesTest extends TestCase
 		self::assertSame('/inbox', $route->path);
 	}
 
+	public function testTheActorRoutesArePublic(): void
+	{
+		foreach (['actors.get', 'actors.followers'] as $name) {
+			$route = Routes::manifest()->find($name);
+
+			self::assertNotNull($route);
+			self::assertFalse($route->requiresAuth, 'Actor documents are public.');
+			self::assertSame('120/60', $route->rateLimit);
+		}
+
+		self::assertSame('/@{handle}', Routes::manifest()->find('actors.get')?->path);
+		self::assertSame('/@{handle}/followers', Routes::manifest()->find('actors.followers')?->path);
+	}
+
 	public function testTheManifestExportsAStableJsonDocument(): void
 	{
 		$decoded = json_decode(Routes::manifest()->toJson(), true, 512, JSON_THROW_ON_ERROR);
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(11, $decoded['routes']);
+		self::assertCount(13, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -100,6 +116,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(11, $app->routes->routes());
+		self::assertCount(13, $app->routes->routes());
 	}
 }

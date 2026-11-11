@@ -56,6 +56,15 @@ interface FollowerRepository
 	public function followers(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array;
 
 	/**
+	 * The actor ids that follow one local user, newest first.
+	 *
+	 * This is the followers collection: all of them, not a page.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIds(string $localUserId): array;
+
+	/**
 	 * The distinct inboxes to deliver one local user's posts to.
 	 *
 	 * @return list<string>

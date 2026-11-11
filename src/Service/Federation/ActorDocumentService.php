@@ -1,0 +1,99 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Service\Federation;
+
+use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\FollowerService;
+
+/**
+ * The public description of a local account and its followers.
+ *
+ * Every id is derived from the same `ActivityFactory` the outbound side uses,
+ * so the actor id here is exactly the actor id a signed request is checked
+ * against, and the key id here is exactly the key id the inbox resolves.
+ */
+final class ActorDocumentService
+{
+	/** The ActivityStreams security vocabulary that defines `publicKey`. */
+	public const CONTEXT_SECURITY = 'https://w3id.org/security/v1';
+
+	public function __construct(
+		private readonly ActivityFactory $activities,
+		private readonly RsaKeyPair $keys,
+		private readonly LocalActorDirectory $actors,
+		private readonly FollowerService $followers,
+	) {
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws UnknownLocalActorException when the handle is not an account here
+	 */
+	public function document(string $handle): array
+	{
+		$userId = $this->knownUser($handle);
+		$actorId = $this->activities->actorId($userId);
+
+		return [
+			'@context' => [ActivityFactory::CONTEXT, self::CONTEXT_SECURITY],
+			'id' => $actorId,
+			'type' => 'Person',
+			'preferredUsername' => $userId,
+			'name' => $userId,
+			// One inbox endpoint serves all local actors; the activity's
+			// `object` names the account it is addressed to.
+			'inbox' => $this->activities->baseUrl() . '/inbox',
+			'outbox' => $actorId . '/outbox',
+			'followers' => $this->activities->followersId($userId),
+			'publicKey' => [
+				'id' => $this->activities->keyId($userId),
+				'owner' => $actorId,
+				'publicKeyPem' => $this->keys->publicKeyPem(),
+			],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws UnknownLocalActorException when the handle is not an account here
+	 */
+	public function followers(string $handle): array
+	{
+		$userId = $this->knownUser($handle);
+		$actors = $this->followers->actorIds($userId);
+
+		return [
+			'@context' => ActivityFactory::CONTEXT,
+			'id' => $this->activities->followersId($userId),
+			'type' => 'OrderedCollection',
+			'totalItems' => count($actors),
+			'orderedItems' => $actors,
+		];
+	}
+
+	/**
+	 * @throws UnknownLocalActorException
+	 */
+	private function knownUser(string $handle): string
+	{
+		$handle = trim($handle);
+
+		if ($handle === '' || !$this->actors->has($handle)) {
+			throw new UnknownLocalActorException($handle);
+		}
+
+		return $handle;
+	}
+}
