@@ -23,6 +23,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Route;
 use AlohaSocial\Core\Http\RouteManifest;
@@ -160,6 +161,15 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'OrderedCollection of a local account\'s public posts as Create activities.',
+			),
+			new Route(
+				name: 'webfinger',
+				method: 'GET',
+				path: '/.well-known/webfinger',
+				handler: WebFingerHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Resolve an acct: handle to the actor document of a local account.',
 			),
 		);
 	}

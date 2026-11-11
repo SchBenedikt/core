@@ -23,6 +23,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
@@ -57,6 +58,7 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
+use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\PostService;
@@ -163,6 +165,13 @@ final readonly class Application
 			? new ActorOutboxService($activities, $localActors, $repository)
 			: null;
 
+		// WebFinger maps a handle to the document route. It is gated like the
+		// document itself: if that route would answer 503, resolving to it
+		// would only hand a peer a dead URL.
+		$webFinger = ($signingKey !== null && $localActors !== null)
+			? new WebFingerService($activities, $localActors)
+			: null;
+
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
@@ -177,7 +186,8 @@ final readonly class Application
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
-			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox));
+			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox))
+			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($httpClient !== null && $signingKey !== null) {

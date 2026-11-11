@@ -94,6 +94,11 @@ call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/follower
 call($app, 'GET /@alice (not configured)', new Request('GET', '/@alice'));
 call($app, 'GET /@alice/followers (not configured)', new Request('GET', '/@alice/followers'));
 call($app, 'GET /@alice/outbox (not configured)', new Request('GET', '/@alice/outbox'));
+call(
+	$app,
+	'GET /.well-known/webfinger (not configured)',
+	new Request('GET', '/.well-known/webfinger', ['resource' => 'acct:alice@localhost:8080']),
+);
 
 // No actor resolver and no signing key in the reference assembly: the inbox
 // says so instead of accepting activities it could neither verify nor answer.
