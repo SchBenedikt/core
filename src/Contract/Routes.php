@@ -11,11 +11,14 @@ namespace AlohaSocial\Core\Contract;
 
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
+use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Route;
 use AlohaSocial\Core\Http\RouteManifest;
@@ -90,6 +93,33 @@ final class Routes
 				handler: HomeTimelineHandler::class,
 				requiresAuth: true,
 				summary: 'The signed-in account\'s home timeline.',
+			),
+			new Route(
+				name: 'followers.list',
+				method: 'GET',
+				path: $base . '/followers',
+				handler: FollowersHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Actors that follow the signed-in account.',
+			),
+			new Route(
+				name: 'followers.follow',
+				method: 'POST',
+				path: $base . '/followers',
+				handler: FollowHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Record a remote follower and its inbox; idempotent per actor.',
+			),
+			new Route(
+				name: 'followers.unfollow',
+				method: 'DELETE',
+				path: $base . '/followers/{id}',
+				handler: UnfollowHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Forget a follower and stop delivering to it.',
 			),
 		);
 	}

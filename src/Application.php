@@ -11,13 +11,18 @@ namespace AlohaSocial\Core;
 
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
+use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Http\HandlerMap;
@@ -40,6 +45,7 @@ use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
+use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\TimelineService;
@@ -63,6 +69,7 @@ final readonly class Application
 		public Kernel $kernel,
 		public PostService $posts,
 		public TimelineService $timelines,
+		public FollowerService $followers,
 		public JobWorker $worker,
 		public JobQueue $queue,
 	) {
@@ -85,16 +92,25 @@ final readonly class Application
 			],
 		]);
 		$logger ??= new NullLogger();
-		$inboxResolver ??= new EmptyInboxResolver();
+
+		$ids = new RandomIdGenerator();
+		$repository = new InMemoryPostRepository();
+		$followers = new InMemoryFollowerRepository();
+
+		// With a client and a key the reference assembly federates to the real
+		// follow graph. Without them it reports no audience, so a post never
+		// queues a delivery that could not be signed.
+		if ($inboxResolver === null) {
+			$inboxResolver = ($httpClient !== null && $signingKey !== null)
+				? new FollowerInboxResolver($followers)
+				: new EmptyInboxResolver();
+		}
 
 		if (!$inboxResolver instanceof EmptyInboxResolver && ($httpClient === null || $signingKey === null)) {
 			throw new InvalidArgumentException(
 				'A delivery target requires both an HTTP client and a signing key.',
 			);
 		}
-
-		$ids = new RandomIdGenerator();
-		$repository = new InMemoryPostRepository();
 		$queue = new InMemoryJobQueue($clock, $ids);
 		$activities = new ActivityFactory($config);
 
@@ -107,6 +123,7 @@ final readonly class Application
 			$ids,
 		);
 		$timelines = new TimelineService($repository);
+		$followerService = new FollowerService($followers, $clock, $ids);
 		$instance = new InstanceInfo($config);
 
 		$handlers = (new HandlerMap())
@@ -116,7 +133,10 @@ final readonly class Application
 			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService))
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
 			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines))
-			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines));
+			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines))
+			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
+			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
+			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($httpClient !== null && $signingKey !== null) {
@@ -156,6 +176,7 @@ final readonly class Application
 			$kernel,
 			$postService,
 			$timelines,
+			$followerService,
 			new JobWorker($queue, $jobHandlers, $clock, $logger),
 			$queue,
 		);

@@ -72,6 +72,23 @@ call($app, 'GET /api/v1/timelines/public', new Request('GET', '/api/v1/timelines
 
 call($app, 'GET /api/v1/timelines/home (bob)', new Request('GET', '/api/v1/timelines/home', userId: 'bob'));
 
+call(
+	$app,
+	'POST /api/v1/followers (alice)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/followers',
+		headers: ['Content-Type' => 'application/json'],
+		body: json_encode([
+			'actor' => 'https://remote.example/users/bob',
+			'inbox' => 'https://remote.example/users/bob/inbox',
+		], JSON_THROW_ON_ERROR),
+		userId: 'alice',
+	),
+);
+
+call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/followers', userId: 'alice'));
+
 call($app, 'POST /api/v1/posts (invalid)', new Request(
 	method: 'POST',
 	path: '/api/v1/posts',
