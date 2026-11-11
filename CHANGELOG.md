@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Discovery: `GET /@{handle}` serves the ActivityStreams actor document with
+  `preferredUsername`, `name`, `inbox`, `outbox`, `followers` and a
+  `publicKey` whose id is exactly the key id inbound verification resolves;
+  `GET /@{handle}/followers` serves the `OrderedCollection` of real follower
+  actor ids. Both are disabled (503) without a signing key and a local actor
+  directory.
 - Inbound `POST /inbox`: signature verification against an actor resolved by
   key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
   replay guard. The endpoint stays at 503 without a configured resolver.

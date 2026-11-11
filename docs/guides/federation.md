@@ -73,10 +73,16 @@ of a remote actor and applies `Follow` and `Undo(Follow)`. See
 [inbound federation](inbound-federation.md) for the order of checks and
 [inbox activities](../reference/inbox-activities.md) for the refusal table.
 
+## Discovery
+
+A local account is described by its [actor document](../reference/actor-document.md)
+at `/@{handle}`, including the public key and the inbox. The
+[followers collection](followers-collection.md) is served next to it.
+
 ## Not implemented yet
 
 - inbound `Create`/`Delete`/`Announce`, and fetching remote posts;
-- actor documents, `followers`/`following` collections, WebFinger;
+- WebFinger, a `following` collection and an outbox;
 - delivery to shared inboxes;
 - a key cache (the HTTP resolver fetches per request).
 

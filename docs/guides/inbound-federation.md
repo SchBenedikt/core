@@ -83,7 +83,8 @@ changes nothing. The clock window for the signed `Date` is 300 seconds; see
 ## What is missing
 
 - inbound `Create`/`Delete`/`Announce` and fetching remote posts;
-- serving this instance's actor document, `followers` collection and WebFinger;
+- WebFinger (the actor document and followers collection are served; see
+  [peer discovery](peer-discovery.md));
 - a key cache (the core fetches on every request when using
   `HttpActorResolver`);
 - a policy layer for approving Follows instead of accepting every valid one.

@@ -82,9 +82,11 @@ unauthenticated request body.
 
 ## What is missing
 
-- an actor document that publishes the `followers` and `following`
-  collections;
-- WebFinger, so a `@user@host` handle resolves to the actor;
+- WebFinger, so a `@user@host` handle resolves to the actor URL;
+- a `following` collection and local follows (accounts on this instance
+  following each other), which the home timeline would need;
 - a policy for approving Follows instead of accepting every valid one;
-- local follows (accounts on this instance following each other), which the
-  home timeline would need.
+- paging for very large follower collections.
+
+The follower list is published at `/@{handle}/followers`; see the
+[followers collection](followers-collection.md).

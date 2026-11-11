@@ -97,6 +97,22 @@ is the only place that maps a reason to an HTTP status. The inbox is enabled
 only when an actor resolver, an HTTP client and a signing key are all present —
 otherwise it answers 503 instead of pretending.
 
+## Serving an actor
+
+```
+GET /@{handle}
+  └─ ActorHandler
+      └─ ActorDocumentService   ids from ActivityFactory, key from RsaKeyPair
+GET /@{handle}/followers
+  └─ FollowersCollectionHandler
+      └─ FollowersCollectionService → FollowerRepository::actorIds
+```
+
+Both are disabled (503) unless the host provides a signing key and a
+`LocalActorDirectory`; an unknown handle answers 404 without echoing it. The
+document's key id is exactly the id the inbox resolves, which a test walks
+end to end.
+
 ## Data invariants
 
 - **UTC, second precision.** `Support\Time` is the only formatter. Stored
@@ -130,7 +146,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
-| actor documents and WebFinger | new `Api` handlers over `Protocol` |
+| WebFinger, outbox, paged collections | new `Api` handlers over `Protocol` |
 | local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |

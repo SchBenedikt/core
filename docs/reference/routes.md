@@ -17,6 +17,8 @@ and versioned under `/api/v1` except the liveness probe.
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
+| `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
+| `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -145,6 +147,29 @@ Signature: keyId="…",algorithm="rsa-sha256",headers="(request-target) host dat
 activities and every refusal are listed in
 [inbox activities](inbox-activities.md). `503 inbox_not_configured` means the
 host did not provide an actor resolver, an HTTP client and a signing key.
+
+## Actor document
+
+```http
+GET /@alice
+Accept: application/activity+json
+```
+
+`200` with the ActivityStreams document, `Content-Type:
+application/activity+json; charset=utf-8`. Every field is described in
+[the actor document reference](actor-document.md). An unknown handle is
+`404 actor_not_found`; an instance without a key or a local directory is
+`503 actor_not_configured`.
+
+## Followers collection
+
+```http
+GET /@alice/followers
+```
+
+`200` with an `OrderedCollection` (`totalItems`, `orderedItems`). It reflects
+accepted Follows and Undos immediately; see the
+[followers collection guide](../guides/followers-collection.md).
 
 ## Route parameters
 

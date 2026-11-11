@@ -17,6 +17,8 @@ Status of the core, not a promise about dates.
 - Inbound federation: `POST /inbox` with signature verification, actor-key
   resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay
   guard.
+- Discovery: the ActivityStreams actor document with its published key, and
+  the followers `OrderedCollection` read from the follower repository.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
 - Security: AES-256-GCM secret box.
 - Documentation and CI across PHP 8.3, 8.4, 8.5.
@@ -26,8 +28,8 @@ Status of the core, not a promise about dates.
 | Item | Seam |
 | --- | --- |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
-| Actor document and `followers`/`following` collections | new `Api` handlers |
 | WebFinger | host routing + a small handler |
+| Outbox and paged collections | `actors.get` + a post store |
 | Local follows and a real home timeline | `Domain\Federation` + a local follow table |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Durable queue adapter | `Jobs\JobQueue` |

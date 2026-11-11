@@ -3,6 +3,14 @@
 Operational notes for running the inbox. The behaviour itself is in
 [inbound federation](../guides/inbound-federation.md).
 
+## Publishing the key
+
+`GET /@{handle}` publishes this instance's public key under the exact key id
+that inbound verification resolves (`{actor}#main-key`). A peer can therefore
+fetch the document, verify our outbound signatures, and use the same identity
+when it addresses the inbox. See the
+[actor document reference](../reference/actor-document.md).
+
 ## Key resolution
 
 `HttpActorResolver` turns a `keyid` into an actor:

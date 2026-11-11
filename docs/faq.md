@@ -46,6 +46,13 @@ A retry must send what the first attempt meant to send. Rebuilding at delivery
 time would let an edit change the payload between attempts and make the
 receiver's idempotency checks meaningless.
 
+### How does a peer find my actor?
+
+Fetch `{instance}/@{handle}` for the actor document. It carries the key id, the
+public key and the inbox. WebFinger is not implemented yet, so a peer cannot
+turn `@alice@social.example` into that URL by itself; see
+[peer discovery](guides/peer-discovery.md).
+
 ### How is an inbound activity authenticated?
 
 By its HTTP signature over `(request-target) host date digest`. The `keyid` is
