@@ -105,13 +105,16 @@ GET /@{handle}
       └─ ActorDocumentService   ids from ActivityFactory, key from RsaKeyPair
 GET /@{handle}/followers
   └─ FollowersCollectionHandler
-      └─ FollowersCollectionService → FollowerRepository::actorIds
+      └─ ActorDocumentService::followers → FollowerRepository::actorIds
+GET /@{handle}/outbox
+  └─ OutboxHandler
+      └─ ActorOutboxService → PostRepository::authorPosts
 ```
 
-Both are disabled (503) unless the host provides a signing key and a
+All three are disabled (503) unless the host provides a signing key and a
 `LocalActorDirectory`; an unknown handle answers 404 without echoing it. The
-document's key id is exactly the id the inbox resolves, which a test walks
-end to end.
+document's key id is exactly the id the inbox resolves, and its `outbox` URL
+is exactly the collection id, which tests walk end to end.
 
 ## Data invariants
 
@@ -146,7 +149,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
-| WebFinger, outbox, paged collections | new `Api` handlers over `Protocol` |
+| WebFinger, paged collections | new `Api` handlers over `Protocol` |
 | local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |

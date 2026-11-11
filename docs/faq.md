@@ -53,6 +53,13 @@ public key and the inbox. WebFinger is not implemented yet, so a peer cannot
 turn `@alice@social.example` into that URL by itself; see
 [peer discovery](guides/peer-discovery.md).
 
+### Where does a peer get my posts?
+
+`GET /@{handle}/outbox` lists the account's public and unlisted posts as
+`Create` activities, newest first. The collection id is the same `outbox` URL
+the actor document advertises. Followers-only posts are not listed, because
+the route is public. See [outbox](guides/outbox.md).
+
 ### How is an inbound activity authenticated?
 
 By its HTTP signature over `(request-target) host date digest`. The `keyid` is

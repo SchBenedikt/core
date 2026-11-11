@@ -51,6 +51,19 @@ refusals: [inbound federation](inbound-federation.md) and
 The instance queues an `Accept` of the embedded Follow to the peer's inbox,
 signed with the local actor's key. The peer matches it by the Follow id.
 
+## 5. Read the outbox
+
+The document's `outbox` is a real route, not a placeholder. A peer fetches it
+for the account's public posts:
+
+```http
+GET https://social.example/@alice/outbox
+```
+
+Every item is a `Create` whose `object` is the Note. The activity id is the
+same one delivery posts to an inbox, so a peer that saw both can deduplicate
+by id instead of by content. Details: [outbox](outbox.md).
+
 ## The circle closes
 
 The same `ActivityFactory` builds the actor id, the key id and every outbound
@@ -70,6 +83,9 @@ Follow signed with the published key id is accepted, proving the values agree.
 ## What a peer cannot do yet
 
 - resolve `@handle@host` (no WebFinger);
-- read the outbox (advertised, not served);
-- read pages of followers (the collection is complete but not paged);
-- fetch posts from this instance (only signed outbound delivery exists).
+- page through followers or the outbox (both collections are complete but not
+  paged);
+- fetch a single post over ActivityPub (objects are embedded in the `Create`;
+  the JSON API is for local clients);
+- deliver posts to this instance (`POST /inbox` applies only `Follow` and
+  `Undo(Follow)`).

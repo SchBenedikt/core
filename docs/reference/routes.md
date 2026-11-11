@@ -19,6 +19,7 @@ and versioned under `/api/v1` except the liveness probe.
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
+| `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -170,6 +171,19 @@ GET /@alice/followers
 `200` with an `OrderedCollection` (`totalItems`, `orderedItems`). It reflects
 accepted Follows and Undos immediately; see the
 [followers collection guide](../guides/followers-collection.md).
+
+## Outbox
+
+```http
+GET /@alice/outbox
+```
+
+`200` with an `OrderedCollection` whose `id` is exactly the `outbox` URL of
+the [actor document](actor-document.md). Items are the same `Create`
+activities outbound delivery sends, newest first; only public and unlisted
+posts appear. See the [outbox guide](../guides/outbox.md). An unknown handle
+is `404 actor_not_found`; an instance without a key or a local directory is
+`503 actor_not_configured`.
 
 ## Route parameters
 

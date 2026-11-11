@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
   `GET /@{handle}/followers` serves the `OrderedCollection` of real follower
   actor ids. Both are disabled (503) without a signing key and a local actor
   directory.
+- Outbox: `GET /@{handle}/outbox` serves the `OrderedCollection` of the
+  account's public posts as `Create` activities, newest first. Its id is
+  exactly the `outbox` URL the actor document advertises, and every item is
+  the same document outbound delivery sends.
 - Inbound `POST /inbox`: signature verification against an actor resolved by
   key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
   replay guard. The endpoint stays at 503 without a configured resolver.

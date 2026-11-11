@@ -19,6 +19,8 @@ Status of the core, not a promise about dates.
   guard.
 - Discovery: the ActivityStreams actor document with its published key, and
   the followers `OrderedCollection` read from the follower repository.
+- Outbox: the public `OrderedCollection` of an account's public posts as
+  `Create` activities, read from the same post repository the local API uses.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
 - Security: AES-256-GCM secret box.
 - Documentation and CI across PHP 8.3, 8.4, 8.5.
@@ -29,7 +31,7 @@ Status of the core, not a promise about dates.
 | --- | --- |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
 | WebFinger | host routing + a small handler |
-| Outbox and paged collections | `actors.get` + a post store |
+| Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
 | Local follows and a real home timeline | `Domain\Federation` + a local follow table |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Durable queue adapter | `Jobs\JobQueue` |
