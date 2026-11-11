@@ -109,12 +109,16 @@ GET /@{handle}/followers
 GET /@{handle}/outbox
   └─ OutboxHandler
       └─ ActorOutboxService → PostRepository::authorPosts
+GET /.well-known/webfinger
+  └─ WebFingerHandler
+      └─ WebFingerService → ActivityFactory::actorId
 ```
 
-All three are disabled (503) unless the host provides a signing key and a
-`LocalActorDirectory`; an unknown handle answers 404 without echoing it. The
-document's key id is exactly the id the inbox resolves, and its `outbox` URL
-is exactly the collection id, which tests walk end to end.
+All four are disabled (503) unless the host provides a signing key and a
+`LocalActorDirectory`; an unknown handle or foreign WebFinger host answers 404
+without echoing it. The document's key id is exactly the id the inbox
+resolves, its `outbox` URL is exactly the collection id, and the WebFinger
+`self` href is exactly the document URL, which tests walk end to end.
 
 ## Data invariants
 
@@ -149,7 +153,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
-| WebFinger, paged collections | new `Api` handlers over `Protocol` |
+| Paged collections | the existing `actors.*` handlers and repositories |
 | local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |

@@ -48,9 +48,10 @@ receiver's idempotency checks meaningless.
 
 ### How does a peer find my actor?
 
-Fetch `{instance}/@{handle}` for the actor document. It carries the key id, the
-public key and the inbox. WebFinger is not implemented yet, so a peer cannot
-turn `@alice@social.example` into that URL by itself; see
+A peer resolves `@alice@social.example` with WebFinger:
+`GET /.well-known/webfinger?resource=acct%3Aalice%40social.example`. The JRD's
+`self` link points at the actor document, which carries the key id, the public
+key, the inbox and the outbox. See [WebFinger](guides/webfinger.md) and
 [peer discovery](guides/peer-discovery.md).
 
 ### Where does a peer get my posts?

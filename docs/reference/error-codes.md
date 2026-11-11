@@ -13,6 +13,7 @@ change. `fields` appears only when an error belongs to specific input.
 | --- | --- | --- |
 | `invalid_json` | 400 | The body is not valid JSON or not an object |
 | `invalid_cursor` | 400 | `before` is not a canonical timestamp |
+| `invalid_resource` | 400 | WebFinger `resource` is missing or not a usable `acct:` URI |
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
 | `forbidden` | 403 | The user is known but may not do this (deleting somebody else's post) |
 | `not_found` | 404 | Missing — or private and therefore indistinguishable from missing |
@@ -26,12 +27,12 @@ change. `fields` appears only when an error belongs to specific input.
 | `unsupported_activity` | 400 | An inbox activity type the core does not apply |
 | `replayed_activity` | 400 | An activity id that was already accepted |
 | `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
-| `actor_not_found` | 404 | A handle that is not an account on this instance (actor document, followers collection, outbox) |
-| `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers collection, outbox) |
+| `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers collection, outbox, WebFinger) |
+| `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers collection, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
-| `instance_not_configured` | 503 | A post cannot be federated because `social/instance.url` is missing or invalid |
+| `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
 
 ## Rules
 

@@ -6,8 +6,10 @@ Accept: application/activity+json
 ```
 
 Serves the ActivityStreams document of a local account. It is public: a peer
-fetches it before it can follow, address or deliver to the account. The
-handler is described in [peer discovery](../guides/peer-discovery.md).
+fetches it before it can follow, address or deliver to the account. A peer
+normally finds it from `@handle@host` through
+[WebFinger](../guides/webfinger.md); the handler is described in
+[peer discovery](../guides/peer-discovery.md).
 
 ## Example
 

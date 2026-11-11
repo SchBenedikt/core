@@ -23,6 +23,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow and Undo |
 | [Peer discovery](guides/peer-discovery.md) | How a peer finds the actor, its key and the inbox |
+| [WebFinger](guides/webfinger.md) | The JRD that resolves an `acct:` handle to the actor document |
 | [Followers collection](guides/followers-collection.md) | The `OrderedCollection` and what changes it |
 | [Outbox](guides/outbox.md) | The public post collection, its `Create` items and how peers reconcile them |
 | [Jobs and delivery](guides/jobs-and-delivery.md) | The queue contract, retries, backoff and dead letters |

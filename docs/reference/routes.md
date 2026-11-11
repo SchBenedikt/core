@@ -2,7 +2,8 @@
 
 The manifest in [`src/Contract/Routes.php`](../../src/Contract/Routes.php) is the
 source of truth; `php bin/export-routes` prints it as JSON. Paths are absolute
-and versioned under `/api/v1` except the liveness probe.
+and versioned under `/api/v1` except the liveness probe and the protocol
+endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 
 | Name | Method | Path | Auth | Rate limit |
 | --- | --- | --- | --- | --- |
@@ -20,6 +21,7 @@ and versioned under `/api/v1` except the liveness probe.
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
+| `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -183,6 +185,20 @@ the [actor document](actor-document.md). Items are the same `Create`
 activities outbound delivery sends, newest first; only public and unlisted
 posts appear. See the [outbox guide](../guides/outbox.md). An unknown handle
 is `404 actor_not_found`; an instance without a key or a local directory is
+`503 actor_not_configured`.
+
+## WebFinger
+
+```http
+GET /.well-known/webfinger?resource=acct:alice@social.example
+Accept: application/jrd+json
+```
+
+`200` with the JRD, `Content-Type: application/jrd+json; charset=utf-8`. Its
+single `self` link points at the URL the actor document is really served
+under. See [WebFinger](../guides/webfinger.md). A missing or malformed
+`resource` is `400 invalid_resource`; a foreign host or unknown handle is
+`404 actor_not_found`; an instance without a key or directory is
 `503 actor_not_configured`.
 
 ## Route parameters

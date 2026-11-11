@@ -1,8 +1,8 @@
 # Federation
 
-The core speaks ActivityPub over signed HTTP POSTs. It does not yet speak
-WebFinger, host an actor document or accept inbound activities; those are host
-and next-milestone concerns. What exists is the outbound half, end to end.
+The core speaks ActivityPub over signed HTTP POSTs, serves its actor
+documents and resolves handles through WebFinger. It also accepts inbound
+`Follow` and `Undo(Follow)`; inbound posts are the next milestone.
 
 ## Ids
 
@@ -76,15 +76,16 @@ of a remote actor and applies `Follow` and `Undo(Follow)`. See
 ## Discovery
 
 A local account is described by its [actor document](../reference/actor-document.md)
-at `/@{handle}`, including the public key and the inbox. The
-[followers collection](followers-collection.md) and the [outbox](outbox.md)
-are served next to it; the outbox lists the account's public posts as the
-same `Create` activities delivery sends.
+at `/@{handle}`, including the public key and the inbox. A peer finds it from
+`@handle@host` through [WebFinger](webfinger.md), which returns the document
+URL as a `self` link. The [followers collection](followers-collection.md) and
+the [outbox](outbox.md) are served next to it; the outbox lists the account's
+public posts as the same `Create` activities delivery sends.
 
 ## Not implemented yet
 
 - inbound `Create`/`Delete`/`Announce`, and fetching remote posts;
-- WebFinger and a `following` collection;
+- a `following` collection;
 - delivery to shared inboxes;
 - a key cache (the HTTP resolver fetches per request).
 

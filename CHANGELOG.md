@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   account's public posts as `Create` activities, newest first. Its id is
   exactly the `outbox` URL the actor document advertises, and every item is
   the same document outbound delivery sends.
+- WebFinger: `GET /.well-known/webfinger?resource=acct:{handle}@{host}`
+  resolves a local handle to the actor document URL and serves it as
+  `application/jrd+json` with a single `self` link of type
+  `application/activity+json`. The configured host is enforced; foreign hosts
+  and unknown handles share one 404 without echoing either.
 - Inbound `POST /inbox`: signature verification against an actor resolved by
   key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
   replay guard. The endpoint stays at 503 without a configured resolver.

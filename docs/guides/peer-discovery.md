@@ -2,22 +2,20 @@
 
 What a remote server does with this instance, in order.
 
-## 1. Find the actor
+## 1. Resolve the handle
 
-A peer that knows the actor URL fetches it:
+A peer resolves `@alice@social.example` with WebFinger:
 
 ```http
-GET https://social.example/@alice
-Accept: application/activity+json
+GET https://social.example/.well-known/webfinger?resource=acct%3Aalice%40social.example
+Accept: application/jrd+json
 ```
 
-The core does not implement WebFinger yet, so a peer cannot resolve
-`@alice@social.example` to the URL on its own. The URL is
-`{instance}/@{urlencoded handle}`; a host that knows its accounts can publish
-it, and the [roadmap](../roadmap.md) lists WebFinger as the next discovery
-step.
+The JRD contains a single `self` link of type `application/activity+json`;
+its href is the actor document. Details and errors: [WebFinger](webfinger.md).
+A peer that already knows the actor URL can skip this step.
 
-The response is the [actor document](../reference/actor-document.md).
+The resolved URL is the [actor document](../reference/actor-document.md).
 
 ## 2. Read the key and the inbox
 
@@ -82,7 +80,6 @@ Follow signed with the published key id is accepted, proving the values agree.
 
 ## What a peer cannot do yet
 
-- resolve `@handle@host` (no WebFinger);
 - page through followers or the outbox (both collections are complete but not
   paged);
 - fetch a single post over ActivityPub (objects are embedded in the `Create`;
