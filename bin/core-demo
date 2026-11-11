@@ -1,0 +1,94 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Http\Response;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+/**
+ * @param array<string, string> $headers
+ */
+function call(Application $app, string $label, Request $request): void
+{
+	$response = $app->handle($request);
+
+	printf("%s -> %d %s\n", $label, $response->status, $response->status < 400 ? 'ok' : 'error');
+
+	try {
+		$decoded = $response->decodedBody();
+	} catch (JsonException) {
+		$decoded = $response->body;
+	}
+
+	if ($decoded !== null) {
+		echo json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
+	}
+
+	echo "\n";
+}
+
+$app = Application::inMemory();
+
+echo "Aloha Social core — in-memory reference assembly\n";
+echo "Routes: ", count($app->routes->routes()), ", queued jobs: ", $app->queue->pendingCount(), "\n\n";
+
+call($app, 'GET /healthz', new Request('GET', '/healthz'));
+
+call(
+	$app,
+	'POST /api/v1/posts (alice)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/posts',
+		headers: ['Content-Type' => 'application/json'],
+		body: json_encode([
+			'content' => 'Hello from the Aloha Social core.',
+			'visibility' => 'public',
+		], JSON_THROW_ON_ERROR),
+		userId: 'alice',
+	),
+);
+
+call(
+	$app,
+	'POST /api/v1/posts (anonymous)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/posts',
+		body: '{"content":"should be refused"}',
+	),
+);
+
+call($app, 'GET /api/v1/timelines/public', new Request('GET', '/api/v1/timelines/public?limit=10'));
+
+call($app, 'GET /api/v1/timelines/home (bob)', new Request('GET', '/api/v1/timelines/home', userId: 'bob'));
+
+call($app, 'POST /api/v1/posts (invalid)', new Request(
+	method: 'POST',
+	path: '/api/v1/posts',
+	body: '{"content":"   "}',
+	userId: 'alice',
+));
+
+call($app, 'GET /api/v1/nope', new Request('GET', '/api/v1/nope'));
+
+$response = $app->handle(new Request('GET', '/api/v1/timelines/public'));
+assert($response instanceof Response);
+
+$body = $response->decodedBody();
+$posts = is_array($body) ? ($body['posts'] ?? []) : [];
+if (!is_array($posts) || $posts === []) {
+	fwrite(STDERR, "demo failed: the post that was just written is not in the timeline\n");
+	exit(1);
+}
+
+echo "demo ok: ", count($posts), " post(s) on the public timeline\n";

@@ -1,0 +1,15 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+use AlohaSocial\Core\Contract\Routes;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+echo Routes::manifest()->toJson() . PHP_EOL;

@@ -1,0 +1,19 @@
+version = 1
+
+[[annotations]]
+path = [
+	"composer.json",
+	"composer.lock",
+	"phpunit.xml",
+	".gitignore",
+	".editorconfig",
+	"README.md",
+	"LICENSE",
+	"REUSE.toml",
+	"AGENTS.md",
+	"docs/**",
+	".github/**",
+	"tools/lint.sh",
+]
+SPDX-FileCopyrightText = "2026 Aloha Social contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

@@ -1,0 +1,124 @@
+# Architecture
+
+The core is a hexagonal application: the domain and its services know nothing
+about the host, and everything a host must provide is an interface in
+`src/Platform/`.
+
+```
+            ┌─────────────────────────────────────────────┐
+  HTTP ───► │ Kernel → Router → Middleware → Handler       │
+            │                      │                      │
+            │                      ▼                      │
+            │                Service (validation,          │
+            │                transactions, fan-out)        │
+            │                 │            │               │
+            │                 ▼            ▼               │
+            │          Domain/Repository  JobQueue         │
+            └─────────────────┬────────────┬───────────────┘
+                              │            │
+                   ┌──────────▼──┐   ┌─────▼─────────┐
+                   │ Connection  │   │ HttpClient    │
+                   │ BlobStore   │   │ Clock, Config │
+                   │ (host ports)│   │ (host ports)  │
+                   └─────────────┘   └───────────────┘
+```
+
+## Layers
+
+| Layer | Responsibility | Must not |
+| --- | --- | --- |
+| `Http` | routing, request/response, middleware, error rendering | contain business rules |
+| `Api` | one handler per route: input → service → output | hold state between requests |
+| `Service` | validation, orchestration, transactions, queue pushes | know about HTTP or SQL |
+| `Domain` | entities, value objects, repository and resolver ports | depend on anything else |
+| `Protocol` | ActivityStreams documents, RSA, HTTP signatures | read the database |
+| `Jobs` | queue contract, worker loop, retry rules | know what a job means |
+| `Platform` | ports a host implements | import a host |
+
+## Request lifecycle
+
+1. The host authenticates and builds a `Core\Http\Request` with `userId`.
+2. `Kernel` asks the `Router` for a `RouteMatch` (404/405 are decided here).
+3. The matched route and its path parameters become request attributes.
+4. Middleware runs outermost first — `RequireAuthentication` refuses a route
+   with `requires_auth` when there is no user.
+5. The `HandlerResolver` builds the handler lazily and it produces a `Response`.
+6. Any `HttpException` becomes the documented JSON error; anything else is
+   logged and answered with a 500 that does not leak internals unless the
+   kernel is in debug mode.
+
+## Writing a post (the implemented vertical slice)
+
+```
+POST /api/v1/posts
+  └─ CreatePostHandler        parse and validate the shape
+      └─ PostService::create  trim, length, content warning, visibility
+          ├─ PostRepository::insert        one row, second-precision UTC
+          ├─ InboxResolver::inboxesFor     empty until the follow graph exists
+          └─ JobQueue::push (per inbox)    {"inbox", "activity", "key_id"}
+                                              │
+JobWorker::runOnce ──────────────────────────┘
+  └─ FederationDeliveryHandler
+      ├─ json_encode the activity built when the post was written
+      ├─ HttpSignature::sign   (request-target) host date digest
+      └─ HttpClient::request   non-2xx → retry with backoff, then dead letter
+```
+
+The activity is built at write time and stored in the job, not rebuilt at
+delivery time: an edit between queueing and sending must not change what a
+retry sends. Its ids are derived from the instance URL and the post id, so a
+retry is idempotent for the receiving server.
+
+## Data invariants
+
+- **UTC, second precision.** `Support\Time` is the only formatter. Stored
+  timestamps are fixed-width RFC 3339 strings, which makes lexicographic order
+  chronological on SQLite, PostgreSQL and MySQL, and makes a round trip equal
+  the value that was written.
+- **Stable ids.** A post id never changes; the public URL and the ActivityPub
+  object id are derived from it.
+- **Soft deletion.** Deleting sets `deleted_at`; every read filters it. The row
+  survives so a `Delete` can still be delivered and a later import can see it.
+- **Schema next to the repository.** `PostSchema` defines the table once. The
+  standalone runs those statements; the Nextcloud host creates the same columns
+  through its schema API. A dump can therefore move between the two.
+
+## Ports
+
+| Port | Methods | In-memory / test | Production |
+| --- | --- | --- | --- |
+| `Clock` | `now()` | `FrozenClock` | `SystemClock` |
+| `Config` | get/set/delete/has/all, typed getters | `ArrayConfig` | YAML + env + DB |
+| `BlobStore` | put/read/exists/delete/size/list | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
+| `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
+| `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+
+Adding a port is a breaking change for both hosts. Add one only when a host
+genuinely owns the capability.
+
+## What is not here yet
+
+| Missing | Where it will attach |
+| --- | --- |
+| accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
+| follow graph and follower inboxes | `Domain\Federation\InboxResolver` (already the seam) |
+| media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
+| AT Protocol | `Protocol\Atproto`, moved from the app |
+| Mastodon-compatible API | more routes in the manifest; handlers over the same services |
+| admin settings | host pages; the core keeps the settings *rules* |
+| migrations runner | the standalone host, executing `*Schema` statements |
+| Vue UI | `@alohasocial/ui` with a `HostBridge` per host |
+| Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform` |
+
+## Testing strategy
+
+- **Unit** for value objects, formatting and validation.
+- **Contract tests** — one abstract case run against every implementation of a
+  port (`BlobStoreTestCase`, `PostRepositoryTestCase`). A new adapter is only
+  done when it passes the shared case.
+- **Protocol vectors** — a signature is verified by the same code that produced
+  it *and* rejected for a changed body, a changed header, a stale date, an
+  unsigned digest and a foreign key.
+- **End to end** — `Application::inMemory()` is a real object graph; the test
+  writes a post over HTTP, drains the queue, and verifies the signature on the
+  request that left.

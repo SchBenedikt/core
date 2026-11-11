@@ -1,0 +1,53 @@
+{
+	"name": "alohasocial/core",
+	"description": "Host-neutral core of Aloha Social: domain, federation, services, HTTP contract and platform ports.",
+	"type": "library",
+	"license": "AGPL-3.0-or-later",
+	"keywords": [
+		"activitypub",
+		"fediverse",
+		"at-protocol",
+		"alohasocial"
+	],
+	"require": {
+		"php": ">=8.3",
+		"ext-json": "*",
+		"ext-mbstring": "*",
+		"ext-openssl": "*",
+		"ext-pdo": "*",
+		"psr/log": "^3.0"
+	},
+	"require-dev": {
+		"ext-pdo_sqlite": "*",
+		"phpunit/phpunit": "^11.5"
+	},
+	"autoload": {
+		"psr-4": {
+			"AlohaSocial\\Core\\": "src/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"AlohaSocial\\Core\\Tests\\": "tests/"
+		}
+	},
+	"scripts": {
+		"test": "@php vendor/bin/phpunit",
+		"lint": "bash tools/lint.sh",
+		"check:boundary": "@php tools/check-core-boundary.php",
+		"check": [
+			"@lint",
+			"@check:boundary",
+			"@test"
+		]
+	},
+	"config": {
+		"platform": {
+			"php": "8.3.16"
+		},
+		"sort-packages": true,
+		"allow-plugins": {}
+	},
+	"minimum-stability": "stable",
+	"prefer-stable": true
+}
