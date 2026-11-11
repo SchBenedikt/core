@@ -54,7 +54,7 @@ final class ActorDocumentService
 			// One inbox endpoint serves all local actors; the activity's
 			// `object` names the account it is addressed to.
 			'inbox' => $this->activities->baseUrl() . '/inbox',
-			'outbox' => $actorId . '/outbox',
+			'outbox' => $this->activities->outboxId($userId),
 			'followers' => $this->activities->followersId($userId),
 			'publicKey' => [
 				'id' => $this->activities->keyId($userId),

@@ -19,6 +19,7 @@ use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
@@ -53,6 +54,7 @@ use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
+use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -154,6 +156,13 @@ final readonly class Application
 			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService)
 			: null;
 
+		// The outbox reads the same post repository the local API writes.
+		// It is enabled with the rest of the actor surface, so an instance
+		// that cannot publish its document does not advertise half an actor.
+		$actorOutbox = ($signingKey !== null && $localActors !== null)
+			? new ActorOutboxService($activities, $localActors, $repository)
+			: null;
+
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
@@ -167,7 +176,8 @@ final readonly class Application
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
-			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments));
+			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
+			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($httpClient !== null && $signingKey !== null) {

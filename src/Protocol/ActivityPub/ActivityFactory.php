@@ -76,6 +76,15 @@ final class ActivityFactory
 		return $this->actorId($userId) . '/followers';
 	}
 
+	/**
+	 * The outbox URL the actor document advertises and the outbox route
+	 * serves. One function, so a peer never has to guess the id.
+	 */
+	public function outboxId(string $userId): string
+	{
+		return $this->actorId($userId) . '/outbox';
+	}
+
 	public function noteId(Post $post): string
 	{
 		return $this->baseUrl() . '/api/v1/posts/' . rawurlencode($post->id);

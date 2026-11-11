@@ -1,0 +1,60 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Api;
+
+use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
+use AlohaSocial\Core\Exceptions\ConfigurationException;
+use AlohaSocial\Core\Http\Handler;
+use AlohaSocial\Core\Http\HttpException;
+use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Service\Federation\ActorOutboxService;
+
+/**
+ * `GET /@{handle}/outbox`
+ *
+ * The public `OrderedCollection` of an account's posts, newest first. It
+ * serves the same repository the local post route writes, so a post appears
+ * here as soon as it is created.
+ */
+final class OutboxHandler implements Handler
+{
+	public function __construct(
+		private readonly ?ActorOutboxService $outbox,
+	) {
+	}
+
+	public function handle(Request $request): Response
+	{
+		if ($this->outbox === null) {
+			throw new HttpException(
+				503,
+				'actor_not_configured',
+				'The actor outbox is not configured on this instance.',
+			);
+		}
+
+		$handle = (string) $request->attribute('handle', '');
+
+		try {
+			$collection = $this->outbox->collection($handle);
+		} catch (UnknownLocalActorException) {
+			throw new HttpException(404, 'actor_not_found', 'Actor not found.');
+		} catch (ConfigurationException) {
+			throw new HttpException(
+				503,
+				'instance_not_configured',
+				'The instance URL is not configured.',
+			);
+		}
+
+		return Response::json($collection, 200, ['Content-Type' => ActorHandler::CONTENT_TYPE]);
+	}
+}

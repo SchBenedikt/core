@@ -19,6 +19,7 @@ use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
@@ -150,6 +151,15 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'OrderedCollection of the actors following a local account.',
+			),
+			new Route(
+				name: 'actors.outbox',
+				method: 'GET',
+				path: '/@{handle}/outbox',
+				handler: OutboxHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'OrderedCollection of a local account\'s public posts as Create activities.',
 			),
 		);
 	}

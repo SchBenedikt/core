@@ -93,6 +93,7 @@ call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/follower
 // publishing an actor whose key and inbox nobody could use.
 call($app, 'GET /@alice (not configured)', new Request('GET', '/@alice'));
 call($app, 'GET /@alice/followers (not configured)', new Request('GET', '/@alice/followers'));
+call($app, 'GET /@alice/outbox (not configured)', new Request('GET', '/@alice/outbox'));
 
 // No actor resolver and no signing key in the reference assembly: the inbox
 // says so instead of accepting activities it could neither verify nor answer.
