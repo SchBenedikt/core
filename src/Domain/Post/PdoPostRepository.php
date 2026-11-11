@@ -85,6 +85,20 @@ final class PdoPostRepository implements PostRepository
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
 
+	public function authorPosts(string $userId): array
+	{
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' AND visibility IN (:public, :unlisted)'
+			. ' ORDER BY published_at DESC, id DESC';
+
+		return $this->hydrateAll($this->db->fetchAll($sql, [
+			'author' => $userId,
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+		]));
+	}
+
 	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE

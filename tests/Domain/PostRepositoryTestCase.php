@@ -89,6 +89,23 @@ abstract class PostRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testAuthorPostsArePublicOnlyAndNewestFirst(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('a-old', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('a-private', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('a-new', 'alice', Visibility::Unlisted, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('b-public', 'bob', Visibility::Public, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post('a-gone', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
+		$repository->softDelete('a-gone', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['a-new', 'a-old'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorPosts('alice')),
+		);
+		self::assertSame([], $repository->authorPosts('nobody'));
+	}
+
 	public function testHomeTimelineIncludesOwnNonPublicPostsButNotThoseOfOthers(): void
 	{
 		$repository = $this->repository();

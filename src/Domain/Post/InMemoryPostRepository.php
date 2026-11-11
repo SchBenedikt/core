@@ -64,6 +64,24 @@ final class InMemoryPostRepository implements PostRepository
 		);
 	}
 
+	public function authorPosts(string $userId): array
+	{
+		$posts = array_values(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted()
+				&& $post->authorId === $userId
+				&& $post->visibility->isPubliclyVisible(),
+		));
+
+		usort($posts, static function (Post $a, Post $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return $posts;
+	}
+
 	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		return $this->slice(

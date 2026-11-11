@@ -41,6 +41,18 @@ interface PostRepository
 	public function publicTimeline(int $limit, ?DateTimeImmutable $before = null): array;
 
 	/**
+	 * Every publicly visible post of one author, newest first, for the outbox.
+	 *
+	 * Only public and unlisted posts are returned: the outbox is a public
+	 * endpoint, and listing a followers-only post there would leak it to
+	 * anyone who can guess the actor URL. Paging is not implemented yet, so
+	 * this returns the complete list.
+	 *
+	 * @return list<Post>
+	 */
+	public function authorPosts(string $userId): array;
+
+	/**
 	 * The signed-in user's home timeline.
 	 *
 	 * For now: the user's own posts plus everything publicly visible. When
