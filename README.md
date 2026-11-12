@@ -35,7 +35,7 @@ Implemented and tested here:
 Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
 timeline, paged collections, media processing, the AT Protocol stack, the
 Mastodon-compatible API, an admin UI, a migration runner, the Vue UI package
-and the host adapters. The
+and the Nextcloud/standalone host applications. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists them
 with the seam they will attach to.
 

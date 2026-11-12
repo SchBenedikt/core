@@ -14,7 +14,7 @@ that prints or skips is a failure.
 | Directory | What lives there |
 | --- | --- |
 | `tests/Platform` | clock, config, PDO connection, blob stores |
-| `tests/Domain` | post, follower and followed-actor entities, all repository contracts |
+| `tests/Domain` | post, follower and followed-actor entities, repository contracts and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |

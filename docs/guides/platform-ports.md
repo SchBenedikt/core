@@ -62,6 +62,11 @@ A new adapter is done when it passes the existing case, not when its own tests
 pass. That is the mechanism that keeps `InMemoryPostRepository` and
 `PdoPostRepository` behaviourally identical.
 
+The application-level `Jobs\JobQueue` and `ActivityLog` ports have their own
+shared cases in `tests/Jobs/JobQueueTestCase.php` and
+`tests/Domain/ActivityLogTestCase.php`; `PdoJobQueue` and `PdoActivityLog` run
+those cases against SQLite as well.
+
 ```php
 final class S3BlobStoreTest extends BlobStoreTestCase
 {
