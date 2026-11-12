@@ -143,6 +143,17 @@ final class PdoFollowerRepository implements FollowerRepository
 		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
 	}
 
+	public function localFollowsByActor(string $actorId): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND is_local = 1 ORDER BY followed_at DESC, id DESC',
+			['actor_id' => $actorId],
+		);
+
+		return array_map(fn (array $row): Follower => $this->hydrate($row), $rows);
+	}
+
 	public function localUserIdsFollowedBy(string $actorId): array
 	{
 		$rows = $this->db->fetchAll(

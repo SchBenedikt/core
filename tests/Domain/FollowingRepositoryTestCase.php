@@ -80,6 +80,24 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->actorIdsPage('dave', 10, 0));
 	}
 
+	public function testFollowedActorsAreOrderedAndScoped(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed('f1', 'alice', 'https://a.example/users/one', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->followed('f2', 'alice', 'https://b.example/users/two', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->followed('f3', 'alice', 'https://c.example/users/three', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->followed('other', 'carol', 'https://d.example/users/four', '2026-11-11T10:03:00Z'));
+
+		self::assertSame(
+			['f3', 'f2', 'f1'],
+			array_map(
+				static fn (FollowedActor $followed): string => $followed->id,
+				$repository->followedActors('alice'),
+			),
+		);
+		self::assertSame([], $repository->followedActors('dave'));
+	}
+
 	public function testFindByIdAndUpdateInboxKeepTheEdgeIdentity(): void
 	{
 		$repository = $this->repository();

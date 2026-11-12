@@ -56,6 +56,16 @@ interface FollowingRepository
 	 */
 	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
 
+	/**
+	 * The remote edges one local user created, newest first.
+	 *
+	 * The profile following collection merges these with local-to-local
+	 * edges and needs both the actor id and the follow time.
+	 *
+	 * @return list<FollowedActor>
+	 */
+	public function followedActors(string $localUserId): array;
+
 	public function count(string $localUserId): int;
 
 	/**

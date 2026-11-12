@@ -205,6 +205,8 @@ documented in [remote threads](../guides/remote-threads.md).
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming; also the compatibility status ceiling |
 | `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines, notification list and search |
 | `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines, notification list and search |
+| `MastodonService::DEFAULT_ACCOUNT_LIST_LIMIT` | 40 | Default page size of the local Mastodon follower/following lists |
+| `MastodonService::MAX_ACCOUNT_LIST_LIMIT` | 80 | Hard page-size ceiling of the local Mastodon follower/following lists |
 | `MastodonService::DEFAULT_NOTIFICATION_COUNT_LIMIT` | 100 | Default cap for `GET /notifications/unread_count` |
 | `MastodonService::MAX_NOTIFICATION_COUNT_LIMIT` | 1000 | Hard cap for `GET /notifications/unread_count` `limit` |
 | `MastodonService::MAX_SEARCH_OFFSET` | 1000 | Hard offset ceiling for the compatibility search |

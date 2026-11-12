@@ -58,6 +58,43 @@ abstract class MastodonHandler implements Handler
 	}
 
 	/**
+	 * Shared response for the account follower/following collections.
+	 *
+	 * @param callable(int, ?string, ?string, ?string): list<array<string, mixed>> $work
+	 */
+	protected function respondAccountList(Request $request, callable $work): Response
+	{
+		$limit = $this->mastodon->clampAccountList($request->queryInt(
+			'limit',
+			MastodonService::DEFAULT_ACCOUNT_LIST_LIMIT,
+			1,
+			1000,
+		));
+
+		$accounts = null;
+		$response = $this->respond(function () use (&$accounts, $work, $limit, $request): array {
+			$accounts = $work(
+				$limit,
+				$request->queryParam('max_id'),
+				$request->queryParam('since_id'),
+				$request->queryParam('min_id'),
+			);
+
+			return $accounts;
+		});
+
+		if ($accounts === null || $accounts === []) {
+			return $response;
+		}
+
+		return $response->withHeader('Link', $this->nextLink(
+			$request,
+			(string) $accounts[array_key_last($accounts)]['id'],
+			$limit,
+		));
+	}
+
+	/**
 	 * @param callable(): void $work
 	 */
 	protected function respondEmpty(callable $work): Response

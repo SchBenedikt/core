@@ -27,6 +27,9 @@ Locally implemented (core):
 - `DELETE /media/{id}`
 - `DELETE /statuses/{id}`
 - `GET /accounts/{id}/statuses`
+- `GET /accounts/{id}`
+- `GET /accounts/{id}/followers`
+- `GET /accounts/{id}/following`
 - `GET /accounts/verify_credentials`
 - `GET /notifications`
 - `POST /notifications/{id}/dismiss`
@@ -43,7 +46,8 @@ does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), boosts, remote notifications, streaming, voting on or fetching remote polls, scheduled posts,
 filters, followed tags, lists, OAuth authorization/token endpoints, remote
-search, admin APIs or the full account/profile surface.
+search, remote profile fetching, admin APIs or the full account management
+surface.
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. Some of the remaining pieces are
 locally implementable and remain on the roadmap; only the parts that need a
@@ -54,7 +58,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-three routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -95,6 +99,9 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `POST {prefix}/accounts/{id}/follow` | yes | `write:follows` | 30 / 900 s |
 | `POST {prefix}/accounts/{id}/unfollow` | yes | `write:follows` | 30 / 900 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
+| `GET {prefix}/accounts/{id}` | no | — | 120 / 60 s |
+| `GET {prefix}/accounts/{id}/followers` | no | — | 60 / 60 s |
+| `GET {prefix}/accounts/{id}/following` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 | `GET {prefix}/notifications` | yes | `read:notifications` | 60 / 60 s |
 | `GET {prefix}/notifications/unread_count` | yes | `read:notifications` | 60 / 60 s |
@@ -114,8 +121,9 @@ the budget, exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
 `verify_credentials`, status creation, favourite/unfavourite, follow/unfollow,
-relationships, notifications, media management, account statuses and account
-search. Without a directory the core cannot distinguish local from remote
+relationships, notifications, media management, account profiles, follower and
+following lists, account statuses and account search. Without a directory the
+core cannot distinguish local from remote
 account ids; a host that enables this API should always pass one.
 
 ## Instance metadata
@@ -187,6 +195,41 @@ A non-public status is readable only by its author. For everyone else it is
 `404 not_found`, like the core API; the status route does not leak existence.
 Account statuses are public/unlisted only, including when the account asks for
 its own list.
+
+## Reading local profiles and follow lists
+
+`GET /accounts/{id}` returns the same minimal Mastodon account object used by
+statuses and notifications. It is public and rate-limited at `120/60`. An
+unknown id, a remote actor URL or an account the supplied local directory does
+not know is `404 not_found`; the route does not reveal whether an account ever
+existed. The id is the local user id, and the counts come from the existing
+follower graph: `followers_count` is the follower collection and
+`following_count` merges outgoing remote edges with local-to-local edges.
+Profiles stay host-owned; display name, note, avatar, header, fields and
+`statuses_count` keep their minimal defaults instead of inventing host data.
+
+`GET /accounts/{id}/followers` and `GET /accounts/{id}/following` are also
+public (`60/60`) and return an array of the same account objects. `limit`
+defaults to 40 and is clamped to 1–80. Both support Mastodon's id-aware
+cursors:
+
+```http
+GET {prefix}/accounts/bob/followers?limit=20&max_id=alice
+Link: <https://social.example/api/mastodon/v1/accounts/bob/followers?limit=20&max_id=alice>; rel="next"
+```
+
+`max_id` returns items after the cursor, while `since_id` (or its alias
+`min_id`) returns items before it, newest first. A cursor must belong to the
+requested collection; a missing or foreign cursor is `404 not_found`, and
+combining `max_id` with `since_id`/`min_id` is `422 validation_failed`. The
+`Link` header points at the next page when one exists. A local follower edge
+stores its actor as an absolute local URL; the list projects that URL back to
+the local user id, so client code sees the same id as everywhere else. Remote
+follow edges from `social_following` are projected as minimal remote accounts
+(`id`/`url` are the actor URL, `username`/`acct` come from the URL) rather
+than fetched profiles. The lists need the relationship service; an assembly
+without it answers `503 follows_not_configured`. There is no new table, column
+or migration: the routes read the existing follower/outgoing graphs.
 
 ## Writing and deleting
 
@@ -723,7 +766,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The twenty routes are in the manifest with auth, scope and rate-limit metadata.
+The twenty-three routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -745,9 +788,14 @@ repeat idempotency, historical survival, type filters, pagination, cursor
 ownership, auth/scope/disabled), notification dismiss/clear/unread_count (idempotency, foreign/missing ids, read-row hiding, count caps/filters, auth/scope/disabled and storage failure), local search (account/status matches, type
 filters, following filter, offset pages, private/deleted exclusion, missing
 `q`/invalid type, auth/scope/disabled and missing capability), account
-statuses, verify, delete and cursor cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
-and PDO stores and now covers local edges, their exclusion from delivery
-inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
+profiles and paged local follower/following lists (known/unknown/remote
+accounts, local actor-URL mapping, remote target projection, cursor ownership,
+`max_id`/`since_id`/`min_id`, limits, `Link` and disabled feature), account
+statuses, verify, delete and cursor cases. `FollowerRepositoryTestCase` and
+`FollowingRepositoryTestCase` are the shared contracts for the in-memory and
+PDO stores and now also cover the timestamped local/remote edges used by the
+profile lists; the follower contract also covers local edges, their exclusion
+from delivery inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
 three relationship routes, the four notification routes and search. The post
@@ -767,18 +815,18 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   streaming and remote search need remote data the core does not fetch for
   this surface. Local notification listing and local status/actor search are
   done above.
-- Narrower local account/profile endpoints are locally implementable and
-  remain on the roadmap; they are not host-side prerequisites. Notification
-  dismissal/unread state is done above through the `read_at` marker and the
-  three new routes. Instance metadata and statistics are done above.
-  Remote relationship APIs, remote polls (fetching, voting or federating a
-  `Question`), domain blocks that would need a remote moderation feed, and
-  remote search remain external; the local follow/unfollow, relationship,
+- Notification dismissal/unread state and the narrower local account/profile
+  endpoints are done above. Instance metadata and statistics are done above.
+  Remote profile fetching, remote relationship APIs, remote polls (fetching,
+  voting or federating a `Question`), domain blocks that would need a remote
+  moderation feed, and remote search remain external; the local
+  follow/unfollow, relationship, profile, follower/following list,
   notification, search, poll-creation and instance views above are done.
-- Following a remote actor through the compatibility prefix and remote
-  follower/following listings are not part of this slice; moderation/admin
-  APIs are also external. The core `/api/v1/following` path remains the
-  federation route.
+- Following a remote actor through the compatibility prefix is not part of
+  this slice. The public profile lists project remote follow edges that are
+  already stored locally, but they never fetch a remote collection; moderation
+  and admin APIs are also external. The core `/api/v1/following` path remains
+  the federation route.
 - The host must map bearer tokens to `userId`/`scopes`, enforce the declared
   rate limits and decide whether to expose the custom prefix publicly.
 

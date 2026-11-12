@@ -50,6 +50,9 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
+| `mastodon.accounts.show` | `GET` | `/api/mastodon/v1/accounts/{id}` | no | 120 / 60 s |
+| `mastodon.accounts.followers` | `GET` | `/api/mastodon/v1/accounts/{id}/followers` | no | 60 / 60 s |
+| `mastodon.accounts.following` | `GET` | `/api/mastodon/v1/accounts/{id}/following` | no | 60 / 60 s |
 | `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 | `mastodon.notifications.list` | `GET` | `/api/mastodon/v1/notifications` | yes, `read:notifications` | 60 / 60 s |
 | `mastodon.notifications.unread_count` | `GET` | `/api/mastodon/v1/notifications/unread_count` | yes, `read:notifications` | 60 / 60 s |
@@ -490,7 +493,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The twenty routes above are additive and disabled by default. Their paths use
+The twenty-three routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow

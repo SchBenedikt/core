@@ -57,6 +57,10 @@ final class MastodonService
 
 	public const MAX_SEARCH_OFFSET = 1000;
 
+	public const DEFAULT_ACCOUNT_LIST_LIMIT = 40;
+
+	public const MAX_ACCOUNT_LIST_LIMIT = 80;
+
 	public const DEFAULT_NOTIFICATION_COUNT_LIMIT = 100;
 
 	public const MAX_NOTIFICATION_COUNT_LIMIT = 1000;
@@ -138,6 +142,70 @@ final class MastodonService
 		);
 
 		return $this->presenter->statuses($posts);
+	}
+
+	/**
+	 * The public profile of one local account.
+	 *
+	 * The shape is deliberately the same minimal account used by statuses and
+	 * notifications; profiles stay host-owned. Without a local directory there
+	 * is no way to tell a local id from a remote one, so the host has opted out
+	 * of that check and the projection is returned for the requested id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function account(string $accountId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($accountId);
+
+		return $this->presenter->account($accountId);
+	}
+
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	public function accountFollowers(
+		string $accountId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($accountId);
+		$relationships = $this->requireRelationships();
+
+		return $this->accountPage(
+			$relationships->followerAccountIds($accountId),
+			$limit,
+			$maxId,
+			$sinceId,
+			$minId,
+		);
+	}
+
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	public function accountFollowing(
+		string $accountId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($accountId);
+		$relationships = $this->requireRelationships();
+
+		return $this->accountPage(
+			$relationships->followingAccountIds($accountId),
+			$limit,
+			$maxId,
+			$sinceId,
+			$minId,
+		);
 	}
 
 	/**
@@ -705,6 +773,11 @@ final class MastodonService
 		return max(1, min(self::MAX_LIMIT, $limit));
 	}
 
+	public function clampAccountList(int $limit): int
+	{
+		return max(1, min(self::MAX_ACCOUNT_LIST_LIMIT, $limit));
+	}
+
 	public function baseUrl(): string
 	{
 		return $this->presenter->baseUrl();
@@ -1000,6 +1073,56 @@ final class MastodonService
 	private function now(): DateTimeImmutable
 	{
 		return Time::toSecondPrecision(($this->clock ?? new SystemClock())->now());
+	}
+
+	/**
+	 * Pages a stable account-id list with the Mongo-style id cursors Mastodon
+	 * clients take from the Link header. The cursor must be part of this exact
+	 * collection: a stale id from another account or page is a 404, not an
+	 * accidental offset.
+	 *
+	 * @param list<string> $accountIds newest first
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private function accountPage(
+		array $accountIds,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$max = $maxId !== null && $maxId !== '' ? $maxId : null;
+		$since = $sinceId !== null && $sinceId !== ''
+			? $sinceId
+			: ($minId !== null && $minId !== '' ? $minId : null);
+
+		if ($max !== null && $since !== null) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'max_id and since_id/min_id cannot be combined.',
+			);
+		}
+
+		$cursor = $max ?? $since;
+		if ($cursor !== null) {
+			$index = array_search($cursor, $accountIds, true);
+			if ($index === false) {
+				throw new MastodonRequestException(404, 'not_found', 'Account cursor not found.');
+			}
+
+			$accountIds = $max !== null
+				? array_slice($accountIds, $index + 1)
+				: array_slice($accountIds, 0, $index);
+		}
+
+		$page = array_slice($accountIds, 0, $this->clampAccountList($limit));
+
+		return array_map(
+			fn (string $accountId): array => $this->presenter->actorAccount($accountId),
+			$page,
+		);
 	}
 
 	/**

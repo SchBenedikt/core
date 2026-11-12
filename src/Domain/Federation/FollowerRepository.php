@@ -83,6 +83,16 @@ interface FollowerRepository
 	public function localUserIdsFollowedBy(string $actorId): array;
 
 	/**
+	 * The local edges one local actor created, newest first.
+	 *
+	 * The profile following collection needs the target id and the follow
+	 * time together, not just the stable target list above.
+	 *
+	 * @return list<Follower>
+	 */
+	public function localFollowsByActor(string $actorId): array;
+
+	/**
 	 * The number of local accounts the given local actor follows.
 	 */
 	public function localFollowingCount(string $actorId): int;

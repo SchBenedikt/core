@@ -33,6 +33,9 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
@@ -428,6 +431,33 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '60/60',
 				summary: 'Public statuses of one local account in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.accounts.show',
+				method: 'GET',
+				path: $mastodon . '/accounts/{id}',
+				handler: MastodonAccountHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Public profile of one local account in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.accounts.followers',
+				method: 'GET',
+				path: $mastodon . '/accounts/{id}/followers',
+				handler: MastodonAccountFollowersHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Public followers of one local account, newest first.',
+			),
+			new Route(
+				name: 'mastodon.accounts.following',
+				method: 'GET',
+				path: $mastodon . '/accounts/{id}/following',
+				handler: MastodonAccountFollowingHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Public accounts followed by one local account, newest first.',
 			),
 			new Route(
 				name: 'mastodon.notifications.list',

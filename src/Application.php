@@ -24,6 +24,9 @@ use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
@@ -648,6 +651,9 @@ final readonly class Application
 			->with(MastodonFavouriteStatusHandler::class, static fn (): MastodonFavouriteStatusHandler => new MastodonFavouriteStatusHandler($mastodonService))
 			->with(MastodonUnfavouriteStatusHandler::class, static fn (): MastodonUnfavouriteStatusHandler => new MastodonUnfavouriteStatusHandler($mastodonService))
 			->with(MastodonAccountStatusesHandler::class, static fn (): MastodonAccountStatusesHandler => new MastodonAccountStatusesHandler($mastodonService))
+			->with(MastodonAccountHandler::class, static fn (): MastodonAccountHandler => new MastodonAccountHandler($mastodonService))
+			->with(MastodonAccountFollowersHandler::class, static fn (): MastodonAccountFollowersHandler => new MastodonAccountFollowersHandler($mastodonService))
+			->with(MastodonAccountFollowingHandler::class, static fn (): MastodonAccountFollowingHandler => new MastodonAccountFollowingHandler($mastodonService))
 			->with(MastodonVerifyCredentialsHandler::class, static fn (): MastodonVerifyCredentialsHandler => new MastodonVerifyCredentialsHandler($mastodonService));
 
 		$jobHandlers = new JobHandlerRegistry();

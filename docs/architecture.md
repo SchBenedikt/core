@@ -445,14 +445,38 @@ GET {mastodon.prefix}/accounts/relationships?id[]=…
       └─ LocalRelationshipService::relationships
           ├─ FollowerRepository::findByActor      following / followed_by
           └─ BlockRepository::findByActor         blocking
+
+GET {mastodon.prefix}/accounts/{id}
+  └─ MastodonAccountHandler
+      └─ MastodonService::account
+          ├─ LocalActorDirectory::has             local id only
+          └─ MastodonPresenter::account           counts from the follower graph
+
+GET {mastodon.prefix}/accounts/{id}/followers
+  └─ MastodonAccountFollowersHandler
+      └─ MastodonService::accountFollowers
+          └─ LocalRelationshipService::followerAccountIds
+              └─ FollowerRepository::actorIds     local actor URL → local user id
+
+GET {mastodon.prefix}/accounts/{id}/following
+  └─ MastodonAccountFollowingHandler
+      └─ MastodonService::accountFollowing
+          └─ LocalRelationshipService::followingAccountIds
+              ├─ FollowingService::followedActors → FollowingRepository
+              └─ FollowerRepository::localFollowsByActor → local edges
+                   both merged newest-first, then paged with an id cursor
 ```
 
 `FollowerRepository::inboxesFor()` excludes local rows, so this path queues no
 remote delivery and sends no signed `Follow`; `LocalRelationshipService`
 combines the follower edge with the outgoing graph for `followers_count` and
-`following_count`. The public following collection adds local actor ids to its
-outgoing page, while the followers collection already reads the follower
-graph. `LocalFollowHomeTimelineRepository` decorates the existing home
+`following_count`. The public follower and following lists reuse that same
+graph, merging local and remote edges with their stored follow times; a local
+actor URL is mapped back to the directory id, while an already-stored remote
+edge becomes a minimal remote account without a fetch. The account show and
+both lists are public, but an unknown or non-local id is `404`. The lists share
+Mastodon's id cursor (`max_id`, `since_id`/`min_id`, limit 40/80) and return a
+`Link` header. They add no table, column or migration. `LocalFollowHomeTimelineRepository` decorates the existing home
 repository: it fetches the base top page plus the top page of locally followed
 authors, applies the same cursor, sort and limit, and delegates unchanged when
 there are no local follows. `MastodonApiGate` answers
@@ -612,7 +636,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local poll creation, instance metadata/statistics and local status/actor search; narrower local account/profile endpoints remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |

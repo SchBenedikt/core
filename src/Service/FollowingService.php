@@ -161,6 +161,16 @@ final class FollowingService
 		return $this->following->actorIds($localUserId);
 	}
 
+	/**
+	 * The remote edges with their follow times, newest first.
+	 *
+	 * @return list<FollowedActor>
+	 */
+	public function followedActors(string $localUserId): array
+	{
+		return $this->following->followedActors($localUserId);
+	}
+
 	public function count(string $localUserId): int
 	{
 		return $this->following->count($localUserId);

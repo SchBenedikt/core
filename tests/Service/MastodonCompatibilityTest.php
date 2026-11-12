@@ -86,6 +86,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$favourite = $manifest->find('mastodon.statuses.favourite');
 		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
 		$relationships = $manifest->find('mastodon.accounts.relationships');
+		$account = $manifest->find('mastodon.accounts.show');
+		$followers = $manifest->find('mastodon.accounts.followers');
+		$following = $manifest->find('mastodon.accounts.following');
 		$follow = $manifest->find('mastodon.accounts.follow');
 		$unfollow = $manifest->find('mastodon.accounts.unfollow');
 		$notifications = $manifest->find('mastodon.notifications.list');
@@ -104,6 +107,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($favourite);
 		self::assertNotNull($unfavourite);
 		self::assertNotNull($relationships);
+		self::assertNotNull($account);
+		self::assertNotNull($followers);
+		self::assertNotNull($following);
 		self::assertNotNull($follow);
 		self::assertNotNull($unfollow);
 		self::assertNotNull($notifications);
@@ -140,6 +146,15 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:follows'], $relationships->requiredScopes);
 		self::assertSame('60/60', $relationships->rateLimit);
 		self::assertSame('/api/mastodon/v1/accounts/relationships', $relationships->path);
+		self::assertFalse($account->requiresAuth);
+		self::assertSame('120/60', $account->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/{id}', $account->path);
+		self::assertFalse($followers->requiresAuth);
+		self::assertSame('60/60', $followers->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/followers', $followers->path);
+		self::assertFalse($following->requiresAuth);
+		self::assertSame('60/60', $following->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/following', $following->path);
 		self::assertTrue($follow->requiresAuth);
 		self::assertSame(['write:follows'], $follow->requiredScopes);
 		self::assertSame('30/900', $follow->rateLimit);

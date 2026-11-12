@@ -123,6 +123,25 @@ final class OpenApiTest extends TestCase
 		self::assertSame('60/60', $search['x-rate-limit']);
 		self::assertSame(['read:search'], $search['x-required-scopes']);
 
+		$account = $document['paths']['/api/mastodon/v1/accounts/{id}']['get'];
+		self::assertSame('mastodon_accounts_show', $account['operationId']);
+		self::assertArrayNotHasKey('security', $account);
+		self::assertSame('120/60', $account['x-rate-limit']);
+		self::assertSame(
+			[['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],
+			$account['parameters'],
+		);
+
+		$followers = $document['paths']['/api/mastodon/v1/accounts/{id}/followers']['get'];
+		self::assertSame('mastodon_accounts_followers', $followers['operationId']);
+		self::assertArrayNotHasKey('security', $followers);
+		self::assertSame('60/60', $followers['x-rate-limit']);
+
+		$followingList = $document['paths']['/api/mastodon/v1/accounts/{id}/following']['get'];
+		self::assertSame('mastodon_accounts_following', $followingList['operationId']);
+		self::assertArrayNotHasKey('security', $followingList);
+		self::assertSame('60/60', $followingList['x-rate-limit']);
+
 		$relationships = $document['paths']['/api/mastodon/v1/accounts/relationships']['get'];
 		self::assertSame('mastodon_accounts_relationships', $relationships['operationId']);
 		self::assertSame([['bearerAuth' => []]], $relationships['security']);
@@ -176,6 +195,9 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/mastodon/v1/media/{id}', $decoded['paths']);
 		self::assertArrayHasKey('put', $decoded['paths']['/api/mastodon/v1/media/{id}']);
 		self::assertArrayHasKey('delete', $decoded['paths']['/api/mastodon/v1/media/{id}']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/followers', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/following', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/accounts/relationships', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/follow', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/unfollow', $decoded['paths']);

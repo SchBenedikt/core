@@ -206,11 +206,12 @@ Status of the core, not a promise about dates.
   timelines and remote delivery; favourite federation (outbound `Like`/`Undo`
   and remote counts); boosts; remote notifications; streaming infrastructure;
   remote relationship/admin APIs; and migrations in an existing host database.
-  Narrower local account/profile endpoints are locally implementable
-  follow-ups, not host prerequisites. Media upload/update/delete, local
+  Local account profiles and paged follower/following lists are complete
+  locally too, not host prerequisites. Media upload/update/delete, local
   favourite bookkeeping, local follow/unfollow/relationship reads, local
   notification listing with dismiss/unread state, local status/actor search,
-  local poll creation and instance metadata/statistics are complete locally. The
+  local poll creation, account profiles/lists and instance
+  metadata/statistics are complete locally. The
   migration for the local follow marker remains a host step: add
   `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
   `social_notification` from `NotificationSchema` before exposing the
@@ -245,14 +246,14 @@ external parts of the two partially done stacks, and explicitly listed
 core-side follow-ups. There is no unlisted local vertical slice hiding in this
 table: the local media catch-up, thread/context, AT Protocol publishing and
 Mastodon compatibility (including instance metadata/statistics, media
-management, local favourites, local follow/relationships, notification
-listing with dismiss/unread state, local search and poll creation) slices are
-recorded above.
+management, local favourites, local follow/relationships, local account
+profiles and follower/following lists, notification listing with
+dismiss/unread state, local search and poll creation) slices are recorded
+above.
 
 | Item | Seam |
 | --- | --- |
-| Local Mastodon follow-ups: narrower local account/profile endpoints | core, over the existing account/post/notification repositories; no host deployment or remote fetch is required |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll` migrations remain host steps |
+| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll` migrations remain host steps |
 | AT Protocol account linking, authorization-code/PAR/revocation and full client/AppView extraction (OAuth session refresh is local) | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |

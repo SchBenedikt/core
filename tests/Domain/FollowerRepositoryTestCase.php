@@ -208,6 +208,47 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertFalse($repository->find('remote')?->local);
 	}
 
+	public function testLocalFollowsByActorAreOrderedAndScoped(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower(
+			'local-1',
+			'bob',
+			'https://social.example/@alice',
+			'2026-11-11T10:00:00Z',
+			local: true,
+		));
+		$repository->insert($this->follower(
+			'local-2',
+			'carol',
+			'https://social.example/@alice',
+			'2026-11-11T10:02:00Z',
+			local: true,
+		));
+		$repository->insert($this->follower(
+			'remote',
+			'dave',
+			'https://social.example/@alice',
+			'2026-11-11T10:03:00Z',
+		));
+		$repository->insert($this->follower(
+			'other',
+			'bob',
+			'https://social.example/@eve',
+			'2026-11-11T10:04:00Z',
+			local: true,
+		));
+
+		self::assertSame(
+			['local-2', 'local-1'],
+			array_map(
+				static fn (Follower $follower): string => $follower->id,
+				$repository->localFollowsByActor('https://social.example/@alice'),
+			),
+		);
+		self::assertSame([], $repository->localFollowsByActor('https://social.example/@nobody'));
+	}
+
 	public function testInboxesAreDistinctAndSorted(): void
 	{
 		$repository = $this->repository();

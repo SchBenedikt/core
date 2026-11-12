@@ -197,6 +197,26 @@ final class MastodonPresenter
 	}
 
 	/**
+	 * Projects one account from a profile relation without exposing its origin.
+	 *
+	 * The follow graph stores remote targets as actor URLs and local targets as
+	 * local ids. Both become the same minimal account shape; a local id is
+	 * resolved through the host directory before it is trusted.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function actorAccount(string $actorId): array
+	{
+		if ($this->localActors?->has($actorId) === true) {
+			return $this->account($actorId);
+		}
+
+		$localId = $this->localActorId($actorId);
+
+		return $localId === null ? $this->notificationAccount($actorId) : $this->account($localId);
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	private function notificationAccount(string $actorId): array
@@ -222,6 +242,21 @@ final class MastodonPresenter
 			0,
 			0,
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function localActorId(string $actorId): ?string
+	{
+		$prefix = rtrim($this->baseUrl(), '/') . '/@';
+		if (!str_starts_with($actorId, $prefix)) {
+			return null;
+		}
+
+		$candidate = rawurldecode(substr($actorId, strlen($prefix)));
+
+		return $candidate !== '' && $this->localActors?->has($candidate) === true ? $candidate : null;
 	}
 
 	/**

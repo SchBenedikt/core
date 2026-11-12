@@ -10,7 +10,10 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
@@ -1196,6 +1199,141 @@ final class MastodonApiTest extends TestCase
 		self::assertFalse($bobViewAfter[0]['followed_by']);
 	}
 
+	public function testAccountProfileAndLocalFollowListsArePublicAndPaginated(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+
+		$this->followAccount($app, 'bob', userId: 'alice');
+		$this->followAccount($app, 'bob', userId: 'carol');
+		$this->followAccount($app, 'carol', userId: 'alice');
+
+		$profile = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/bob',
+		));
+		self::assertSame(200, $profile->status);
+		self::assertSame('bob', $profile->decodedBody()['id']);
+		self::assertSame('bob', $profile->decodedBody()['acct']);
+		self::assertSame(2, $profile->decodedBody()['followers_count']);
+		self::assertSame(0, $profile->decodedBody()['following_count']);
+
+		$followers = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/bob/followers',
+			query: ['limit' => '1'],
+		));
+		self::assertSame(200, $followers->status);
+		self::assertCount(1, $followers->decodedBody());
+		$firstFollower = $followers->decodedBody()[0]['id'];
+		self::assertContains($firstFollower, ['alice', 'carol']);
+		self::assertStringContainsString('rel="next"', $followers->headers['Link']);
+
+		$nextFollowers = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/bob/followers',
+			query: ['limit' => '1', 'max_id' => $firstFollower],
+		));
+		self::assertSame(200, $nextFollowers->status);
+		self::assertCount(1, $nextFollowers->decodedBody());
+		self::assertNotSame($firstFollower, $nextFollowers->decodedBody()[0]['id']);
+
+		$following = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/following',
+			query: ['limit' => '1'],
+		));
+		self::assertSame(200, $following->status);
+		self::assertCount(1, $following->decodedBody());
+		$firstFollowing = $following->decodedBody()[0]['id'];
+		self::assertContains($firstFollowing, ['bob', 'carol']);
+
+		$nextFollowing = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/following',
+			query: ['limit' => '1', 'max_id' => $firstFollowing],
+		));
+		self::assertSame(200, $nextFollowing->status);
+		self::assertCount(1, $nextFollowing->decodedBody());
+		self::assertNotSame($firstFollowing, $nextFollowing->decodedBody()[0]['id']);
+
+		$missingCursor = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/following',
+			query: ['max_id' => 'missing-account'],
+		));
+		self::assertSame(404, $missingCursor->status);
+		self::assertSame('not_found', $missingCursor->decodedBody()['error']['code']);
+
+		$combined = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/following',
+			query: ['max_id' => $firstFollowing, 'since_id' => $firstFollowing],
+		));
+		self::assertSame(422, $combined->status);
+	}
+
+	public function testAccountFollowingProjectsRemoteTargetsAsMinimalAccounts(): void
+	{
+		$following = new InMemoryFollowingRepository();
+		$app = $this->app(
+			actors: ['alice'],
+			followingRepository: $following,
+		);
+		$following->insert(new FollowedActor(
+			id: 'remote-follow',
+			localUserId: 'alice',
+			actorId: 'https://remote.example/users/bob',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: Time::parse('2026-11-11T10:00:00Z'),
+		));
+
+		$response = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/following',
+		));
+
+		self::assertSame(200, $response->status);
+		self::assertCount(1, $response->decodedBody());
+		self::assertSame('https://remote.example/users/bob', $response->decodedBody()[0]['id']);
+		self::assertSame('bob', $response->decodedBody()[0]['username']);
+		self::assertSame('bob@remote.example', $response->decodedBody()[0]['acct']);
+		self::assertSame('https://remote.example/users/bob', $response->decodedBody()[0]['url']);
+	}
+
+	public function testAccountProfileHidesUnknownAndRemoteAccountsAndHonoursTheDisabledFeature(): void
+	{
+		$app = $this->app(actors: ['alice']);
+
+		$missing = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/ghost',
+		));
+		self::assertSame(404, $missing->status);
+		self::assertSame('not_found', $missing->decodedBody()['error']['code']);
+
+		$remote = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/' . rawurlencode('https://remote.example/users/bob'),
+		));
+		self::assertSame(404, $remote->status);
+
+		$missingFollowers = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/ghost/followers',
+		));
+		self::assertSame(404, $missingFollowers->status);
+
+		$disabled = $this->app(enabled: false);
+		foreach (['/accounts/alice', '/accounts/alice/followers', '/accounts/alice/following'] as $path) {
+			$response = $disabled->handle(new Request(
+				'GET',
+				MastodonApiConfig::DEFAULT_PREFIX . $path,
+			));
+			self::assertSame(404, $response->status);
+			self::assertSame('mastodon_api_disabled', $response->decodedBody()['error']['code']);
+		}
+	}
+
 	public function testLocalFollowAddsTheAuthorsPostsToTheHomeTimeline(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -1548,6 +1686,7 @@ final class MastodonApiTest extends TestCase
 		?array $actors = ['alice'],
 		?string $instanceUrl = 'https://social.example',
 		array $instanceConfig = [],
+		?FollowingRepository $followingRepository = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -1566,6 +1705,7 @@ final class MastodonApiTest extends TestCase
 			notificationRepository: $notificationRepository,
 			blobStore: $blobs,
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
+			followingRepository: $followingRepository,
 		);
 	}
 

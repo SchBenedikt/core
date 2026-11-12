@@ -8,6 +8,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local account profiles and follow lists:
+  `GET {mastodon.prefix}/accounts/{id}` returns the minimal account shape for
+  one local id (`120/60`), while `GET {mastodon.prefix}/accounts/{id}/followers`
+  and `GET {mastodon.prefix}/accounts/{id}/following` return paged account
+  arrays (`60/60`, default 40, maximum 80). All three are public, additively
+  mounted under the configurable prefix and remain behind the
+  disabled-by-default Mastodon gate. Unknown and non-local ids are `404
+  not_found`; the follower list maps stored local actor URLs back to local user
+  ids, and the following list merges outgoing remote edges with local-to-local
+  edges by their stored follow time. The lists support `max_id`,
+  `since_id`/`min_id` and `limit`, return a `Link` next page, reject a cursor
+  outside the requested collection with `404` and reject `max_id` combined with
+  `since_id`/`min_id` with `422 validation_failed`; an assembly without the
+  relationship service answers `503 follows_not_configured`. Two additive
+  repository reads (`FollowerRepository::localFollowsByActor` and
+  `FollowingRepository::followedActors`) reuse the existing tables, so there is
+  no new table, column, backfill or cleanup job. The manifest/OpenAPI export now
+  has 49 routes (23 under the compatibility prefix). Tests cover the in-memory
+  and PDO repository contracts, real-kernel profiles/lists, local actor-URL
+  mapping, remote target projection, cursor/limit edges and the disabled
+  feature. See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible notification dismissal and unread state:
   `POST {mastodon.prefix}/notifications/{id}/dismiss` and `POST
   {mastodon.prefix}/notifications/clear` set a nullable `read_at` marker on

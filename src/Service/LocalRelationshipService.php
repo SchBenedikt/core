@@ -18,7 +18,14 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use function array_filter;
 use function array_map;
 use function array_values;
+use function rawurldecode;
+use function rtrim;
+use function str_starts_with;
+use function strcmp;
+use function strlen;
+use function substr;
 use function trim;
+use function usort;
 
 /**
  * Local account relationships.
@@ -135,6 +142,83 @@ final class LocalRelationshipService
 	{
 		return $this->following->count($userId)
 			+ $this->followers->localFollowingCount($this->activities->actorId($userId));
+	}
+
+	/**
+	 * The accounts following one local account, for the public profile view.
+	 *
+	 * A local follower is stored as its absolute actor URL; the profile list
+	 * presents it with the same stable local id as every other account shape.
+	 *
+	 * @return list<string> local user ids and remote actor URLs, newest first
+	 */
+	public function followerAccountIds(string $userId): array
+	{
+		$userId = $this->known($userId);
+
+		return array_map(
+			fn (string $actorId): string => $this->accountIdForActor($actorId),
+			$this->followers->actorIds($userId),
+		);
+	}
+
+	/**
+	 * The accounts one local account follows, for the public profile view.
+	 *
+	 * Remote follows live in the outgoing graph, local-to-local follows in the
+	 * marked follower graph. Both carry a follow time, so the merged page keeps
+	 * one newest-first order instead of concatenating two lists.
+	 *
+	 * @return list<string> local user ids and remote actor URLs, newest first
+	 */
+	public function followingAccountIds(string $userId): array
+	{
+		$userId = $this->known($userId);
+		$edges = [];
+
+		foreach ($this->following->followedActors($userId) as $followed) {
+			$edges[] = ['id' => $followed->actorId, 'at' => $followed->followedAt, 'key' => $followed->id];
+		}
+
+		foreach ($this->followers->localFollowsByActor($this->activities->actorId($userId)) as $follower) {
+			$edges[] = ['id' => $follower->localUserId, 'at' => $follower->followedAt, 'key' => $follower->id];
+		}
+
+		usort($edges, static function (array $a, array $b): int {
+			$byTime = $b['at'] <=> $a['at'];
+
+			return $byTime !== 0 ? $byTime : strcmp((string) $b['key'], (string) $a['key']);
+		});
+
+		$ids = [];
+		foreach ($edges as $edge) {
+			$id = (string) $edge['id'];
+			// Keeping the id as the value also keeps numeric ids strings:
+			// array_keys() would turn "123" into an int key.
+			$ids[$id] = $id;
+		}
+
+		return array_values($ids);
+	}
+
+	/**
+	 * Maps a local actor URL back to the local account id, leaving remote actors
+	 * untouched. A stale local URL stays a remote-shaped value rather than being
+	 * guessed into an account that no longer exists.
+	 */
+	public function accountIdForActor(string $actorId): string
+	{
+		$actorId = trim($actorId);
+		$prefix = rtrim($this->activities->baseUrl(), '/') . '/@';
+
+		if (str_starts_with($actorId, $prefix)) {
+			$candidate = rawurldecode(substr($actorId, strlen($prefix)));
+			if ($candidate !== '' && $this->actors->has($candidate)) {
+				return $candidate;
+			}
+		}
+
+		return $actorId;
 	}
 
 	/**

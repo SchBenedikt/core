@@ -115,6 +115,22 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return array_slice($this->actorIds($localUserId), max(0, $offset), max(0, $limit));
 	}
 
+	public function localFollowsByActor(string $actorId): array
+	{
+		$matching = array_values(array_filter(
+			$this->followers,
+			static fn (Follower $follower): bool => $follower->local && $follower->actorId === $actorId,
+		));
+
+		usort($matching, static function (Follower $a, Follower $b): int {
+			$byTime = $b->followedAt <=> $a->followedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return $matching;
+	}
+
 	public function localUserIdsFollowedBy(string $actorId): array
 	{
 		$users = [];

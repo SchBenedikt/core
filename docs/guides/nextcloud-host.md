@@ -493,13 +493,14 @@ one owner, or a peer will see two different answers for the same account.
   metadata/statistics, public timeline, status read/create/delete with local
   poll creation, local favourite/unfavourite, local follow/unfollow and
   relationships, local notifications with dismiss/unread state, media
-  upload/update/delete, account statuses and verify credentials). The app can
+  upload/update/delete, account profiles and follower/following lists,
+  account statuses and verify credentials). The app can
   delegate those routes instead of keeping a second implementation;
   OAuth/token issuance, remote timelines, favourite federation, boosts,
   remote notifications, streaming and the remote account/admin surface stay
-  host-specific. Local search and notification dismiss/unread state are done
-  in the core; narrower local account endpoints are core-side follow-ups, not
-  host blockers. Remote-post backfill,
+  host-specific. Local search, notification dismiss/unread state and local
+  account profiles/follow lists are done in the core; no locally implementable
+  profile follow-up is a host blocker. Remote-post backfill,
   thread/context fetching and local/remote media are in the core; the
   Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use the
   supplied `CurlHttpClient`) before remote attachment ingestion or thread
