@@ -34,7 +34,7 @@ use the [`HostBridge`](docs/guides/shared-ui.md), never a host global.
 ## Before you open a pull request
 
 ```sh
-composer check        # lint + host-neutrality guard + links + tests
+composer check        # lint + boundary + attribution + links + tests
 ```
 
 - New behaviour has a test that fails without it.

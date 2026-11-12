@@ -23,6 +23,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          # The attribution guard must see the complete history.
+          fetch-depth: 0
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2

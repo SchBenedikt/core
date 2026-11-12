@@ -9,12 +9,13 @@ composer install
 composer check
 ```
 
-`composer check` runs four gates in order:
+`composer check` runs five gates in order:
 
 | Script | What it does |
 | --- | --- |
 | `composer lint` | `php -l` on every file in `src`, `tests`, `bin` |
 | `composer check:boundary` | fails if the core references a host (`OCP\`, `OCA\`, a `nextcloud/*` dependency) |
+| `composer check:attribution` | fails if any commit's author, committer or message contains AI/tool attribution |
 | `composer check:links` | fails if a relative Markdown link points at a missing file |
 | `composer test` | PHPUnit |
 
@@ -28,7 +29,13 @@ php bin/core-demo
 php bin/export-routes
 php bin/validate-cutover var/migration-export.json
 composer migration:validate -- var/migration-export.json
+composer check:attribution
 ```
+
+The attribution guard scans every commit reachable from any ref, including
+full message bodies. It refuses a shallow clone rather than reporting a false
+pass; in CI the checkout must use `fetch-depth: 0`, and locally use
+`git fetch --unshallow` if needed.
 
 ### Without root
 

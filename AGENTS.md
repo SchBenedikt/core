@@ -37,7 +37,8 @@ change.
 ## Commands
 
 ```sh
-composer check                     # lint + boundary + links + tests (the gate)
+composer check                     # lint + boundary + attribution + links + tests (the gate)
+composer check:attribution
 composer check:links
 composer test
 php vendor/bin/phpunit tests/Http

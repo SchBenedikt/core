@@ -51,7 +51,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, links, 458 tests
+composer check          # lint, boundary, attribution, links, 458 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (18 routes)
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
@@ -80,7 +80,7 @@ src/
   Support/         time and id helpers
 tests/             unit, contract and end-to-end tests
 bin/               demo, route export and cutover validation
-tools/             lint, link check and the host-neutrality guard
+tools/             lint, link, attribution and host-neutrality guards
 docs/              index, architecture, guides, reference, operations, ADRs
 ```
 

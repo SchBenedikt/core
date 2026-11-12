@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Attribution guard: `tools/check-attribution.php` scans every commit reachable
+  from any ref, including author/committer identities and full message bodies,
+  for AI/tool attribution markers. It fails on a match, refuses shallow clones,
+  runs in `composer check`, and the CI checkout fetches the full history.
 - Cutover validator: `CutoverValidator`, `bin/validate-cutover` and
   `composer migration:validate` read the documented neutral JSON export,
   derive the core's actor, key, note, Create/Delete/Follow/Undo and outgoing
