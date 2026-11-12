@@ -42,8 +42,8 @@ Status of the core, not a promise about dates.
 - Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
   `Announce` activities from a followed actor's public outbox. It is bounded by
   pages and items, stays on the outbox origin, skips unsupported or malformed
-  entries and deduplicates by activity id. Thread and context fetching remain
-  separate.
+  entries and deduplicates by activity id. Thread/context fetching is a
+  separate, explicit read path, not a mirror of the outbox.
 - Media: `Attachment` metadata with JPEG/PNG/WebP validation, an
   `AttachmentRepository` with in-memory and PDO adapters behind one contract
   test, `BlobStore` storage of an untouched original and a GD-generated
@@ -79,6 +79,22 @@ Status of the core, not a promise about dates.
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
   them or affecting another local account.
+- Thread/context fetching: `GET /api/v1/remote-posts/{id}/thread` returns a
+  bounded view of a stored remote post: the target object, its ancestors from
+  root to parent and its direct replies. The remote activity id is
+  URL-encoded as the path segment. The reader must follow the target actor and
+  must not block it; ancestors and replies from blocked actors are omitted.
+  `RemoteThreadRepository` (in-memory and PDO, one contract test) over
+  `social_remote_thread_post` caches fetched nodes by object id, so repeated
+  requests and shared ancestors do not duplicate rows. `RemoteFetcher` is the
+  shared network guard for media and threads: http(s)-only, public-address
+  checks on every hop, manual redirect revalidation, timeout and body limit.
+  `social/thread.fetch` switches the route off with a `503`, and
+  `thread.max_depth`, `thread.max_replies`, `thread.max_bytes`,
+  `thread.timeout_seconds` and `thread.max_redirects` bound work. Ancestor and
+  reply failures are logged and skipped; a target failure answers `502`. No
+  media is imported into the cache. Expiring old nodes remains a host job via
+  `RemoteThreadRepository::deleteFetchedBefore()`.
 - Discovery: the ActivityStreams actor document with its published key, and
   the followers `OrderedCollection` read from the follower repository.
 - Outbox: the public `OrderedCollection` of an account's public posts as
@@ -104,8 +120,8 @@ Status of the core, not a promise about dates.
 ## Next
 
 The remaining items are host-owned migrations or integrations. There is no
-core-only vertical slice waiting in this table; the local media catch-up gap is
-closed in Done above.
+core-only vertical slice waiting in this table; the local media catch-up and
+thread/context gaps are closed in Done above.
 
 | Item | Seam |
 | --- | --- |
@@ -120,7 +136,6 @@ closed in Done above.
   the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
-- Thread/context fetching for remote posts.
 - Shared inboxes and delivery batching.
 
 ## Explicitly not planned

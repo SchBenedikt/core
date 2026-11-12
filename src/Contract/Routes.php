@@ -27,6 +27,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
@@ -82,6 +83,15 @@ final class Routes
 				handler: ShowPostHandler::class,
 				requiresAuth: false,
 				summary: 'Read one post.',
+			),
+			new Route(
+				name: 'threads.get',
+				method: 'GET',
+				path: $base . '/remote-posts/{id}/thread',
+				handler: ShowRemoteThreadHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'Fetch the bounded ancestors and direct replies of a remote post.',
 			),
 			new Route(
 				name: 'posts.delete',

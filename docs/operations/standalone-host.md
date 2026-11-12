@@ -11,7 +11,7 @@ This document is the checklist that host is built against.
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
    statements (`PostSchema`, `AttachmentSchema`, `FollowerSchema`,
-   `FollowingSchema`, `RemotePostSchema`, `BlockSchema`, `JobSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`, `JobSchema`,
    `ActivityLogSchema`) from the migration step.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.

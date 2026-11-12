@@ -14,7 +14,7 @@ that prints or skips is a failure.
 | Directory | What lives there |
 | --- | --- |
 | `tests/Platform` | clock, config, PDO connection, blob stores and image processing |
-| `tests/Domain` | post, attachment, follower, followed-actor, remote-post and block entities, local/remote/block/timeline/attachment repository contracts and the activity-log contract |
+| `tests/Domain` | post, attachment, follower, followed-actor, remote-post, remote-thread and block entities, local/remote/thread/block/timeline/attachment repository contracts and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
@@ -26,6 +26,7 @@ that prints or skips is a failure.
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
 | `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |
 | `tests/Api/RemoteMediaTest.php` | signed inbound Create → guarded fetch from a local HTTP server → local original/thumbnail → home timeline, plus SSRF, redirect, oversized, corrupt, false type, 404, timeout, duplicate URL and attachment-limit cases; outbox backfill of a historical post, repair of an existing post after disabled media, idempotent repeats, SSRF/corrupt backfill entries and preservation of existing links when one candidate disappears |
+| `tests/Api/RemoteThreadTest.php` | authenticated thread request → guarded target/parent/reply fetch from a local HTTP server → cache → JSON; ordered ancestors, direct replies, depth/reply limits, idempotent repeats, auth, missing/unfollowed/deleted/blocked targets, disabled fetching, invalid target, blocked ancestor, SSRF ancestor and oversized/slow targets |
 | `tests/Service/Federation/RemoteMediaFetcherTest.php` | guard reasons for private IPv4/IPv6, redirect revalidation, redirect budget, HTTP error, timeout, size limit and disabled switch |
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
@@ -46,6 +47,8 @@ final class PdoJobQueueTest extends JobQueueTestCase { … }
 final class PdoActivityLogTest extends ActivityLogTestCase { … }
 final class InMemoryRemotePostRepositoryTest extends RemotePostRepositoryTestCase { … }
 final class PdoRemotePostRepositoryTest extends RemotePostRepositoryTestCase { … }
+final class InMemoryRemoteThreadRepositoryTest extends RemoteThreadRepositoryTestCase { … }
+final class PdoRemoteThreadRepositoryTest extends RemoteThreadRepositoryTestCase { … }
 final class InMemoryBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class PdoBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
@@ -65,7 +68,8 @@ that.
 - `FakeHttpClient` — records requests and answers from a queue (default 202);
   also implements the bounded path.
 - `LocalHttpClient` — maps the guarded test hostname to a real local HTTP
-  fixture server for end-to-end tests; `RemoteMediaServer` starts that server.
+  fixture server for end-to-end tests; `RemoteMediaServer` starts that server
+  and `remote-media-router.php` also serves the thread fixture objects.
 - `FixedInboxResolver` — pretends the follow graph has entries.
 - `RecordingJobHandler` / `FailingJobHandler` — worker tests without work.
 - `SequenceIdGenerator` — deterministic ids when a test needs them.

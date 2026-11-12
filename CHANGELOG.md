@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Thread/context fetching: the authenticated
+  `GET /api/v1/remote-posts/{id}/thread` returns the freshly fetched target, its
+  ancestors from root to parent and its direct replies for a stored remote
+  post. The remote activity id is URL-encoded as one path segment; the reader
+  must follow the target actor and must not block it. Ancestors and replies
+  from blocked actors are omitted, only direct children are returned, and the
+  depth/reply counts are bounded by `social/thread.max_depth` and
+  `max_replies`. `RemoteThreadRepository` (in-memory and PDO behind one contract
+  test) caches nodes in `social_remote_thread_post` by object id, so repeats and
+  shared ancestors do not duplicate rows. `RemoteFetcher` was extracted as the
+  shared network guard for remote media and threads (http(s)-only, public
+  address checks on every hop, redirect revalidation, timeout and body cap);
+  `RemoteMediaFetcher` delegates to it without changing its stable
+  `remote_media_*` reasons. `social/thread.fetch`, `thread.max_depth`,
+  `thread.max_replies`, `thread.max_bytes`, `thread.timeout_seconds` and
+  `thread.max_redirects` are documented. A target failure is `502`; ancestor or
+  reply failures are logged and skipped. The route adds one entry to the route
+  manifest (24 routes) and the OpenAPI export. `RemoteThreadRepository`
+  exposes `deleteFetchedBefore()` for host-scheduled cleanup; the core does not
+  schedule it. Thread context does not import media blobs.
 - Historical remote media catch-up: `RemoteOutboxBackfill` now passes every
   stored and every already-present `Create`/`Announce` object to the same
   `RemoteMediaService` as the live inbox. A later explicit backfill run can
@@ -42,7 +62,7 @@ All notable changes to this project are documented here. The format follows
   and home-timeline shapes; posts without attachments keep the old shape.
   Invalid, corrupt and oversized uploads leave no blob or row. This adds two
   routes, the `AttachmentRepository` contract test and an end-to-end media
-  test; 23 routes.
+  test; 24 routes.
 - Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
   `Announce` activities from a followed actor's public outbox. It follows
   `first`/`next` only on the outbox origin, is bounded by pages and items,

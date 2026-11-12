@@ -37,12 +37,27 @@ change. `fields` appears only when an error belongs to specific input.
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `delivery_failed` | 502 | A peer inbox answered non-2xx or could not be reached while delivering a local Follow or Undo. A Follow is rolled back; an Undo keeps the edge so the request can be retried |
 | `federation_not_configured` | 503 | A local follow write has no HTTP client or signing key to deliver the Follow/Undo |
+| `thread_not_configured` | 503 | The thread route is present but no bounded HTTP client/service was assembled |
+| `thread_fetch_disabled` | 503 | `social/thread.fetch` is off, so no request is made to the peer |
+| `thread_fetch_failed` | 502 | The target remote object could not be fetched, was too large/timed out, or was not a usable ActivityPub object |
 | `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers/following collections, outbox, WebFinger) |
 | `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
+
+## Remote thread failures
+
+The thread route has three HTTP codes above. Failures while walking an ancestor
+or reading the direct-reply collection are logged with stable reasons and do
+not fail the request: `thread_invalid_url`, `thread_dns_failed`,
+`thread_ssrf_blocked`, `thread_fetch_failed`, `thread_timeout`,
+`thread_http_error`, `thread_too_many_redirects`, `thread_redirect_invalid`,
+`thread_too_large`, `thread_invalid_document`, `thread_disabled` and
+`thread_store_failed` (the cache write failed but the fetched response is
+still returned). The target failure is logged with the same reason before the
+handler answers `502`. See [remote threads](../guides/remote-threads.md).
 
 ## Remote media failures
 

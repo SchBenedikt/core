@@ -14,6 +14,7 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
+| `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
 | `timelines.home` | `GET` | `/api/v1/timelines/home` | yes | — |
@@ -149,6 +150,44 @@ DELETE /api/v1/posts/{id}
 
 `204` on success, `403 forbidden` when the post belongs to somebody else, `404`
 when it does not exist.
+
+## Remote thread/context
+
+```http
+GET /api/v1/remote-posts/{id}/thread
+```
+
+`{id}` is the remote **activity id**, URL-encoded as one path segment, for
+ example `https%3A%2F%2Fremote.example%2Factivities%2Fcreate-1`. The target row
+must be a live `social_remote_post` from an actor the caller follows and does
+not block; otherwise the answer is `404 not_found`, identical to a missing row.
+
+```json
+{"thread": {
+  "post": {"object_id": "https://remote.example/notes/target",
+    "author_id": "https://remote.example/users/bob", "content": "target",
+    "content_warning": null, "published_at": "2026-11-11T10:02:00Z",
+    "in_reply_to_id": "https://remote.example/notes/parent"},
+  "ancestors": [ … ],
+  "replies": [ … ]
+}}
+```
+
+`ancestors` is ordered root first, directly before the target, up to
+`thread.max_depth` (default 5). `replies` contains only direct children whose
+`in_reply_to_id` is the target object, oldest first, up to
+`thread.max_replies` (default 20); it does not walk reply chains. Both arrays
+omit nodes whose author the caller blocks. `post` is always the freshly
+fetched target; `fetched_at` is cached by the service but not exposed in this
+response.
+
+Errors: `401 authentication_required`; `404 not_found` for a missing, deleted,
+unfollowed or blocked target; `503 thread_fetch_disabled` when
+`social/thread.fetch` is off; `503 thread_not_configured` when no bounded HTTP
+client/service is assembled; `502 thread_fetch_failed` when the target itself
+cannot be fetched or parsed. Ancestor or reply failures do **not** fail the
+request: they are logged with a stable `thread_*` reason and omitted. See
+[remote threads](../guides/remote-threads.md).
 
 ## Timelines
 

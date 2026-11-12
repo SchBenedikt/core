@@ -16,6 +16,12 @@ the database — the core does not care.
 | `social` | `media.remote_max_bytes` | no | Hard per-response body limit for a remote image; defaults to 5 MiB, clamped to 1 byte–`Attachment::MAX_BYTES` |
 | `social` | `media.remote_timeout_seconds` | no | Per-hop remote fetch timeout; defaults to 10, clamped to 1–30 |
 | `social` | `media.remote_max_redirects` | no | Redirects followed per remote fetch; defaults to 3, clamped to 0–5 |
+| `social` | `thread.fetch` | no | Enables the authenticated thread/context route. Defaults to `true`; `false`/`0`/`off`/`no` makes the route answer `503 thread_fetch_disabled` without a request to the peer |
+| `social` | `thread.max_depth` | no | Maximum ancestors walked from the target; defaults to 5, clamped to 0–10. `0` returns only the target and its direct replies |
+| `social` | `thread.max_replies` | no | Maximum direct replies returned; defaults to 20, clamped to 0–40 |
+| `social` | `thread.max_bytes` | no | Hard per-response body limit for a thread object or replies collection; defaults to 1 MiB, clamped to 1 byte–5 MiB |
+| `social` | `thread.timeout_seconds` | no | Per-hop thread fetch timeout; defaults to 10, clamped to 1–30 |
+| `social` | `thread.max_redirects` | no | Redirects followed per thread fetch; defaults to 3, clamped to 0–5 |
 
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503
@@ -33,13 +39,29 @@ that period. A host that only supplies `HttpClient` and not
 `BoundedHttpClient` also gets no remote fetch: `Application` wires the
 importer only when the bounded capability is present.
 
+With `thread.fetch` disabled, `GET /api/v1/remote-posts/{id}/thread` answers
+`503 thread_fetch_disabled`; it does not return an empty or stale thread. The
+same applies when the assembly has no bounded HTTP client
+(`503 thread_not_configured`) or no `RemoteThreadService`. Existing cached
+nodes remain stored and readable by a host through
+`RemoteThreadRepository`, but the route does not fall back to them without a
+fresh target fetch. Disabling the switch does not delete rows. There is no
+automatic cleanup timer: a host that wants a TTL calls
+`RemoteThreadRepository::deleteFetchedBefore()` on its own schedule.
+
+`thread.max_bytes` applies to each fetched object or replies collection, not
+to the whole response. Depth and reply limits are applied after fetching, so a
+collection can be read up to the body limit and then truncated to
+`thread.max_replies`; the cache never receives the truncated-away nodes.
+
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.
 
 Remote media limits and failure reasons are documented operationally in
 [media](../guides/media.md#remote-attachments-from-incoming-posts). The fetch
 requires a `BoundedHttpClient` plus a `HostResolver`; the local `CurlHttpClient`
-and `DnsHostResolver` provide both.
+and `DnsHostResolver` provide both. Thread/context uses the same guard and is
+documented in [remote threads](../guides/remote-threads.md).
 
 ## Limits
 
@@ -55,6 +77,16 @@ and `DnsHostResolver` provide both.
 | `RemoteMediaFetcher::DEFAULT_MAX_REDIRECTS` | 3 | Default redirect budget |
 | `RemoteMediaFetcher::MAX_REDIRECTS` | 5 | Hard redirect ceiling |
 | `RemoteMediaService::MAX_ATTACHMENTS` | 4 | Imported images per incoming post |
+| `RemoteThreadFetcher::DEFAULT_MAX_DEPTH` | 5 | Default ancestors walked for a thread |
+| `RemoteThreadFetcher::MAX_DEPTH` | 10 | Hard ancestor ceiling |
+| `RemoteThreadFetcher::DEFAULT_MAX_REPLIES` | 20 | Default direct replies returned |
+| `RemoteThreadFetcher::MAX_REPLIES` | 40 | Hard direct-reply ceiling |
+| `RemoteThreadFetcher::DEFAULT_MAX_BYTES` | 1 MiB | Default thread object body limit |
+| `RemoteThreadFetcher::MAX_BYTES` | 5 MiB | Hard thread object body ceiling |
+| `RemoteThreadFetcher::DEFAULT_TIMEOUT_SECONDS` | 10 | Default per-hop thread timeout |
+| `RemoteThreadFetcher::MAX_TIMEOUT_SECONDS` | 30 | Hard thread timeout ceiling |
+| `RemoteThreadFetcher::DEFAULT_MAX_REDIRECTS` | 3 | Default thread redirect budget |
+| `RemoteThreadFetcher::MAX_REDIRECTS` | 5 | Hard thread redirect ceiling |
 | `Attachment::MAX_DIMENSION` | 10000 | Longest stored image side |
 | `Attachment::MAX_PIXELS` | 40,000,000 | Decode guard against decompression bombs |
 | `Post::MAX_ATTACHMENTS` | 4 | Attachments per post |

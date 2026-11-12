@@ -69,5 +69,10 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/v1/media', $decoded['paths']);
 		self::assertArrayHasKey('post', $decoded['paths']['/api/v1/media']);
 		self::assertArrayHasKey('/api/v1/media/{id}', $decoded['paths']);
+		self::assertArrayHasKey('/api/v1/remote-posts/{id}/thread', $decoded['paths']);
+		self::assertSame(
+			[['bearerAuth' => []]],
+			$decoded['paths']['/api/v1/remote-posts/{id}/thread']['get']['security'],
+		);
 	}
 }

@@ -21,6 +21,7 @@ use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobSchema;
@@ -73,7 +74,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(23, $app->routes->routes());
+		self::assertCount(24, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -200,6 +201,7 @@ final class ApplicationHostTest extends TestCase
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);
+		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);

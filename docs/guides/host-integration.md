@@ -165,6 +165,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
+- `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
 - `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
@@ -178,8 +179,13 @@ If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.
 If `social_attachment` predates remote media, add nullable `source_url
 VARCHAR(512)` and its unique index, and create
-`social_remote_post_attachment` from `RemotePostSchema::statements()`. There is
-no migration runner in this repository.
+`social_remote_post_attachment` from `RemotePostSchema::statements()`.
+For thread/context fetching, create `social_remote_thread_post` from
+`RemoteThreadSchema::statements()` and wire a `RemoteThreadRepository` into
+`Application::forHost()`; a host that does not create the table must not expose
+the route. There is no migration runner and no automatic retention job in this
+repository. A host that wants context to expire calls
+`RemoteThreadRepository::deleteFetchedBefore()` on its own schedule.
 
 ### Durable queue and activity log
 

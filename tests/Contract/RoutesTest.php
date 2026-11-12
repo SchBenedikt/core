@@ -22,7 +22,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(23, $manifest->routes());
+		self::assertCount(24, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
@@ -38,6 +38,7 @@ final class RoutesTest extends TestCase
 		self::assertNotNull($manifest->find('following.unfollow'));
 		self::assertNotNull($manifest->find('actors.outbox'));
 		self::assertNotNull($manifest->find('webfinger'));
+		self::assertNotNull($manifest->find('threads.get'));
 	}
 
 	public function testEveryHandlerExistsAndImplementsTheContract(): void
@@ -140,6 +141,16 @@ final class RoutesTest extends TestCase
 		}
 	}
 
+	public function testTheThreadRouteIsProtectedAndRateLimited(): void
+	{
+		$route = Routes::manifest()->find('threads.get');
+
+		self::assertNotNull($route);
+		self::assertTrue($route->requiresAuth);
+		self::assertSame('60/60', $route->rateLimit);
+		self::assertSame('/api/v1/remote-posts/{id}/thread', $route->path);
+	}
+
 	public function testTheInboxIsPublicButRateLimited(): void
 	{
 		$route = Routes::manifest()->find('inbox');
@@ -182,7 +193,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(23, $decoded['routes']);
+		self::assertCount(24, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -192,6 +203,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(23, $app->routes->routes());
+		self::assertCount(24, $app->routes->routes());
 	}
 }

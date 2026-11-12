@@ -10,6 +10,45 @@ declare(strict_types=1);
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $fixture = getenv('MEDIA_FIXTURE') ?: '';
 
+/**
+ * A minimal ActivityPub Note for the thread-context tests. The ids use the
+ * documented remote origin; LocalHttpClient maps the request to this server.
+ *
+ * @return array<string, mixed>
+ */
+$note = static function (
+	string $id,
+	string $author,
+	string $content,
+	string $published,
+	?string $inReplyTo = null,
+): array {
+	$object = [
+		'id' => $id,
+		'type' => 'Note',
+		'attributedTo' => 'https://remote.example/users/' . $author,
+		'content' => $content,
+		'published' => $published,
+	];
+	if ($inReplyTo !== null) {
+		$object['inReplyTo'] = $inReplyTo;
+	}
+
+	return $object;
+};
+
+$threadTarget = $note(
+	'https://remote.example/notes/target',
+	'bob',
+	'target content',
+	'2026-11-11T10:02:00Z',
+	'https://remote.example/notes/parent',
+);
+$threadTarget['replies'] = [
+	'type' => 'Collection',
+	'first' => 'http://thread.remote.example/thread/replies',
+];
+
 switch ($path) {
 	case '/health':
 		header('Content-Type: text/plain');
@@ -49,6 +88,138 @@ switch ($path) {
 		usleep(1_800_000);
 		header('Content-Type: image/png');
 		readfile($fixture);
+		return;
+
+	case '/notes/target':
+		header('Content-Type: application/activity+json');
+		echo json_encode($threadTarget, JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/parent':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/parent',
+			'carol',
+			'parent content',
+			'2026-11-11T10:01:00Z',
+			'https://remote.example/notes/root',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/root':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/root',
+			'dave',
+			'root content',
+			'2026-11-11T10:00:00Z',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/blocked-target':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/blocked-target',
+			'bob',
+			'blocked target',
+			'2026-11-11T10:02:00Z',
+			'https://remote.example/notes/blocked-parent',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/blocked-parent':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/blocked-parent',
+			'mallory',
+			'blocked parent',
+			'2026-11-11T10:01:00Z',
+			'https://remote.example/notes/root',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/ssrf-target':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/ssrf-target',
+			'bob',
+			'ssrf target',
+			'2026-11-11T10:02:00Z',
+			'http://127.0.0.1:' . $_SERVER['SERVER_PORT'] . '/secret',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/invalid-target':
+		header('Content-Type: application/activity+json');
+		echo json_encode([
+			'id' => 'https://remote.example/notes/invalid-target',
+			'type' => 'Note',
+			'attributedTo' => 'https://remote.example/users/bob',
+			'published' => '2026-11-11T10:02:00Z',
+		], JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/too-large':
+		header('Content-Type: application/activity+json');
+		echo str_repeat('x', 2_000_000);
+		return;
+
+	case '/notes/slow':
+		usleep(1_800_000);
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/slow',
+			'bob',
+			'slow target',
+			'2026-11-11T10:02:00Z',
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/thread/replies':
+		header('Content-Type: application/activity+json');
+		$direct = $note(
+			'https://remote.example/notes/reply-a',
+			'erin',
+			'first direct reply',
+			'2026-11-11T10:03:00Z',
+			'https://remote.example/notes/target',
+		);
+		$blocked = $note(
+			'https://remote.example/notes/reply-blocked',
+			'mallory',
+			'blocked reply',
+			'2026-11-11T10:04:00Z',
+			'https://remote.example/notes/target',
+		);
+		$second = $note(
+			'https://remote.example/notes/reply-b',
+			'frank',
+			'second direct reply',
+			'2026-11-11T10:05:00Z',
+			'https://remote.example/notes/target',
+		);
+		$nested = $note(
+			'https://remote.example/notes/reply-nested',
+			'grace',
+			'nested reply',
+			'2026-11-11T10:06:00Z',
+			'https://remote.example/notes/reply-a',
+		);
+		echo json_encode([
+			'id' => 'http://thread.remote.example/thread/replies',
+			'type' => 'OrderedCollection',
+			'orderedItems' => [
+				[
+					'id' => 'https://remote.example/activities/create-reply-a',
+					'type' => 'Create',
+					'object' => $direct,
+				],
+				$blocked,
+				$second,
+				$nested,
+				['id' => 'https://remote.example/notes/broken-reply', 'type' => 'Note'],
+			],
+		], JSON_THROW_ON_ERROR);
 		return;
 
 	case '/users/bob/outbox':

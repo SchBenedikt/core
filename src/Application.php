@@ -27,6 +27,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
@@ -48,6 +49,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
@@ -55,7 +57,9 @@ use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
@@ -96,10 +100,13 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
+use AlohaSocial\Core\Service\Federation\RemoteFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaService;
 use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
+use AlohaSocial\Core\Service\Federation\RemoteThreadFetcher;
+use AlohaSocial\Core\Service\Federation\RemoteThreadService;
 use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -141,6 +148,7 @@ final readonly class Application
 		public BlockService $blocks,
 		public ?RemoteOutboxBackfill $backfill,
 		public ?MediaService $media,
+		public ?RemoteThreadService $threads,
 	) {
 	}
 
@@ -164,6 +172,7 @@ final readonly class Application
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
+		?RemoteThreadRepository $remoteThreadRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -180,6 +189,7 @@ final readonly class Application
 		$followers = new InMemoryFollowerRepository();
 		$followingRepository ??= new InMemoryFollowingRepository();
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
+		$remoteThreadRepository ??= new InMemoryRemoteThreadRepository();
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository();
 		$blobStore ??= new InMemoryBlobStore();
@@ -206,6 +216,7 @@ final readonly class Application
 			followers: $followers,
 			followingRepository: $followingRepository,
 			remotePosts: $remotePostRepository,
+			threadRepository: $remoteThreadRepository,
 			homeTimeline: $homeTimeline,
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
@@ -276,6 +287,7 @@ final readonly class Application
 			followers: $followers,
 			followingRepository: new PdoFollowingRepository($database),
 			remotePosts: $remotePosts,
+			threadRepository: new PdoRemoteThreadRepository($database),
 			homeTimeline: new PdoHomeTimelineRepository($database),
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
@@ -309,6 +321,7 @@ final readonly class Application
 		FollowerRepository $followers,
 		FollowingRepository $followingRepository,
 		RemotePostRepository $remotePosts,
+		RemoteThreadRepository $threadRepository,
 		HomeTimelineRepository $homeTimeline,
 		BlockRepository $blockRepository,
 		?BlockedActorPolicy $blockedActors,
@@ -383,15 +396,35 @@ final readonly class Application
 		// Remote media is wired only when the host provided the bounded HTTP
 		// capability. A plain HttpClient is enough for delivery and actor
 		// resolution, but not for fetching untrusted image bytes.
+		$resolver = $hostResolver ?? new DnsHostResolver();
 		$remoteMedia = ($mediaService !== null && $httpClient instanceof BoundedHttpClient)
 			? new RemoteMediaService(
 				new RemoteMediaFetcher(
 					$httpClient,
-					$hostResolver ?? new DnsHostResolver(),
+					$resolver,
 					$config,
 				),
 				$mediaService,
 				$remotePosts,
+				$logger,
+			)
+			: null;
+
+		// Thread context is an explicit, authenticated read operation. It
+		// shares the bounded network guard with media but has its own limits
+		// and cache, so remote media being disabled does not disable threads.
+		$remoteThreadService = $httpClient instanceof BoundedHttpClient
+			? new RemoteThreadService(
+				$remotePosts,
+				$threadRepository,
+				$followingRepository,
+				$blockRepository,
+				new RemoteThreadFetcher(
+					new RemoteFetcher($httpClient, $resolver),
+					$config,
+					$clock,
+					$logger,
+				),
 				$logger,
 			)
 			: null;
@@ -456,6 +489,7 @@ final readonly class Application
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
 			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService))
+			->with(ShowRemoteThreadHandler::class, static fn (): ShowRemoteThreadHandler => new ShowRemoteThreadHandler($remoteThreadService))
 			->with(UploadMediaHandler::class, static fn (): UploadMediaHandler => new UploadMediaHandler($mediaService))
 			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService))
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
@@ -519,6 +553,7 @@ final readonly class Application
 			$blockService,
 			$backfill,
 			$mediaService,
+			$remoteThreadService,
 		);
 	}
 

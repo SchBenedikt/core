@@ -29,6 +29,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
+- `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
@@ -58,6 +59,16 @@ local followers and the join, rather than a per-user copy, scopes visibility.
 `social_remote_post_attachment` is the ordered link between a remote activity
 and imported local attachment rows; the attachment source URL is unique, so
 one remote image is stored once and reused.
+
+`social_remote_thread_post` is the on-demand context cache used by
+`GET /api/v1/remote-posts/{id}/thread`. Its primary key is the remote object id,
+not an activity id: an ancestor or reply may never have been delivered to this
+instance. It stores the author, content, optional content warning, publication
+time, `in_reply_to_id` and `fetched_at`. The parent and fetched indexes support
+direct-child queries and a host's retention job. Upserts by object id make a
+repeat or a shared ancestor idempotent; `deleteFetchedBefore()` is the only
+cleanup API and is not scheduled by the core. Rows are deliberately not shown
+in the home timeline and do not import media blobs.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md).

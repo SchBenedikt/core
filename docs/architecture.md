@@ -206,6 +206,38 @@ An imported image is a normal local `Attachment` with a nullable `source_url`.
 `thumbnail_url` and `alt_text` shape for both. The remote URL is the unique
 idempotence key and is never required by a reader.
 
+## Fetching a remote thread
+
+```
+GET /api/v1/remote-posts/{id}/thread
+  └─ ShowRemoteThreadHandler
+      └─ RemoteThreadService::threadForUser
+          ├─ RemotePostRepository::findByActivityId
+          ├─ FollowingRepository::find / BlockRepository::findByActor
+          ├─ RemoteThreadFetcher::fetch(target object)
+          │   └─ RemoteFetcher      shared SSRF/redirect/timeout/body guard
+          ├─ RemoteThreadFetcher::fetch(parent) up to thread.max_depth
+          ├─ RemoteThreadFetcher::fetchReplies(first page only)
+          └─ RemoteThreadRepository::upsert  idempotent object-id cache
+```
+
+The target is a stored remote activity, but the fetched nodes are objects: an
+ancestor or reply may never have been delivered to this instance. That is why
+the cache has its own table keyed by object id and never appears in the home
+timeline. Ancestors are returned root-first; replies are direct children only,
+filtered by `in_reply_to_id === target.object_id`. The reader's blocks are
+applied to the target, every ancestor and every reply. A failure to read one
+parent or the reply collection is logged and truncates that part of the view;
+a target failure is a `502` because the request has no anchor.
+
+`RemoteFetcher` is shared with remote-media ingestion. It owns the
+http(s)-only check, userinfo rejection, public-address check on the initial
+host and every redirect, manual redirect following, timeout and body cap.
+`RemoteMediaFetcher` adds only the media switch, MIME accept header and the
+`remote_media_*` reason prefix. Threads add their own limits, cache and stable
+`thread_*` reasons without reimplementing the network guard. The thread cache
+stores text/structure only; media is not imported.
+
 ## Following an actor
 
 ```
@@ -322,7 +354,6 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| thread/context fetching | `HttpClient` + the remote-post repository; outbox backfill already catches up missed `Create`/`Announce`, but does not walk replies |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
 | admin settings | host pages; the core keeps the settings *rules* |
@@ -338,7 +369,8 @@ genuinely owns the capability.
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
   `AttachmentRepositoryTestCase`, `FollowerRepositoryTestCase`,
   `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
-  `BlockRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
+  `RemoteThreadRepositoryTestCase`, `BlockRepositoryTestCase`,
+  `HomeTimelineRepositoryTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
@@ -362,5 +394,10 @@ genuinely owns the capability.
   and no post. `RemoteMediaTest` delivers a signed Create containing attachments
   through the real inbox while a local HTTP server answers the guarded fetch;
   it covers redirects, SSRF targets, size, corrupt bytes, a false type, a
-  timeout, duplicate URLs and historical backfill media. `CurlHttpClientTest` covers the production
-  client's body cap and address pinning against the same fixture server.
+  timeout, duplicate URLs and historical backfill media. `RemoteThreadTest`
+  requests a real local thread fixture through the authenticated route and
+  covers ordered ancestors, direct replies, persistence, repeat idempotence,
+  depth/reply limits, auth, unfollowed/deleted/blocked targets, disabled
+  fetching, an invalid target, a blocked ancestor, an SSRF ancestor and
+  oversized/slow targets. `CurlHttpClientTest` covers the production client's
+  body cap and address pinning against the same fixture server.

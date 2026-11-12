@@ -159,11 +159,12 @@ The clock window for the signed `Date` is 300 seconds; see
 
 ## What is missing
 
-- thread/context fetching;
 - shared-inbox handling and delivery batching.
 
-A bounded outbox catch-up for missed `Create`/`Announce` activities exists as
-an explicit host operation; see [remote outbox backfill](remote-backfill.md).
+Thread/context is an explicit, authenticated read path rather than part of the
+inbox; see [remote threads](remote-threads.md). A bounded outbox catch-up for
+missed `Create`/`Announce` activities exists as an explicit host operation; see
+[remote outbox backfill](remote-backfill.md).
 It is not a full mirror: it does not fetch threads and it does not apply
 `Delete` activities. It does import embedded-object images through the same
 guarded `RemoteMediaService` as the live inbox, including for already-present

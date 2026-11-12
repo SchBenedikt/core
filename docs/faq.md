@@ -39,7 +39,8 @@ author still sees it because the visibility check includes the viewer.
 The mechanism differs per host: Nextcloud has its own schema API, the standalone
 server will use Doctrine Migrations. The core shares the *schema*
 (`PostSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
-`BlockSchema`, `JobSchema`, `ActivityLogSchema`), not the runner.
+`RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`), not
+the runner.
 
 ### How do I block an actor?
 
