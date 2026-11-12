@@ -10,6 +10,15 @@ the database — the core does not care.
 | --- | --- | --- | --- |
 | `social` | `instance.url` | for federation | Absolute http(s) base URL, no trailing slash required |
 | `social` | `instance.name` | no | Display name; defaults to the product name |
+| `social` | `instance.description` | no | Public description used by both instance endpoints; defaults to empty |
+| `social` | `instance.version` | no | Version segment in the Mastodon compatibility string; defaults to `0.1.0` |
+| `social` | `instance.contact_email` | no | Public administrator contact address. `instance.email` remains accepted as a fallback; defaults to empty |
+| `social` | `instance.contact_account` | no | Local account id projected as the instance contact account. A supplied directory must contain it or the core field is empty and the Mastodon projection is `null`; defaults to empty |
+| `social` | `instance.registrations` | no | Whether registrations are open; defaults to `false` |
+| `social` | `instance.approval_required` | no | Whether registrations need approval; defaults to `true` |
+| `social` | `instance.invites_enabled` | no | Whether invites are enabled; defaults to `false` |
+| `social` | `instance.languages` | no | Comma-separated or JSON array of language codes; defaults to an empty list |
+| `social` | `instance.thumbnail` | no | Public thumbnail URL; defaults to empty |
 | `social` | `media.max_bytes` | no | Local upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
 | `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
 | `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts and historical posts processed by the outbox backfill; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
@@ -33,6 +42,20 @@ implement them. A type whose capability is absent answers `503
 search_not_configured`, and `following=true` also needs the existing
 `LocalRelationshipService`. There is no search table or index migration, and
 nothing to clean up: search only reads existing rows.
+
+The `instance.*` metadata keys feed the core `GET /api/v1/instance` response and
+the Mastodon-compatible `GET {mastodon.prefix}/instance` projection. The counts
+in that response come from optional capabilities on the existing stores:
+`LocalActorCount` on the account directory, `PostCount` on the local post
+repository and `RemoteDomainCount` on the remote-post repository. A store that
+omits a capability reports zero for that field; it is not an error and does not
+trigger an unbounded scan. The in-memory and PDO post repositories and the
+in-memory directory implement the capabilities, and the PDO remote-post
+repository derives distinct hosts from live rows. These values are read-only:
+there is no instance or statistics table, no migration and no cleanup job. A
+stale `instance.contact_account` is hidden when a local directory is supplied
+and the id is unknown; without a directory the host remains responsible for
+the configured id.
 
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503

@@ -66,6 +66,56 @@ final class MastodonApiTest extends TestCase
 		], $response->decodedBody()['configuration']['polls']);
 	}
 
+	public function testInstanceExposesConfiguredMetadataAndLocalStats(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob'], instanceConfig: [
+			'instance.description' => 'A small test instance.',
+			'instance.contact_email' => 'admin@social.example',
+			'instance.contact_account' => 'alice',
+			'instance.registrations' => 'true',
+			'instance.approval_required' => 'false',
+			'instance.invites_enabled' => 'true',
+			'instance.languages' => 'de, en',
+			'instance.thumbnail' => 'https://social.example/thumbnail.png',
+		]);
+		$this->createStatus($app, ['status' => 'first local status']);
+		$this->createStatus($app, ['status' => 'second local status'], userId: 'bob');
+
+		$response = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/instance'));
+		self::assertSame(200, $response->status);
+		$body = $response->decodedBody();
+		self::assertSame('A small test instance.', $body['short_description']);
+		self::assertSame('A small test instance.', $body['description']);
+		self::assertSame('admin@social.example', $body['email']);
+		self::assertTrue($body['registrations']);
+		self::assertFalse($body['approval_required']);
+		self::assertTrue($body['invites_enabled']);
+		self::assertSame(['de', 'en'], $body['languages']);
+		self::assertSame('https://social.example/thumbnail.png', $body['thumbnail']);
+		self::assertSame('alice', $body['contact_account']['id']);
+		self::assertSame([
+			'user_count' => 2,
+			'status_count' => 2,
+			'domain_count' => 0,
+		], $body['stats']);
+
+		// The core endpoint shares the same description and the additive stats.
+		$core = $app->handle(new Request('GET', '/api/v1/instance'));
+		self::assertSame(200, $core->status);
+		self::assertSame('A small test instance.', $core->decodedBody()['instance']['description']);
+		self::assertSame(2, $core->decodedBody()['instance']['stats']['status_count']);
+	}
+
+	public function testInstanceContactAccountIsOmittedWhenItIsNotLocal(): void
+	{
+		$response = $this->app(instanceConfig: ['instance.contact_account' => 'ghost'])->handle(
+			new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/instance'),
+		);
+
+		self::assertSame(200, $response->status);
+		self::assertNull($response->decodedBody()['contact_account']);
+	}
+
 	public function testTheSurfaceIsDisabledByDefaultAndWithTheFlagOff(): void
 	{
 		$app = $this->app(enabled: false);
@@ -1382,12 +1432,13 @@ final class MastodonApiTest extends TestCase
 		?NotificationRepository $notificationRepository = null,
 		?array $actors = ['alice'],
 		?string $instanceUrl = 'https://social.example',
+		array $instanceConfig = [],
 	): Application {
-		$config = [
+		$config = array_merge([
 			'instance.name' => 'Aloha Social',
 			'mastodon.api' => $enabled ? 'true' : 'false',
 			'mastodon.prefix' => $prefix,
-		];
+		], $instanceConfig);
 		if ($instanceUrl !== null) {
 			$config['instance.url'] = $instanceUrl;
 		}

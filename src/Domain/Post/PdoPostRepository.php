@@ -22,7 +22,7 @@ use PDOException;
  * keeps string comparison chronological on SQLite, PostgreSQL and MySQL
  * alike and makes the timeline query a single indexed range scan.
  */
-final class PdoPostRepository implements PostRepository, PostSearchRepository
+final class PdoPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, published_at, deleted_at';
 
@@ -248,6 +248,13 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository
 		);
 
 		return (int) $value;
+	}
+
+	public function countLive(): int
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . PostSchema::TABLE . ' WHERE deleted_at IS NULL',
+		);
 	}
 
 	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array

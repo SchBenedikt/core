@@ -249,6 +249,23 @@ stores text/structure only; media is not imported.
 
 ## Mastodon compatibility
 
+The public instance description is assembled from configuration and the
+stores the host already passes in; it is not an instance database:
+
+```
+GET {mastodon.prefix}/instance
+  └─ MastodonPresenter::instance
+      ├─ InstanceInfo::describe   social/instance.* metadata, read per request
+      └─ InstanceInfo::stats
+          ├─ LocalActorCount::localActorCount   if the directory supports it
+          ├─ PostCount::countLive               if the post repository supports it
+          └─ RemoteDomainCount::remoteDomainCount if the remote store supports it
+```
+
+A missing capability becomes `0`; the endpoint does not scan all rows or add a
+second statistics table. `contact_account` is projected only when it is
+configured and the supplied local directory knows the id.
+
 `POST /api/mastodon/v1/statuses` is not a second write path:
 
 ```

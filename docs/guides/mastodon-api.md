@@ -111,6 +111,44 @@ relationships, notifications, media management, account statuses and account
 search. Without a directory the core cannot distinguish local from remote
 account ids; a host that enables this API should always pass one.
 
+## Instance metadata
+
+`GET {prefix}/instance` is public, rate-limited at `120/60`, and projects the
+existing instance configuration and local stores instead of returning fixed
+placeholder values. The contact and registration fields are optional config:
+
+| Key | Field | Default |
+| --- | --- | --- |
+| `social/instance.description` | `description`, `short_description` | empty |
+| `social/instance.version` | the Aloha Social part of `version` | `0.1.0` |
+| `social/instance.contact_email` | `email` (`instance.email` is a fallback) | empty |
+| `social/instance.contact_account` | `contact_account` | `null` |
+| `social/instance.registrations` | `registrations` | `false` |
+| `social/instance.approval_required` | `approval_required` | `true` |
+| `social/instance.invites_enabled` | `invites_enabled` | `false` |
+| `social/instance.languages` | `languages` (comma-separated or JSON array) | `[]` |
+| `social/instance.thumbnail` | `thumbnail` | empty |
+
+The `version` field keeps the Mastodon-compatible prefix and appends the
+configured core version. `configuration.statuses`, `configuration.media_attachments`
+and `configuration.polls` continue to reflect the real limits in
+`Post`, `Attachment` and `Poll`; they are not configurable down through this
+endpoint. `contact_account` is projected as the normal Mastodon account only
+when it is configured and, if a `LocalActorDirectory` is supplied, that
+account exists locally. A stale value therefore cannot advertise an account
+that cannot be opened; without a directory the host remains responsible for
+the configured id.
+
+`stats` is derived from three optional capabilities over the existing stores:
+`LocalActorCount` for `user_count`, `PostCount` for live `status_count` and
+`RemoteDomainCount` for distinct live remote-post hosts. A store that does not
+implement a capability reports `0` for that field; it is not an error, and the
+endpoint does not fall back to an unbounded scan. The in-memory directory, both
+post repositories and both remote-post repositories implement them, so the
+standard assemblies report real values. The core `GET /api/v1/instance` embeds
+the same description and statistics. There is no instance/statistics table,
+migration or cleanup job: the values are read-only projections.
+
 ## Reading statuses
 
 `GET /timelines/public` and `GET /accounts/{id}/statuses` return a JSON array
@@ -629,8 +667,9 @@ cleanup policy, not duplicated here.
 
 The seventeen routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
-`x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
-media upload (success, description, media-in-status, auth, scope, disabled,
+`x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
+configured contact/registration fields and local stats (including stale contact
+accounts and the core projection), media upload (success, description, media-in-status, auth, scope, disabled,
 missing/invalid/corrupt/oversized file, no orphan rows or blobs, idempotency),
 media update (JSON/form/multipart, absent/empty description, ownership,
 attached refusal, binary refusal) and delete (empty object, blob cleanup,
@@ -670,13 +709,13 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   streaming and remote search need remote data the core does not fetch for
   this surface. Local notification listing and local status/actor search are
   done above.
-- Domain/instance info beyond the current instance endpoint, notification
-  dismissal/unread state, and narrower local account/profile endpoints are
-  locally implementable and remain on the roadmap; they are not host-side
-  prerequisites. Remote relationship APIs, remote polls (fetching, voting or
-  federating a `Question`) and remote search remain external; the local
-  follow/unfollow, relationship, notification, search and poll-creation views
-  above are done.
+- Notification dismissal/unread state and narrower local account/profile
+  endpoints are locally implementable and remain on the roadmap; they are not
+  host-side prerequisites. Instance metadata and statistics are done above.
+  Remote relationship APIs, remote polls (fetching, voting or federating a
+  `Question`), domain blocks that would need a remote moderation feed, and
+  remote search remain external; the local follow/unfollow, relationship,
+  notification, search, poll-creation and instance views above are done.
 - Following a remote actor through the compatibility prefix and remote
   follower/following listings are not part of this slice; moderation/admin
   APIs are also external. The core `/api/v1/following` path remains the

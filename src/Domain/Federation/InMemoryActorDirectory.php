@@ -13,6 +13,7 @@ use function array_fill_keys;
 use function array_filter;
 use function array_slice;
 use function array_values;
+use function count;
 use function in_array;
 use function mb_stripos;
 use function strcmp;
@@ -22,7 +23,7 @@ use function usort;
 /**
  * A fixed list of local accounts, for tests, the demo and tools.
  */
-final class InMemoryActorDirectory implements LocalActorDirectory, LocalActorSearch
+final class InMemoryActorDirectory implements LocalActorDirectory, LocalActorSearch, LocalActorCount
 {
 	/**
 	 * @param list<string> $userIds
@@ -35,6 +36,11 @@ final class InMemoryActorDirectory implements LocalActorDirectory, LocalActorSea
 	public function has(string $userId): bool
 	{
 		return in_array($userId, $this->userIds, true);
+	}
+
+	public function localActorCount(): int
+	{
+		return count($this->userIds);
 	}
 
 	/**

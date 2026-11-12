@@ -22,7 +22,7 @@ use Throwable;
  * restart even when the activity log's retention window has passed. Timestamps
  * use the canonical fixed-width form and are ordered as text.
  */
-final class PdoRemotePostRepository implements RemotePostRepository
+final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomainCount
 {
 	public const MAX_ATTACHMENTS = 4;
 
@@ -192,6 +192,23 @@ final class PdoRemotePostRepository implements RemotePostRepository
 
 			throw new DatabaseException('The remote post attachments could not be linked.', 0, $exception);
 		}
+	}
+
+	public function remoteDomainCount(): int
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT actor_id FROM ' . RemotePostSchema::TABLE . ' WHERE deleted_at IS NULL',
+		);
+
+		$domains = [];
+		foreach ($rows as $row) {
+			$host = parse_url((string) $row['actor_id'], PHP_URL_HOST);
+			if (is_string($host) && $host !== '') {
+				$domains[strtolower($host)] = true;
+			}
+		}
+
+		return count($domains);
 	}
 
 	public function attachmentIdsFor(array $activityIds): array

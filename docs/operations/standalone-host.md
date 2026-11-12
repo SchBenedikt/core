@@ -8,7 +8,9 @@ This document is the checklist that host is built against.
 
 ## Boot order
 
-1. **Configuration** — read the environment, build a `Config`.
+1. **Configuration** — read the environment, build a `Config`. The optional
+   `social/instance.*` metadata keys feed both instance endpoints; unset keys
+   use their documented defaults, and no instance row or migration is needed.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
    statements (`PostSchema`, `PollSchema`, `FavouriteSchema`,
    `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
@@ -20,7 +22,9 @@ This document is the checklist that host is built against.
    `social_notification` are needed only when favourite/unfavourite and
    notification listing are exposed. There is no backfill. Local search needs
    no additional table: it uses `social_post` and the host's account
-   directory.
+   directory. Instance metadata/statistics also add no table or migration;
+   they read configuration and the existing stores through optional count
+   capabilities.
    Existing `social_follower` tables also need the `is_local`
    column before local follow/unfollow is exposed; it defaults old rows to
    remote (`0`) and needs no backfill. Existing hosts must add
@@ -33,7 +37,11 @@ This document is the checklist that host is built against.
    `PdoFollowerRepository`, `PdoFollowingRepository`,
    `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`
    and `PdoNotificationRepository` when local favourites and notifications
-   are exposed, and the combined `PdoHomeTimelineRepository`.
+   are exposed, and the combined `PdoHomeTimelineRepository`. The PDO post and
+   remote-post repositories already implement `PostCount` and
+   `RemoteDomainCount`; a custom local directory should implement
+   `LocalActorCount` if the instance stats should include its accounts,
+   otherwise `user_count` stays `0`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery
    handler, `BlockService`, and `MediaService` with a `BlobStore` and an

@@ -132,6 +132,14 @@ refresh tokens are host credentials, and `AtprotoSessionStore` keeps them in
 the host's secret store. The core's only session adapter is the in-memory fake
 for tests. See [AT Protocol publishing](atproto.md).
 
+Instance metadata and statistics add no table. The public responses read the
+`social/instance.*` configuration and, when available, count through the
+optional `LocalActorCount`, `PostCount` and `RemoteDomainCount` capabilities on
+the existing directory and post/remote-post repositories. `PostCount` filters
+`social_post.deleted_at IS NULL`; `RemoteDomainCount` derives distinct hosts
+from live `social_remote_post.actor_id` rows. A host that omits a capability
+reports `0`; nothing needs to be backfilled, migrated or cleaned up.
+
 `social_attachment` stores only metadata; the original and thumbnail bytes live
 under the keys in the host's `BlobStore`. `source_url` is nullable for local
 uploads and unique for imported remote media. `social_post_attachment` is the

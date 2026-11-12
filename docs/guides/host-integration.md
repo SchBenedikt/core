@@ -126,7 +126,7 @@ production bootstrap.
 | Port | What the host must do | Core implementation |
 | --- | --- | --- |
 | `Clock` | Return the current UTC time | `SystemClock` |
-| `Config` | Store `social/instance.url`, `social/instance.name` and the host's settings | `ArrayConfig` only for tests |
+| `Config` | Store `social/instance.url`, the optional `social/instance.*` metadata and the host's settings | `ArrayConfig` only for tests |
 | `Db\Connection` | Execute parameterised SQL, fetch rows, join transactions and report the driver | `PdoConnection` if PDO is available |
 | `Http\HttpClient` | Return non-2xx answers as `HttpResponse`; throw `HttpClientException` only on transport failure | `CurlHttpClient` |
 | `Http\BoundedHttpClient` | Also cap the response body while reading and pin a validated address; required for remote media | `CurlHttpClient`; test `FakeHttpClient` / `LocalHttpClient` |
@@ -134,6 +134,9 @@ production bootstrap.
 | `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
 | `LocalActorSearch` | Optional: search local account ids for `GET {mastodon.prefix}/search`; a directory that also implements this gets account search, otherwise the route answers `503 search_not_configured` for `type=accounts` | host-specific; `InMemoryActorDirectory` for tests/tools |
+| `LocalActorCount` | Optional: report the number of local accounts for instance stats; without it the count is `0` | host-specific; `InMemoryActorDirectory` |
+| `PostCount` | Optional: report live local posts for instance stats; without it the count is `0` | `InMemoryPostRepository`, `PdoPostRepository`; host adapter otherwise |
+| `RemoteDomainCount` | Optional: report distinct live remote-post hosts for instance stats; without it the count is `0` | `InMemoryRemotePostRepository`, `PdoRemotePostRepository`; host adapter otherwise |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
@@ -156,6 +159,17 @@ social/instance.url    absolute base URL, no trailing slash required
 social/instance.name   display name
 ```
 
+The public instance response also reads optional metadata from the same `social`
+app: `instance.description`, `instance.version`, `instance.contact_email` (with
+`instance.email` as a fallback), `instance.contact_account`,
+`instance.registrations`, `instance.approval_required`,
+`instance.invites_enabled`, `instance.languages` and `instance.thumbnail`. The
+booleans accept the normal `Config` truthy values; `languages` accepts a
+comma-separated list or a JSON array. They have no required value and no
+migration. `contact_account` is only advertised when the supplied
+`LocalActorDirectory` contains that id; a host without a directory remains
+responsible for the configured value.
+
 The media keys are optional and documented in
 [media](media.md#configuration). In particular, remote attachment ingestion
 is controlled by `social/media.remote_fetch` (default on), with
@@ -167,8 +181,11 @@ selects the path (default `/api/mastodon/v1`). Media upload uses the same
 answers `503 media_not_configured`. The prefix must not overlap `/api/v1` or
 the protocol paths. Search adds no key: status search uses the same post
 repository when it implements `PostSearchRepository`, and account search uses
-`LocalActorSearch` when the supplied directory implements it. See
-[Mastodon-compatible API](mastodon-api.md).
+`LocalActorSearch` when the supplied directory implements it. Instance stats
+use the optional `LocalActorCount`, `PostCount` and `RemoteDomainCount`
+capabilities; the normal assemblies wire the built-in repository and directory
+adapters automatically, while a custom adapter that omits a capability reports
+zero for that field. See [Mastodon-compatible API](mastodon-api.md).
 
 `instance.url` is what every actor, post and activity id is built from. It must
 be the public URL under which the core's routes are actually served. If that

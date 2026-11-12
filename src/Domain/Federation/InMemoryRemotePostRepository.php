@@ -18,7 +18,7 @@ use DateTimeImmutable;
  * It mirrors the SQL adapter's ordering, unique activity id and soft-delete
  * rules; the shared contract test is what keeps the two interchangeable.
  */
-final class InMemoryRemotePostRepository implements RemotePostRepository
+final class InMemoryRemotePostRepository implements RemotePostRepository, RemoteDomainCount
 {
 	public const MAX_ATTACHMENTS = 4;
 
@@ -131,6 +131,23 @@ final class InMemoryRemotePostRepository implements RemotePostRepository
 		}
 
 		$this->attachments[$activityId] = $attachmentIds;
+	}
+
+	public function remoteDomainCount(): int
+	{
+		$domains = [];
+		foreach ($this->posts as $post) {
+			if ($post->deletedAt !== null) {
+				continue;
+			}
+
+			$host = parse_url($post->actorId, PHP_URL_HOST);
+			if (is_string($host) && $host !== '') {
+				$domains[strtolower($host)] = true;
+			}
+		}
+
+		return count($domains);
 	}
 
 	public function attachmentIdsFor(array $activityIds): array

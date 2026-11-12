@@ -28,7 +28,7 @@ use function usort;
  * It applies exactly the ordering and visibility rules of the SQL
  * implementation, so behaviour cannot differ between the two unnoticed.
  */
-final class InMemoryPostRepository implements PostRepository, PostSearchRepository
+final class InMemoryPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
 	/**
 	 * @var array<string, Post>
@@ -138,6 +138,14 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 	public function authorPostCount(string $userId): int
 	{
 		return count($this->authorPosts($userId));
+	}
+
+	public function countLive(): int
+	{
+		return count(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted(),
+		));
 	}
 
 	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array

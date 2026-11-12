@@ -271,19 +271,15 @@ final class MastodonPresenter
 			'title' => $description['name'],
 			'short_description' => $description['description'],
 			'description' => $description['description'],
-			'email' => '',
+			'email' => (string) ($description['email'] ?? ''),
 			'version' => '4.2.0 (compatible; Aloha Social ' . $description['version'] . ')',
 			'urls' => ['streaming_api' => ''],
-			'stats' => [
-				'user_count' => 0,
-				'status_count' => 0,
-				'domain_count' => 0,
-			],
-			'thumbnail' => '',
-			'languages' => [],
-			'registrations' => false,
-			'approval_required' => true,
-			'invites_enabled' => false,
+			'stats' => is_array($description['stats'] ?? null) ? $description['stats'] : $this->instance->stats(),
+			'thumbnail' => (string) ($description['thumbnail'] ?? ''),
+			'languages' => is_array($description['languages'] ?? null) ? $description['languages'] : [],
+			'registrations' => (bool) ($description['registrations'] ?? false),
+			'approval_required' => (bool) ($description['approval_required'] ?? true),
+			'invites_enabled' => (bool) ($description['invites_enabled'] ?? false),
 			'configuration' => [
 				'statuses' => [
 					'max_characters' => 5000,
@@ -302,9 +298,33 @@ final class MastodonPresenter
 					'max_expiration' => Poll::MAX_EXPIRY_SECONDS,
 				],
 			],
-			'contact_account' => null,
+			'contact_account' => $this->contactAccount($description['contact_account'] ?? null),
 			'rules' => [],
 		];
+	}
+
+	/**
+	 * Projects the configured contact account only when it is a known local id.
+	 *
+	 * A stale configuration value must not make the public endpoint advertise
+	 * an account that cannot be opened. Without a local directory the host has
+	 * deliberately left account validation to itself, so the configured value
+	 * is still projected as a minimal account.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private function contactAccount(mixed $userId): ?array
+	{
+		if (!is_string($userId) || trim($userId) === '') {
+			return null;
+		}
+
+		$userId = trim($userId);
+		if ($this->localActors !== null && !$this->localActors->has($userId)) {
+			return null;
+		}
+
+		return $this->account($userId);
 	}
 
 	/**

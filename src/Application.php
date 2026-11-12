@@ -475,7 +475,7 @@ final readonly class Application
 			$activities,
 			$federationDelivery,
 		);
-		$instance = new InstanceInfo($config);
+		$instance = new InstanceInfo($config, $localActors, $posts, $remotePosts);
 		$localRelationships = $localActors === null
 			? null
 			: new LocalRelationshipService(

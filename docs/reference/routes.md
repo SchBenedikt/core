@@ -78,8 +78,31 @@ GET /api/v1/instance
 ```
 
 ```json
-{"instance": {"name": "Aloha Social", "url": "https://social.example", "api": "v1"}}
+{"instance": {
+  "name": "Aloha Social",
+  "description": "A small instance",
+  "version": "0.1.0",
+  "api": "v1",
+  "federation": true,
+  "email": "admin@social.example",
+  "contact_account": "alice",
+  "registrations": false,
+  "approval_required": true,
+  "invites_enabled": false,
+  "languages": ["de", "en"],
+  "thumbnail": "https://social.example/thumbnail.png",
+  "stats": {"user_count": 2, "status_count": 5, "domain_count": 3}
+}}
 ```
+
+The metadata comes from the optional `social/instance.*` keys documented in
+[configuration](configuration.md#keys); unset values use the
+defaults shown there. `stats` uses the optional `LocalActorCount`, `PostCount`
+and `RemoteDomainCount` capabilities on the existing directory and post
+repositories. A missing capability reports `0`; there is no statistics table,
+migration or cleanup job. The Mastodon compatibility prefix projects the same
+description and stats with its own field names; see
+[Mastodon-compatible API](../guides/mastodon-api.md#instance-metadata).
 
 ## Upload media
 

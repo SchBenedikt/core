@@ -295,6 +295,65 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame('2026-11-11T11:00:00.000Z', $shown->decodedBody()['poll']['expires_at']);
 	}
 
+	public function testForHostReportsInstanceMetadataAndSqlStats(): void
+	{
+		$database = $this->database();
+		(new PdoFollowingRepository($database))->insert(new FollowedActor(
+			'f-stats',
+			'alice',
+			self::BOB,
+			self::BOB_INBOX,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+		$app = $this->host(
+			$database,
+			new FakeHttpClient(),
+			new InMemoryActorResolver([
+				'https://remote.example/users/bob#main-key' => new RemoteActor(
+					self::BOB,
+					'https://remote.example/users/bob#main-key',
+					self::BOB_INBOX,
+					self::$remoteKey->publicKeyPem(),
+				),
+			]),
+			mastodon: true,
+		);
+
+		$post = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'a local post', 'visibility' => 'public'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $post->status);
+
+		$create = [
+			'id' => 'https://remote.example/activities/create-stats',
+			'type' => 'Create',
+			'actor' => self::BOB,
+			'object' => [
+				'id' => 'https://remote.example/notes/stats',
+				'type' => 'Note',
+				'attributedTo' => self::BOB,
+				'content' => 'a remote post',
+				'published' => '2026-11-11T10:01:00Z',
+			],
+		];
+		$inbox = $app->handle($this->signedInbox($create));
+		self::assertSame(202, $inbox->status, $inbox->body);
+
+		$instance = $app->handle(new Request('GET', '/api/mastodon/v1/instance'));
+
+		self::assertSame(200, $instance->status);
+		self::assertSame('Aloha Social', $instance->decodedBody()['title']);
+		self::assertSame([
+			'user_count' => 1,
+			'status_count' => 1,
+			'domain_count' => 1,
+		], $instance->decodedBody()['stats']);
+	}
+
 	public function testForHostStoresARemoteFollowNotificationOverSql(): void
 	{
 		$database = $this->database();

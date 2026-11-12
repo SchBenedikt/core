@@ -123,6 +123,17 @@ Status of the core, not a promise about dates.
   listing supports `max_id`/`since_id`/`min_id`, `types[]`/`exclude_types[]`
   and the `read:notifications` scope, and projects local actors or minimal
   remote actor URLs without a second account model.
+- Local Mastodon instance metadata: `GET {mastodon.prefix}/instance` and the
+  core `GET /api/v1/instance` now expose configurable description, version,
+  contact email/account, registration/approval/invite flags, languages,
+  thumbnail and real local statistics. The metadata comes from the existing
+  `social/instance.*` configuration; `user_count`/`status_count`/`domain_count`
+  come from optional count capabilities on the local directory and the
+  local/remote post repositories, so a custom adapter that cannot cheaply
+  count reports zero instead of forcing a scan. The contact account is hidden
+  when a supplied directory does not know it. No new table, migration or
+  cleanup job is needed. Tests cover configured values, defaults, stale
+  contacts, in-memory and SQL counts, and both HTTP projections.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
 - Security: AES-256-GCM secret box.
 - Documentation and CI across PHP 8.3, 8.4, 8.5.
@@ -135,7 +146,7 @@ Status of the core, not a promise about dates.
 
 - **Mastodon-compatible API**: the core now owns the additive,
   disabled-by-default compatibility subset under `social/mastodon.prefix`
-  (default `/api/mastodon/v1`): instance description, public timeline, status
+  (default `/api/mastodon/v1`): instance metadata and statistics, public timeline, status
   read/create/delete including local poll creation on an own status, local
   favourite/unfavourite, local follow/unfollow and relationship reads, local
   notification listing, media upload/update/delete, local account statuses and
@@ -170,7 +181,10 @@ Status of the core, not a promise about dates.
   `read:search`, and supports `type`, `limit`, `offset` and the local
   `following` filter. No search table or index migration is needed; hosts
   without a search implementation answer `503 search_not_configured` for the
-  affected type. The prefix is configurable and cannot overlap `/api/v1`; the
+  affected type. Instance metadata is projected from the optional
+  `social/instance.*` keys; the stats use the optional `LocalActorCount`,
+  `PostCount` and `RemoteDomainCount` capabilities over the existing stores,
+  with no new table or migration. The prefix is configurable and cannot overlap `/api/v1`; the
   whole surface answers `404 mastodon_api_disabled` when `social/mastodon.api`
   is off. See [Mastodon-compatible API](guides/mastodon-api.md). The full Mastodon
   server API is **not** done. Only these parts are genuinely external:
@@ -178,11 +192,12 @@ Status of the core, not a promise about dates.
   timelines and remote delivery; favourite federation (outbound `Like`/`Undo`
   and remote counts); boosts; remote notifications; streaming infrastructure;
   remote relationship/admin APIs; and migrations in an existing host database.
-  Domain/instance info, notification dismissal/unread state and narrower local
-  account/profile endpoints are locally implementable follow-ups, not host
-  prerequisites. Media upload/update/delete, local favourite bookkeeping,
-  local follow/unfollow/relationship reads, local notification listing,
-  local status/actor search and local poll creation are complete locally. The
+  Notification dismissal/unread state and narrower local account/profile
+  endpoints are locally implementable follow-ups, not host prerequisites.
+  Media upload/update/delete, local favourite bookkeeping, local
+  follow/unfollow/relationship reads, local notification listing, local
+  status/actor search, local poll creation and instance metadata/statistics
+  are complete locally. The
   migration for the local follow marker remains a host step: add
   `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
   `social_notification` from `NotificationSchema` before exposing the
@@ -215,14 +230,14 @@ The remaining items are host-owned migrations/integrations, the genuinely
 external parts of the two partially done stacks, and explicitly listed
 core-side follow-ups. There is no unlisted local vertical slice hiding in this
 table: the local media catch-up, thread/context, AT Protocol publishing and
-Mastodon compatibility (including media management, local favourites, local
-follow/relationships, notification listing, local search and poll creation)
-slices are recorded above.
+Mastodon compatibility (including instance metadata/statistics, media
+management, local favourites, local follow/relationships, notification listing,
+local search and poll creation) slices are recorded above.
 
 | Item | Seam |
 | --- | --- |
-| Local Mastodon follow-ups: domain/instance info beyond the current endpoint, narrower local account/profile endpoints and notification dismissal/unread state | core, over the existing post/account/notification repositories; no host deployment or remote fetch is required |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` plus `social_poll` migrations remain host steps |
+| Local Mastodon follow-ups: notification dismissal/unread state and narrower local account/profile endpoints | core, over the existing account/post/notification repositories; no host deployment or remote fetch is required |
+| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` plus `social_poll` migrations remain host steps |
 | AT Protocol account linking, authorization-code/PAR/revocation and full client/AppView extraction (OAuth session refresh is local) | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |

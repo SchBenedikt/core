@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Federation\RemoteDomainCount;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
@@ -39,6 +40,23 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		self::assertSame('2026-11-11T10:00:00Z', Time::format($found->publishedAt));
 		self::assertNull($found->deletedAt);
 		self::assertNull($repository->findByActivityId('missing'));
+	}
+
+	public function testCountsDistinctDomainsFromLiveRemoteActors(): void
+	{
+		$repository = $this->repository();
+		self::assertInstanceOf(RemoteDomainCount::class, $repository);
+
+		$repository->insert($this->remote('one', 'note-1', 'https://one.example/users/bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote('two', 'note-2', 'https://one.example/users/carol', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->remote('three', 'note-3', 'https://two.example/users/dave', '2026-11-11T10:02:00Z'));
+		$repository->softDeleteByActivityId(
+			'three',
+			'https://two.example/users/dave',
+			Time::parse('2026-11-11T11:00:00Z'),
+		);
+
+		self::assertSame(1, $repository->remoteDomainCount());
 	}
 
 	public function testActivityIdIsUnique(): void

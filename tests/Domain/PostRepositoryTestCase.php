@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 use AlohaSocial\Core\Domain\Post\Poll;
 use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostCount;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -282,6 +283,19 @@ abstract class PostRepositoryTestCase extends TestCase
 		// The link row survives the tombstone, so media deletion must still
 		// refuse rather than leave a dangling reference.
 		self::assertTrue($repository->isAttachmentLinked('a1'));
+	}
+
+	public function testCountLiveIncludesEveryVisibilityAndExcludesDeletedPosts(): void
+	{
+		$repository = $this->repository();
+		self::assertInstanceOf(PostCount::class, $repository);
+
+		$repository->insert($this->post('public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('followers', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('gone', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->softDelete('gone', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(2, $repository->countLive());
 	}
 
 	public function testSearchFindsOnlyLivePublicAndUnlistedContent(): void

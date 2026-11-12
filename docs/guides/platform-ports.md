@@ -28,9 +28,9 @@ makes the tests deterministic: `FrozenClock` moves only when a test moves it.
 
 ### Config
 
-A two-level store (`app`, `key`) with typed getters that take a default. The
-core reads `social/instance.url`, `social/instance.name` and the optional
-media limits (`media.max_bytes`, `media.thumbnail_max_dimension`,
+A two-level store (`app`, `key`) with typed getters that take a default. The core reads `social/instance.url`, `social/instance.name`, the optional
+public `instance.*` metadata (description, version, contact email/account,
+registration flags, languages and thumbnail) and the optional media limits (`media.max_bytes`, `media.thumbnail_max_dimension`,
 `media.remote_fetch`, `media.remote_max_bytes`, `media.remote_timeout_seconds`
 and `media.remote_max_redirects`) and `atproto.publish`; a host may store them
 in `config.php`, an `.env` file or the database. `Config` is not a secret store — private keys
@@ -94,12 +94,27 @@ provider where cryptography is not the subject. Account linking and the real
 credential store stay in the host; `InMemoryAtprotoSessionStore` is only the
 test/tool adapter. See [AT Protocol publishing](atproto.md).
 
+## Optional count capabilities
+
+Instance statistics do not add a required port. Three narrow capability
+interfaces extend the existing stores and are checked with `instanceof` by
+`InstanceInfo`: `LocalActorCount::localActorCount()`, `PostCount::countLive()`
+and `RemoteDomainCount::remoteDomainCount()`. The account directory and the
+local/remote post repositories already used by the host may implement them; a
+store that does not simply leaves the corresponding field at zero. This keeps
+`LocalActorDirectory`, `PostRepository` and `RemotePostRepository` unchanged for
+existing adapters and avoids a second statistics table or a scan hidden in the
+endpoint. The built-in in-memory directory, both local post repositories and
+both remote-post repositories implement the capabilities; the PDO remote-post
+adapter counts distinct live actor hosts in one query.
+
 ## Contract tests
 
 Several ports have a shared test case that every implementation must pass:
 
 - `tests/Platform/Storage/BlobStoreTestCase.php`
-- `tests/Domain/PostRepositoryTestCase.php`
+- `tests/Domain/PostRepositoryTestCase.php` (including the optional `PostCount` capability)
+- `tests/Domain/RemotePostRepositoryTestCase.php` (including the optional `RemoteDomainCount` capability)
 - `tests/Domain/AttachmentRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`

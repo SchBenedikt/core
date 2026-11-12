@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible instance metadata and local statistics:
+  `GET {mastodon.prefix}/instance` and the core `GET /api/v1/instance` now
+  expose configurable description, version, contact email/account,
+  registration/approval/invite flags, languages and thumbnail from the
+  existing `social/instance.*` keys. `stats` reports real `user_count`,
+  `status_count` and `domain_count` when the supplied directory/post/remote
+  stores implement the new optional `LocalActorCount`, `PostCount` and
+  `RemoteDomainCount` capabilities; a missing capability reports `0` instead
+  of scanning or inventing data. A configured contact account is hidden when
+  a supplied local directory does not know it. The in-memory and PDO local
+  post repositories and both remote-post repositories implement the counts,
+  including live-row filtering and distinct domains. There is no new table,
+  migration or cleanup job. Tests cover configured values, defaults, stale
+  contacts, the in-memory and SQL projections and the repository contracts.
+  See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local poll creation: `POST {mastodon.prefix}/statuses`
   accepts an optional Mastodon `poll` object with two to four options, each
   1–50 characters after trimming, and either `expires_in` (300–604800 seconds)

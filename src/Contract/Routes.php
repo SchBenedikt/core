@@ -297,7 +297,7 @@ final class Routes
 				handler: MastodonInstanceHandler::class,
 				requiresAuth: false,
 				rateLimit: '120/60',
-				summary: 'Mastodon-compatible instance description.',
+				summary: 'Mastodon-compatible instance description with configured metadata and local stats.',
 			),
 			new Route(
 				name: 'mastodon.media.upload',
