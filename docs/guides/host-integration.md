@@ -17,7 +17,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
-| ATProto record/TID publishing through the `AtprotoAccountResolver` and `AtprotoPublisher` ports | Account linking, OAuth/app-password sessions, token refresh and PDS credentials |
+| ATProto record/TID publishing and remote delete through the `AtprotoAccountResolver`, `AtprotoPublisher` and `AtprotoDeleter` ports | Account linking, OAuth/app-password sessions, token refresh and PDS credentials |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -109,7 +109,7 @@ The object exposes the parts a host needs:
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
-| `$app->atproto` | AT Protocol publishing service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
+| `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
 | `$app->mastodon` | Mastodon compatibility service; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
@@ -143,6 +143,7 @@ production bootstrap.
 | `ImageProcessor` | Produce a bounded thumbnail; the default GD adapter is complete for local use | `GdImageProcessor` |
 | `AtprotoAccountResolver` | Resolve a local user to a linked DID, handle, PDS URL and access token; refresh the token before returning it | none; host-specific |
 | `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client | `XrpcAtprotoPublisher`; fake in tests |
+| `AtprotoDeleter` | Delete the record this core published; the default XRPC adapter implements both write and delete | `XrpcAtprotoPublisher`; fake in tests |
 
 ### Config keys
 
@@ -428,8 +429,9 @@ host's own tests as well.
 The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It contains local image upload, validation and thumbnails, and remote
 image ingestion for incoming `Create`/`Announce` posts with SSRF, size,
-timeout and redirect guards. It does not contain an admin UI, the
-Mastodon-compatible API or an object-storage adapter. It does provide a
+timeout and redirect guards. It does not contain an admin UI, the full Mastodon server API or an
+object-storage adapter. The local Mastodon subset and AT Protocol remote delete
+are implemented. It does provide a
 bounded outbox backfill for missed `Create`/`Announce` activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the

@@ -374,11 +374,12 @@ maximum is 40, and generated links carry a non-default limit.
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
-AT Protocol has two domain-level host ports instead of new platform methods:
-`AtprotoAccountResolver` returns a linked account and `AtprotoPublisher` writes
-one record. `XrpcAtprotoPublisher` is the default adapter over `HttpClient`;
-fakes cover the network in tests. Account linking, OAuth/token refresh and PDS
-credentials remain host-owned.
+AT Protocol has three domain-level host ports instead of new platform methods:
+`AtprotoAccountResolver` returns a linked account, `AtprotoPublisher` writes
+one record and `AtprotoDeleter` removes it again. `XrpcAtprotoPublisher` is the
+default adapter for both transports over `HttpClient`; fakes cover the network
+in tests. Account linking, OAuth/token refresh and PDS credentials remain
+host-owned, so remote delete can only act on an account the host resolves.
 
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
@@ -414,7 +415,9 @@ genuinely owns the capability.
 - **End to end** — `Application::inMemory()` is a real object graph; the test
   writes a post over HTTP, drains the queue, and verifies the signature on the
   request that left. AT Protocol publishing follows the same pattern: a real
-  post and job, a fake XRPC adapter, and the resulting publication row. `InboundTimelineTest` delivers a signed Create, Announce
+  post and job, a fake XRPC adapter, and the resulting publication row. The
+  delete path starts at the real post-delete route, queues `atproto.delete`,
+  sends `deleteRecord`, removes the row and retries after a PDS failure. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `ApplicationTest` proves that two followers on
   one server sharing an advertised inbox produce one signed job to the shared

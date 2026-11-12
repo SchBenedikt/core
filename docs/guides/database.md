@@ -82,11 +82,12 @@ to the AT Protocol record written for one account. Its primary key is
 `(local_user_id, post_id)` and `(local_user_id, rkey)` is unique; `rkey` is
 the deterministic TID, `uri` is the PDS-returned `at://` URI and
 `published_at` is the canonical timestamp. The row is written only after the
-PDS accepted the record, so a failed publish leaves no partial row. Deleting
-the local row does not delete the remote record; a host that wants that must
-call `com.atproto.repo.deleteRecord` itself. `removeForPost()` is the cleanup
-hook and is not scheduled by the core. See
-[AT Protocol publishing](atproto.md).
+PDS accepted the record, so a failed publish leaves no partial row. A local
+post deletion queues `atproto.delete`, calls `com.atproto.repo.deleteRecord`
+and removes this row only after the PDS accepted it; a failed delete leaves
+the row for the normal retry. `removeForPost()` remains the cleanup hook for a
+host that deliberately drops a mapping. No new table or migration is added for
+remote delete. See [AT Protocol publishing](atproto.md).
 
 `social_attachment` stores only metadata; the original and thumbnail bytes live
 under the keys in the host's `BlobStore`. `source_url` is nullable for local

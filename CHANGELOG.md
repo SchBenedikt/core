@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- AT Protocol remote delete: a local post deletion now queues a durable
+  `atproto.delete` job for a record this core published. The new
+  `AtprotoDeleter` port is implemented by `XrpcAtprotoPublisher` through an
+  authenticated `POST /xrpc/com.atproto.repo.deleteRecord`; a missing record
+  (404) counts as already deleted. `AtprotoPublishService::scheduleDelete()`
+  only queues when a publication row exists, and `AtprotoDeleteHandler` removes
+  that row only after the PDS accepts the delete. A PDS failure keeps the row
+  for the normal retry backoff, while a deleted-before-publish post queues no
+  delete. No table or migration is added; the existing
+  `social_atproto_publication` row is the idempotency record. Account linking,
+  OAuth/session refresh, a full repository/AppView client, CAR/MST, media,
+  firehose and the Nextcloud extraction remain external; see
+  `docs/guides/atproto.md`.
 - Mastodon-compatible API (local subset): an additive, disabled-by-default
   compatibility surface under `social/mastodon.prefix` (default
   `/api/mastodon/v1`) with seven routes: instance, public timeline, status
@@ -38,9 +51,10 @@ All notable changes to this project are documented here. The format follows
   posts are refused with a stable reason; a PDS failure writes no publication
   row, and a retry uses the same rkey so `putRecord` is an upsert rather than a
   duplicate. The route manifest and OpenAPI export now have 26 routes.
-  Accounts/OAuth session refresh, linked-account storage, remote deletes,
-  media, AppView/CAR/MST/firehose and the extraction from the Nextcloud app
-  remain external; see `docs/guides/atproto.md`. The new table is created from
+  Accounts/OAuth session refresh, linked-account storage, media,
+  AppView/CAR/MST/firehose and the extraction from the Nextcloud app remain
+  external; remote delete is documented in the newer entry above. See
+  `docs/guides/atproto.md`. The new table is created from
   `AtprotoPublicationSchema::statements()`; hosts that do not create it must
   not enable the feature.
 - Shared inboxes and delivery batching: every actor document advertises

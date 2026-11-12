@@ -128,6 +128,7 @@ final class PostService
 
 		$deletedAt = Time::toSecondPrecision($this->clock->now());
 		$this->posts->softDelete($postId, $deletedAt);
+		$this->atproto?->scheduleDelete($post);
 
 		$this->enqueueDelivery($post, fn (): array => $this->activities->deleteNote($post, $deletedAt));
 	}

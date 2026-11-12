@@ -88,8 +88,8 @@ shared inboxes and batched delivery), inbound and outbound ActivityPub (signed
 signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 public text-only AT Protocol publishing foundation (account/publisher ports,
-deterministic TIDs, XRPC `putRecord`, idempotent publication rows and a
-disabled-by-default route), the optional disabled-by-default Mastodon
+deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
+rows, remote delete for published posts and a disabled-by-default route), the optional disabled-by-default Mastodon
 compatibility subset (instance, public timeline, status read/create/delete,
 account statuses, verify credentials; scopes, id-aware pagination and
 `Idempotency-Key`), the

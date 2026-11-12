@@ -25,8 +25,9 @@ interface AtprotoPublicationRepository
 	public function insert(AtprotoPublication $publication): void;
 
 	/**
-	 * Removes the local idempotency record. The remote record is not deleted;
-	 * host cleanup must use the AT URI separately.
+	 * Removes the local idempotency record after the remote record was deleted.
+	 * The caller must delete the remote record first; removing only the row
+	 * would leave an orphaned PDS record.
 	 *
 	 * @return bool whether a row was removed
 	 */

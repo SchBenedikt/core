@@ -43,6 +43,7 @@ use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
@@ -112,6 +113,7 @@ use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
@@ -415,6 +417,7 @@ final readonly class Application
 			$atprotoPublisher,
 			$queue,
 			$clock,
+			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
 		);
 		$postService = new PostService(
 			$posts,
@@ -579,10 +582,9 @@ final readonly class Application
 		if ($federationDelivery !== null) {
 			$jobHandlers = $jobHandlers->with(JobType::FEDERATION_DELIVER, $federationDelivery);
 		}
-		$jobHandlers = $jobHandlers->with(
-			JobType::ATPROTO_PUBLISH,
-			new AtprotoPublishHandler($atprotoService, $logger),
-		);
+		$jobHandlers = $jobHandlers
+			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
+			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger));
 
 		$routes = Routes::manifest(MastodonApiConfig::prefix($config));
 

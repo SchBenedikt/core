@@ -19,6 +19,7 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Service\Atproto\AtprotoPublishDisabledException;
 use AlohaSocial\Core\Service\Atproto\AtprotoPostRejectedException;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\InstanceInfo;
@@ -35,6 +36,8 @@ final class AtprotoPublishServiceTest extends TestCase
 
 	private AtprotoPublishService $service;
 
+	private InMemoryAtprotoPublicationRepository $publications;
+
 	private FakeHttpClient $http;
 
 	protected function setUp(): void
@@ -43,17 +46,20 @@ final class AtprotoPublishServiceTest extends TestCase
 		$this->posts = new InMemoryPostRepository();
 		$this->http = new FakeHttpClient();
 		$this->queue = new InMemoryJobQueue($clock, new RandomIdGenerator());
+		$this->publications = new InMemoryAtprotoPublicationRepository();
+		$publisher = new XrpcAtprotoPublisher($this->http);
 
 		$this->service = new AtprotoPublishService(
 			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'true']]),
 			$this->posts,
-			new InMemoryAtprotoPublicationRepository(),
+			$this->publications,
 			new InMemoryAtprotoAccountResolver([
 				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
 			]),
-			new XrpcAtprotoPublisher($this->http),
+			$publisher,
 			$this->queue,
 			$clock,
+			$publisher,
 		);
 	}
 
@@ -113,6 +119,50 @@ final class AtprotoPublishServiceTest extends TestCase
 		$this->expectException(\AlohaSocial\Core\Domain\Post\PostNotFoundException::class);
 
 		$this->service->publish('bob', $post->id);
+	}
+
+	public function testDeleteIsDisabledWithTheFeatureSwitch(): void
+	{
+		$clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
+		$service = new AtprotoPublishService(
+			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'false']]),
+			$this->posts,
+			$this->publications,
+			null,
+			null,
+			$this->queue,
+			$clock,
+		);
+
+		$this->expectException(AtprotoPublishDisabledException::class);
+
+		$service->deleteRemote('alice', 'post-1');
+	}
+
+	public function testDeleteWithoutAPublicationIsANoOp(): void
+	{
+		$this->service->deleteRemote('alice', 'post-1');
+
+		self::assertCount(0, $this->http->requests);
+		self::assertCount(0, $this->queue->pending());
+	}
+
+	public function testDeleteWithoutADeleterIsNotConfigured(): void
+	{
+		$clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
+		$service = new AtprotoPublishService(
+			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([]),
+			null,
+			$this->queue,
+			$clock,
+		);
+
+		$this->expectException(\AlohaSocial\Core\Service\Atproto\AtprotoNotConfiguredException::class);
+
+		$service->deleteRemote('alice', 'post-1');
 	}
 
 	public function testScheduleSkipsWithoutAConnectedAccount(): void

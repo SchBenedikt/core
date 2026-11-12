@@ -91,7 +91,9 @@ object that is not stored, the activity is still accepted as a no-op.
 ## Deleting a local post
 
 `DELETE /api/v1/posts/{id}` soft-deletes: the row keeps `deleted_at`, every
-local read filters it, and a `Delete` activity is queued for the audience.
+local read filters it, a `Delete` activity is queued for the audience, and an
+AT Protocol mirror (when enabled and published) queues its own idempotent
+remote delete.
 Keeping the row means a retried `Delete` still has a stable object id to refer
 to. There is no API route for fetching an individual remote post; remote
 content is read through the home timeline.

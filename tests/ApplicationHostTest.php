@@ -19,7 +19,10 @@ use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
@@ -31,6 +34,7 @@ use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\RandomIdGenerator;
@@ -219,6 +223,50 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame('<p>from sql</p>', $timeline->decodedBody()[0]['content']);
 	}
 
+	public function testForHostDeletesTheRemoteAtprotoRecordAfterALocalDelete(): void
+	{
+		$database = $this->database();
+		$http = new FakeHttpClient();
+		$app = $this->host(
+			$database,
+			$http,
+			atproto: true,
+			atprotoAccounts: new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+		);
+
+		$http->queueResponse(new HttpResponse(200, [], '{"uri":"at://did:plc:alice/app.bsky.feed.post/234567abcdefg"}'));
+		$post = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'sql delete'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $post->status);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . AtprotoPublicationSchema::TABLE,
+		));
+
+		$http->queueResponse(new HttpResponse(200, [], '{}'));
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . $post->decodedBody()['post']['id'],
+			userId: 'alice',
+		));
+		self::assertSame(204, $deleted->status);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(0, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . AtprotoPublicationSchema::TABLE,
+		));
+		self::assertSame(
+			'https://pds.example/xrpc/com.atproto.repo.deleteRecord',
+			$http->requests[1]['url'],
+		);
+	}
+
 	public function testForHostLeavesTheInboxAt503WithoutAnActorResolver(): void
 	{
 		$app = $this->host($this->database(), new FakeHttpClient());
@@ -256,6 +304,8 @@ final class ApplicationHostTest extends TestCase
 		FakeHttpClient $http,
 		?ActorResolver $actorResolver = null,
 		bool $mastodon = false,
+		bool $atproto = false,
+		?AtprotoAccountResolver $atprotoAccounts = null,
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
@@ -263,6 +313,7 @@ final class ApplicationHostTest extends TestCase
 					'instance.url' => 'https://localhost:8080',
 					'instance.name' => 'Aloha Social',
 					'mastodon.api' => $mastodon ? 'true' : 'false',
+					'atproto.publish' => $atproto ? 'true' : 'false',
 				],
 			]),
 			database: $database,
@@ -272,6 +323,7 @@ final class ApplicationHostTest extends TestCase
 			queue: new PdoJobQueue($database, $this->clock, new RandomIdGenerator()),
 			activityLog: new PdoActivityLog($database),
 			actorResolver: $actorResolver,
+			atprotoAccounts: $atprotoAccounts,
 			clock: $this->clock,
 		);
 	}

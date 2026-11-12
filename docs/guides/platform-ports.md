@@ -82,12 +82,14 @@ policy. Returning an empty list means the name did not resolve.
 
 ## Domain-level host ports
 
-AT Protocol adds two domain-level ports rather than new `Platform` methods:
+AT Protocol adds three domain-level ports rather than new `Platform` methods:
 `Domain\Atproto\AtprotoAccountResolver` returns the host's linked account for a
-local user (or `null`), and `Domain\Atproto\AtprotoPublisher` writes one record
-to a PDS. `XrpcAtprotoPublisher` is the production adapter over the existing
-`HttpClient`; tests use a fake. Account linking, token storage and refresh stay
-in the host. See [AT Protocol publishing](atproto.md).
+local user (or `null`), `Domain\Atproto\AtprotoPublisher` writes one record to
+a PDS, and `Domain\Atproto\AtprotoDeleter` removes a record this core
+published. `XrpcAtprotoPublisher` is the production adapter over the existing
+`HttpClient` for both transports; tests use a fake. Account linking, token
+storage and refresh stay in the host. See
+[AT Protocol publishing](atproto.md).
 
 ## Contract tests
 

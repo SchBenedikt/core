@@ -1,10 +1,11 @@
 # AT Protocol publishing
 
 The core owns a deliberately small, public, text-only AT Protocol publishing
-foundation. It does not own account linking, OAuth sessions, the AppView or a
-full repository client; those remain in the host or in a future standalone
-client. This guide describes the implemented seam, its limits and what a host
-must provide.
+foundation. It owns deterministic record writes and the matching remote
+record delete for mirrored posts. It does not own account linking, OAuth
+sessions, the AppView or a full repository client; those remain in the host or
+in a future standalone client. This guide describes the implemented seam, its
+limits and what a host must provide.
 
 ## What is implemented
 
@@ -27,15 +28,24 @@ must provide.
 - `Service\Atproto\AtprotoPublishService` schedules an automatic attempt after
   a post is written and implements the explicit publish operation. The
   `atproto.publish` job is handled by `AtprotoPublishHandler`.
+- `Domain\Atproto\AtprotoDeleter` is the delete-side port.
+  `XrpcAtprotoPublisher` implements it with an authenticated
+  `POST /xrpc/com.atproto.repo.deleteRecord`; the delete is idempotent, so a
+  missing record (404) and a retry after a lost response both succeed.
+  `AtprotoPublishService::scheduleDelete()` queues an `atproto.delete` job only
+  when a publication row exists; `AtprotoDeleteHandler` performs it and removes
+  the local row only after the PDS accepted the delete.
 
 ## What is deliberately not here
 
 Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
-truncated. There is no partial record, blob upload, image embed, edit, delete,
+truncated. There is no partial record, blob upload, image embed, edit,
 thread/reply, facet/link detection, AppView read, firehose consumer, CAR/MST
-repository implementation or OAuth session refresh in this slice.
+repository implementation or OAuth session refresh in this slice. Remote delete
+is implemented for records the core itself published; deleting arbitrary PDS
+records is not.
 
 Account linking, the account/token store, token refresh and PDS selection stay
 in the host. The core's `AtprotoAccountResolver` is intentionally a port, not a
@@ -46,12 +56,15 @@ answers `503 atproto_not_configured`.
 
 | App | Key | Default | Meaning |
 | --- | --- | --- | --- |
-| `social` | `atproto.publish` | `false` | Enables automatic scheduling and the explicit publish route. `false`/`0`/`off`/`no` makes the route answer `503 atproto_publish_disabled` and prevents new jobs. Existing publication rows are retained. |
+| `social` | `atproto.publish` | `false` | Enables automatic scheduling, the explicit publish route and the matching remote delete for published posts. `false`/`0`/`off`/`no` makes the route answer `503 atproto_publish_disabled` and prevents new publish/delete jobs. Existing publication rows are retained. |
 
 The feature is off by default, so upgrading the package does not start
 outbound network writes. Turning it on requires both an account resolver and an
 `AtprotoPublisher`; the production assembly supplies `XrpcAtprotoPublisher`
-from the host's `HttpClient`, while tests and tools can supply a fake.
+from the host's `HttpClient`, while tests and tools can supply a fake. Remote
+delete additionally needs the publisher to implement `AtprotoDeleter`; the
+default XRPC adapter does, so no extra host argument is needed unless a host
+replaces the publisher.
 
 ## Host wiring
 
@@ -109,6 +122,15 @@ The core never reads or writes the host's credential store.
    stored publication without another PDS request. `putRecord` is also an
    upsert, so even a lost response does not create a second record with the
    same key.
+6. `PostService::delete()` soft-deletes the post, then calls
+   `AtprotoPublishService::scheduleDelete()`. If a publication row exists, a
+   durable `atproto.delete` job is queued with `{user_id, post_id}`. The worker
+   resolves the account, calls `deleteRecord` with the stored rkey, and removes
+   the local publication row only after the PDS accepts the delete. A PDS or
+   transport failure leaves the row and is retried with the normal backoff; a
+   404 is treated as already deleted, so a lost success does not stay stuck.
+   A post deleted before its publish job ran has no publication row and queues
+   no delete; the pending publish job sees the deleted post and skips.
 
 The explicit route is independent of the automatic hook. It is useful for a
 retry button or a host that wants to opt in per post:
@@ -157,13 +179,14 @@ publication row and does not modify the local post.
 | `published_at` | `VARCHAR(20)` | canonical UTC timestamp |
 
 The primary key is `(local_user_id, post_id)` and `(local_user_id, rkey)` is
-unique. The core does not delete a remote record when a local post is deleted;
-that would need a separate `com.atproto.repo.deleteRecord` operation and is
-outside this slice. A host can remove the local idempotency row with
-`AtprotoPublicationRepository::removeForPost()` when it deliberately wants a
-later publish to create a new local mapping. It must delete the remote record
-through its own AT Protocol client first if that is the intent; removing only
-the row does not change the PDS.
+unique. A local post deletion queues the matching remote delete and removes the
+row only after the PDS accepted it. If the feature is disabled, the account is
+missing or the host supplied no `AtprotoDeleter`, the row is retained and the
+job is logged as skipped, so recovery is explicit rather than a silent local
+removal. `AtprotoPublicationRepository::removeForPost()` remains available for
+a host that deliberately wants to drop a local mapping, but removing only the
+row does not change the PDS. There is no new table or migration for remote
+delete.
 
 ## Testing
 
@@ -171,9 +194,12 @@ the row does not change the PDS.
 kernel: post creation, queued job, fake XRPC adapter, publication row and JSON.
 It covers automatic and explicit publication, repeat idempotency, an unsupported
 post, a disabled feature, auth, an unknown post, a missing account, content
-warning labels and a PDS failure that leaves no row. `AtprotoPublishServiceTest`
-covers the schedule skip rules for attachments, non-public posts and long text;
-`XrpcAtprotoPublisherTest` checks the exact XRPC request and malformed/refused
+warning labels and a PDS failure that leaves no row. Remote-delete coverage
+adds deleteRecord, publication removal, retry after a PDS failure, a 404 as
+idempotent success and the no-publication/no-double-job cases.
+`AtprotoPublishServiceTest` covers the schedule skip rules for attachments,
+non-public posts and long text plus disabled/not-configured deletion;
+`XrpcAtprotoPublisherTest` checks the exact XRPC requests and malformed/refused
 responses; `TidTest` and the repository contract cover the protocol and
 persistence primitives.
 
@@ -183,12 +209,15 @@ The full AT Protocol stack is still host/app work:
 
 - account linking UI and callback, OAuth or app-password flow, token refresh,
   revocation and per-account PDS discovery;
-- a full repository client (CAR/MST, record listing, delete/update), AppView
-  reads, firehose consumption and blob upload;
+- a full repository client (CAR/MST, arbitrary record listing/update),
+  AppView reads, firehose consumption and blob upload;
 - media embeds and image processing for AT Protocol;
 - reply/thread mapping, facets, mentions and link cards;
-- migrating the existing AT Protocol implementation out of the Nextcloud app
-  and deleting remote records on local deletion.
+-   migrating the existing AT Protocol implementation out of the Nextcloud app.
+
+Remote delete for records published by this core is no longer in this list: it
+is implemented locally. Deleting records that were created outside this core,
+and full account/AppView extraction, remain external.
 
 Those are tracked in the [roadmap](../roadmap.md) as the remaining part of the
 AT Protocol stack, not as part of this publishing foundation.

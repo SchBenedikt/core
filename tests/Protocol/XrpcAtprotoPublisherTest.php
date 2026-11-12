@@ -54,6 +54,41 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		self::assertSame('hello', $body['record']['text']);
 	}
 
+	public function testItSendsAnAuthenticatedDeleteRecordAndAccepts404AsIdempotent(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(404, [], '{"error":"RecordNotFound"}'));
+
+		(new XrpcAtprotoPublisher($http))->delete($this->account(), '234567abcdefg');
+
+		self::assertCount(1, $http->requests);
+		$request = $http->requests[0];
+		self::assertSame('POST', $request['method']);
+		self::assertSame('https://pds.example/xrpc/com.atproto.repo.deleteRecord', $request['url']);
+		self::assertSame('Bearer secret-token', $request['headers']['Authorization']);
+
+		$body = json_decode($request['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('did:plc:alice', $body['repo']);
+		self::assertSame('app.bsky.feed.post', $body['collection']);
+		self::assertSame('234567abcdefg', $body['rkey']);
+		self::assertArrayNotHasKey('record', $body);
+	}
+
+	public function testADeleteRefusalCarriesTheStatusButNoBody(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(401, [], '{"error":"InvalidToken","message":"secret"}'));
+
+		try {
+			(new XrpcAtprotoPublisher($http))->delete($this->account(), '234567abcdefg');
+			self::fail('The deleter should have failed.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(401, $exception->status);
+			self::assertStringNotContainsString('secret', $exception->getMessage());
+			self::assertStringNotContainsString('InvalidToken', $exception->getMessage());
+		}
+	}
+
 	public function testANonSuccessfulAnswerCarriesTheStatusButNoBody(): void
 	{
 		$http = new FakeHttpClient();

@@ -91,6 +91,80 @@ final class AtprotoPublishTest extends TestCase
 		self::assertNotNull($this->publications->findForPost(self::ALICE, $post));
 	}
 
+	public function testDeletingAPostRemovesTheRemoteRecordAndPublication(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+		$post = $this->createPost($app, 'delete me');
+		self::assertSame(1, $app->worker->runOnce());
+
+		$publication = $this->publications->findForPost(self::ALICE, $post);
+		self::assertNotNull($publication);
+
+		$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . rawurlencode($post),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(204, $deleted->status);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertCount(2, $this->http->requests);
+
+		$request = $this->http->requests[1];
+		self::assertSame('POST', $request['method']);
+		self::assertSame('https://pds.example/xrpc/com.atproto.repo.deleteRecord', $request['url']);
+		$body = json_decode($request['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('did:plc:alice', $body['repo']);
+		self::assertSame('app.bsky.feed.post', $body['collection']);
+		self::assertSame($publication->rkey, $body['rkey']);
+		self::assertArrayNotHasKey('record', $body);
+
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+		self::assertSame(0, $app->worker->runOnce(), 'A second delete must not create a second job.');
+	}
+
+	public function testAFailedRemoteDeleteKeepsThePublicationAndRetries(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+		$post = $this->createPost($app, 'retry delete');
+		self::assertSame(1, $app->worker->runOnce());
+
+		$this->http->queueResponse(new HttpResponse(500, [], '{"error":"InternalError"}'));
+		$app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . rawurlencode($post),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertNotNull($this->publications->findForPost(self::ALICE, $post));
+
+		$this->clock->advance(30);
+		$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
+	public function testDeletingAnUnpublishedPostDoesNotQueueARemoteDelete(): void
+	{
+		$app = $this->app();
+		$post = $this->createPost($app, 'never published');
+
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . rawurlencode($post),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(204, $deleted->status);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertCount(0, $this->http->requests);
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
 	public function testTheExplicitRoutePublishesAndReturnsTheSameOnRepeat(): void
 	{
 		$app = $this->app();

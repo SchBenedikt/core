@@ -21,6 +21,8 @@ final class JobType
 
 	public const ATPROTO_PUBLISH = 'atproto.publish';
 
+	public const ATPROTO_DELETE = 'atproto.delete';
+
 	private function __construct()
 	{
 	}

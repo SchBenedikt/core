@@ -22,7 +22,7 @@ the database — the core does not care.
 | `social` | `thread.max_bytes` | no | Hard per-response body limit for a thread object or replies collection; defaults to 1 MiB, clamped to 1 byte–5 MiB |
 | `social` | `thread.timeout_seconds` | no | Per-hop thread fetch timeout; defaults to 10, clamped to 1–30 |
 | `social` | `thread.max_redirects` | no | Redirects followed per thread fetch; defaults to 3, clamped to 0–5 |
-| `social` | `atproto.publish` | no | Enables the AT Protocol publication job and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher` in the assembly |
+| `social` | `atproto.publish` | no | Enables the AT Protocol publication job, the matching remote delete and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher`; remote delete also needs an `AtprotoDeleter` (the default XRPC publisher implements both) |
 | `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
 | `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
 
@@ -57,15 +57,20 @@ to the whole response. Depth and reply limits are applied after fetching, so a
 collection can be read up to the body limit and then truncated to
 `thread.max_replies`; the cache never receives the truncated-away nodes.
 
-With `atproto.publish` disabled, post creation schedules no AT Protocol job and
-the explicit route answers `503 atproto_publish_disabled` without a PDS
-request. Existing rows in `social_atproto_publication` remain; turning the
-switch back on does not publish old posts automatically and does not delete
-remote records. With the switch enabled but no resolver/publisher assembled,
-the route answers `503 atproto_not_configured`. The feature only mirrors
-public text posts without attachments; other posts are skipped automatically
-and refused with `422 atproto_post_unsupported` when published explicitly.
-See [AT Protocol publishing](../guides/atproto.md).
+With `atproto.publish` disabled, post creation and post deletion schedule no
+AT Protocol job and the explicit route answers `503 atproto_publish_disabled`
+without a PDS request. Existing rows in `social_atproto_publication` remain;
+turning the switch back on does not publish old posts automatically and does
+not delete remote records that were orphaned while it was off. A host that
+wants to recover such a row has the stored `uri`/`rkey` and can delete it with
+its own AT Protocol client, then remove the row with
+`AtprotoPublicationRepository::removeForPost()`. With the switch enabled but
+no resolver/publisher assembled, the route answers `503
+atproto_not_configured`; without an `AtprotoDeleter` a post deletion queues no
+job while publishing still works. The feature only mirrors public text posts
+without attachments; other posts are skipped automatically and refused with
+`422 atproto_post_unsupported` when published explicitly. See
+[AT Protocol publishing](../guides/atproto.md).
 
 Shared inboxes have no configuration key. Both inbox routes are controlled by
 the same prerequisites as the normal inbox: without an actor resolver, an

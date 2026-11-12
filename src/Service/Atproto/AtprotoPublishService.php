@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
@@ -48,6 +49,7 @@ final class AtprotoPublishService
 		private readonly ?AtprotoPublisher $publisher,
 		private readonly JobQueue $queue,
 		private readonly Clock $clock,
+		private readonly ?AtprotoDeleter $deleter = null,
 	) {
 	}
 
@@ -76,6 +78,73 @@ final class AtprotoPublishService
 			'user_id' => $post->authorId,
 			'post_id' => $post->id,
 		]);
+	}
+
+	/**
+	 * Queues a best-effort remote delete after a local post was soft-deleted.
+	 *
+	 * Only a post with a stored publication needs a remote delete. A post whose
+	 * publish job has not run yet has no remote record; its queued publish job
+	 * will see the deleted post and skip.
+	 */
+	public function scheduleDelete(Post $post): void
+	{
+		if (!$this->isEnabled() || !$this->isDeleteConfigured()) {
+			return;
+		}
+
+		if ($this->publications->findForPost($post->authorId, $post->id) === null) {
+			return;
+		}
+
+		$this->queue->push(JobType::ATPROTO_DELETE, [
+			'user_id' => $post->authorId,
+			'post_id' => $post->id,
+		]);
+	}
+
+	/**
+	 * Deletes the remote AT Protocol record for a local post and removes the
+	 * local publication row. Repeating this operation is a no-op.
+	 *
+	 * @throws AtprotoPublishDisabledException
+	 * @throws AtprotoNotConfiguredException
+	 * @throws AtprotoAccountNotConnectedException
+	 * @throws PostNotFoundException when a still-present post belongs to another user
+	 * @throws \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException
+	 */
+	public function deleteRemote(string $localUserId, string $postId): void
+	{
+		if (!$this->isEnabled()) {
+			throw new AtprotoPublishDisabledException();
+		}
+
+		if (!$this->isDeleteConfigured()) {
+			throw new AtprotoNotConfiguredException();
+		}
+
+		$post = $this->posts->find($postId);
+		if ($post !== null && $post->authorId !== $localUserId) {
+			throw new PostNotFoundException($postId);
+		}
+
+		$publication = $this->publications->findForPost($localUserId, $postId);
+		if ($publication === null) {
+			return;
+		}
+
+		$account = $this->accounts?->resolve($localUserId);
+		if ($account === null) {
+			throw new AtprotoAccountNotConnectedException();
+		}
+
+		$deleter = $this->deleter;
+		if ($deleter === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+
+		$deleter->delete($account, $publication->rkey);
+		$this->publications->removeForPost($localUserId, $postId);
 	}
 
 	/**
@@ -157,6 +226,11 @@ final class AtprotoPublishService
 	private function isConfigured(): bool
 	{
 		return $this->accounts !== null && $this->publisher !== null;
+	}
+
+	private function isDeleteConfigured(): bool
+	{
+		return $this->accounts !== null && $this->deleter !== null;
 	}
 
 	private function rejectionReason(Post $post): ?string

@@ -26,8 +26,8 @@ Implemented and tested here:
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, individual and shared inbox resolution, batched post delivery, signed `Follow`/`Undo` delivery |
 | Inbound federation | signed `POST /inbox` and `/inbox/shared`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up with historical media repair, bounded on-demand thread/context fetching and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
-| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing for public text posts |
-| AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`, an idempotent publication table with in-memory/PDO adapters, and a disabled-by-default publish route; the full OAuth/AppView/repository stack is still external (see the [guide](docs/guides/atproto.md)) |
+| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
+| AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route and an idempotent remote delete for core-published records; the full OAuth/AppView/repository stack is still external (see the [guide](docs/guides/atproto.md)) |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 33 routes and its JSON export |
 | Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, account statuses, verify credentials) over the same posts, with scopes, id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
@@ -149,7 +149,9 @@ path against SQL repositories. `AtprotoPublishTest` drives post creation through
 the queued AT Protocol job to the XRPC request and publication row, including
 repeat idempotency, unsupported posts, disabled/auth/missing-account and PDS
 failure paths; the XRPC adapter, record builder, TID and publication
-repositories have their own tests. `MastodonApiTest` drives the optional
+repositories have their own tests. Remote delete is covered through the real
+post-delete route, the queued job, the XRPC `deleteRecord` request, retry after
+a PDS failure and the no-publication/no-duplicate cases. `MastodonApiTest` drives the optional
 compatibility routes through the real kernel: instance, public timeline,
 create (form and JSON), read, account statuses, verify, delete, scopes,
 disabled, custom prefix, cursor pagination, idempotency and invalid media.

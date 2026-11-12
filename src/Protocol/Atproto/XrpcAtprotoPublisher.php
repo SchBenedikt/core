@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Protocol\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Platform\Http\HttpClient;
@@ -27,9 +28,11 @@ use function is_string;
  * only remote service this class talks to, and the access token is sent only
  * in the Authorization header.
  */
-final class XrpcAtprotoPublisher implements AtprotoPublisher
+final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 {
 	public const ENDPOINT = '/xrpc/com.atproto.repo.putRecord';
+
+	public const DELETE_ENDPOINT = '/xrpc/com.atproto.repo.deleteRecord';
 
 	public function __construct(
 		private readonly HttpClient $http,
@@ -84,5 +87,43 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher
 		}
 
 		return $uri;
+	}
+
+	public function delete(AtprotoAccount $account, string $rkey): void
+	{
+		$url = rtrim($account->pdsUrl, '/') . self::DELETE_ENDPOINT;
+
+		try {
+			$body = json_encode([
+				'repo' => $account->did,
+				'collection' => AtprotoPostRecord::COLLECTION,
+				'rkey' => $rkey,
+			], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+		} catch (JsonException) {
+			throw new AtprotoPublishFailedException(0, 'The AT Protocol record key could not be encoded.');
+		}
+
+		try {
+			$response = $this->http->request(
+				'POST',
+				$url,
+				[
+					'Authorization' => 'Bearer ' . $account->accessToken,
+					'Content-Type' => 'application/json',
+					'Accept' => 'application/json',
+				],
+				$body,
+				20,
+			);
+		} catch (HttpClientException) {
+			throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
+		}
+
+		// A missing record already has the desired end state. Treat it as a
+		// successful idempotent delete so a retry after a lost response or a
+		// host-side cleanup can finish.
+		if (!$response->isSuccessful() && $response->status !== 404) {
+			throw new AtprotoPublishFailedException($response->status, 'The AT Protocol PDS refused the delete.');
+		}
 	}
 }
