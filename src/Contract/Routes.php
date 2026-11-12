@@ -37,6 +37,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
@@ -288,6 +289,16 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'Mastodon-compatible instance description.',
+			),
+			new Route(
+				name: 'mastodon.media.upload',
+				method: 'POST',
+				path: $mastodon . '/media',
+				handler: MastodonMediaUploadHandler::class,
+				requiresAuth: true,
+				rateLimit: '20/900',
+				requiredScopes: ['write:media'],
+				summary: 'Upload one image through the Mastodon shape.',
 			),
 			new Route(
 				name: 'mastodon.timelines.public',

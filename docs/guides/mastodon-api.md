@@ -17,23 +17,24 @@ Locally implemented (core):
 - `GET /timelines/public`
 - `GET /statuses/{id}`
 - `POST /statuses`
+- `POST /media`
 - `DELETE /statuses/{id}`
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
 
-The local subset covers public/unlisted/followers-only text posts and local
-media attachments that already exist. It deliberately does **not** implement
+The local subset covers public/unlisted/followers-only text posts, media
+upload and local media attachments. It deliberately does **not** implement
 remote timelines, favourites, boosts, notifications, streaming, polls,
 scheduled posts, filters, followed tags, lists, OAuth authorization/token
-endpoints, media upload, search, admin APIs or the full account/profile
-surface. Those remain external work; see the section at the end.
+endpoints, search, admin APIs or the full account/profile surface. Those
+remain external work; see the section at the end.
 
 ## Configuration and prefix
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all seven routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all eight routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -61,6 +62,7 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | Route | Auth | Required scope | Rate limit |
 | --- | --- | --- | --- |
 | `GET {prefix}/instance` | no | — | 120 / 60 s |
+| `POST {prefix}/media` | yes | `write:media` | 20 / 900 s |
 | `GET {prefix}/timelines/public` | no | — | 60 / 60 s |
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
@@ -68,16 +70,17 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 
-A parent scope grants its children (`read` grants `read:accounts`); a granular
-scope does not grant its parent. `*` grants everything. A token with too few
-scopes gets `403 insufficient_scope`. The host still owns bearer parsing, token
-expiry/revocation and the actual rate limiter; the route manifest only declares
-the budget, exactly like the rest of the core API.
+A parent scope grants its children (`read` grants `read:accounts`, `write`
+grants `write:media`); a granular scope does not grant its parent. `*` grants
+everything. A token with too few scopes gets `403 insufficient_scope`. The host
+still owns bearer parsing, token expiry/revocation and the actual rate limiter;
+the route manifest only declares the budget, exactly like the rest of the core
+API.
 
 The local-account directory, when supplied, is checked for
-`verify_credentials`, status creation and account statuses. Without a
-directory the core cannot distinguish local from remote account ids; a host
-that enables this API should always pass one.
+`verify_credentials`, status creation, media upload and account statuses.
+Without a directory the core cannot distinguish local from remote account ids;
+a host that enables this API should always pass one.
 
 ## Reading statuses
 
@@ -128,7 +131,48 @@ Another account's status, a missing status or an already deleted status is
 `404 not_found`; the ownership check happens in `PostService`, not in a
 handler copy.
 
-### Idempotency
+### Uploading media
+
+`POST /media` accepts `multipart/form-data` with a `file` field and an optional
+`description` field, the same envelope as `POST /api/v1/media`. `alt_text` is
+accepted as a fallback for clients that used the core name. The bytes are
+validated and stored by the same `MediaService`: JPEG, PNG and WebP up to 5
+MiB and 40 megapixels, with a bounded thumbnail. `focus` is ignored because the
+core has no crop metadata. A successful upload answers `200` with a Mastodon
+attachment:
+
+```json
+{
+  "id": "…",
+  "type": "image",
+  "url": "https://social.example/api/v1/media/…",
+  "preview_url": "https://social.example/api/v1/media/…?variant=thumbnail",
+  "remote_url": null,
+  "preview_remote_url": null,
+  "text_url": null,
+  "meta": {"original": {"width": 1200, "height": 800,
+    "size": "1200x800", "aspect": 1.5}, "small": {…}},
+  "description": "A cat on a keyboard",
+  "blurhash": null
+}
+```
+
+Use the returned `id` in `media_ids` on `POST /statuses`. A rejected upload
+answers `400 invalid_multipart`, `413 payload_too_large`, `422
+validation_failed` with `error.fields.file` or `error.fields.description`, or
+`503 media_not_configured`/`media_storage_unavailable`; it leaves neither a
+metadata row nor a blob. An instance without a `BlobStore`-backed
+`MediaService` cannot serve this route and answers `503 media_not_configured`.
+
+An optional `Idempotency-Key` makes a retry safe. The core derives a
+deterministic internal `source_url` from the local user and the key and passes
+it to `MediaService`, whose existing source-URL lookup returns the original
+attachment before writing again. The key is scoped to the user, a repeat
+returns the same attachment with no second row or blob, and a different key
+creates a distinct attachment. A failed first attempt stores nothing, so a
+retry can succeed. This needs no second table or cleanup job.
+
+### Status idempotency
 
 Send `Idempotency-Key: <client-key>` on `POST /statuses`. The core derives a
 deterministic post id from the local user id and the key and passes it to
@@ -170,6 +214,8 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | --- | --- | --- |
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off |
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
+| `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
+| `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility or `in_reply_to_id` in this slice |
 | `validation_failed` | 422 | Missing/invalid status fields or media ids; see `error.fields` |
 | `not_found` | 404 | Missing/private status, unknown cursor or unknown local account |
@@ -181,21 +227,26 @@ invent a second error shape for the compatibility surface.
 ## Database and cleanup
 
 No new table is needed. Statuses live in `social_post` /
-`social_post_attachment`; idempotency uses the primary key and a deterministic
-id. There is no migration for this slice. Deleting a status follows the normal
-soft-delete path; attachment rows and blobs are governed by the existing media
-cleanup policy, not duplicated here.
+`social_post_attachment`; uploaded images use `social_attachment` and the same
+`BlobStore` as `/api/v1/media`. Status idempotency uses the primary key and a
+deterministic post id; media idempotency uses the existing unique
+`source_url` column with a deterministic internal key. There is no migration
+for this slice. Deleting a status follows the normal soft-delete path;
+attachment rows and blobs are governed by the existing media cleanup policy,
+not duplicated here.
 
 ## OpenAPI and tests
 
-The seven routes are in the manifest with auth, scope and rate-limit metadata.
+The eight routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
+media upload (success, description, media-in-status, auth, scope, disabled,
+missing/invalid/corrupt/oversized file, no orphan rows or blobs, idempotency),
 timeline, create (JSON and form), read, account statuses, verify, delete,
-scopes, disabled, custom prefix, cursor, idempotency and invalid-media cases.
-`MastodonCompatibilityTest` covers prefix validation, scope matching and route
-metadata. The post repository contract now covers the id-aware cursor and
-duplicate-id behavior used by the API.
+custom prefix, cursor and invalid-media cases. `MastodonCompatibilityTest`
+covers prefix validation, scope matching and route metadata. The post
+repository contract now covers the id-aware cursor and duplicate-id behavior
+used by the API; no new repository contract is introduced.
 
 ## What remains external
 
@@ -206,7 +257,7 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - Remote statuses, public/remote timelines, favourites, boosts, bookmarks,
   notifications, streaming and search need remote data the core does not
   fetch for this surface.
-- Media upload, polls, scheduled posts, filters, lists and the full account
+- Polls, scheduled posts, filters, lists and the full account
   profile/relationship APIs are separate features.
 - Follow/follower endpoints and moderation/admin APIs are not part of this
   slice.

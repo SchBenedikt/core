@@ -80,11 +80,13 @@ final class MastodonCompatibilityTest extends TestCase
 		$delete = $manifest->find('mastodon.statuses.delete');
 		$verify = $manifest->find('mastodon.accounts.verify_credentials');
 		$public = $manifest->find('mastodon.timelines.public');
+		$media = $manifest->find('mastodon.media.upload');
 
 		self::assertNotNull($create);
 		self::assertNotNull($delete);
 		self::assertNotNull($verify);
 		self::assertNotNull($public);
+		self::assertNotNull($media);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
 		self::assertSame('30/900', $create->rateLimit);
@@ -92,5 +94,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:accounts'], $verify->requiredScopes);
 		self::assertFalse($public->requiresAuth);
 		self::assertSame('/api/mastodon/v1/timelines/public', $public->path);
+		self::assertTrue($media->requiresAuth);
+		self::assertSame(['write:media'], $media->requiredScopes);
+		self::assertSame('20/900', $media->rateLimit);
+		self::assertSame('/api/mastodon/v1/media', $media->path);
 	}
 }

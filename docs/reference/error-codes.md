@@ -64,8 +64,11 @@ insufficient_scope`. An unknown `max_id`/`since_id`/`min_id`, a missing or
 deleted status, a private status for anyone but its author, and an unknown
 local account are all `404 not_found`. `direct` visibility and
 `in_reply_to_id` are `422 unsupported_parameter`; other input problems use
-`422 validation_failed` with `error.fields`. See
-[Mastodon-compatible API](../guides/mastodon-api.md).
+`422 validation_failed` with `error.fields`. Media upload reuses the core media
+codes: `400 invalid_multipart`, `413 payload_too_large`, `422
+validation_failed`, `503 media_not_configured` and `503
+media_storage_unavailable`; `write:media` is enforced like every other declared
+scope. See [Mastodon-compatible API](../guides/mastodon-api.md).
 
 ## Remote thread failures
 

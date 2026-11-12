@@ -37,6 +37,7 @@ defaults to `/api/mastodon/v1`).
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
 | `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |
+| `mastodon.media.upload` | `POST` | `/api/mastodon/v1/media` | yes, `write:media` | 20 / 900 s |
 | `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
@@ -454,7 +455,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The seven routes above are additive and disabled by default. Their paths use
+The eight routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -478,6 +479,26 @@ unsupported_parameter` in this slice. The write goes through `PostService`, so
 validation, ownership, soft deletion and delivery are identical to
 `/api/v1/posts`. `Idempotency-Key` makes a retry return the same status
 instead of inserting a duplicate.
+
+To upload an image first, send the same multipart envelope as
+`/api/v1/media`:
+
+```http
+POST /api/mastodon/v1/media
+Authorization: Bearer …
+Content-Type: multipart/form-data; boundary=…
+
+file=@cat.png;type=image/png
+description=A cat on a keyboard
+```
+
+`200` with the Mastodon attachment shape (`id`, `type`, `url`, `preview_url`,
+`meta`, `description`, …). JPEG, PNG and WebP are accepted up to 5 MiB and 40
+megapixels; the `id` can then be used in `media_ids`. `focus` is ignored. An
+optional `Idempotency-Key` makes a retry return the same attachment without a
+second row or blob. Errors: `400 invalid_multipart`, `413 payload_too_large`,
+`422 validation_failed` with `error.fields`, `503 media_not_configured` and
+`503 media_storage_unavailable`; a rejected upload leaves no row or blob.
 
 Pagination accepts `limit` (1–40), `max_id`, `since_id` and `min_id`; a
 non-empty page carries a `Link` with `rel="next"`. `max_id` cannot be combined

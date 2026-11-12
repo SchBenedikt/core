@@ -9,19 +9,14 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Api;
 
-use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
-use AlohaSocial\Core\Http\MultipartFormData;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\ValidationException;
-
-use function strlen;
-use function trim;
 
 /**
  * `POST /api/v1/media`
@@ -31,8 +26,6 @@ use function trim;
  */
 final class UploadMediaHandler implements Handler
 {
-	private const REQUEST_OVERHEAD_BYTES = 131_072;
-
 	public function __construct(
 		private readonly ?MediaService $media,
 	) {
@@ -49,24 +42,10 @@ final class UploadMediaHandler implements Handler
 			throw new HttpException(503, 'media_not_configured', 'Media storage is not configured.');
 		}
 
-		if (strlen($request->body) > Attachment::MAX_BYTES + self::REQUEST_OVERHEAD_BYTES) {
-			throw new HttpException(413, 'payload_too_large', 'The upload is too large.');
-		}
-
-		$form = MultipartFormData::fromRequest($request);
-		$file = $form->file('file');
-		if ($file === null) {
-			throw HttpException::validationFailed(['file' => 'A file field is required.']);
-		}
-
-		$altText = $form->field('alt_text');
-		$altText = $altText === null ? null : trim($altText);
-		if ($altText === '') {
-			$altText = null;
-		}
+		$input = MediaUploadInput::fromRequest($request);
 
 		try {
-			$attachment = $this->media->upload($userId, $file->contents, $altText);
+			$attachment = $this->media->upload($userId, $input->bytes, $input->altText);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
 		} catch (StorageException) {

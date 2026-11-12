@@ -178,6 +178,16 @@ final class MastodonPresenter
 	}
 
 	/**
+	 * @param array<string, mixed> $attachment a presented attachment from MediaService
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function media(array $attachment): array
+	{
+		return $this->mediaAttachment($attachment);
+	}
+
+	/**
 	 * @param array<string, mixed> $attachment
 	 *
 	 * @return array<string, mixed>

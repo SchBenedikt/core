@@ -260,9 +260,23 @@ POST {mastodon.prefix}/statuses
 Reads project the same `social_post` rows through `MastodonPresenter`; there is
 no compatibility table. The deterministic post id (`mastodon-` + hash of user
 and key) makes an idempotent retry collide with the existing primary key and
-return the stored row. The prefix is validated against `/api/v1` and the
-protocol paths at boot, and `MastodonApiGate` answers `404
-mastodon_api_disabled` before auth while the switch is off. Pagination uses the
+return the stored row. Media upload reuses the same service as the core route:
+
+```
+POST {mastodon.prefix}/media
+  └─ MastodonMediaUploadHandler  parse multipart, description/alt_text, Idempotency-Key
+      └─ MastodonService::uploadMedia
+          └─ MediaService::upload   same validation, thumbnail and cleanup as /api/v1/media
+              ├─ BlobStore::put       original + thumbnail
+              └─ AttachmentRepository::insert   social_attachment
+```
+
+The response is a projection in `MastodonPresenter`, not a second attachment
+model. A client idempotency key becomes a deterministic internal `source_url`,
+so `MediaService`'s existing source lookup returns the original attachment on a
+retry; no idempotency table is added. `MastodonApiGate` answers `404
+mastodon_api_disabled` before auth while the switch is off. The prefix is
+validated against `/api/v1` and the protocol paths at boot. Pagination uses the
 id-aware cursor on `PostRepository`, not an offset. See
 [Mastodon-compatible API](guides/mastodon-api.md).
 
@@ -412,7 +426,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, media upload, polls, search, account/admin and relationship APIs) | host/integration work over the completed local compatibility subset; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media upload; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -468,7 +482,7 @@ genuinely owns the capability.
   oversized/slow targets. `CurlHttpClientTest` covers the production client's
   body cap and address pinning against the same fixture server.
   `MastodonApiTest` drives the optional compatibility routes through the same
-  kernel, including JSON/form writes, scopes, disabled-before-auth, cursor
-  pagination, idempotency and media projection; `ApplicationHostTest` repeats
-  the idempotent write over SQL. `MastodonCompatibilityTest` covers the prefix
-  and scope rules.
+  kernel, including JSON/form writes, media upload, scopes,
+  disabled-before-auth, cursor pagination, idempotency and media projection;
+  `ApplicationHostTest` repeats the idempotent write over SQL.
+  `MastodonCompatibilityTest` covers the prefix and scope rules.

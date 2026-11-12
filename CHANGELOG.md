@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible media upload: `POST {mastodon.prefix}/media` accepts the
+  same `multipart/form-data` envelope as `POST /api/v1/media`, including the
+  `file` field and an optional Mastodon `description` (`alt_text` is also
+  accepted). It requires `write:media`, declares a `20/900` rate limit and
+  returns the Mastodon attachment shape with `id`, `type`, original and
+  thumbnail URLs, dimensions, description and metadata. The write goes through
+  the existing `MediaService`, so JPEG/PNG/WebP validation, the 5 MiB/40
+  megapixel limits, thumbnail generation and cleanup on failure are identical
+  to the core route; a rejected upload leaves no `social_attachment` row and
+  no blob. An optional `Idempotency-Key` maps to a deterministic internal
+  source key, so a retry returns the original attachment without a duplicate
+  row or blob; no new table or migration is added. The route manifest and
+  OpenAPI export now have 34 routes. The rest of the full Mastodon server API
+  (OAuth/token issuance, remote timelines, favourites, boosts, notifications,
+  streaming, polls, search and the account/admin/relationship surface) remains
+  external; see `docs/guides/mastodon-api.md`.
 - AT Protocol OAuth session refresh: `AtprotoOAuthSession` validates the token
   endpoint, client id, DID, rotating access/refresh tokens, mandatory `atproto`
   scope and expiry. `AtprotoSessionService` refreshes inside a 60-second

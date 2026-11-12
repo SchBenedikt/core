@@ -81,6 +81,7 @@ abstract class MastodonHandler implements Handler
 			'content' => 'status',
 			'content_warning' => 'spoiler_text',
 			'attachment_ids' => 'media_ids',
+			'alt_text' => 'description',
 		];
 
 		$translated = [];

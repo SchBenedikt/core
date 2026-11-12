@@ -64,6 +64,13 @@ final class OpenApiTest extends TestCase
 		self::assertSame('30/900', $mastodon['x-rate-limit']);
 		self::assertSame(['write:statuses'], $mastodon['x-required-scopes']);
 
+		$media = $document['paths']['/api/mastodon/v1/media']['post'];
+		self::assertSame('mastodon', $media['tags'][0]);
+		self::assertSame('mastodon_media_upload', $media['operationId']);
+		self::assertSame([['bearerAuth' => []]], $media['security']);
+		self::assertSame('20/900', $media['x-rate-limit']);
+		self::assertSame(['write:media'], $media['x-required-scopes']);
+
 		$post = $document['paths']['/api/v1/posts/{id}']['get'];
 		self::assertSame(
 			[['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],

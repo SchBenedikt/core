@@ -11,10 +11,13 @@ namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Support\Time;
@@ -263,6 +266,128 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('<p>json body</p>', $timeline->decodedBody()[0]['content']);
 	}
 
+	public function testMediaUploadStoresAPresentedAttachmentAndCanBeUsedInAStatus(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+		$png = $this->png();
+
+		$response = $this->upload($app, $png, 'a mastodon image');
+
+		self::assertSame(200, $response->status);
+		$media = $response->decodedBody();
+		self::assertSame('image', $media['type']);
+		self::assertSame('a mastodon image', $media['description']);
+		self::assertSame(32, $media['meta']['original']['width']);
+		self::assertSame(32, $media['meta']['original']['height']);
+		self::assertStringStartsWith('https://social.example/api/v1/media/', $media['url']);
+		self::assertStringEndsWith('?variant=thumbnail', $media['preview_url']);
+		self::assertSame(1, $attachments->count());
+
+		$stored = $attachments->find($media['id']);
+		self::assertNotNull($stored);
+		self::assertSame('alice', $stored->ownerId);
+		self::assertSame('a mastodon image', $stored->altText);
+		self::assertSame([
+			'media/' . $media['id'] . '/original.png',
+			'media/' . $media['id'] . '/thumbnail.png',
+		], $blobs->list('media/' . $media['id']));
+
+		$fetched = $app->handle(new Request('GET', $media['url']));
+		self::assertSame(200, $fetched->status);
+		self::assertSame($png, $fetched->body);
+
+		$created = $this->createStatus($app, [
+			'status' => 'with an uploaded image',
+			'media_ids' => [$media['id']],
+		]);
+		self::assertSame(200, $created->status);
+		$projected = $created->decodedBody()['media_attachments'];
+		self::assertCount(1, $projected);
+		self::assertSame($media['id'], $projected[0]['id']);
+		self::assertSame('a mastodon image', $projected[0]['description']);
+	}
+
+	public function testMediaUploadRequiresAuthAndTheWriteMediaScope(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+
+		$anonymous = $this->upload($app, $this->png(), userId: null);
+		self::assertSame(401, $anonymous->status);
+		self::assertSame('authentication_required', $anonymous->decodedBody()['error']['code']);
+
+		$wrongScope = $this->upload($app, $this->png(), scopes: ['write:statuses']);
+		self::assertSame(403, $wrongScope->status);
+		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
+		self::assertSame(0, $attachments->count());
+		self::assertSame([], $blobs->list('media'));
+
+		$parentScope = $this->upload($app, $this->png(), scopes: ['write']);
+		self::assertSame(200, $parentScope->status);
+		self::assertSame(1, $attachments->count());
+	}
+
+	public function testMediaUploadIsDisabledBeforeAuth(): void
+	{
+		$app = $this->app(enabled: false);
+
+		$response = $this->upload($app, $this->png(), userId: null);
+
+		self::assertSame(404, $response->status);
+		self::assertSame('mastodon_api_disabled', $response->decodedBody()['error']['code']);
+	}
+
+	public function testMediaUploadRejectsMissingInvalidCorruptAndOversizedFilesWithoutRows(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+
+		$missing = $this->upload($app, null, 'no file');
+		self::assertSame(422, $missing->status);
+		self::assertSame('validation_failed', $missing->decodedBody()['error']['code']);
+		self::assertArrayHasKey('file', $missing->decodedBody()['error']['fields']);
+
+		$invalid = $this->upload($app, 'not an image');
+		self::assertSame(422, $invalid->status);
+		self::assertArrayHasKey('file', $invalid->decodedBody()['error']['fields']);
+
+		$corrupt = $this->upload($app, "\x89PNG\r\n\x1a\nnot-really-a-png");
+		self::assertSame(422, $corrupt->status);
+		self::assertArrayHasKey('file', $corrupt->decodedBody()['error']['fields']);
+
+		$oversized = $this->upload($app, str_repeat('a', Attachment::MAX_BYTES + 200_000));
+		self::assertSame(413, $oversized->status);
+		self::assertSame('payload_too_large', $oversized->decodedBody()['error']['code']);
+
+		self::assertSame(0, $attachments->count());
+		self::assertSame([], $blobs->list('media'));
+	}
+
+	public function testMediaUploadIdempotencyReturnsTheSameAttachment(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+
+		$first = $this->upload($app, $this->png(), 'retry me', ['Idempotency-Key' => 'media-key-1']);
+		$second = $this->upload($app, $this->png(), 'retry me', ['Idempotency-Key' => 'media-key-1']);
+
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+		self::assertSame(1, $attachments->count());
+		self::assertCount(2, $blobs->list('media'));
+
+		$third = $this->upload($app, $this->png(), 'different intent', ['Idempotency-Key' => 'media-key-2']);
+		self::assertSame(200, $third->status);
+		self::assertNotSame($first->decodedBody()['id'], $third->decodedBody()['id']);
+		self::assertSame(2, $attachments->count());
+	}
+
 	public function testAnExistingAttachmentIsProjectedOnTheStatus(): void
 	{
 		$app = $this->app();
@@ -302,6 +427,10 @@ final class MastodonApiTest extends TestCase
 			'GET',
 			'/compat/mastodon/statuses/' . $created->decodedBody()['id'],
 		))->status);
+
+		$uploaded = $this->upload($app, $this->png(), 'custom prefix', prefix: '/compat/mastodon');
+		self::assertSame(200, $uploaded->status);
+		self::assertStringContainsString('/api/v1/media/', $uploaded->decodedBody()['url']);
 	}
 
 	public function testDirectVisibilityAndMissingInputAreRejected(): void
@@ -343,6 +472,8 @@ final class MastodonApiTest extends TestCase
 	private function app(
 		bool $enabled = true,
 		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+		?InMemoryAttachmentRepository $attachments = null,
+		?InMemoryBlobStore $blobs = null,
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -354,8 +485,52 @@ final class MastodonApiTest extends TestCase
 					'mastodon.prefix' => $prefix,
 				],
 			]),
+			attachmentRepository: $attachments,
+			blobStore: $blobs,
 			localActors: new InMemoryActorDirectory(['alice']),
 		);
+	}
+
+	/**
+	 * @param array<string, string> $headers
+	 * @param list<string>          $scopes
+	 * @param string                $prefix  compatibility prefix to target
+	 */
+	private function upload(
+		Application $app,
+		?string $bytes,
+		?string $description = null,
+		array $headers = [],
+		array $scopes = ['write:media'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		$boundary = '----AlohaSocialMastodon' . bin2hex(random_bytes(8));
+		$body = '';
+
+		if ($description !== null) {
+			$body .= '--' . $boundary . "\r\n"
+				. "Content-Disposition: form-data; name=\"description\"\r\n\r\n"
+				. $description . "\r\n";
+		}
+
+		if ($bytes !== null) {
+			$body .= '--' . $boundary . "\r\n"
+				. "Content-Disposition: form-data; name=\"file\"; filename=\"upload.png\"\r\n"
+				. "Content-Type: image/png\r\n\r\n"
+				. $bytes . "\r\n";
+		}
+
+		$body .= '--' . $boundary . "--\r\n";
+
+		return $app->handle(new Request(
+			method: 'POST',
+			path: $prefix . '/media',
+			headers: array_merge(['Content-Type' => 'multipart/form-data; boundary=' . $boundary], $headers),
+			body: $body,
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	/**

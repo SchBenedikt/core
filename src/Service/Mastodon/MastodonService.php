@@ -17,7 +17,9 @@ use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\CreatePost;
+use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 
 /**
@@ -40,6 +42,7 @@ final class MastodonService
 		private readonly PostService $postService,
 		private readonly MastodonPresenter $presenter,
 		private readonly ?LocalActorDirectory $localActors = null,
+		private readonly ?MediaService $media = null,
 	) {
 	}
 
@@ -181,6 +184,55 @@ final class MastodonService
 		} catch (PostNotFoundException|PostAccessDeniedException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 		}
+	}
+
+	/**
+	 * Stores one image through the same MediaService the core upload route uses.
+	 *
+	 * A client `Idempotency-Key` becomes a deterministic internal source key.
+	 * `MediaService::upload()` already re-reads an attachment by source URL
+	 * before writing, so a retry returns the original row and blobs without a
+	 * second table. The key is scoped to the local user.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function uploadMedia(
+		string $userId,
+		string $bytes,
+		?string $description = null,
+		?string $idempotencyKey = null,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		if ($this->media === null) {
+			throw new MastodonRequestException(
+				503,
+				'media_not_configured',
+				'Media storage is not configured.',
+			);
+		}
+
+		$sourceUrl = $idempotencyKey === null
+			? null
+			: 'urn:alohasocial:mastodon-media:' . hash('sha256', $userId . "\0" . $idempotencyKey);
+
+		try {
+			$attachment = $this->media->upload(
+				ownerId: $userId,
+				bytes: $bytes,
+				altText: $description,
+				sourceUrl: $sourceUrl,
+			);
+		} catch (StorageException) {
+			throw new MastodonRequestException(
+				503,
+				'media_storage_unavailable',
+				'The media file could not be stored.',
+			);
+		}
+
+		return $this->presenter->media($this->media->present($attachment));
 	}
 
 	/**
