@@ -55,6 +55,21 @@ final class FederationDeliveryHandler implements JobHandler
 			);
 		}
 
+		$this->deliver($inbox, $activity, $keyId);
+	}
+
+	/**
+	 * Synchronous variant for use cases whose local state depends on the
+	 * answer, such as a Follow that is rolled back when the peer refuses it.
+	 *
+	 * @param array<string, mixed> $activity
+	 *
+	 * @throws DeliveryFailedException on a non-2xx answer
+	 * @throws InvalidJobPayloadException when the inbox is not an absolute http(s) URL
+	 * @throws JsonException when the activity cannot be encoded
+	 */
+	public function deliver(string $inbox, array $activity, string $keyId): void
+	{
 		$parts = parse_url($inbox);
 		$host = $parts['host'] ?? null;
 		$scheme = $parts['scheme'] ?? null;
@@ -83,6 +98,7 @@ final class FederationDeliveryHandler implements JobHandler
 			$body,
 			$this->clock->now(),
 		);
+		$headers['Content-Type'] = 'application/activity+json';
 
 		$response = $this->http->request('POST', $inbox, $headers, $body, 20);
 
