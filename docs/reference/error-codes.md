@@ -69,7 +69,9 @@ codes: `400 invalid_multipart`, `413 payload_too_large`, `422
 validation_failed`, `503 media_not_configured` and `503
 media_storage_unavailable`; `write:media` is enforced like every other declared
 scope. A notification cursor must belong to the signed-in recipient; an
-unknown or foreign cursor is `404 not_found`. An assembly without the needed
+unknown or foreign cursor is `404 not_found`. Dismissing a missing or foreign
+notification is also `404 not_found`, while repeating an owned dismiss or
+clear is a successful `200 {}`. An assembly without the needed
 repository answers `503 favourites_not_configured` or `503
 notifications_not_configured`, and an assembly without local relationships
 answers `503 follows_not_configured`. Search answers `422 validation_failed`

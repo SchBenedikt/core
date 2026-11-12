@@ -41,7 +41,27 @@ final class FailingNotificationRepository implements NotificationRepository
 		?string $afterId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		bool $includeRead = false,
 	): array {
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
+	public function markRead(string $id, string $recipientId, DateTimeImmutable $readAt): bool
+	{
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
+	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int
+	{
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
+	public function countUnread(
+		string $recipientId,
+		?string $accountId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): int {
 		throw new DatabaseException('The notification table is unavailable.');
 	}
 }

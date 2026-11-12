@@ -82,7 +82,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(43, $app->routes->routes());
+		self::assertCount(46, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -393,6 +393,42 @@ final class ApplicationHostTest extends TestCase
 		self::assertCount(1, $notifications->decodedBody());
 		self::assertSame('follow', $notifications->decodedBody()[0]['type']);
 		self::assertSame(self::BOB, $notifications->decodedBody()[0]['account']['id']);
+
+		$unread = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/notifications/unread_count',
+			userId: 'alice',
+			scopes: ['read:notifications'],
+		));
+		self::assertSame(200, $unread->status);
+		self::assertSame(1, $unread->decodedBody()['count']);
+
+		$dismiss = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/notifications/' . rawurlencode($notifications->decodedBody()[0]['id']) . '/dismiss',
+			userId: 'alice',
+			scopes: ['write:notifications'],
+		));
+		self::assertSame(200, $dismiss->status);
+		self::assertNotNull($database->fetchValue(
+			'SELECT read_at FROM ' . NotificationSchema::TABLE,
+		));
+
+		$afterDismiss = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/notifications',
+			userId: 'alice',
+			scopes: ['read:notifications'],
+		));
+		self::assertSame([], $afterDismiss->decodedBody());
+
+		$clear = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/notifications/clear',
+			userId: 'alice',
+			scopes: ['write:notifications'],
+		));
+		self::assertSame(200, $clear->status);
 	}
 
 	public function testForHostDeletesTheRemoteAtprotoRecordAfterALocalDelete(): void

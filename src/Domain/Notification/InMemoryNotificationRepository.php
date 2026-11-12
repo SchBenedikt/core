@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Notification;
 
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 
 use function array_filter;
@@ -54,6 +55,7 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		?string $afterId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		bool $includeRead = false,
 	): array {
 		$notifications = array_values(array_filter(
 			$this->notifications,
@@ -65,8 +67,13 @@ final class InMemoryNotificationRepository implements NotificationRepository
 				$afterId,
 				$types,
 				$excludeTypes,
+				$includeRead,
 			): bool {
 				if ($notification->recipientId !== $recipientId) {
+					return false;
+				}
+
+				if (!$includeRead && $notification->isRead()) {
 					return false;
 				}
 
@@ -113,5 +120,65 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		});
 
 		return array_slice($notifications, 0, max(1, $limit));
+	}
+
+	public function markRead(string $id, string $recipientId, DateTimeImmutable $readAt): bool
+	{
+		$notification = $this->notifications[$id] ?? null;
+		if ($notification === null || $notification->recipientId !== $recipientId) {
+			return false;
+		}
+
+		if (!$notification->isRead()) {
+			$this->notifications[$id] = $notification->withReadAt(Time::toSecondPrecision($readAt));
+		}
+
+		return true;
+	}
+
+	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int
+	{
+		$marked = 0;
+		$readAt = Time::toSecondPrecision($readAt);
+		foreach ($this->notifications as $id => $notification) {
+			if ($notification->recipientId !== $recipientId || $notification->isRead()) {
+				continue;
+			}
+
+			$this->notifications[$id] = $notification->withReadAt($readAt);
+			$marked++;
+		}
+
+		return $marked;
+	}
+
+	public function countUnread(
+		string $recipientId,
+		?string $accountId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): int {
+		$count = 0;
+		foreach ($this->notifications as $notification) {
+			if ($notification->recipientId !== $recipientId || $notification->isRead()) {
+				continue;
+			}
+
+			if ($accountId !== null && $notification->actorId !== $accountId) {
+				continue;
+			}
+
+			if ($types !== [] && !in_array($notification->type, $types, true)) {
+				continue;
+			}
+
+			if (in_array($notification->type, $excludeTypes, true)) {
+				continue;
+			}
+
+			$count++;
+		}
+
+		return $count;
 	}
 }

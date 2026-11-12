@@ -136,16 +136,26 @@ the host migration path before exposing those routes. There is no backfill,
 and the table has a composite `(user_id, post_id)` primary key, so a repeat
 cannot duplicate a favourite. Local notifications use the new
 `social_notification` table through `NotificationRepository`; create it with
-`NotificationSchema::statements()` before enabling the notification route.
+`NotificationSchema::statements()` before enabling the notification routes.
 Its primary key is a deterministic event id, so a repeated favourite, local
 follow or remote Follow cannot create a second row. Notification recording is
 best-effort: if the table is missing or the write fails, the primary
 favourite/follow write still succeeds, the failure is logged, and a repeat of
-the event can heal the missing row. The notification listing route itself still
-needs the table. There is no backfill from older favourites/followers, and
-deleting a post or follow deliberately does not delete the historical
-notification. Notification rows can be cleaned up by recipient or age in a
-host job; no dismiss/read state is stored. Local follow/unfollow writes the existing
+the event can heal the missing row. The notification routes themselves still
+need the table. A host upgrading from the listing-only slice adds the read
+marker and unread index before enabling dismiss, clear or unread-count:
+
+```sql
+ALTER TABLE social_notification ADD COLUMN read_at VARCHAR(20) NULL;
+CREATE INDEX social_notification_unread
+  ON social_notification (recipient_id, read_at, created_at, id);
+```
+
+Existing rows are unread (`NULL`) and no backfill is needed. There is no
+backfill from older favourites/followers, and deleting a post or follow
+deliberately does not delete the historical notification. Notification rows,
+including read rows, can be cleaned up by recipient or age in a host job; the
+core schedules no cleanup and uses no second read-state table. Local follow/unfollow writes the existing
 `social_follower` edge with `is_local = 1`; existing hosts must add the column:
 
 ```sql
@@ -169,8 +179,8 @@ answers `503 notifications_unavailable`. The standard assemblies always
 provide the repository. The host must
 map bearer tokens to `Request::$userId` and `Request::$scopes`; a parent scope
 such as `read` grants `read:accounts`, `read:follows` and
-`read:notifications`, `write` grants `write:favourites`, `write:follows` and
-`write:media`, a granular scope does
+`read:notifications`, `write` grants `write:favourites`, `write:follows`,
+`write:media` and `write:notifications`, a granular scope does
 not grant its parent, and a token without the route's scope gets `403
 insufficient_scope`.
 The declared rate limits are enforced by the host like every other route. The
@@ -195,6 +205,8 @@ documented in [remote threads](../guides/remote-threads.md).
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming; also the compatibility status ceiling |
 | `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines, notification list and search |
 | `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines, notification list and search |
+| `MastodonService::DEFAULT_NOTIFICATION_COUNT_LIMIT` | 100 | Default cap for `GET /notifications/unread_count` |
+| `MastodonService::MAX_NOTIFICATION_COUNT_LIMIT` | 1000 | Hard cap for `GET /notifications/unread_count` `limit` |
 | `MastodonService::MAX_SEARCH_OFFSET` | 1000 | Hard offset ceiling for the compatibility search |
 | `Poll::MIN_OPTIONS` / `Poll::MAX_OPTIONS` | 2 / 4 | Option count accepted by local poll creation and advertised by the instance endpoint |
 | `PollOption::MAX_TITLE_LENGTH` | 50 | Characters per poll option after trimming |

@@ -57,6 +57,10 @@ final class MastodonService
 
 	public const MAX_SEARCH_OFFSET = 1000;
 
+	public const DEFAULT_NOTIFICATION_COUNT_LIMIT = 100;
+
+	public const MAX_NOTIFICATION_COUNT_LIMIT = 1000;
+
 	private const SEARCH_TYPES = ['accounts', 'statuses', 'hashtags'];
 
 	public function __construct(
@@ -488,6 +492,94 @@ final class MastodonService
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Dismisses one notification by setting its durable read marker.
+	 *
+	 * The id is scoped to the caller. A missing or foreign id is a 404; a
+	 * repeat dismiss of the caller's already-read row is a successful no-op.
+	 */
+	public function dismissNotification(string $userId, string $id): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$service = $this->requireNotifications();
+
+		try {
+			if (!$service->markRead($userId, $id, $this->now())) {
+				throw new MastodonRequestException(404, 'not_found', 'Notification not found.');
+			}
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+	}
+
+	/**
+	 * Marks every unread notification of the caller as read.
+	 *
+	 * Repeating clear is a successful no-op. New notifications recorded after
+	 * the clear are unread again because they are new rows.
+	 */
+	public function clearNotifications(string $userId): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$service = $this->requireNotifications();
+
+		try {
+			$service->markAllRead($userId, $this->now());
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+	}
+
+	/**
+	 * Returns the capped unread count with the same local filters as the list.
+	 *
+	 * @param list<string> $types
+	 * @param list<string> $excludeTypes
+	 */
+	public function notificationUnreadCount(
+		string $userId,
+		int $limit,
+		array $types = [],
+		array $excludeTypes = [],
+		?string $accountId = null,
+	): int {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$service = $this->requireNotifications();
+
+		$include = $this->notificationTypes($types);
+		if ($types !== [] && $include === []) {
+			return 0;
+		}
+
+		try {
+			$count = $service->unreadCount(
+				$userId,
+				$accountId === '' ? null : $accountId,
+				$include,
+				$this->notificationTypes($excludeTypes),
+			);
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+
+		return min(max(1, $limit), $count);
 	}
 
 	/**

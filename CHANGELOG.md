@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible notification dismissal and unread state:
+  `POST {mastodon.prefix}/notifications/{id}/dismiss` and `POST
+  {mastodon.prefix}/notifications/clear` set a nullable `read_at` marker on
+  the existing `social_notification` row and return `200 {}`; `GET
+  {mastodon.prefix}/notifications/unread_count` returns the capped count
+  (`limit` 100 by default, 1000 maximum) with the list's type/account filters.
+  `GET {mastodon.prefix}/notifications` now returns only unread rows and adds
+  `"unread": true`. Dismiss is idempotent for the caller's own id, a
+  foreign/missing id is `404 not_found`, and clear is an idempotent no-op;
+  events recorded after clear are unread. The routes require
+  `write:notifications` (writes) or `read:notifications` (count), declare
+  `30/900` or `60/60` rate limits and stay behind the disabled-by-default
+  Mastodon gate. Existing hosts add `read_at VARCHAR(20) NULL` and the
+  `(recipient_id, read_at, created_at, id)` index; old rows remain unread and
+  there is no backfill or new table. The manifest/OpenAPI export now has 46
+  routes (20 under the compatibility prefix). Tests cover the in-memory and
+  PDO repository contract, real-kernel HTTP behavior, SQL persistence,
+  idempotency, foreign/missing ids, filters/caps, auth, scopes, disabled
+  feature and storage failure. See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible instance metadata and local statistics:
   `GET {mastodon.prefix}/instance` and the core `GET /api/v1/instance` now
   expose configurable description, version, contact email/account,

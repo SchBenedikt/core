@@ -34,13 +34,16 @@ use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDismissNotificationHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
@@ -434,7 +437,37 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/60',
 				requiredScopes: ['read:notifications'],
-				summary: 'Notifications for the signed-in local account, newest first.',
+				summary: 'Unread notifications for the signed-in local account, newest first.',
+			),
+			new Route(
+				name: 'mastodon.notifications.unread_count',
+				method: 'GET',
+				path: $mastodon . '/notifications/unread_count',
+				handler: MastodonNotificationUnreadCountHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:notifications'],
+				summary: 'Capped unread notification count for the signed-in local account.',
+			),
+			new Route(
+				name: 'mastodon.notifications.dismiss',
+				method: 'POST',
+				path: $mastodon . '/notifications/{id}/dismiss',
+				handler: MastodonDismissNotificationHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:notifications'],
+				summary: 'Mark one notification of the signed-in account read.',
+			),
+			new Route(
+				name: 'mastodon.notifications.clear',
+				method: 'POST',
+				path: $mastodon . '/notifications/clear',
+				handler: MastodonClearNotificationsHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:notifications'],
+				summary: 'Mark every unread notification of the signed-in account read.',
 			),
 			new Route(
 				name: 'mastodon.search',

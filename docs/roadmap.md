@@ -117,12 +117,23 @@ Status of the core, not a promise about dates.
 - WebFinger: `GET /.well-known/webfinger` resolves a local `acct:` handle to
   the actor document URL, with the configured host enforced.
 - Local Mastodon notifications: `GET {mastodon.prefix}/notifications` lists
-  favourite and follow events for the signed-in local account. Local
+  unread favourite and follow events for the signed-in local account. Local
   favourites, local follows and verified inbound remote Follows record a
   notification; a deterministic event id makes every repeat idempotent. The
   listing supports `max_id`/`since_id`/`min_id`, `types[]`/`exclude_types[]`
   and the `read:notifications` scope, and projects local actors or minimal
   remote actor URLs without a second account model.
+- Local Mastodon notification read state: `POST
+  {mastodon.prefix}/notifications/{id}/dismiss` and `POST
+  {mastodon.prefix}/notifications/clear` set the nullable `read_at` marker
+  instead of deleting the historical row. `GET
+  {mastodon.prefix}/notifications/unread_count` returns the capped unread
+  count. The list omits read rows and exposes `unread` on each remaining
+  event. Dismiss and clear are idempotent for the caller; a foreign or missing
+  id stays `404 not_found`. The write routes require `write:notifications`,
+  the count requires `read:notifications`, and existing hosts add the column
+  and unread index through the documented migration. No new table or job is
+  required; read rows can be pruned by the host's existing retention policy.
 - Local Mastodon instance metadata: `GET {mastodon.prefix}/instance` and the
   core `GET /api/v1/instance` now expose configurable description, version,
   contact email/account, registration/approval/invite flags, languages,
@@ -149,12 +160,13 @@ Status of the core, not a promise about dates.
   (default `/api/mastodon/v1`): instance metadata and statistics, public timeline, status
   read/create/delete including local poll creation on an own status, local
   favourite/unfavourite, local follow/unfollow and relationship reads, local
-  notification listing, media upload/update/delete, local account statuses and
-  verify credentials. It maps
+  notification listing with dismiss/unread state, media upload/update/delete,
+  local account statuses and verify credentials. It maps
   to the existing posts, `PostService`, `MediaService` and repositories rather
   than a second status or media store, carries auth and scope metadata
   (`write:statuses`, `write:favourites`, `write:follows`, `write:media`,
-  `read:accounts`, `read:follows`, `read:notifications`, `read:search`),
+  `write:notifications`, `read:accounts`, `read:follows`,
+  `read:notifications`, `read:search`),
   implements `max_id`/`since_id`/`min_id` pagination with an id tie-break and
   `Link` headers, offset pagination for search, and makes `Idempotency-Key`
   idempotent through a deterministic post id or media source key. Local favourites live in `social_favourite` behind
@@ -173,7 +185,9 @@ Status of the core, not a promise about dates.
   `NotificationRepository`: a local favourite, local follow or verified remote
   Follow records one row, a deterministic id makes repeats no-ops, and a
   remote follower is projected as a minimal actor URL without fetching its
-  profile. Local search uses two optional read ports over the existing stores:
+  profile. Dismiss and clear set `read_at`; the list hides read rows and the
+  unread count projects the remaining ones, with no second table. Local search
+  uses two optional read ports over the existing stores:
   `PostSearchRepository` matches live public/unlisted `social_post.content`
   (case-insensitive, offset-paged) and `LocalActorSearch` matches the host's
   local account directory. `GET /search` returns the Mastodon v2 object with
@@ -192,16 +206,16 @@ Status of the core, not a promise about dates.
   timelines and remote delivery; favourite federation (outbound `Like`/`Undo`
   and remote counts); boosts; remote notifications; streaming infrastructure;
   remote relationship/admin APIs; and migrations in an existing host database.
-  Notification dismissal/unread state and narrower local account/profile
-  endpoints are locally implementable follow-ups, not host prerequisites.
-  Media upload/update/delete, local favourite bookkeeping, local
-  follow/unfollow/relationship reads, local notification listing, local
-  status/actor search, local poll creation and instance metadata/statistics
-  are complete locally. The
+  Narrower local account/profile endpoints are locally implementable
+  follow-ups, not host prerequisites. Media upload/update/delete, local
+  favourite bookkeeping, local follow/unfollow/relationship reads, local
+  notification listing with dismiss/unread state, local status/actor search,
+  local poll creation and instance metadata/statistics are complete locally. The
   migration for the local follow marker remains a host step: add
   `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
   `social_notification` from `NotificationSchema` before exposing the
-  notification route; add `social_poll`/`social_poll_option` from
+  notification routes, or add `read_at` and the unread index to an existing
+  table as documented; add `social_poll`/`social_poll_option` from
   `PollSchema` before accepting a `poll` parameter. The remaining parts are
   tracked in the Next table, not as a completed item.
 - **AT Protocol stack**: the core now owns the public text-only publishing
@@ -231,13 +245,14 @@ external parts of the two partially done stacks, and explicitly listed
 core-side follow-ups. There is no unlisted local vertical slice hiding in this
 table: the local media catch-up, thread/context, AT Protocol publishing and
 Mastodon compatibility (including instance metadata/statistics, media
-management, local favourites, local follow/relationships, notification listing,
-local search and poll creation) slices are recorded above.
+management, local favourites, local follow/relationships, notification
+listing with dismiss/unread state, local search and poll creation) slices are
+recorded above.
 
 | Item | Seam |
 | --- | --- |
-| Local Mastodon follow-ups: notification dismissal/unread state and narrower local account/profile endpoints | core, over the existing account/post/notification repositories; no host deployment or remote fetch is required |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` plus `social_poll` migrations remain host steps |
+| Local Mastodon follow-ups: narrower local account/profile endpoints | core, over the existing account/post/notification repositories; no host deployment or remote fetch is required |
+| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll` migrations remain host steps |
 | AT Protocol account linking, authorization-code/PAR/revocation and full client/AppView extraction (OAuth session refresh is local) | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |

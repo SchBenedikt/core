@@ -29,16 +29,19 @@ Locally implemented (core):
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
 - `GET /notifications`
+- `POST /notifications/{id}/dismiss`
+- `POST /notifications/clear`
+- `GET /notifications/unread_count`
 - `GET /search`
 
 The local subset covers public/unlisted/followers-only text posts, local poll
 creation on an own status, local favourite/unfavourite bookkeeping, local
-follow/unfollow and relationship bookkeeping, local notifications, media
-upload, metadata update/delete and local media attachments. It deliberately
+follow/unfollow and relationship bookkeeping, local notifications with
+dismiss/unread state, media upload, metadata update/delete and local media
+attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
-remote favourite counts), boosts, remote notifications or notification
-dismissal, streaming, voting on or fetching remote polls, scheduled posts,
+remote favourite counts), boosts, remote notifications, streaming, voting on or fetching remote polls, scheduled posts,
 filters, followed tags, lists, OAuth authorization/token endpoints, remote
 search, admin APIs or the full account/profile surface.
 Local search over local accounts and statuses is implemented below; remote
@@ -51,7 +54,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all seventeen routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -94,11 +97,15 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 | `GET {prefix}/notifications` | yes | `read:notifications` | 60 / 60 s |
+| `GET {prefix}/notifications/unread_count` | yes | `read:notifications` | 60 / 60 s |
+| `POST {prefix}/notifications/{id}/dismiss` | yes | `write:notifications` | 30 / 900 s |
+| `POST {prefix}/notifications/clear` | yes | `write:notifications` | 30 / 900 s |
 | `GET {prefix}/search` | yes | `read:search` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`,
 `read:follows`, `read:notifications` and `read:search`, `write` grants
-`write:favourites`, `write:follows` and `write:media`); a granular scope does
+`write:favourites`, `write:follows`, `write:media` and
+`write:notifications`); a granular scope does
 not grant its parent.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
@@ -321,9 +328,9 @@ directory. `Application::inMemory()`/`Application::forHost()` create the
 service when a directory is supplied; an assembly without one answers `503
 follows_not_configured` rather than returning an empty relationship.
 
-### Reading notifications
+### Reading and dismissing notifications
 
-`GET {prefix}/notifications` returns the signed-in local account's
+`GET {prefix}/notifications` returns the signed-in local account's unread
 notifications, newest first. A local favourite by another account creates one
 `favourite` notification for the post author; a local or remote follow creates
 one `follow` notification for the local target. Repeating the same favourite,
@@ -336,6 +343,7 @@ a post the caller cannot see.
   "id": "notification-8f14e45fceea167a5a36dedd4bea2543",
   "type": "favourite",
   "created_at": "2026-11-11T10:00:00.000Z",
+  "unread": true,
   "account": {
     "id": "alice",
     "username": "alice",
@@ -358,7 +366,8 @@ remote profile just to render a notification. `status` is present for a
 favourite and omitted for a follow. It is also omitted if the post was deleted
 or is no longer visible to the recipient, so a notification never exposes a
 tombstone. The id is derived from recipient, type, actor and post, which is the
-idempotency boundary; no random notification id is generated.
+idempotency boundary; no random notification id is generated. `unread` is true
+for every row the list returns; the list never includes read rows.
 
 The endpoint accepts `types[]` and `exclude_types[]`, each repeatable. Known
 local types are `favourite` and `follow`; unknown names are ignored for
@@ -372,11 +381,38 @@ different account is `404 not_found`, not someone else's page. `max_id` cannot
 be combined with `since_id`/`min_id`. A non-empty page carries `Link: <…
 ?limit=…&max_id=…>; rel="next"` and preserves active type filters.
 
+#### Dismissing and clearing
+
+`POST {prefix}/notifications/{id}/dismiss` marks one notification read. It
+requires `write:notifications`, declares a `30/900` rate limit and answers
+`200 {}` (the same empty-object shape Mastodon uses). The id is scoped to the
+caller: a missing or foreign notification answers `404 not_found`, while a
+repeat dismiss of the caller's own already-read row answers `200 {}` again.
+No row is deleted, so a repeated event cannot resurrect an old notification
+and the host retains the historical event for its own retention window.
+
+`POST {prefix}/notifications/clear` marks every unread notification of the
+caller read. It requires `write:notifications`, declares a `30/900` rate limit
+and answers `200 {}`. Repeating clear is a successful no-op. A favourite or
+follow recorded after the clear is a new unread row; clear does not store a
+"read everything until" watermark that could hide future events.
+
+`GET {prefix}/notifications/unread_count` requires `read:notifications`,
+declares a `60/60` rate limit and returns `{"count": n}`. `count` defaults to a
+cap of 100 and accepts `limit` from 1 to 1000, matching Mastodon's capped
+count rather than a full table count. The same `types[]`/`exclude_types[]`
+filters as the list apply; `account_id` limits the count to the event actor,
+using a local account id or the stored remote actor URL. Unknown types are
+ignored, and a non-empty `types[]` with no known local type returns zero. The
+count uses the optional repository `countUnread()` read capability and never
+loads notification rows.
+
 A manually assembled service without a `NotificationRepository` answers `503
 notifications_not_configured` instead of returning an empty list. The standard
 `Application::inMemory()`/`Application::forHost()` assemblies always supply
-one. Reading notifications does not mark them as read; the core has no unread
-or dismissal state in this slice.
+one. Reading the list does not mark anything read; only dismiss and clear set
+the durable `read_at` marker. A missing or unreadable table answers `503
+notifications_unavailable` for all four notification routes.
 
 ### Searching local accounts and statuses
 
@@ -634,38 +670,60 @@ CREATE TABLE social_notification (
   actor_id VARCHAR(255) NOT NULL,
   type VARCHAR(32) NOT NULL,
   post_id VARCHAR(64) NULL,
-  created_at VARCHAR(20) NOT NULL
+  created_at VARCHAR(20) NOT NULL,
+  read_at VARCHAR(20) NULL
 );
 CREATE INDEX social_notification_timeline
   ON social_notification (recipient_id, created_at, id);
+CREATE INDEX social_notification_unread
+  ON social_notification (recipient_id, read_at, created_at, id);
 ```
 
 An existing host must create `social_favourite` through its migration path
 before exposing the two favourite routes; there is no data backfill. A fresh
 host can run `FavouriteSchema::create()`. An existing host must likewise create
 `social_notification` with `NotificationSchema::statements()` or
-`NotificationSchema::create()` before enabling the notification route; the
+`NotificationSchema::create()` before enabling the notification routes; the
 standard `forHost()` assembly constructs the SQL repository, but it does not
 alter an existing database. Recording is best-effort: while the table is
 missing, a favourite or follow still succeeds, the notification failure is
 logged, and repeating the event after the migration can heal the row. The
-notification listing route answers `503 notifications_unavailable` until the
-table exists.
+notification routes answer `503 notifications_unavailable` until the table
+exists.
+
+An existing `social_notification` table from the listing-only slice needs the
+read marker before dismiss, clear or unread-count can work:
+
+```sql
+ALTER TABLE social_notification ADD COLUMN read_at VARCHAR(20) NULL;
+CREATE INDEX social_notification_unread
+  ON social_notification (recipient_id, read_at, created_at, id);
+```
+
+Existing rows have `read_at = NULL`, so they remain unread after the upgrade;
+there is no backfill and no notification is deleted. The insert query now also
+writes `read_at`, and the list selects it, so complete the migration before
+enabling any notification route; an old table without the column answers `503
+notifications_unavailable` instead of serving a partial read state. Fresh
+hosts get the column and both indexes
+from `NotificationSchema`.
+
 There is no backfill from old favourites or followers: only events recorded
 after the table exists appear. Deleting a post
 follows the normal soft-delete path and deliberately leaves favourite,
 poll, option and notification rows for an explicit host cleanup; the post is
 not visible, so its count and status are not served. Deleting a follower or
 unfavouriting removes the interaction, not its historical notification.
-Notification rows can be removed by recipient or by age in a host cleanup job;
-no read/dismiss state is stored. Poll cleanup should delete options first or
+Notification rows, including read rows, can be removed by recipient or by age
+in a host cleanup job; there is no scheduled core job and no separate
+read-state table. Poll cleanup should delete options first or
 rely on the host's `ON DELETE CASCADE`; the core schema does not add a foreign
 key. Attachment rows and blobs remain governed by the existing media
 cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The seventeen routes are in the manifest with auth, scope and rate-limit metadata.
+The twenty routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -684,7 +742,7 @@ disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
 unknown ids and the 100-id limit), notifications (favourite/follow creation,
 repeat idempotency, historical survival, type filters, pagination, cursor
-ownership, auth/scope/disabled), local search (account/status matches, type
+ownership, auth/scope/disabled), notification dismiss/clear/unread_count (idempotency, foreign/missing ids, read-row hiding, count caps/filters, auth/scope/disabled and storage failure), local search (account/status matches, type
 filters, following filter, offset pages, private/deleted exclusion, missing
 `q`/invalid type, auth/scope/disabled and missing capability), account
 statuses, verify, delete and cursor cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
@@ -692,7 +750,7 @@ and PDO stores and now covers local edges, their exclusion from delivery
 inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
-three relationship routes, the notification route and search. The post
+three relationship routes, the four notification routes and search. The post
 repository contract still covers the id-aware cursor used by the API, and now
 also the `PostSearchRepository` match, visibility, author-filter and offset
 contract for both the in-memory and PDO implementations; the in-memory
@@ -709,9 +767,10 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   streaming and remote search need remote data the core does not fetch for
   this surface. Local notification listing and local status/actor search are
   done above.
-- Notification dismissal/unread state and narrower local account/profile
-  endpoints are locally implementable and remain on the roadmap; they are not
-  host-side prerequisites. Instance metadata and statistics are done above.
+- Narrower local account/profile endpoints are locally implementable and
+  remain on the roadmap; they are not host-side prerequisites. Notification
+  dismissal/unread state is done above through the `read_at` marker and the
+  three new routes. Instance metadata and statistics are done above.
   Remote relationship APIs, remote polls (fetching, voting or federating a
   `Question`), domain blocks that would need a remote moderation feed, and
   remote search remain external; the local follow/unfollow, relationship,

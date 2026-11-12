@@ -917,6 +917,115 @@ final class MastodonApiTest extends TestCase
 		self::assertSame([], $unknownType->decodedBody());
 	}
 
+	public function testDismissClearAndUnreadCountFollowTheReadMarker(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$status = $this->createStatus($app, ['status' => 'read me'], userId: 'bob')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$this->favourite($app, $status['id']);
+
+		$all = $this->notifications($app, userId: 'bob');
+		self::assertSame(200, $all->status);
+		self::assertCount(2, $all->decodedBody());
+		self::assertTrue($all->decodedBody()[0]['unread']);
+		$dismissedId = $all->decodedBody()[0]['id'];
+
+		$count = $this->unreadCount($app, userId: 'bob');
+		self::assertSame(200, $count->status);
+		self::assertSame(2, $count->decodedBody()['count']);
+
+		$dismissed = $this->dismissNotification($app, $dismissedId, userId: 'bob');
+		self::assertSame(200, $dismissed->status);
+		self::assertSame([], $dismissed->decodedBody());
+
+		$again = $this->dismissNotification($app, $dismissedId, userId: 'bob');
+		self::assertSame(200, $again->status);
+		self::assertSame([], $again->decodedBody());
+
+		$remaining = $this->notifications($app, userId: 'bob');
+		self::assertCount(1, $remaining->decodedBody());
+		self::assertNotSame($dismissedId, $remaining->decodedBody()[0]['id']);
+		self::assertTrue($remaining->decodedBody()[0]['unread']);
+		self::assertSame(1, $this->unreadCount($app, userId: 'bob')->decodedBody()['count']);
+
+		$cleared = $this->clearNotifications($app, userId: 'bob');
+		self::assertSame(200, $cleared->status);
+		self::assertSame([], $cleared->decodedBody());
+		self::assertSame(0, $this->unreadCount($app, userId: 'bob')->decodedBody()['count']);
+		self::assertSame([], $this->notifications($app, userId: 'bob')->decodedBody());
+
+		$clearAgain = $this->clearNotifications($app, userId: 'bob');
+		self::assertSame(200, $clearAgain->status);
+		self::assertSame(200, $this->dismissNotification($app, $dismissedId, userId: 'bob')->status);
+
+		// A new event after clear is a new row and is unread again.
+		$this->followAccount($app, 'bob', userId: 'carol');
+		self::assertSame(1, $this->unreadCount($app, userId: 'bob')->decodedBody()['count']);
+		self::assertCount(1, $this->notifications($app, userId: 'bob')->decodedBody());
+	}
+
+	public function testDismissAndClearCannotTouchAnotherAccountsNotifications(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$this->followAccount($app, 'alice', userId: 'bob');
+		$aliceNotification = $this->notifications($app, userId: 'alice')->decodedBody()[0];
+
+		$foreignDismiss = $this->dismissNotification($app, $aliceNotification['id'], userId: 'bob');
+		self::assertSame(404, $foreignDismiss->status);
+		self::assertSame('not_found', $foreignDismiss->decodedBody()['error']['code']);
+
+		$foreignClear = $this->clearNotifications($app, userId: 'bob');
+		self::assertSame(200, $foreignClear->status);
+		self::assertCount(1, $this->notifications($app, userId: 'alice')->decodedBody());
+		self::assertSame(1, $this->unreadCount($app, userId: 'alice')->decodedBody()['count']);
+
+		$missing = $this->dismissNotification($app, 'notification-missing', userId: 'alice');
+		self::assertSame(404, $missing->status);
+	}
+
+	public function testUnreadCountSupportsMastodonLocalFiltersAndIsCapped(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol', 'dave']);
+		$status = $this->createStatus($app, ['status' => 'count me'], userId: 'bob')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$this->favourite($app, $status['id']);
+		$this->favourite($app, $status['id'], userId: 'carol');
+
+		self::assertSame(3, $this->unreadCount($app, userId: 'bob')->decodedBody()['count']);
+		self::assertSame(1, $this->unreadCount($app, ['types' => ['follow']], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(1, $this->unreadCount($app, ['exclude_types' => ['favourite']], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(2, $this->unreadCount($app, ['account_id' => 'alice'], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(1, $this->unreadCount($app, ['limit' => '1'], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(3, $this->unreadCount($app, ['limit' => '0'], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(3, $this->unreadCount($app, ['limit' => '1001'], userId: 'bob')->decodedBody()['count']);
+		self::assertSame(0, $this->unreadCount($app, ['types' => ['mention']], userId: 'bob')->decodedBody()['count']);
+	}
+
+	public function testNotificationDismissClearAndUnreadCountRequireAuthScopeAndEnabledApi(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$this->followAccount($app, 'bob');
+		$id = $this->notifications($app, userId: 'bob')->decodedBody()[0]['id'];
+
+		self::assertSame(401, $this->unreadCount($app, userId: null)->status);
+		self::assertSame(401, $this->dismissNotification($app, $id, userId: null)->status);
+		self::assertSame(401, $this->clearNotifications($app, userId: null)->status);
+
+		self::assertSame(403, $this->unreadCount($app, scopes: ['read:statuses'], userId: 'bob')->status);
+		self::assertSame(403, $this->dismissNotification($app, $id, scopes: ['read:notifications'], userId: 'bob')->status);
+		self::assertSame(403, $this->clearNotifications($app, scopes: ['read:notifications'], userId: 'bob')->status);
+
+		self::assertSame(200, $this->dismissNotification($app, $id, scopes: ['write'], userId: 'bob')->status);
+		self::assertSame(200, $this->clearNotifications($app, scopes: ['write'], userId: 'bob')->status);
+
+		$disabled = $this->app(enabled: false);
+		self::assertSame(404, $this->unreadCount($disabled, userId: 'bob')->status);
+		self::assertSame(404, $this->dismissNotification($disabled, $id, userId: 'bob')->status);
+		self::assertSame(404, $this->clearNotifications($disabled, userId: 'bob')->status);
+	}
+
 	public function testNotificationStorageFailureKeepsThePrimaryWriteAndAnswers503(): void
 	{
 		$app = $this->app(
@@ -936,6 +1045,12 @@ final class MastodonApiTest extends TestCase
 		$notifications = $this->notifications($app, userId: 'bob');
 		self::assertSame(503, $notifications->status);
 		self::assertSame('notifications_unavailable', $notifications->decodedBody()['error']['code']);
+
+		self::assertSame(503, $this->dismissNotification($app, 'notification-any', userId: 'bob')->status);
+		self::assertSame(503, $this->clearNotifications($app, userId: 'bob')->status);
+		$count = $this->unreadCount($app, userId: 'bob');
+		self::assertSame(503, $count->status);
+		self::assertSame('notifications_unavailable', $count->decodedBody()['error']['code']);
 	}
 
 	public function testNotificationsRequireAuthScopeAndAValidCursor(): void
@@ -1538,6 +1653,58 @@ final class MastodonApiTest extends TestCase
 			method: 'GET',
 			path: $prefix . '/notifications',
 			query: $query,
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, mixed> $query
+	 * @param list<string>         $scopes
+	 */
+	private function unreadCount(
+		Application $app,
+		array $query = [],
+		array $scopes = ['read:notifications'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/notifications/unread_count',
+			query: $query,
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param list<string> $scopes
+	 */
+	private function dismissNotification(
+		Application $app,
+		string $id,
+		array $scopes = ['write:notifications'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/notifications/' . rawurlencode($id) . '/dismiss',
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param list<string> $scopes
+	 */
+	private function clearNotifications(
+		Application $app,
+		array $scopes = ['write:notifications'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/notifications/clear',
 			userId: $userId,
 			scopes: $scopes,
 		));

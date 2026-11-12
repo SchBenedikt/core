@@ -89,6 +89,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$follow = $manifest->find('mastodon.accounts.follow');
 		$unfollow = $manifest->find('mastodon.accounts.unfollow');
 		$notifications = $manifest->find('mastodon.notifications.list');
+		$unread = $manifest->find('mastodon.notifications.unread_count');
+		$dismiss = $manifest->find('mastodon.notifications.dismiss');
+		$clear = $manifest->find('mastodon.notifications.clear');
 		$search = $manifest->find('mastodon.search');
 
 		self::assertNotNull($create);
@@ -104,6 +107,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($follow);
 		self::assertNotNull($unfollow);
 		self::assertNotNull($notifications);
+		self::assertNotNull($unread);
+		self::assertNotNull($dismiss);
+		self::assertNotNull($clear);
 		self::assertNotNull($search);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
@@ -146,6 +152,18 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:notifications'], $notifications->requiredScopes);
 		self::assertSame('60/60', $notifications->rateLimit);
 		self::assertSame('/api/mastodon/v1/notifications', $notifications->path);
+		self::assertTrue($unread->requiresAuth);
+		self::assertSame(['read:notifications'], $unread->requiredScopes);
+		self::assertSame('60/60', $unread->rateLimit);
+		self::assertSame('/api/mastodon/v1/notifications/unread_count', $unread->path);
+		self::assertTrue($dismiss->requiresAuth);
+		self::assertSame(['write:notifications'], $dismiss->requiredScopes);
+		self::assertSame('30/900', $dismiss->rateLimit);
+		self::assertSame('/api/mastodon/v1/notifications/{id}/dismiss', $dismiss->path);
+		self::assertTrue($clear->requiresAuth);
+		self::assertSame(['write:notifications'], $clear->requiredScopes);
+		self::assertSame('30/900', $clear->rateLimit);
+		self::assertSame('/api/mastodon/v1/notifications/clear', $clear->path);
 		self::assertTrue($search->requiresAuth);
 		self::assertSame(['read:search'], $search->requiredScopes);
 		self::assertSame('60/60', $search->rateLimit);

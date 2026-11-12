@@ -13,10 +13,6 @@ use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
 
-use function is_array;
-use function is_string;
-use function trim;
-
 /**
  * `GET {mastodon.prefix}/notifications`
  *
@@ -68,24 +64,4 @@ final class MastodonNotificationsHandler extends MastodonHandler
 		));
 	}
 
-	/**
-	 * @return list<string>
-	 */
-	private function listQuery(Request $request, string $name): array
-	{
-		$raw = $request->query[$name] ?? null;
-		if ($raw === null) {
-			return [];
-		}
-
-		$values = is_array($raw) ? $raw : [$raw];
-		$result = [];
-		foreach ($values as $value) {
-			if (is_string($value) && trim($value) !== '') {
-				$result[] = trim($value);
-			}
-		}
-
-		return $result;
-	}
 }

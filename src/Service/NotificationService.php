@@ -60,6 +60,45 @@ final class NotificationService
 	}
 
 	/**
+	 * Marks one notification read, idempotently and only for its recipient.
+	 *
+	 * The row stays in storage so a repeat dismiss can answer success instead
+	 * of leaking whether an id ever existed. A foreign or missing id is false.
+	 */
+	public function markRead(string $recipientId, string $id, DateTimeImmutable $readAt): bool
+	{
+		// The repository owns the ownership and already-read checks. It can
+		// answer success for an existing read row without an extra find, and
+		// its PDO adapter maps a missing table/column to DatabaseException.
+		return $this->notifications->markRead(
+			$id,
+			$recipientId,
+			Time::toSecondPrecision($readAt),
+		);
+	}
+
+	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int
+	{
+		return $this->notifications->markAllRead(
+			$recipientId,
+			Time::toSecondPrecision($readAt),
+		);
+	}
+
+	/**
+	 * @param list<NotificationType> $types
+	 * @param list<NotificationType> $excludeTypes
+	 */
+	public function unreadCount(
+		string $recipientId,
+		?string $accountId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): int {
+		return $this->notifications->countUnread($recipientId, $accountId, $types, $excludeTypes);
+	}
+
+	/**
 	 * @param list<NotificationType> $types
 	 * @param list<NotificationType> $excludeTypes
 	 *

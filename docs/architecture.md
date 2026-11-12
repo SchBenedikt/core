@@ -372,8 +372,23 @@ POST /inbox (Follow)
 GET {mastodon.prefix}/notifications
   └─ MastodonNotificationsHandler
       └─ MastodonService::notifications
-          ├─ NotificationRepository::find/listFor
+          ├─ NotificationRepository::find/listFor (unread only)
           └─ MastodonPresenter::notification + status lookup
+
+POST {mastodon.prefix}/notifications/{id}/dismiss
+  └─ MastodonDismissNotificationHandler
+      └─ MastodonService::dismissNotification
+          └─ NotificationService::markRead → read_at
+
+POST {mastodon.prefix}/notifications/clear
+  └─ MastodonClearNotificationsHandler
+      └─ MastodonService::clearNotifications
+          └─ NotificationService::markAllRead → read_at
+
+GET {mastodon.prefix}/notifications/unread_count
+  └─ MastodonNotificationUnreadCountHandler
+      └─ MastodonService::notificationUnreadCount
+          └─ NotificationRepository::countUnread (capped by the service)
 ```
 
 The notification id is a hash of recipient, type, actor and optional post. It
@@ -384,8 +399,12 @@ and post deletion do not delete it. A post that no longer exists is omitted
 from the projected notification rather than exposing a deleted status. A
 remote actor is stored as its URL and projected as a minimal remote account;
 the core does not fetch a profile just to render the notification. The local
-account directory distinguishes local actor ids from remote URLs. Read/unread
-and dismissal state do not exist in this slice.
+account directory distinguishes local actor ids from remote URLs. `read_at`
+is a nullable durable marker: dismiss marks one owned row, clear marks every
+unread row of the recipient, and the list/count read only rows without a
+marker. Dismiss is idempotent for the owner and hides a foreign/missing id as
+`404`; clear is idempotent and leaves new events unread. Read rows remain
+historical and may be pruned by the host.
 
 Local search is a read-only projection over the same stores, not a search
 index or a remote resolver:
@@ -593,7 +612,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow, relationship reads, local poll creation and local status/actor search; locally implementable instance/account/dismissal slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local poll creation, instance metadata/statistics and local status/actor search; narrower local account/profile endpoints remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |

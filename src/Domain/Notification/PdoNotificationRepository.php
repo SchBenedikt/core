@@ -23,11 +23,12 @@ use function implode;
  *
  * The primary key is the deterministic event id. Timestamps use the canonical
  * UTC form, so the cursor and ordering behave identically on every supported
- * database.
+ * database. A nullable `read_at` is the durable read marker; dismiss and clear
+ * set it without deleting the historical event.
  */
 final class PdoNotificationRepository implements NotificationRepository
 {
-	private const COLUMNS = 'id, recipient_id, actor_id, type, post_id, created_at';
+	private const COLUMNS = 'id, recipient_id, actor_id, type, post_id, created_at, read_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -39,8 +40,8 @@ final class PdoNotificationRepository implements NotificationRepository
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . NotificationSchema::TABLE
-				. ' (id, recipient_id, actor_id, type, post_id, created_at)'
-				. ' VALUES (:id, :recipient_id, :actor_id, :type, :post_id, :created_at)',
+				. ' (id, recipient_id, actor_id, type, post_id, created_at, read_at)'
+				. ' VALUES (:id, :recipient_id, :actor_id, :type, :post_id, :created_at, :read_at)',
 				[
 					'id' => $notification->id,
 					'recipient_id' => $notification->recipientId,
@@ -48,6 +49,7 @@ final class PdoNotificationRepository implements NotificationRepository
 					'type' => $notification->type->value,
 					'post_id' => $notification->postId,
 					'created_at' => Time::format($notification->createdAt),
+					'read_at' => $notification->readAt === null ? null : Time::format($notification->readAt),
 				],
 			);
 		} catch (PDOException $exception) {
@@ -57,10 +59,14 @@ final class PdoNotificationRepository implements NotificationRepository
 
 	public function find(string $id): ?Notification
 	{
-		$row = $this->db->fetchOne(
-			'SELECT ' . self::COLUMNS . ' FROM ' . NotificationSchema::TABLE . ' WHERE id = :id',
-			['id' => $id],
-		);
+		try {
+			$row = $this->db->fetchOne(
+				'SELECT ' . self::COLUMNS . ' FROM ' . NotificationSchema::TABLE . ' WHERE id = :id',
+				['id' => $id],
+			);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The notification could not be read.', 0, $exception);
+		}
 
 		return $row === null ? null : $this->hydrate($row);
 	}
@@ -74,10 +80,13 @@ final class PdoNotificationRepository implements NotificationRepository
 		?string $afterId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		bool $includeRead = false,
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . NotificationSchema::TABLE
 			. ' WHERE recipient_id = :recipient_id';
 		$parameters = ['recipient_id' => $recipientId];
+
+		$this->appendFilters($sql, $parameters, $types, $excludeTypes, null, !$includeRead);
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -99,6 +108,108 @@ final class PdoNotificationRepository implements NotificationRepository
 			$parameters['after'] = Time::format($after);
 		}
 
+		$sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, $limit);
+
+		try {
+			$rows = $this->db->fetchAll($sql, $parameters);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The notifications could not be read.', 0, $exception);
+		}
+
+		return array_map(
+			fn (array $row): Notification => $this->hydrate($row),
+			$rows,
+		);
+	}
+
+	public function markRead(string $id, string $recipientId, DateTimeImmutable $readAt): bool
+	{
+		try {
+			$changed = $this->db->execute(
+				'UPDATE ' . NotificationSchema::TABLE
+				. ' SET read_at = :read_at'
+				. ' WHERE id = :id AND recipient_id = :recipient_id AND read_at IS NULL',
+				[
+					'read_at' => Time::format($readAt),
+					'id' => $id,
+					'recipient_id' => $recipientId,
+				],
+			);
+
+			if ($changed > 0) {
+				return true;
+			}
+
+			// A repeat dismiss finds the row already read. Only the owner may
+			// turn that into success; a foreign or missing id stays invisible.
+			$notification = $this->find($id);
+
+			return $notification !== null && $notification->recipientId === $recipientId;
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The notification could not be marked read.', 0, $exception);
+		}
+	}
+
+	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int
+	{
+		try {
+			return $this->db->execute(
+				'UPDATE ' . NotificationSchema::TABLE
+				. ' SET read_at = :read_at'
+				. ' WHERE recipient_id = :recipient_id AND read_at IS NULL',
+				[
+					'read_at' => Time::format($readAt),
+					'recipient_id' => $recipientId,
+				],
+			);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The notifications could not be marked read.', 0, $exception);
+		}
+	}
+
+	public function countUnread(
+		string $recipientId,
+		?string $accountId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): int {
+		$sql = 'SELECT COUNT(*) FROM ' . NotificationSchema::TABLE
+			. ' WHERE recipient_id = :recipient_id';
+		$parameters = ['recipient_id' => $recipientId];
+
+		$this->appendFilters($sql, $parameters, $types, $excludeTypes, $accountId, true);
+
+		try {
+			return (int) $this->db->fetchValue($sql, $parameters);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('Unread notifications could not be counted.', 0, $exception);
+		}
+	}
+
+	/**
+	 * Builds the shared read/actor/type filter for list and count queries.
+	 *
+	 * @param array<string, mixed>   $parameters
+	 * @param list<NotificationType> $types
+	 * @param list<NotificationType> $excludeTypes
+	 */
+	private function appendFilters(
+		string &$sql,
+		array &$parameters,
+		array $types,
+		array $excludeTypes,
+		?string $accountId,
+		bool $unreadOnly,
+	): void {
+		if ($unreadOnly) {
+			$sql .= ' AND read_at IS NULL';
+		}
+
+		if ($accountId !== null) {
+			$sql .= ' AND actor_id = :account_id';
+			$parameters['account_id'] = $accountId;
+		}
+
 		if ($types !== []) {
 			$placeholders = [];
 			foreach (array_values($types) as $index => $type) {
@@ -118,13 +229,6 @@ final class PdoNotificationRepository implements NotificationRepository
 			}
 			$sql .= ' AND type NOT IN (' . implode(', ', $placeholders) . ')';
 		}
-
-		$sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, $limit);
-
-		return array_map(
-			fn (array $row): Notification => $this->hydrate($row),
-			$this->db->fetchAll($sql, $parameters),
-		);
 	}
 
 	/**
@@ -139,6 +243,7 @@ final class PdoNotificationRepository implements NotificationRepository
 			type: NotificationType::from((string) $row['type']),
 			postId: $row['post_id'] === null ? null : (string) $row['post_id'],
 			createdAt: Time::parse((string) $row['created_at']),
+			readAt: $row['read_at'] === null ? null : Time::parse((string) $row['read_at']),
 		);
 	}
 }

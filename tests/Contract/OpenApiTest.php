@@ -95,6 +95,28 @@ final class OpenApiTest extends TestCase
 		self::assertSame('60/60', $notifications['x-rate-limit']);
 		self::assertSame(['read:notifications'], $notifications['x-required-scopes']);
 
+		$unread = $document['paths']['/api/mastodon/v1/notifications/unread_count']['get'];
+		self::assertSame('mastodon_notifications_unread_count', $unread['operationId']);
+		self::assertSame([['bearerAuth' => []]], $unread['security']);
+		self::assertSame('60/60', $unread['x-rate-limit']);
+		self::assertSame(['read:notifications'], $unread['x-required-scopes']);
+
+		$dismiss = $document['paths']['/api/mastodon/v1/notifications/{id}/dismiss']['post'];
+		self::assertSame('mastodon_notifications_dismiss', $dismiss['operationId']);
+		self::assertSame([['bearerAuth' => []]], $dismiss['security']);
+		self::assertSame('30/900', $dismiss['x-rate-limit']);
+		self::assertSame(['write:notifications'], $dismiss['x-required-scopes']);
+		self::assertSame(
+			[['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],
+			$dismiss['parameters'],
+		);
+
+		$clear = $document['paths']['/api/mastodon/v1/notifications/clear']['post'];
+		self::assertSame('mastodon_notifications_clear', $clear['operationId']);
+		self::assertSame([['bearerAuth' => []]], $clear['security']);
+		self::assertSame('30/900', $clear['x-rate-limit']);
+		self::assertSame(['write:notifications'], $clear['x-required-scopes']);
+
 		$search = $document['paths']['/api/mastodon/v1/search']['get'];
 		self::assertSame('mastodon_search', $search['operationId']);
 		self::assertSame([['bearerAuth' => []]], $search['security']);
@@ -159,6 +181,9 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/unfollow', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/favourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/unfavourite', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/notifications/unread_count', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/notifications/{id}/dismiss', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/notifications/clear', $decoded['paths']);
 		self::assertArrayHasKey('/api/v1/remote-posts/{id}/thread', $decoded['paths']);
 		self::assertSame(
 			[['bearerAuth' => []]],

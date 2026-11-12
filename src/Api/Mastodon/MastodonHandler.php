@@ -19,6 +19,10 @@ use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\ValidationException;
 use stdClass;
 
+use function is_array;
+use function is_string;
+use function trim;
+
 /**
  * Shared error mapping and pagination links for the compatibility handlers.
  */
@@ -61,6 +65,29 @@ abstract class MastodonHandler implements Handler
 		$this->run($work);
 
 		return Response::empty();
+	}
+
+	/**
+	 * Reads a repeatable query parameter such as `types[]`.
+	 *
+	 * @return list<string>
+	 */
+	protected function listQuery(Request $request, string $name): array
+	{
+		$raw = $request->query[$name] ?? null;
+		if ($raw === null) {
+			return [];
+		}
+
+		$values = is_array($raw) ? $raw : [$raw];
+		$result = [];
+		foreach ($values as $value) {
+			if (is_string($value) && trim($value) !== '') {
+				$result[] = trim($value);
+			}
+		}
+
+		return $result;
 	}
 
 	/**

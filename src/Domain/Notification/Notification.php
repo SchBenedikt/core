@@ -18,7 +18,9 @@ use InvalidArgumentException;
  *
  * `actorId` is a local user id for local interactions and an absolute actor
  * URL for a remote follower. `postId` is set only for a favourite, because a
- * follow notification has no status to show.
+ * follow notification has no status to show. `readAt` is null while the event
+ * is unread and is set by a dismiss or clear action; the row itself stays for
+ * the host's retention policy.
  */
 final readonly class Notification
 {
@@ -29,6 +31,7 @@ final readonly class Notification
 		public NotificationType $type,
 		public ?string $postId,
 		public DateTimeImmutable $createdAt,
+		public ?DateTimeImmutable $readAt = null,
 	) {
 		if ($id === '' || $recipientId === '' || $actorId === '') {
 			throw new InvalidArgumentException('A notification needs an id, a recipient and an actor.');
@@ -43,6 +46,29 @@ final readonly class Notification
 		}
 	}
 
+	public function isRead(): bool
+	{
+		return $this->readAt !== null;
+	}
+
+	/**
+	 * Returns the same event with a read marker. Dismiss and clear are the only
+	 * callers; a repeat keeps the first marker so the operation stays
+	 * idempotent.
+	 */
+	public function withReadAt(DateTimeImmutable $readAt): self
+	{
+		return new self(
+			id: $this->id,
+			recipientId: $this->recipientId,
+			actorId: $this->actorId,
+			type: $this->type,
+			postId: $this->postId,
+			createdAt: $this->createdAt,
+			readAt: $readAt,
+		);
+	}
+
 	/**
 	 * @return array<string, mixed>
 	 */
@@ -55,6 +81,7 @@ final readonly class Notification
 			'type' => $this->type->value,
 			'post_id' => $this->postId,
 			'created_at' => Time::format($this->createdAt),
+			'read_at' => $this->readAt === null ? null : Time::format($this->readAt),
 		];
 	}
 }

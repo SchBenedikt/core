@@ -31,6 +31,10 @@ interface NotificationRepository
 	/**
 	 * One page for a recipient, newest first with the id as tie-break.
 	 *
+	 * Read notifications are omitted by default because Mastodon's dismiss
+	 * removes them from the client view. The read rows stay stored so a repeat
+	 * dismiss can remain idempotent and the host can prune them later.
+	 *
 	 * @param list<NotificationType> $types        only these types when non-empty
 	 * @param list<NotificationType> $excludeTypes omit these types
 	 *
@@ -45,5 +49,37 @@ interface NotificationRepository
 		?string $afterId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		bool $includeRead = false,
 	): array;
+
+	/**
+	 * Marks one notification of this recipient as read.
+	 *
+	 * Returns false for a missing or foreign row. An already-read row belonging
+	 * to the recipient returns true, so the HTTP dismiss is idempotent.
+	 */
+	public function markRead(string $id, string $recipientId, DateTimeImmutable $readAt): bool;
+
+	/**
+	 * Marks every unread notification of one recipient as read.
+	 *
+	 * @return int the number of rows changed
+	 */
+	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int;
+
+	/**
+	 * Counts unread notifications for a recipient, with optional local filters.
+	 *
+	 * The service caps the returned number; the repository returns the uncapped
+	 * count so a caller can decide on its own limit without loading rows.
+	 *
+	 * @param list<NotificationType> $types        only these types when non-empty
+	 * @param list<NotificationType> $excludeTypes omit these types
+	 */
+	public function countUnread(
+		string $recipientId,
+		?string $accountId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): int;
 }

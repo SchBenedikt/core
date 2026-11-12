@@ -148,6 +148,106 @@ abstract class NotificationRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testReadMarkerIsScopedIdempotentAndHidesByDefault(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->notification('n1', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->notification('n2', 'alice', 'carol', NotificationType::Favourite, 'p1', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->notification('n3', 'bob', 'bob', NotificationType::Follow, null, '2026-11-11T10:02:00Z'));
+
+		$readAt = Time::parse('2026-11-11T10:03:00Z');
+		self::assertTrue($repository->markRead('n1', 'alice', $readAt));
+		self::assertTrue($repository->find('n1')?->isRead());
+		self::assertSame('2026-11-11T10:03:00Z', $repository->find('n1')?->toArray()['read_at']);
+
+		// A repeat keeps the first marker and still reports success.
+		self::assertTrue($repository->markRead('n1', 'alice', Time::parse('2026-11-11T10:04:00Z')));
+		self::assertSame('2026-11-11T10:03:00Z', $repository->find('n1')?->toArray()['read_at']);
+
+		self::assertFalse($repository->markRead('n2', 'bob', $readAt));
+		self::assertFalse($repository->markRead('missing', 'alice', $readAt));
+		self::assertFalse($repository->find('n2')?->isRead());
+
+		self::assertSame(
+			['n2'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor('alice', 10)),
+		);
+		self::assertSame(
+			['n2', 'n1'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor(
+				'alice',
+				10,
+				null,
+				null,
+				null,
+				null,
+				[],
+				[],
+				true,
+			)),
+		);
+		self::assertSame(
+			['n3'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor('bob', 10)),
+		);
+	}
+
+	public function testMarkAllReadIsScopedAndNewRowsStayUnread(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->notification('n1', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->notification('n2', 'alice', 'carol', NotificationType::Favourite, 'p1', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->notification('n3', 'bob', 'bob', NotificationType::Follow, null, '2026-11-11T10:02:00Z'));
+
+		self::assertSame(2, $repository->countUnread('alice'));
+		self::assertSame(1, $repository->countUnread('bob'));
+		self::assertSame(2, $repository->markAllRead('alice', Time::parse('2026-11-11T10:03:00Z')));
+		self::assertSame(0, $repository->markAllRead('alice', Time::parse('2026-11-11T10:04:00Z')));
+		self::assertSame(0, $repository->countUnread('alice'));
+		self::assertSame(1, $repository->countUnread('bob'));
+		self::assertSame([], $repository->listFor('alice', 10));
+
+		$repository->insert($this->notification('n4', 'alice', 'dave', NotificationType::Follow, null, '2026-11-11T10:05:00Z'));
+
+		self::assertSame(1, $repository->countUnread('alice'));
+		self::assertSame(
+			['n4'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor('alice', 10)),
+		);
+		self::assertCount(3, $repository->listFor(
+			'alice',
+			10,
+			null,
+			null,
+			null,
+			null,
+			[],
+			[],
+			true,
+		));
+	}
+
+	public function testUnreadCountSupportsActorTypeAndExcludeFilters(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->notification('f1', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->notification('v1', 'alice', 'bob', NotificationType::Favourite, 'p1', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->notification('f2', 'alice', 'carol', NotificationType::Follow, null, '2026-11-11T10:02:00Z'));
+
+		self::assertSame(3, $repository->countUnread('alice'));
+		self::assertSame(2, $repository->countUnread('alice', 'bob'));
+		self::assertSame(1, $repository->countUnread('alice', 'carol'));
+		self::assertSame(2, $repository->countUnread('alice', null, [NotificationType::Follow]));
+		self::assertSame(1, $repository->countUnread('alice', null, [], [NotificationType::Follow]));
+		self::assertSame(1, $repository->countUnread('alice', 'carol', [NotificationType::Follow]));
+
+		self::assertTrue($repository->markRead('v1', 'alice', Time::parse('2026-11-11T10:03:00Z')));
+
+		self::assertSame(2, $repository->countUnread('alice'));
+		self::assertSame(1, $repository->countUnread('alice', 'bob'));
+		self::assertSame(0, $repository->countUnread('alice', null, [NotificationType::Favourite]));
+	}
+
 	private function notification(
 		string $id,
 		string $recipientId,

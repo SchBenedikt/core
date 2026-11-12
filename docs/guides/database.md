@@ -27,7 +27,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
 - `src/Domain/Post/PollSchema.php` → `social_poll` and ordered `social_poll_option` (one poll per post; no vote rows yet)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
-- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id)
+- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
@@ -111,11 +111,15 @@ schema migration.
 optional post. Its primary key is a deterministic hash of that tuple, so a
 repeated favourite or Follow cannot create a second row; no random id or
 secondary idempotency table is involved. The `(recipient_id, created_at, id)`
-index serves the newest-first page and its id tie-break. A notification is
-historical: unfavouriting, unfollowing or deleting the post does not delete
+index serves the newest-first page and its id tie-break; the
+`(recipient_id, read_at, created_at, id)` unread index serves the filtered
+list and count. `read_at` is null until the recipient dismisses one row or
+clears all unread rows, and the list omits rows with a marker. A notification
+is historical: unfavouriting, unfollowing or deleting the post does not delete
 it. A deleted post is omitted from the projected notification. The host can
-prune rows by recipient or age; the core does not schedule that job. There is
-no read/dismiss flag.
+prune rows, including read rows, by recipient or age; the core does not
+schedule that job. Existing listing-only hosts must add the nullable column and
+unread index before the read routes work; old rows remain unread.
 
 `social_atproto_publication` stores the idempotency mapping from a local post
 to the AT Protocol record written for one account. Its primary key is

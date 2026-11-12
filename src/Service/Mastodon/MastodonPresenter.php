@@ -73,6 +73,7 @@ final class MastodonPresenter
 			'type' => $notification->type->value,
 			'created_at' => $notification->createdAt->format('Y-m-d\TH:i:s.000\Z'),
 			'account' => $this->notificationAccount($notification->actorId),
+			'unread' => !$notification->isRead(),
 		];
 
 		if ($status !== null) {

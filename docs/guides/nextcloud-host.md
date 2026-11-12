@@ -413,10 +413,20 @@ For the Mastodon-compatible local follow/unfollow and relationship routes,
 add `is_local SMALLINT NOT NULL DEFAULT 0` to `social_follower`; existing rows
 stay remote and only `POST {prefix}/accounts/{id}/follow` writes `1`. A host
 without the column cannot read followers or serve those routes. For the
-notification route, create `social_notification` from
+notification routes, create `social_notification` from
 `NotificationSchema::statements()`; there is no legacy import. Repeating an
 interaction cannot duplicate a notification, and deleting a post/follow leaves
-the historical row for the host's retention policy.
+the historical row for the host's retention policy. A host that already has
+the listing-only table adds the nullable `read_at` marker and unread index:
+
+```sql
+ALTER TABLE social_notification ADD COLUMN read_at VARCHAR(20) NULL;
+CREATE INDEX social_notification_unread
+  ON social_notification (recipient_id, read_at, created_at, id);
+```
+
+Old rows stay unread, and dismiss/clear only update `read_at`; the host can
+prune read rows on its own schedule.
 Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
 or reading the combined home timeline; it has no legacy rows to import. Create
 `social_block` before enabling `GET`/`POST /api/v1/blocks` or the combined home
@@ -482,14 +492,14 @@ one owner, or a peer will see two different answers for the same account.
 - The core now owns the optional Mastodon-compatible subset (instance
   metadata/statistics, public timeline, status read/create/delete with local
   poll creation, local favourite/unfavourite, local follow/unfollow and
-  relationships, local notifications, media
+  relationships, local notifications with dismiss/unread state, media
   upload/update/delete, account statuses and verify credentials). The app can
   delegate those routes instead of keeping a second implementation;
   OAuth/token issuance, remote timelines, favourite federation, boosts,
   remote notifications, streaming and the remote account/admin surface stay
-  host-specific. Local search is done in the core; notification
-dismissal/unread state and narrower local account endpoints are core-side
-follow-ups, not host blockers. Remote-post backfill,
+  host-specific. Local search and notification dismiss/unread state are done
+  in the core; narrower local account endpoints are core-side follow-ups, not
+  host blockers. Remote-post backfill,
   thread/context fetching and local/remote media are in the core; the
   Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use the
   supplied `CurlHttpClient`) before remote attachment ingestion or thread
