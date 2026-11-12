@@ -1010,6 +1010,137 @@ final class MastodonApiTest extends TestCase
 		)->status);
 	}
 
+	public function testSearchFindsLocalAccountsAndStatuses(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$this->createStatus($app, ['status' => 'alice says hello']);
+		$this->createStatus($app, ['status' => 'bob says hello'], userId: 'bob');
+
+		$all = $this->search($app, [
+			'q' => 'alice',
+			'resolve' => 'true',
+			'exclude_unreviewed' => 'false',
+		]);
+		self::assertSame(200, $all->status);
+		self::assertCount(1, $all->decodedBody()['accounts']);
+		self::assertSame('alice', $all->decodedBody()['accounts'][0]['id']);
+		self::assertCount(1, $all->decodedBody()['statuses']);
+		self::assertSame('alice', $all->decodedBody()['statuses'][0]['account']['id']);
+		self::assertSame([], $all->decodedBody()['hashtags']);
+
+		$statuses = $this->search($app, ['q' => 'hello', 'type' => 'statuses']);
+		self::assertCount(2, $statuses->decodedBody()['statuses']);
+		self::assertSame([], $statuses->decodedBody()['accounts']);
+
+		$accounts = $this->search($app, ['q' => 'hello', 'type' => 'accounts']);
+		self::assertSame([], $accounts->decodedBody()['accounts']);
+		self::assertSame([], $accounts->decodedBody()['statuses']);
+
+		$hashtags = $this->search($app, ['q' => 'hello', 'type' => 'hashtags']);
+		self::assertSame([], $hashtags->decodedBody()['accounts']);
+		self::assertSame([], $hashtags->decodedBody()['statuses']);
+		self::assertSame([], $hashtags->decodedBody()['hashtags']);
+	}
+
+	public function testSearchCanBeLimitedToFollowedAccountsAndToAnOffsetPage(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$this->createStatus($app, ['status' => 'alice hello one']);
+		$this->createStatus($app, ['status' => 'alice hello two']);
+		$this->createStatus($app, ['status' => 'bob hello three'], userId: 'bob');
+
+		$all = $this->search($app, ['q' => 'hello', 'type' => 'statuses', 'limit' => '2']);
+		$next = $this->search($app, ['q' => 'hello', 'type' => 'statuses', 'limit' => '2', 'offset' => '2']);
+		self::assertCount(2, $all->decodedBody()['statuses']);
+		self::assertCount(1, $next->decodedBody()['statuses']);
+		self::assertNotSame($all->decodedBody()['statuses'][0]['id'], $next->decodedBody()['statuses'][0]['id']);
+
+		$this->followAccount($app, 'bob');
+		$following = $this->search($app, [
+			'q' => 'hello',
+			'type' => 'statuses',
+			'following' => 'true',
+		]);
+		self::assertCount(1, $following->decodedBody()['statuses']);
+		self::assertSame('bob', $following->decodedBody()['statuses'][0]['account']['id']);
+
+		$followingAccounts = $this->search($app, [
+			'q' => 'bob',
+			'type' => 'accounts',
+			'following' => 'true',
+		]);
+		self::assertCount(1, $followingAccounts->decodedBody()['accounts']);
+		self::assertSame('bob', $followingAccounts->decodedBody()['accounts'][0]['id']);
+	}
+
+	public function testSearchHidesPrivateAndDeletedStatuses(): void
+	{
+		$app = $this->app();
+		$private = $this->createStatus($app, [
+			'status' => 'private hello',
+			'visibility' => 'private',
+		])->decodedBody();
+		$public = $this->createStatus($app, ['status' => 'public hello'])->decodedBody();
+
+		self::assertCount(1, $this->search($app, ['q' => 'hello'])->decodedBody()['statuses']);
+
+		$app->handle(new Request(
+			method: 'DELETE',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $public['id'],
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame([], $this->search($app, ['q' => 'hello'])->decodedBody()['statuses']);
+		self::assertSame($private['id'], $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $private['id'],
+			userId: 'alice',
+		))->decodedBody()['id']);
+	}
+
+	public function testSearchRejectsMissingOrUnknownInputAndRequiresItsScope(): void
+	{
+		$app = $this->app();
+
+		$missing = $this->search($app, ['type' => 'statuses']);
+		self::assertSame(422, $missing->status);
+		self::assertSame('validation_failed', $missing->decodedBody()['error']['code']);
+
+		$unknown = $this->search($app, ['q' => 'hello', 'type' => 'unknown']);
+		self::assertSame(422, $unknown->status);
+		self::assertSame('validation_failed', $unknown->decodedBody()['error']['code']);
+
+		$anonymous = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/search?q=hello',
+		));
+		self::assertSame(401, $anonymous->status);
+
+		$wrongScope = $this->search($app, ['q' => 'hello'], scopes: ['read:accounts']);
+		self::assertSame(403, $wrongScope->status);
+		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
+
+		self::assertSame(200, $this->search($app, ['q' => 'alice'], scopes: ['read'])->status);
+
+		$disabled = $this->search($this->app(enabled: false), ['q' => 'alice']);
+		self::assertSame(404, $disabled->status);
+		self::assertSame('mastodon_api_disabled', $disabled->decodedBody()['error']['code']);
+	}
+
+	public function testSearchReportsMissingLocalCapabilities(): void
+	{
+		$app = $this->app(actors: null);
+
+		$accounts = $this->search($app, ['q' => 'alice', 'type' => 'accounts']);
+		self::assertSame(503, $accounts->status);
+		self::assertSame('search_not_configured', $accounts->decodedBody()['error']['code']);
+
+		$following = $this->search($app, ['q' => 'alice', 'following' => 'true']);
+		self::assertSame(503, $following->status);
+		self::assertSame('search_not_configured', $following->decodedBody()['error']['code']);
+	}
+
 	public function testDirectVisibilityAndMissingInputAreRejected(): void
 	{
 		$app = $this->app();
@@ -1044,6 +1175,26 @@ final class MastodonApiTest extends TestCase
 			'GET',
 			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
 		))->decodedBody());
+	}
+
+	/**
+	 * @param array<string, string> $query
+	 * @param list<string> $scopes
+	 */
+	private function search(
+		Application $app,
+		array $query,
+		array $scopes = ['read:search'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: $prefix . '/search',
+			query: $query,
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	private function app(

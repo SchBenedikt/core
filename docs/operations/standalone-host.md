@@ -15,7 +15,9 @@ This document is the checklist that host is built against.
    `RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
    the migration step. `social_favourite` and `social_notification` are needed
    only when the optional Mastodon compatibility surface exposes
-   favourite/unfavourite and notification listing; there is no backfill.
+   favourite/unfavourite and notification listing; there is no backfill. Local
+   search needs no additional table: it uses `social_post` and the host's
+   account directory.
    Existing `social_follower` tables also need the `is_local`
    column before local follow/unfollow is exposed; it defaults old rows to
    remote (`0`) and needs no backfill.

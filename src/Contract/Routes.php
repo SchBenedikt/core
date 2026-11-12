@@ -44,6 +44,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
@@ -434,6 +435,16 @@ final class Routes
 				rateLimit: '60/60',
 				requiredScopes: ['read:notifications'],
 				summary: 'Notifications for the signed-in local account, newest first.',
+			),
+			new Route(
+				name: 'mastodon.search',
+				method: 'GET',
+				path: $mastodon . '/search',
+				handler: MastodonSearchHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:search'],
+				summary: 'Search local accounts and public/unlisted statuses in the Mastodon v2 shape.',
 			),
 			new Route(
 				name: 'mastodon.accounts.verify_credentials',

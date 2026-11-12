@@ -93,10 +93,11 @@ rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
 proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
 compatibility subset (instance, public timeline, status read/create/delete,
 local favourite/unfavourite, local follow/unfollow and relationship reads,
-local notification listing, media upload/update/delete, account statuses,
-verify credentials; `write:statuses`, `write:favourites`, `write:follows`,
-`write:media`, `read:accounts`, `read:follows` and `read:notifications`
-scopes, id-aware pagination and `Idempotency-Key`), the
+local notification listing, local status/actor search, media
+upload/update/delete, account statuses, verify credentials; `write:statuses`,
+`write:favourites`, `write:follows`, `write:media`, `read:accounts`,
+`read:follows`, `read:notifications` and `read:search` scopes, id-aware and
+offset pagination and `Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
 backfill with historical media catch-up, bounded thread/context fetching with
@@ -115,9 +116,10 @@ repository/AppView/media/firehose stack, the external Mastodon server
 remainder (OAuth/token issuance and app registration, remote timelines and
 delivery, favourite federation, boosts, remote notifications, streaming,
 remote search, account/admin and remote relationship APIs), and an
-object-storage adapter. Local Mastodon notification listing is done; local
-search, poll creation, instance/domain info and narrower local account
-endpoints are core-side roadmap follow-ups, not host blockers. The local AT Protocol publishing slice is
+object-storage adapter. Local Mastodon notification listing and local
+status/actor search are done; poll creation, instance/domain info,
+notification dismissal/unread state and narrower local account endpoints are
+core-side roadmap follow-ups, not host blockers. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility
 subset is in `docs/guides/mastodon-api.md`; the rest is in
 `docs/roadmap.md`. Local

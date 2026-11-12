@@ -22,7 +22,7 @@ use PDOException;
  * keeps string comparison chronological on SQLite, PostgreSQL and MySQL
  * alike and makes the timeline query a single indexed range scan.
  */
-final class PdoPostRepository implements PostRepository
+final class PdoPostRepository implements PostRepository, PostSearchRepository
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, published_at, deleted_at';
 
@@ -252,6 +252,49 @@ final class PdoPostRepository implements PostRepository
 		}
 
 		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	/**
+	 * @param list<string>|null $authorIds
+	 *
+	 * @return list<Post>
+	 */
+	public function search(
+		string $query,
+		int $limit,
+		int $offset,
+		?array $authorIds = null,
+	): array {
+		$query = trim($query);
+		if ($query === '' || $limit < 1 || $authorIds === []) {
+			return [];
+		}
+
+		$parameters = [
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+			'query' => '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($query)) . '%',
+		];
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL'
+			. ' AND visibility IN (:public, :unlisted)'
+			. " AND LOWER(content) LIKE :query ESCAPE '!'";
+
+		if ($authorIds !== null) {
+			$placeholders = [];
+			foreach (array_values($authorIds) as $index => $authorId) {
+				$name = 'author_' . $index;
+				$placeholders[] = ':' . $name;
+				$parameters[$name] = $authorId;
+			}
+			$sql .= ' AND author_id IN (' . implode(', ', $placeholders) . ')';
+		}
+
+		$sql .= ' ORDER BY published_at DESC, id DESC'
+			. ' LIMIT ' . $this->limit($limit)
+			. ' OFFSET ' . $this->offset($offset);
 
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}

@@ -110,7 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService` and local notification listing through `NotificationService`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, local notification listing through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -133,6 +133,7 @@ production bootstrap.
 | `Network\HostResolver` | Resolve every A/AAAA answer so the remote-media guard can reject private addresses | `DnsHostResolver`; hosts may supply their DNS policy |
 | `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
+| `LocalActorSearch` | Optional: search local account ids for `GET {mastodon.prefix}/search`; a directory that also implements this gets account search, otherwise the route answers `503 search_not_configured` for `type=accounts` | host-specific; `InMemoryActorDirectory` for tests/tools |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
@@ -164,7 +165,10 @@ off by default; `social/mastodon.api` enables it and `social/mastodon.prefix`
 selects the path (default `/api/mastodon/v1`). Media upload uses the same
 `MediaService` and `BlobStore` as `/api/v1/media`; without one the route
 answers `503 media_not_configured`. The prefix must not overlap `/api/v1` or
-the protocol paths. See [Mastodon-compatible API](mastodon-api.md).
+the protocol paths. Search adds no key: status search uses the same post
+repository when it implements `PostSearchRepository`, and account search uses
+`LocalActorSearch` when the supplied directory implements it. See
+[Mastodon-compatible API](mastodon-api.md).
 
 `instance.url` is what every actor, post and activity id is built from. It must
 be the public URL under which the core's routes are actually served. If that

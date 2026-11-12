@@ -12,7 +12,15 @@ namespace AlohaSocial\Core\Domain\Post;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
 
+use function array_fill_keys;
+use function array_filter;
+use function array_slice;
+use function array_values;
 use function in_array;
+use function mb_stripos;
+use function strcmp;
+use function trim;
+use function usort;
 
 /**
  * Post storage in memory, for tests, the demo and tools.
@@ -20,7 +28,7 @@ use function in_array;
  * It applies exactly the ordering and visibility rules of the SQL
  * implementation, so behaviour cannot differ between the two unnoticed.
  */
-final class InMemoryPostRepository implements PostRepository
+final class InMemoryPostRepository implements PostRepository, PostSearchRepository
 {
 	/**
 	 * @var array<string, Post>
@@ -176,6 +184,40 @@ final class InMemoryPostRepository implements PostRepository
 		}
 
 		return $result;
+	}
+
+	/**
+	 * @param list<string>|null $authorIds
+	 *
+	 * @return list<Post>
+	 */
+	public function search(
+		string $query,
+		int $limit,
+		int $offset,
+		?array $authorIds = null,
+	): array {
+		$query = trim($query);
+		if ($query === '' || $limit < 1 || $authorIds === []) {
+			return [];
+		}
+
+		$allowed = $authorIds === null ? null : array_fill_keys($authorIds, true);
+		$matches = array_values(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted()
+				&& $post->visibility->isPubliclyVisible()
+				&& ($allowed === null || isset($allowed[$post->authorId]))
+				&& mb_stripos($post->content, $query) !== false,
+		));
+
+		usort($matches, static function (Post $a, Post $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($matches, max(0, $offset), max(1, $limit));
 	}
 
 	public function isAttachmentLinked(string $attachmentId): bool

@@ -29,6 +29,7 @@ Locally implemented (core):
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
 - `GET /notifications`
+- `GET /search`
 
 The local subset covers public/unlisted/followers-only text posts, local
 favourite/unfavourite bookkeeping, local follow/unfollow and relationship
@@ -38,16 +39,18 @@ timelines, following a remote actor through this compatibility prefix, remote
 favourite federation (outbound `Like`/`Undo` or remote favourite counts),
 boosts, remote notifications or notification dismissal, streaming, polls,
 scheduled posts, filters, followed tags, lists, OAuth authorization/token
-endpoints, search, admin APIs or the full account/profile surface. Some of
-those are locally implementable and remain on the roadmap; only the parts that
-need a host or remote data are external. See the section at the end.
+endpoints, remote search, admin APIs or the full account/profile surface.
+Local search over local accounts and statuses is implemented below; remote
+search and hashtag search are external. Some of the remaining pieces are
+locally implementable and remain on the roadmap; only the parts that need a
+host or remote data are external. See the section at the end.
 
 ## Configuration and prefix
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all sixteen routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all seventeen routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -90,10 +93,12 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 | `GET {prefix}/notifications` | yes | `read:notifications` | 60 / 60 s |
+| `GET {prefix}/search` | yes | `read:search` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`,
-`read:follows` and `read:notifications`, `write` grants `write:favourites`,
-`write:follows` and `write:media`); a granular scope does not grant its parent.
+`read:follows`, `read:notifications` and `read:search`, `write` grants
+`write:favourites`, `write:follows` and `write:media`); a granular scope does
+not grant its parent.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
 expiry/revocation and the actual rate limiter; the route manifest only declares
@@ -101,9 +106,9 @@ the budget, exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
 `verify_credentials`, status creation, favourite/unfavourite, follow/unfollow,
-relationships, notifications, media management and account statuses.
-Without a directory the core cannot distinguish local from remote account ids;
-a host that enables this API should always pass one.
+relationships, notifications, media management, account statuses and account
+search. Without a directory the core cannot distinguish local from remote
+account ids; a host that enables this API should always pass one.
 
 ## Reading statuses
 
@@ -308,6 +313,54 @@ notifications_not_configured` instead of returning an empty list. The standard
 one. Reading notifications does not mark them as read; the core has no unread
 or dismissal state in this slice.
 
+### Searching local accounts and statuses
+
+`GET {prefix}/search` implements the Mastodon v2 search object over local data
+only:
+
+```http
+GET {prefix}/search?q=hello&type=statuses&limit=20&following=true
+```
+
+```json
+{
+  "accounts": [],
+  "statuses": [{"id": "…", "content": "<p>hello</p>", "…": "the usual status fields"}],
+  "hashtags": []
+}
+```
+
+`q` is required and non-empty (`422 validation_failed`). `type` is optional
+and accepts `accounts`, `statuses` or `hashtags`; any other value is `422
+validation_failed`. Without `type`, all three collections are returned.
+`hashtags` is always an empty array because the core has no hashtag model.
+Status matches are case-insensitive over live, public/unlisted
+`social_post.content`; private, direct and soft-deleted posts never appear,
+and the projected status keeps the normal viewer flags and attachment shape.
+Account matches are case-insensitive over the host's local account directory
+and are projected with `MastodonPresenter::account`.
+
+`following=true` limits both collections to local accounts the signed-in user
+follows (and, for statuses, to posts by those accounts). It does not follow or
+resolve anyone. `limit` defaults to 20 and is clamped to 1–40; `offset`
+defaults to 0 and is clamped to 0–1000, so search uses offset pagination rather
+than the id cursor of timelines. `resolve` and `exclude_unreviewed` are
+accepted for client compatibility but have no local effect: the endpoint never
+fetches a remote status or profile and has no review queue. `read:search` is
+required; a parent `read` token also grants it. The full result object is
+returned even when one collection is empty.
+
+The two capabilities are optional ports over the existing stores:
+`PostSearchRepository` and `LocalActorSearch`. The standard
+`Application::inMemory()`/`Application::forHost()` assemblies wire these when
+the supplied post store and account directory implement them. A host whose
+post store does not implement search, or whose directory has no search
+capability, gets `503
+search_not_configured` when the affected collection is requested. Status
+search needs no new table or index; a host with a large post table can add its
+own index or search adapter behind the same port without changing the route.
+Search is read-only, so it creates no rows and has no cleanup job.
+
 ### Uploading media
 
 `POST /media` accepts `multipart/form-data` with a `file` field and an optional
@@ -410,6 +463,9 @@ default.
   validation_failed`.
 - An unknown cursor id is `404 not_found`; a notification cursor must belong to
   the signed-in recipient.
+- Search uses a numeric `offset` instead of a cursor: it is clamped to 0–1000
+  and applied after the visibility/author filter, so a page never contains a
+  non-public or deleted status.
 
 A non-empty page carries `Link: <…?limit=…&max_id=…>; rel="next"`. Clients can
 follow it until the page is empty. This uses the existing post or notification
@@ -427,11 +483,12 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `notifications_not_configured` | 503 | The assembly has no `NotificationRepository` |
 | `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
+| `search_not_configured` | 503 | The assembly has no `PostSearchRepository` or `LocalActorSearch` for the requested collection, or no relationship service for `following=true` |
 | `instance_not_configured` | 503 | `social/instance.url` is missing; a local follow needs it to derive actor URLs |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
-| `validation_failed` | 422 | Missing/invalid status fields, media ids, relationship ids or a self-follow; see `error.fields` |
+| `validation_failed` | 422 | Missing/invalid status fields, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
 | `not_found` | 404 | Missing/private status, unknown cursor, unknown local account or unknown relationship target |
 
 Authentication failures use the existing `401 authentication_required`; the
@@ -510,7 +567,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The sixteen routes are in the manifest with auth, scope and rate-limit metadata.
+The seventeen routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
 media upload (success, description, media-in-status, auth, scope, disabled,
@@ -526,14 +583,19 @@ disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
 unknown ids and the 100-id limit), notifications (favourite/follow creation,
 repeat idempotency, historical survival, type filters, pagination, cursor
-ownership, auth/scope/disabled), account statuses, verify, delete and cursor
-cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
+ownership, auth/scope/disabled), local search (account/status matches, type
+filters, following filter, offset pages, private/deleted exclusion, missing
+`q`/invalid type, auth/scope/disabled and missing capability), account
+statuses, verify, delete and cursor cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
 and PDO stores and now covers local edges, their exclusion from delivery
 inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
-three relationship routes and the notification route. The post repository contract still covers the
-id-aware cursor used by the API.
+three relationship routes, the notification route and search. The post
+repository contract still covers the id-aware cursor used by the API, and now
+also the `PostSearchRepository` match, visibility, author-filter and offset
+contract for both the in-memory and PDO implementations; the in-memory
+actor-directory search is covered directly.
 
 ## What remains external
 
@@ -544,13 +606,14 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - Remote statuses, public/remote timelines, favourite federation (outbound
   `Like`/`Undo` and remote counts), boosts, bookmarks, remote notifications,
   streaming and remote search need remote data the core does not fetch for
-  this surface. Local notification listing is done above.
-- Local search over local statuses/actors, poll creation on an own status,
-  domain/instance info beyond the current instance endpoint, and narrower
-  local account/profile endpoints are locally implementable and remain on the
+  this surface. Local notification listing and local status/actor search are
+  done above.
+- Poll creation on an own status, domain/instance info beyond the current
+  instance endpoint, notification dismissal/unread state, and narrower local
+  account/profile endpoints are locally implementable and remain on the
   roadmap; they are not host-side prerequisites. Remote relationship APIs and
-  remote search remain external; the local follow/unfollow, relationship and
-  notification views above are done.
+  remote search remain external; the local follow/unfollow, relationship,
+  notification and search views above are done.
 - Following a remote actor through the compatibility prefix and remote
   follower/following listings are not part of this slice; moderation/admin
   APIs are also external. The core `/api/v1/following` path remains the

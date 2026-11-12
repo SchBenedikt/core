@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local search: `GET {mastodon.prefix}/search` requires
+  `read:search`, declares a `60/60` rate limit and returns the Mastodon v2
+  `accounts`/`statuses`/`hashtags` object. It searches only local data:
+  case-insensitive matches over live public/unlisted `social_post.content` and
+  over the host's local account directory. `type` accepts `accounts`,
+  `statuses` or `hashtags`; `hashtags` is always empty because the core has no
+  hashtag model. `limit` is 1–40 with a default of 20, `offset` is 0–1000, and
+  `following=true` limits both collections to local accounts the caller
+  follows. `resolve`/`exclude_unreviewed` are accepted but have no local
+  effect. Two optional read ports over the existing stores keep this additive:
+  `PostSearchRepository` (implemented by the in-memory and PDO post
+  repositories) and `LocalActorSearch` (implemented by the in-memory directory).
+  A missing capability answers `503 search_not_configured`; there is no search
+  table or index migration. The route manifest and OpenAPI export now have 43
+  routes. Remote search, hashtag search, polls, notification dismissal/unread
+  state and narrower local account endpoints remain follow-ups; OAuth/token
+  issuance, remote timelines/delivery, streaming and admin/remote relationship
+  APIs remain external. See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local notifications: `GET
   {mastodon.prefix}/notifications` requires `read:notifications`, declares a
   `60/60` rate limit and returns the signed-in local account's favourites and
@@ -27,11 +45,10 @@ All notable changes to this project are documented here. The format follows
   write, and repeating the event after the migration can heal the row.
   Notifications are historical and survive unfavourite, unfollow and post
   deletion; they are not marked read. The route manifest and
-  OpenAPI export now have 42 routes. The external Mastodon remainder (OAuth,
-  remote timelines/delivery, favourite federation, boosts, remote
-  notifications, streaming and remote admin) stays out of scope; local search,
-  polls and narrower local account endpoints remain core-side roadmap
-  follow-ups. See `docs/guides/mastodon-api.md`.
+  OpenAPI export had 42 routes at that point. The external Mastodon remainder
+  (OAuth, remote timelines/delivery, favourite federation, boosts, remote
+  notifications, streaming and remote admin) stays out of scope; polls and
+  narrower local account endpoints remain core-side roadmap follow-ups. See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local follows and relationships: `POST
   {mastodon.prefix}/accounts/{id}/follow` and `.../unfollow` require
   `write:follows`, declare a `30/900` rate limit and return the normal

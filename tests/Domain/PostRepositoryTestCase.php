@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
@@ -25,6 +26,8 @@ use PHPUnit\Framework\TestCase;
 abstract class PostRepositoryTestCase extends TestCase
 {
 	abstract protected function repository(): PostRepository;
+
+	abstract protected function searchRepository(): PostSearchRepository;
 
 	public function testInsertAndFind(): void
 	{
@@ -279,6 +282,59 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertTrue($repository->isAttachmentLinked('a1'));
 	}
 
+	public function testSearchFindsOnlyLivePublicAndUnlistedContent(): void
+	{
+		$repository = $this->searchRepository();
+		$repository->insert($this->post('public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: 'Hello World'));
+		$repository->insert($this->post('unlisted', 'bob', Visibility::Unlisted, '2026-11-11T10:01:00Z', content: 'hello there'));
+		$repository->insert($this->post('followers', 'alice', Visibility::Followers, '2026-11-11T10:02:00Z', content: 'hello followers'));
+		$repository->insert($this->post('direct', 'alice', Visibility::Direct, '2026-11-11T10:03:00Z', content: 'hello privately'));
+		$repository->insert($this->post('gone', 'alice', Visibility::Public, '2026-11-11T10:04:00Z', content: 'hello again'));
+		$repository->softDelete('gone', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['unlisted', 'public'],
+			array_map(static fn (Post $post): string => $post->id, $repository->search('HELLO', 10, 0)),
+		);
+		self::assertSame([], $repository->search('hello', 10, 0, []));
+	}
+
+	public function testSearchFiltersByAuthorsAndPagesByOffset(): void
+	{
+		$repository = $this->searchRepository();
+		$repository->insert($this->post('a1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: 'same text'));
+		$repository->insert($this->post('b1', 'bob', Visibility::Public, '2026-11-11T10:01:00Z', content: 'same text'));
+		$repository->insert($this->post('a2', 'alice', Visibility::Public, '2026-11-11T10:02:00Z', content: 'same text'));
+		$repository->insert($this->post('c1', 'carol', Visibility::Public, '2026-11-11T10:03:00Z', content: 'same text'));
+
+		self::assertSame(
+			['a2', 'a1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->search('same', 10, 0, ['alice'])),
+		);
+		self::assertSame(
+			['a2', 'b1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->search('same', 2, 1)),
+		);
+	}
+
+	public function testSearchTreatsWildcardsAsTextAndEmptyQueriesMatchNothing(): void
+	{
+		$repository = $this->searchRepository();
+		$repository->insert($this->post('percent', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: '100% done'));
+		$repository->insert($this->post('underscore', 'alice', Visibility::Public, '2026-11-11T10:01:00Z', content: 'under_score'));
+		$repository->insert($this->post('other', 'alice', Visibility::Public, '2026-11-11T10:02:00Z', content: '100 done'));
+
+		self::assertSame(['percent'], array_map(
+			static fn (Post $post): string => $post->id,
+			$repository->search('%', 10, 0),
+		));
+		self::assertSame(['underscore'], array_map(
+			static fn (Post $post): string => $post->id,
+			$repository->search('_', 10, 0),
+		));
+		self::assertSame([], $repository->search('   ', 10, 0));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();
@@ -297,11 +353,12 @@ abstract class PostRepositoryTestCase extends TestCase
 		string $publishedAt,
 		?string $contentWarning = null,
 		array $attachmentIds = [],
+		?string $content = null,
 	): Post {
 		return new Post(
 			$id,
 			$author,
-			'content of ' . $id,
+			$content ?? 'content of ' . $id,
 			$visibility,
 			Time::parse($publishedAt),
 			$contentWarning,

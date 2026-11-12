@@ -37,8 +37,10 @@ about the host, and everything a host must provide is an interface in
 | `Platform` | ports a host implements | import a host |
 
 `Domain\Federation` holds the follow graph, the remote-post store, the
-per-user block store, the remote-attachment candidate and the `InboxResolver`
-seam. `Domain\Timeline` owns the combined home-timeline read model.
+per-user block store, the remote-attachment candidate, the optional
+`LocalActorSearch` read capability and the `InboxResolver` seam.
+`Domain\Timeline` owns the combined home-timeline read model; `Domain\Post`
+keeps the optional `PostSearchRepository` next to the post store.
 `Domain\Media` owns attachment metadata, its local post link and its remote
 post link; the bytes go through the `BlobStore` port and image processing
 through the `ImageProcessor` port. These are domain ports, not platform ports:
@@ -349,6 +351,28 @@ the core does not fetch a profile just to render the notification. The local
 account directory distinguishes local actor ids from remote URLs. Read/unread
 and dismissal state do not exist in this slice.
 
+Local search is a read-only projection over the same stores, not a search
+index or a remote resolver:
+
+```
+GET {mastodon.prefix}/search?q=…&type=…&offset=…
+  └─ MastodonSearchHandler
+      └─ MastodonService::search
+          ├─ PostSearchRepository::search   live public/unlisted posts, lower(content) LIKE
+          │   └─ optional authorIds for following=true
+          ├─ LocalActorSearch::search       host's local account directory ids
+          └─ MastodonPresenter::account/statuses
+```
+
+Status search is case-insensitive, matches only live public/unlisted rows and
+uses the stored publish time plus id for stable order; the query's `%` and `_`
+are escaped, so they are literal text. No table or index is added. Account
+search is optional because a host may not expose a searchable directory; the
+route answers `503 search_not_configured` for the affected collection instead
+of returning an invented result. `hashtags` is always empty because no hashtag
+model exists, and `resolve`/`exclude_unreviewed` have no local effect. Search
+pages by `offset`, unlike the cursor-paged timelines.
+
 Local follow/unfollow is a
 projection of the same follower graph, not a second relationship table:
 
@@ -378,8 +402,9 @@ repository: it fetches the base top page plus the top page of locally followed
 authors, applies the same cursor, sort and limit, and delegates unchanged when
 there are no local follows. `MastodonApiGate` answers
 `404 mastodon_api_disabled` before auth while the switch is off. The prefix is
-validated against `/api/v1` and the protocol paths at boot. Pagination uses the
-id-aware cursor on `PostRepository`, not an offset. See
+validated against `/api/v1` and the protocol paths at boot. Timeline and
+notification pagination uses the id-aware cursor on `PostRepository` or
+`NotificationRepository`; search uses a clamped `offset`. See
 [Mastodon-compatible API](guides/mastodon-api.md).
 
 ## Following an actor
@@ -532,7 +557,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow and relationship reads; locally implementable search/poll/instance/account slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow, relationship reads and local status/actor search; locally implementable poll/instance/account/dismissal slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -543,12 +568,13 @@ genuinely owns the capability.
 
 - **Unit** for value objects, formatting and validation.
 - **Contract tests** — one abstract case run against every implementation of a
-  port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
-  `AttachmentRepositoryTestCase`, `FollowerRepositoryTestCase`,
-  `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
-  `RemoteThreadRepositoryTestCase`, `BlockRepositoryTestCase`,
-  `HomeTimelineRepositoryTestCase`, `NotificationRepositoryTestCase`,
-  `AtprotoPublicationRepositoryTestCase`, `AtprotoSessionStoreTestCase`,
+  port (`BlobStoreTestCase`, `PostRepositoryTestCase` (also covers the
+  optional `PostSearchRepository`), `AttachmentRepositoryTestCase`,
+  `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
+  `RemotePostRepositoryTestCase`, `RemoteThreadRepositoryTestCase`,
+  `BlockRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
+  `NotificationRepositoryTestCase`, `AtprotoPublicationRepositoryTestCase`,
+  `AtprotoSessionStoreTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
@@ -590,8 +616,10 @@ genuinely owns the capability.
   body cap and address pinning against the same fixture server.
   `MastodonApiTest` drives the optional compatibility routes through the same
   kernel, including JSON/form writes, media upload/update/delete, local
-  follow/unfollow and relationship reads, scopes, disabled-before-auth, cursor
-  pagination, idempotency and media projection; `ApplicationHostTest` repeats
-  the idempotent write over SQL. `MastodonCompatibilityTest` covers the prefix,
-  scope and relationship route metadata. `FollowerRepositoryTestCase` covers
-  the local edge and its exclusion from delivery.
+  follow/unfollow and relationship reads, local search, scopes,
+  disabled-before-auth, cursor/offset pagination, idempotency and media
+  projection; `ApplicationHostTest` repeats the idempotent write and a SQL
+  search over SQL repositories. `MastodonCompatibilityTest` covers the prefix,
+  scope and route metadata. `FollowerRepositoryTestCase` covers the local edge
+  and its exclusion from delivery; the post contract now also covers
+  `PostSearchRepository` visibility, author filtering and offset paging.

@@ -52,6 +52,7 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
 | `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 | `mastodon.notifications.list` | `GET` | `/api/mastodon/v1/notifications` | yes, `read:notifications` | 60 / 60 s |
+| `mastodon.search` | `GET` | `/api/mastodon/v1/search` | yes, `read:search` | 60 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -463,7 +464,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The sixteen routes above are additive and disabled by default. Their paths use
+The seventeen routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow

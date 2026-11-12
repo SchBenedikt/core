@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
@@ -19,6 +20,7 @@ use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
@@ -50,6 +52,10 @@ final class MastodonService
 
 	public const MAX_LIMIT = 40;
 
+	public const MAX_SEARCH_OFFSET = 1000;
+
+	private const SEARCH_TYPES = ['accounts', 'statuses', 'hashtags'];
+
 	public function __construct(
 		private readonly Config $config,
 		private readonly PostRepository $posts,
@@ -61,6 +67,8 @@ final class MastodonService
 		private readonly ?Clock $clock = null,
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?NotificationService $notifications = null,
+		private readonly ?PostSearchRepository $searchPosts = null,
+		private readonly ?LocalActorSearch $searchActors = null,
 	) {
 	}
 
@@ -471,6 +479,103 @@ final class MastodonService
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Local-only Mastodon v2 search shape.
+	 *
+	 * Only public/unlisted local statuses and local directory accounts are
+	 * searched. Remote resolution, hashtags and full-text ranking are not
+	 * invented; `hashtags` stays empty and `resolve` has no effect upstream.
+	 *
+	 * @return array{accounts: list<array<string, mixed>>, statuses: list<array<string, mixed>>, hashtags: list<never>}
+	 */
+	public function search(
+		string $userId,
+		string $query,
+		?string $type,
+		int $limit,
+		int $offset,
+		bool $following,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$query = trim($query);
+		if ($query === '') {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'The search query is required.',
+			);
+		}
+
+		$type = $type === null ? null : strtolower(trim($type));
+		if ($type === '') {
+			$type = null;
+		}
+		if ($type !== null && !in_array($type, self::SEARCH_TYPES, true)) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'Invalid search type.',
+			);
+		}
+
+		$limit = $this->clamp($limit);
+		$offset = max(0, min(self::MAX_SEARCH_OFFSET, $offset));
+
+		$allowedAuthors = null;
+		if ($following) {
+			if ($this->relationships === null) {
+				throw new MastodonRequestException(
+					503,
+					'search_not_configured',
+					'Local following search is not configured.',
+				);
+			}
+
+			$allowedAuthors = $this->relationships->localFollowingUserIds($userId);
+		}
+
+		$accounts = [];
+		$statuses = [];
+
+		if ($type === null || $type === 'accounts') {
+			if ($this->searchActors === null) {
+				throw new MastodonRequestException(
+					503,
+					'search_not_configured',
+					'Local account search is not configured.',
+				);
+			}
+
+			$accounts = array_map(
+				fn (string $accountId): array => $this->presenter->account($accountId),
+				$this->searchActors->search($query, $limit, $offset, $allowedAuthors),
+			);
+		}
+
+		if ($type === null || $type === 'statuses') {
+			if ($this->searchPosts === null) {
+				throw new MastodonRequestException(
+					503,
+					'search_not_configured',
+					'Local status search is not configured.',
+				);
+			}
+
+			$posts = $allowedAuthors === []
+				? []
+				: $this->searchPosts->search($query, $limit, $offset, $allowedAuthors);
+			$statuses = $this->presenter->statuses($posts, $userId);
+		}
+
+		return [
+			'accounts' => $accounts,
+			'statuses' => $statuses,
+			'hashtags' => [],
+		];
 	}
 
 	/**

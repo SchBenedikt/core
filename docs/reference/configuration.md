@@ -26,6 +26,14 @@ the database — the core does not care.
 | `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
 | `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
 
+Search adds no configuration key. It reads the existing `social_post` rows through
+`PostSearchRepository` and the host's local account directory through
+`LocalActorSearch`; the default assemblies wire both when the supplied stores
+implement them. A type whose capability is absent answers `503
+search_not_configured`, and `following=true` also needs the existing
+`LocalRelationshipService`. There is no search table or index migration, and
+nothing to clean up: search only reads existing rows.
+
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503
 instance_not_configured` instead of sending documents with a broken id. Media
@@ -159,8 +167,9 @@ documented in [remote threads](../guides/remote-threads.md).
 | Constant | Value | Meaning |
 | --- | --- | --- |
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming; also the compatibility status ceiling |
-| `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines and notification list |
-| `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines and notification list |
+| `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines, notification list and search |
+| `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines, notification list and search |
+| `MastodonService::MAX_SEARCH_OFFSET` | 1000 | Hard offset ceiling for the compatibility search |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
 | `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |

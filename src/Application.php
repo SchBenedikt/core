@@ -35,6 +35,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
@@ -75,6 +76,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
 use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
@@ -95,6 +97,7 @@ use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PdoFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\LocalFollowHomeTimelineRepository;
@@ -499,6 +502,8 @@ final readonly class Application
 			$clock,
 			$localRelationships,
 			$notificationService,
+			$posts instanceof PostSearchRepository ? $posts : null,
+			$localActors instanceof LocalActorSearch ? $localActors : null,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -626,6 +631,7 @@ final readonly class Application
 			->with(MastodonPublicTimelineHandler::class, static fn (): MastodonPublicTimelineHandler => new MastodonPublicTimelineHandler($mastodonService))
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonNotificationsHandler::class, static fn (): MastodonNotificationsHandler => new MastodonNotificationsHandler($mastodonService))
+			->with(MastodonSearchHandler::class, static fn (): MastodonSearchHandler => new MastodonSearchHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
 			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))

@@ -34,8 +34,9 @@ that prints or skips is a failure.
 | `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
-| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), notifications (favourite/follow creation, repeat idempotency, survival after unfavourite, self suppression, type filters, pagination, remote actor projection, auth/scope/disabled, cursor ownership and a missing-table failure that leaves the primary favourite/follow intact while listing answers 503), account statuses, verify, delete and cursor pagination |
-| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload/update/delete, favourites, local follow/relationship routes and notifications |
+| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), notifications (favourite/follow creation, repeat idempotency, survival after unfavourite, self suppression, type filters, pagination, remote actor projection, auth/scope/disabled, cursor ownership and a missing-table failure that leaves the primary favourite/follow intact while listing answers 503), local search (account/status matches, type filters, following filter, offset pages, private/deleted exclusion, invalid input, auth/scope/disabled and missing capabilities), account statuses, verify, delete and cursor pagination |
+| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload/update/delete, favourites, local follow/relationship routes, notifications and search |
+| `tests/Service/MastodonSearchTest.php` | a direct service call without `PostSearchRepository` answers `503 search_not_configured` for statuses, while `type=hashtags` needs no optional ports |
 | `tests/Domain/InMemoryFavouriteRepositoryTest.php`, `tests/Domain/PdoFavouriteRepositoryTest.php` | the shared `FavouriteRepositoryTestCase`: pair uniqueness, per-user removal, batch public counts and viewer flags |
 | `tests/Domain/InMemoryNotificationRepositoryTest.php`, `tests/Domain/PdoNotificationRepositoryTest.php` | the shared `NotificationRepositoryTestCase`: insert/find projection, duplicate-id refusal, recipient scoping, newest-first ordering with the id tie-break, exclusive cursors and type filters before the limit |
 | `tests/Protocol/XrpcAtprotoPublisherTest.php` | exact `putRecord`/`deleteRecord` requests, bearer header, successful URI, 404-as-idempotent-delete, non-2xx status without leaking the body, transport failure and malformed success |
@@ -44,7 +45,7 @@ that prints or skips is a failure.
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination; the application-level backfill→media path is covered by `RemoteMediaTest` |
-| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL favourite row, a SQL notification row and an AT Protocol remote delete over SQL |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL status search, a SQL favourite row, a SQL notification row and an AT Protocol remote delete over SQL |
 
 ## Contract tests
 
@@ -76,7 +77,10 @@ final class InMemoryAtprotoSessionStoreTest extends AtprotoSessionStoreTestCase 
 ```
 
 If a behaviour is not in the case, the two implementations may drift. Add the
-expectation to the case, not to one subclass. The PDO queue and activity-log
+expectation to the case, not to one subclass. `PostRepositoryTestCase` also
+exercises the optional `PostSearchRepository` implemented by both post stores;
+`InMemoryActorSearchTest` covers the directory's `LocalActorSearch`
+implementation directly. The PDO queue and activity-log
 tests also open a fresh SQLite connection to prove that a reservation, a retry
 and a replay decision survive a restart; the in-memory versions cannot prove
 that.

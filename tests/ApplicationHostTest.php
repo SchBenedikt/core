@@ -81,7 +81,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(42, $app->routes->routes());
+		self::assertCount(43, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -218,6 +218,17 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $second->status);
 		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
 		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+
+		$search = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/search',
+			query: ['q' => 'sql', 'type' => 'statuses'],
+			userId: 'alice',
+			scopes: ['read:search'],
+		));
+		self::assertSame(200, $search->status);
+		self::assertCount(1, $search->decodedBody()['statuses']);
+		self::assertSame($first->decodedBody()['id'], $search->decodedBody()['statuses'][0]['id']);
 
 		$timeline = $app->handle(new Request('GET', '/api/mastodon/v1/timelines/public'));
 		self::assertSame(200, $timeline->status);

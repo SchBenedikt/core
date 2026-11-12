@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use PDO;
@@ -28,6 +29,11 @@ final class PdoPostRepositoryTest extends PostRepositoryTestCase
 	}
 
 	protected function repository(): PostRepository
+	{
+		return $this->repository;
+	}
+
+	protected function searchRepository(): PostSearchRepository
 	{
 		return $this->repository;
 	}

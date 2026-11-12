@@ -72,7 +72,10 @@ scope. A notification cursor must belong to the signed-in recipient; an
 unknown or foreign cursor is `404 not_found`. An assembly without the needed
 repository answers `503 favourites_not_configured` or `503
 notifications_not_configured`, and an assembly without local relationships
-answers `503 follows_not_configured`. See [Mastodon-compatible API](../guides/mastodon-api.md).
+answers `503 follows_not_configured`. Search answers `422 validation_failed`
+for a missing `q` or an unknown `type`, and `503 search_not_configured` when
+the requested local search capability is absent (or `following=true` has no
+relationship service). See [Mastodon-compatible API](../guides/mastodon-api.md).
 
 ## Remote thread failures
 

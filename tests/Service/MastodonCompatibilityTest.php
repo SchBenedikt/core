@@ -89,6 +89,7 @@ final class MastodonCompatibilityTest extends TestCase
 		$follow = $manifest->find('mastodon.accounts.follow');
 		$unfollow = $manifest->find('mastodon.accounts.unfollow');
 		$notifications = $manifest->find('mastodon.notifications.list');
+		$search = $manifest->find('mastodon.search');
 
 		self::assertNotNull($create);
 		self::assertNotNull($delete);
@@ -103,6 +104,7 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($follow);
 		self::assertNotNull($unfollow);
 		self::assertNotNull($notifications);
+		self::assertNotNull($search);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
 		self::assertSame('30/900', $create->rateLimit);
@@ -144,5 +146,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:notifications'], $notifications->requiredScopes);
 		self::assertSame('60/60', $notifications->rateLimit);
 		self::assertSame('/api/mastodon/v1/notifications', $notifications->path);
+		self::assertTrue($search->requiresAuth);
+		self::assertSame(['read:search'], $search->requiredScopes);
+		self::assertSame('60/60', $search->rateLimit);
+		self::assertSame('/api/mastodon/v1/search', $search->path);
 	}
 }

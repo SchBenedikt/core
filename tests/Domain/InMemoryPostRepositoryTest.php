@@ -11,11 +11,19 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 
 final class InMemoryPostRepositoryTest extends PostRepositoryTestCase
 {
+	private ?InMemoryPostRepository $repository = null;
+
 	protected function repository(): PostRepository
 	{
-		return new InMemoryPostRepository();
+		return $this->repository ??= new InMemoryPostRepository();
+	}
+
+	protected function searchRepository(): PostSearchRepository
+	{
+		return $this->repository();
 	}
 }

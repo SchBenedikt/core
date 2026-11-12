@@ -86,6 +86,13 @@ the `(user, created_at)` index supports a future favourites timeline. A post
 deletion is a soft delete and does not cascade here; the host may remove
 orphaned favourites on its own cleanup schedule.
 
+Search has no table of its own: `PdoPostRepository` implements
+`PostSearchRepository` over the existing `social_post` rows, and the host's
+local account directory may implement `LocalActorSearch`. Account search does
+not add a user table to the core. A large host can add a database index on its
+content column or replace the adapter behind the port; the core route needs no
+schema migration.
+
 `social_notification` stores one local event per recipient, type, actor and
 optional post. Its primary key is a deterministic hash of that tuple, so a
 repeated favourite or Follow cannot create a second row; no random id or
