@@ -28,6 +28,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
+use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobSchema;
@@ -259,6 +260,41 @@ final class ApplicationHostTest extends TestCase
 		));
 	}
 
+	public function testForHostStoresAPollWithItsStatusOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query([
+				'status' => 'poll over sql',
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_in' => '3600',
+				],
+			]),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(200, $created->status);
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PollSchema::TABLE));
+		self::assertSame(2, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PollSchema::OPTION_TABLE));
+		self::assertSame('Yes', $database->fetchValue('SELECT title FROM ' . PollSchema::OPTION_TABLE . ' WHERE position = 0'));
+
+		$status = $created->decodedBody();
+		$shown = $app->handle(new Request(
+			'GET',
+			'/api/mastodon/v1/statuses/' . $status['id'],
+		));
+		self::assertSame(200, $shown->status);
+		self::assertSame($status['poll'], $shown->decodedBody()['poll']);
+		self::assertSame('2026-11-11T11:00:00.000Z', $shown->decodedBody()['poll']['expires_at']);
+	}
+
 	public function testForHostStoresARemoteFollowNotificationOverSql(): void
 	{
 		$database = $this->database();
@@ -364,6 +400,7 @@ final class ApplicationHostTest extends TestCase
 	{
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
+		PollSchema::create($database);
 		FavouriteSchema::create($database);
 		NotificationSchema::create($database);
 		FollowerSchema::create($database);

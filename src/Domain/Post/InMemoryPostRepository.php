@@ -65,6 +65,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			$post->contentWarning,
 			$deletedAt,
 			$post->attachmentIds,
+			$post->poll,
 		);
 	}
 

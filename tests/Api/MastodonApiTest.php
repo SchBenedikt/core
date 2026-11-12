@@ -58,6 +58,12 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(200, $response->status);
 		self::assertSame('Aloha Social', $response->decodedBody()['title']);
 		self::assertSame('4.2.0 (compatible; Aloha Social 0.1.0)', $response->decodedBody()['version']);
+		self::assertSame([
+			'max_options' => 4,
+			'max_characters_per_option' => 50,
+			'min_expiration' => 300,
+			'max_expiration' => 604800,
+		], $response->decodedBody()['configuration']['polls']);
 	}
 
 	public function testTheSurfaceIsDisabledByDefaultAndWithTheFlagOff(): void
@@ -162,6 +168,176 @@ final class MastodonApiTest extends TestCase
 		));
 		self::assertSame(200, $verify->status);
 		self::assertSame('alice', $verify->decodedBody()['id']);
+	}
+
+	public function testCreateStatusWithPollReturnsAndReadsTheMastodonPoll(): void
+	{
+		$app = $this->app();
+		$created = $this->createStatus($app, [
+			'status' => 'Which option?',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+				'multiple' => 'true',
+				'hide_totals' => 'true',
+			],
+		]);
+
+		self::assertSame(200, $created->status);
+		$status = $created->decodedBody();
+		$poll = $status['poll'];
+		self::assertSame('poll-' . $status['id'], $poll['id']);
+		self::assertSame('2026-11-11T11:00:00.000Z', $poll['expires_at']);
+		self::assertFalse($poll['expired']);
+		self::assertTrue($poll['multiple']);
+		self::assertSame(0, $poll['votes_count']);
+		self::assertSame(0, $poll['voters_count']);
+		self::assertFalse($poll['voted']);
+		self::assertSame([], $poll['own_votes']);
+		self::assertSame([
+			['title' => 'Yes', 'votes_count' => 0],
+			['title' => 'No', 'votes_count' => 0],
+		], $poll['options']);
+		self::assertSame([], $poll['emojis']);
+
+		$shown = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+		));
+		self::assertSame($poll, $shown->decodedBody()['poll']);
+
+		$timeline = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		));
+		self::assertSame($poll, $timeline->decodedBody()[0]['poll']);
+	}
+
+	public function testPollAcceptsJsonAndAnExplicitExpiry(): void
+	{
+		$app = $this->app();
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode([
+				'status' => 'JSON poll',
+				'poll' => [
+					'options' => ['A', 'B', 'C'],
+					'expires_at' => '2026-11-11T12:00:00Z',
+				],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(200, $response->status);
+		self::assertSame('2026-11-11T12:00:00.000Z', $response->decodedBody()['poll']['expires_at']);
+		self::assertCount(3, $response->decodedBody()['poll']['options']);
+	}
+
+	public function testPollValidationCreatesNoPartialStatus(): void
+	{
+		$app = $this->app();
+
+		$invalidPolls = [
+			['options' => ['only one'], 'expires_in' => '3600'],
+			['options' => ['1', '2', '3', '4', '5'], 'expires_in' => '3600'],
+			['options' => ['yes', '   '], 'expires_in' => '3600'],
+			['options' => ['yes', str_repeat('x', 51)], 'expires_in' => '3600'],
+			['options' => ['yes', 'no']],
+			['options' => ['yes', 'no'], 'expires_in' => '299'],
+			['options' => ['yes', 'no'], 'expires_in' => '604801'],
+			['options' => ['yes', 'no'], 'expires_in' => '3600', 'multiple' => 'maybe'],
+		];
+
+		foreach ($invalidPolls as $poll) {
+			$response = $this->createStatus($app, ['status' => 'invalid poll', 'poll' => $poll]);
+			self::assertSame(422, $response->status);
+			self::assertSame('validation_failed', $response->decodedBody()['error']['code']);
+		}
+
+		$scalar = $this->createStatus($app, ['status' => 'invalid poll', 'poll' => 'not an object']);
+		self::assertSame(422, $scalar->status);
+		self::assertSame(
+			[],
+			$app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public'))->decodedBody(),
+		);
+	}
+
+	public function testPollExpiresWithoutAScheduledJob(): void
+	{
+		$app = $this->app();
+		$status = $this->createStatus($app, [
+			'status' => 'expires soon',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '300',
+			],
+		])->decodedBody();
+
+		$this->clock->advance(299);
+		self::assertFalse($app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+		))->decodedBody()['poll']['expired']);
+
+		$this->clock->advance(1);
+		self::assertTrue($app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+		))->decodedBody()['poll']['expired']);
+	}
+
+	public function testPollCreationRequiresAuthTheWriteScopeAndTheFeatureFlag(): void
+	{
+		$fields = [
+			'status' => 'protected poll',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		];
+		$app = $this->app();
+
+		self::assertSame(401, $this->createStatus($app, $fields, userId: null)->status);
+
+		$wrongScope = $this->createStatus($app, $fields, scopes: ['read:statuses']);
+		self::assertSame(403, $wrongScope->status);
+		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
+
+		$disabled = $this->app(enabled: false);
+		$off = $this->createStatus($disabled, $fields);
+		self::assertSame(404, $off->status);
+		self::assertSame('mastodon_api_disabled', $off->decodedBody()['error']['code']);
+
+		self::assertSame([], $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		))->decodedBody());
+	}
+
+	public function testAPollRetryWithTheSameIdempotencyKeyDoesNotDuplicateThePoll(): void
+	{
+		$app = $this->app();
+		$fields = [
+			'status' => 'idempotent poll',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		];
+		$first = $this->createStatus($app, $fields, ['Idempotency-Key' => 'poll-key']);
+		$second = $this->createStatus($app, $fields, ['Idempotency-Key' => 'poll-key']);
+
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+		self::assertSame($first->decodedBody()['poll'], $second->decodedBody()['poll']);
+		self::assertCount(1, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		))->decodedBody());
 	}
 
 	public function testAnIdempotencyKeyReturnsTheSameStatus(): void

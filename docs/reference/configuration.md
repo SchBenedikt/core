@@ -103,7 +103,10 @@ are still in the manifest and OpenAPI export. Enabling it reuses
 plus the existing `BlobStore` for media upload, metadata update and delete;
 an `Idempotency-Key` is translated into a deterministic post id or media
 source key. Media update changes only the description, and delete is allowed
-only while no post link references the attachment; neither adds a table. Local
+only while no post link references the attachment; neither adds a table. Poll
+creation writes `social_poll` and `social_poll_option` in the same transaction
+as the post; create both with `PollSchema::statements()` before serving status
+reads through the SQL repository. Local
 favourite/unfavourite writes the new `social_favourite` table through
 `FavouriteRepository`; create it with `FavouriteSchema::statements()` through
 the host migration path before exposing those routes. There is no backfill,
@@ -170,6 +173,9 @@ documented in [remote threads](../guides/remote-threads.md).
 | `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines, notification list and search |
 | `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines, notification list and search |
 | `MastodonService::MAX_SEARCH_OFFSET` | 1000 | Hard offset ceiling for the compatibility search |
+| `Poll::MIN_OPTIONS` / `Poll::MAX_OPTIONS` | 2 / 4 | Option count accepted by local poll creation and advertised by the instance endpoint |
+| `PollOption::MAX_TITLE_LENGTH` | 50 | Characters per poll option after trimming |
+| `Poll::MIN_EXPIRY_SECONDS` / `Poll::MAX_EXPIRY_SECONDS` | 300 / 604800 | Expiry window accepted by `expires_in`/`expires_at`; advertised by the instance endpoint |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
 | `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |

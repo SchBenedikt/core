@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Post\Poll;
 use AlohaSocial\Core\Domain\Post\Visibility;
 
 /**
@@ -27,6 +28,7 @@ final readonly class CreatePost
 		/** @var list<string> */
 		public array $attachmentIds = [],
 		public ?string $postId = null,
+		public ?Poll $poll = null,
 	) {
 	}
 }

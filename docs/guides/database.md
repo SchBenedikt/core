@@ -25,6 +25,7 @@ timestamp, and anything else is refused.
 Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
+- `src/Domain/Post/PollSchema.php` → `social_poll` and ordered `social_poll_option` (one poll per post; no vote rows yet)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
@@ -77,6 +78,19 @@ direct-child queries and a host's retention job. Upserts by object id make a
 repeat or a shared ancestor idempotent; `deleteFetchedBefore()` is the only
 cleanup API and is not scheduled by the core. Rows are deliberately not shown
 in the home timeline and do not import media blobs.
+`social_poll` is keyed by `post_id` and stores the two flags, the canonical
+`expires_at` and the aggregate counts; `social_poll_option` stores the ordered
+titles (`position` 0-based) and their counts. Both are written by
+`PdoPostRepository::insert()` inside the existing post transaction, so a
+rejected poll leaves no post and a failed post insert leaves no poll rows. The
+repository loads a page of polls in one query for the poll rows and one for the
+option rows, then attaches them to their posts; there is no per-post query.
+`expired` is derived from `expires_at` and the clock, so no expiry row or job
+is needed. A post soft delete keeps the poll rows for the host's cleanup, just
+like attachments and favourites; a hard delete should remove the option rows
+and the poll row in that order (the core schema adds no foreign key). An
+existing host must create both tables with `PollSchema::statements()` before
+serving a status whose repository reads them or accepting a `poll` parameter.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md). `social_favourite` is unique by

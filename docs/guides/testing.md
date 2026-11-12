@@ -14,7 +14,7 @@ that prints or skips is a failure.
 | Directory | What lives there |
 | --- | --- |
 | `tests/Platform` | clock, config, PDO connection, blob stores and image processing |
-| `tests/Domain` | post, favourite, attachment, follower, followed-actor, remote-post, remote-thread and block entities, local/remote/thread/block/timeline/attachment/favourite repository contracts (including local follower edges, their delivery exclusion, attachment-link and alt-text update semantics) and the activity-log contract |
+| `tests/Domain` | post, poll, favourite, attachment, follower, followed-actor, remote-post, remote-thread and block entities, local/remote/thread/block/timeline/attachment/favourite repository contracts (including poll round-tripping, local follower edges, their delivery exclusion, attachment-link and alt-text update semantics) and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
@@ -34,7 +34,7 @@ that prints or skips is a failure.
 | `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
-| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), notifications (favourite/follow creation, repeat idempotency, survival after unfavourite, self suppression, type filters, pagination, remote actor projection, auth/scope/disabled, cursor ownership and a missing-table failure that leaves the primary favourite/follow intact while listing answers 503), local search (account/status matches, type filters, following filter, offset pages, private/deleted exclusion, invalid input, auth/scope/disabled and missing capabilities), account statuses, verify, delete and cursor pagination |
+| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance (including advertised poll limits), public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), poll creation (options, `expires_in`/`expires_at`, expiry flip, validation with no partial status, idempotent retry, projection on read/timeline), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), notifications (favourite/follow creation, repeat idempotency, survival after unfavourite, self suppression, type filters, pagination, remote actor projection, auth/scope/disabled, cursor ownership and a missing-table failure that leaves the primary favourite/follow intact while listing answers 503), local search (account/status matches, type filters, following filter, offset pages, private/deleted exclusion, invalid input, auth/scope/disabled and missing capabilities), account statuses, verify, delete and cursor pagination |
 | `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload/update/delete, favourites, local follow/relationship routes, notifications and search |
 | `tests/Service/MastodonSearchTest.php` | a direct service call without `PostSearchRepository` answers `503 search_not_configured` for statuses, while `type=hashtags` needs no optional ports |
 | `tests/Domain/InMemoryFavouriteRepositoryTest.php`, `tests/Domain/PdoFavouriteRepositoryTest.php` | the shared `FavouriteRepositoryTestCase`: pair uniqueness, per-user removal, batch public counts and viewer flags |
@@ -45,7 +45,7 @@ that prints or skips is a failure.
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination; the application-level backfill→media path is covered by `RemoteMediaTest` |
-| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL status search, a SQL favourite row, a SQL notification row and an AT Protocol remote delete over SQL |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL poll row/option round-trip, a SQL status search, a SQL favourite row, a SQL notification row and an AT Protocol remote delete over SQL |
 
 ## Contract tests
 
@@ -78,7 +78,8 @@ final class InMemoryAtprotoSessionStoreTest extends AtprotoSessionStoreTestCase 
 
 If a behaviour is not in the case, the two implementations may drift. Add the
 expectation to the case, not to one subclass. `PostRepositoryTestCase` also
-exercises the optional `PostSearchRepository` implemented by both post stores;
+exercises poll round-tripping and soft-delete retention plus the optional
+`PostSearchRepository` implemented by both post stores;
 `InMemoryActorSearchTest` covers the directory's `LocalActorSearch`
 implementation directly. The PDO queue and activity-log
 tests also open a fresh SQLite connection to prove that a reservation, a retry

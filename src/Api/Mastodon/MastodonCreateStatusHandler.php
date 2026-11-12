@@ -80,6 +80,11 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			);
 		}
 
+		$poll = $body['poll'] ?? null;
+		if ($poll !== null && !is_array($poll)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'poll must be an object.');
+		}
+
 		$idempotencyKey = trim((string) $request->header('idempotency-key'));
 
 		return $this->respond(fn (): array => $this->mastodon->createStatus(
@@ -89,6 +94,7 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			$spoiler === null || trim($spoiler) === '' ? null : trim($spoiler),
 			$ids,
 			$idempotencyKey === '' ? null : $idempotencyKey,
+			$poll,
 		));
 	}
 

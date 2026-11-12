@@ -36,6 +36,7 @@ final class PostTest extends TestCase
 			'visibility' => 'public',
 			'published_at' => '2026-11-11T10:00:00Z',
 			'deleted_at' => null,
+			'poll' => null,
 		], $post->toArray());
 	}
 

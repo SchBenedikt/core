@@ -110,7 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, local notification listing through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including status creation with an optional poll, media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, local notification listing through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -180,6 +180,7 @@ host must strip it before passing the request to the kernel.
 The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
+- `PollSchema` → `social_poll` and `social_poll_option` (one poll per post; options are ordered; no vote rows yet)
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `NotificationSchema` → `social_notification` (local favourite/follow notifications; deterministic event id primary key)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
@@ -215,8 +216,12 @@ For thread/context fetching, create `social_remote_thread_post` from
 the route. For local Mastodon favourites, create `social_favourite` from
 `FavouriteSchema::statements()` before exposing the favourite/unfavourite
 routes; existing posts need no backfill, and deleting a post leaves the row for
-the host's cleanup policy. For local notifications, create
-`social_notification` from `NotificationSchema::statements()` before exposing
+the host's cleanup policy. For local polls, create `social_poll` and `social_poll_option` from
+`PollSchema::statements()` before serving the Mastodon status reads/writes
+(which read the poll tables) or accepting a `poll` parameter; there is no
+backfill, and poll rows are written in the same transaction as their post. For
+local notifications, create `social_notification` from
+`NotificationSchema::statements()` before exposing
 `GET {mastodon.prefix}/notifications`; there is no backfill from older
 favourites or followers. Repeating an event cannot duplicate a row. A post or
 follow deletion deliberately does not delete the historical notification;

@@ -61,6 +61,35 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository
 						],
 					);
 				}
+
+				if ($post->poll !== null) {
+					$this->db->execute(
+						'INSERT INTO ' . PollSchema::TABLE
+						. ' (post_id, multiple, hide_totals, expires_at, votes_count, voters_count)'
+						. ' VALUES (:post_id, :multiple, :hide_totals, :expires_at, :votes_count, :voters_count)',
+						[
+							'post_id' => $post->id,
+							'multiple' => $post->poll->multiple ? 1 : 0,
+							'hide_totals' => $post->poll->hideTotals ? 1 : 0,
+							'expires_at' => Time::format($post->poll->expiresAt),
+							'votes_count' => $post->poll->votesCount,
+							'voters_count' => $post->poll->votersCount,
+						],
+					);
+
+					foreach ($post->poll->options as $position => $option) {
+						$this->db->execute(
+							'INSERT INTO ' . PollSchema::OPTION_TABLE
+							. ' (post_id, position, title, votes_count) VALUES (:post_id, :position, :title, :votes_count)',
+							[
+								'post_id' => $post->id,
+								'position' => $position,
+								'title' => $option->title,
+								'votes_count' => $option->votesCount,
+							],
+						);
+					}
+				}
 			});
 		} catch (PDOException $exception) {
 			throw new DatabaseException('The post could not be stored.', 0, $exception);
@@ -74,7 +103,15 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository
 			['id' => $id],
 		);
 
-		return $row === null ? null : $this->hydrate($row, $this->attachmentIdsFor([$id])[$id] ?? []);
+		if ($row === null) {
+			return null;
+		}
+
+		return $this->hydrate(
+			$row,
+			$this->attachmentIdsFor([$id])[$id] ?? [],
+			$this->pollsFor([$id])[$id] ?? null,
+		);
 	}
 
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void
@@ -364,17 +401,84 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository
 	{
 		$ids = array_map(static fn (array $row): string => (string) $row['id'], $rows);
 		$attachmentIds = $this->attachmentIdsFor($ids);
+		$polls = $this->pollsFor($ids);
 
 		return array_map(
-			fn (array $row): Post => $this->hydrate($row, $attachmentIds[(string) $row['id']] ?? []),
+			fn (array $row): Post => $this->hydrate(
+				$row,
+				$attachmentIds[(string) $row['id']] ?? [],
+				$polls[(string) $row['id']] ?? null,
+			),
 			$rows,
 		);
 	}
 
 	/**
+	 * Polls for a set of posts, in one query for the poll rows and one for
+	 * their ordered options instead of a query per timeline entry.
+	 *
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, Poll>
+	 */
+	private function pollsFor(array $postIds): array
+	{
+		if ($postIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach (array_values($postIds) as $index => $postId) {
+			$name = 'post_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $postId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT post_id, multiple, hide_totals, expires_at, votes_count, voters_count FROM '
+			. PollSchema::TABLE
+			. ' WHERE post_id IN (' . implode(', ', $placeholders) . ')',
+			$parameters,
+		);
+		if ($rows === []) {
+			return [];
+		}
+
+		$optionRows = $this->db->fetchAll(
+			'SELECT post_id, title, votes_count FROM ' . PollSchema::OPTION_TABLE
+			. ' WHERE post_id IN (' . implode(', ', $placeholders) . ')'
+			. ' ORDER BY post_id, position',
+			$parameters,
+		);
+		$options = [];
+		foreach ($optionRows as $optionRow) {
+			$options[(string) $optionRow['post_id']][] = new PollOption(
+				(string) $optionRow['title'],
+				(int) $optionRow['votes_count'],
+			);
+		}
+
+		$polls = [];
+		foreach ($rows as $row) {
+			$postId = (string) $row['post_id'];
+			$polls[$postId] = new Poll(
+				options: $options[$postId] ?? [],
+				multiple: (int) $row['multiple'] === 1,
+				hideTotals: (int) $row['hide_totals'] === 1,
+				expiresAt: Time::parse((string) $row['expires_at']),
+				votesCount: (int) $row['votes_count'],
+				votersCount: (int) $row['voters_count'],
+			);
+		}
+
+		return $polls;
+	}
+
+	/**
 	 * @param array<string, mixed> $row
 	 */
-	private function hydrate(array $row, array $attachmentIds = []): Post
+	private function hydrate(array $row, array $attachmentIds = [], ?Poll $poll = null): Post
 	{
 		return new Post(
 			id: (string) $row['id'],
@@ -385,6 +489,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository
 			contentWarning: $row['content_warning'] === null ? null : (string) $row['content_warning'],
 			deletedAt: $row['deleted_at'] === null ? null : Time::parse((string) $row['deleted_at']),
 			attachmentIds: $attachmentIds,
+			poll: $poll,
 		);
 	}
 }

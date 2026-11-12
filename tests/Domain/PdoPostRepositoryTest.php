@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
+use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use PDO;
@@ -24,6 +25,7 @@ final class PdoPostRepositoryTest extends PostRepositoryTestCase
 	{
 		$connection = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($connection);
+		PollSchema::create($connection);
 
 		$this->repository = new PdoPostRepository($connection);
 	}

@@ -91,9 +91,9 @@ public text-only AT Protocol publishing foundation (account/publisher ports,
 deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
 rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
 proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
-compatibility subset (instance, public timeline, status read/create/delete,
-local favourite/unfavourite, local follow/unfollow and relationship reads,
-local notification listing, local status/actor search, media
+compatibility subset (instance, public timeline, status read/create/delete
+with local poll creation, local favourite/unfavourite, local follow/unfollow
+and relationship reads, local notification listing, local status/actor search, media
 upload/update/delete, account statuses, verify credentials; `write:statuses`,
 `write:favourites`, `write:follows`, `write:media`, `read:accounts`,
 `read:follows`, `read:notifications` and `read:search` scopes, id-aware and
@@ -116,8 +116,8 @@ repository/AppView/media/firehose stack, the external Mastodon server
 remainder (OAuth/token issuance and app registration, remote timelines and
 delivery, favourite federation, boosts, remote notifications, streaming,
 remote search, account/admin and remote relationship APIs), and an
-object-storage adapter. Local Mastodon notification listing and local
-status/actor search are done; poll creation, instance/domain info,
+object-storage adapter. Local Mastodon notification listing, local
+status/actor search and local poll creation are done; instance/domain info,
 notification dismissal/unread state and narrower local account endpoints are
 core-side roadmap follow-ups, not host blockers. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility

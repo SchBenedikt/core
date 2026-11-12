@@ -69,6 +69,7 @@ final class PostService
 			publishedAt: Time::toSecondPrecision($this->clock->now()),
 			contentWarning: $warning,
 			attachmentIds: $command->attachmentIds,
+			poll: $command->poll,
 		);
 
 		$this->posts->insert($post);

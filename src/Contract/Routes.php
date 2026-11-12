@@ -355,7 +355,7 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
-				summary: 'Write a local status through the Mastodon shape.',
+				summary: 'Write a local status through the Mastodon shape, optionally with a poll.',
 			),
 			new Route(
 				name: 'mastodon.statuses.delete',

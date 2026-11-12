@@ -10,17 +10,22 @@ This document is the checklist that host is built against.
 
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `FavouriteSchema`, `NotificationSchema`,
-   `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
-   `RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
-   the migration step. `social_favourite` and `social_notification` are needed
-   only when the optional Mastodon compatibility surface exposes
-   favourite/unfavourite and notification listing; there is no backfill. Local
-   search needs no additional table: it uses `social_post` and the host's
-   account directory.
+   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`,
+   `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
+   `JobSchema`, `ActivityLogSchema`) from the migration step.
+   `social_poll`/`social_poll_option` are needed whenever status reads or
+   writes are exposed through the Mastodon compatibility surface, because
+   `PdoPostRepository` reads polls for every status; `social_favourite` and
+   `social_notification` are needed only when favourite/unfavourite and
+   notification listing are exposed. There is no backfill. Local search needs
+   no additional table: it uses `social_post` and the host's account
+   directory.
    Existing `social_follower` tables also need the `is_local`
    column before local follow/unfollow is exposed; it defaults old rows to
-   remote (`0`) and needs no backfill.
+   remote (`0`) and needs no backfill. Existing hosts must add
+   `social_poll`/`social_poll_option` from `PollSchema` before a status read
+   touches the poll lookup or a `poll` is sent; the old rows need no backfill.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.

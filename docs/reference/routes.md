@@ -484,16 +484,21 @@ POST /api/mastodon/v1/statuses
 Idempotency-Key: client-key-1
 Content-Type: application/json
 
-{"status": "hello", "visibility": "public"}
+{"status": "hello", "visibility": "public",
+ "poll": {"options": ["Yes", "No"], "expires_in": 3600}}
 ```
 
 A status response is the usual Mastodon shape (`id`, `content`,
 `spoiler_text`, `sensitive`, `visibility`, `account`, `media_attachments`,
-`favourites_count`, `favourited`, …). `private` maps to followers-only;
-`direct` and `in_reply_to_id` are `422 unsupported_parameter` in this slice.
-The write goes through `PostService`, so validation, ownership, soft deletion
-and delivery are identical to `/api/v1/posts`. `Idempotency-Key` makes a retry
-return the same status instead of inserting a duplicate.
+`poll`, `favourites_count`, `favourited`, …). `poll` is `null` without one;
+otherwise it carries two to four options and a clock-derived `expired` flag,
+with zero counts until a vote endpoint exists. `private` maps to
+followers-only; `direct` and `in_reply_to_id` are `422 unsupported_parameter`
+in this slice. The write goes through `PostService`, so validation, ownership,
+soft deletion and delivery are identical to `/api/v1/posts`. A valid `poll` is
+written in the same transaction as its post; invalid options or expiry are
+`422 validation_failed` and leave no status. `Idempotency-Key` makes a retry
+return the same status, including its poll, instead of inserting a duplicate.
 
 `POST /api/mastodon/v1/statuses/{id}/favourite` and
 `POST /api/mastodon/v1/statuses/{id}/unfavourite` require

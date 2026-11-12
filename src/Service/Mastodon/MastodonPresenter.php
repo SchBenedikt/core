@@ -13,13 +13,17 @@ use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\Poll;
+use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
+use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\MediaService;
+use DateTimeImmutable;
 
 /**
  * Maps core posts and accounts to Mastodon API shapes.
@@ -38,6 +42,7 @@ final class MastodonPresenter
 		private readonly ?FavouriteRepository $favourites = null,
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?LocalActorDirectory $localActors = null,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -122,13 +127,47 @@ final class MastodonPresenter
 			'tags' => [],
 			'emojis' => [],
 			'card' => null,
-			'poll' => null,
+			'poll' => $this->poll($post),
 			'favourited' => $favourited
 				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
 			'reblogged' => false,
 			'muted' => false,
 			'bookmarked' => false,
 			'pinned' => false,
+		];
+	}
+
+	/**
+	 * The Mastodon poll entity, or null for a status without a poll.
+	 *
+	 * The poll id is derived from the post id, so a page can be rendered
+	 * without a second id table and the id stays stable across retries.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private function poll(Post $post): ?array
+	{
+		$poll = $post->poll;
+		if ($poll === null) {
+			return null;
+		}
+
+		$now = $this->clock?->now() ?? new DateTimeImmutable('now');
+
+		return [
+			'id' => 'poll-' . $post->id,
+			'expires_at' => $poll->expiresAt->format('Y-m-d\TH:i:s.000\Z'),
+			'expired' => $poll->isExpired($now),
+			'multiple' => $poll->multiple,
+			'votes_count' => $poll->votesCount,
+			'voters_count' => $poll->votersCount,
+			'voted' => false,
+			'own_votes' => [],
+			'options' => array_map(
+				static fn (PollOption $option): array => $option->toArray(),
+				$poll->options,
+			),
+			'emojis' => [],
 		];
 	}
 
@@ -257,10 +296,10 @@ final class MastodonPresenter
 					'image_matrix_limit' => Attachment::MAX_PIXELS,
 				],
 				'polls' => [
-					'max_options' => 0,
-					'max_characters_per_option' => 0,
-					'min_expiration' => 0,
-					'max_expiration' => 0,
+					'max_options' => Poll::MAX_OPTIONS,
+					'max_characters_per_option' => PollOption::MAX_TITLE_LENGTH,
+					'min_expiration' => Poll::MIN_EXPIRY_SECONDS,
+					'max_expiration' => Poll::MAX_EXPIRY_SECONDS,
 				],
 			],
 			'contact_account' => null,

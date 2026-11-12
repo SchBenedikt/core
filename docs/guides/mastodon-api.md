@@ -31,15 +31,16 @@ Locally implemented (core):
 - `GET /notifications`
 - `GET /search`
 
-The local subset covers public/unlisted/followers-only text posts, local
-favourite/unfavourite bookkeeping, local follow/unfollow and relationship
-bookkeeping, local notifications, media upload, metadata update/delete and
-local media attachments. It deliberately does **not** implement remote
-timelines, following a remote actor through this compatibility prefix, remote
-favourite federation (outbound `Like`/`Undo` or remote favourite counts),
-boosts, remote notifications or notification dismissal, streaming, polls,
-scheduled posts, filters, followed tags, lists, OAuth authorization/token
-endpoints, remote search, admin APIs or the full account/profile surface.
+The local subset covers public/unlisted/followers-only text posts, local poll
+creation on an own status, local favourite/unfavourite bookkeeping, local
+follow/unfollow and relationship bookkeeping, local notifications, media
+upload, metadata update/delete and local media attachments. It deliberately
+does **not** implement remote timelines, following a remote actor through this
+compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
+remote favourite counts), boosts, remote notifications or notification
+dismissal, streaming, voting on or fetching remote polls, scheduled posts,
+filters, followed tags, lists, OAuth authorization/token endpoints, remote
+search, admin APIs or the full account/profile surface.
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. Some of the remaining pieces are
 locally implementable and remain on the roadmap; only the parts that need a
@@ -128,6 +129,12 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
   `favourited` is true only when the authenticated viewer owns a favourite.
   The public timeline is unauthenticated, so it always reports `favourited`
   false while still reporting the count.
+- `poll` is `null` when the status has no poll, otherwise the Mastodon poll
+  object. Its options and counts come from the existing status row and the
+  poll tables; no separate status model is created. There is no vote endpoint
+  yet, so every option and `votes_count`/`voters_count` is `0`, `voted` is
+  `false`, and `own_votes`/`emojis` are empty. `expired` is computed from
+  `expires_at` and the clock, so it flips without a scheduled job.
 - `uri`/`url` point at the core post URL; `created_at` is the stored publish
   time.
 
@@ -147,7 +154,13 @@ its own list.
   "visibility": "public",
   "spoiler_text": "optional",
   "sensitive": false,
-  "media_ids": ["existing-attachment-id"]
+  "media_ids": ["existing-attachment-id"],
+  "poll": {
+    "options": ["Yes", "No"],
+    "expires_in": 3600,
+    "multiple": false,
+    "hide_totals": false
+  }
 }
 ```
 
@@ -157,6 +170,20 @@ content, over-limit text, more than four attachments and an attachment not
 owned by the caller are refused by `PostService` with `422
 validation_failed` and `error.fields`. `in_reply_to_id` is also refused with
 `422 unsupported_parameter` in this slice.
+
+`poll` is optional and is stored atomically with the status. It accepts two to
+four `options`, each after trimming one to 50 characters, plus exactly one of
+`expires_in` (integer seconds, 300–604800) or `expires_at` (ISO date/time). The
+resulting expiry must be between 300 and 604800 seconds from the request time;
+when both forms are present, `expires_in` wins. `multiple` and `hide_totals`
+default to `false` and accept JSON booleans, `0`/`1` and the usual
+`true`/`false`/`yes`/`no`/`on`/`off` form values. Invalid options, expiry or
+booleans are `422 validation_failed`; the handler validates before calling
+`PostService`, so a rejected poll creates no post, attachment link or poll row.
+The same route then returns the status with `poll` populated, and `GET
+/statuses/{id}`, timelines, account statuses and search return the same object.
+Poll creation currently has no local vote endpoint and does not federate an
+ActivityPub `Question`; those are separate slices.
 
 `DELETE /statuses/{id}` soft-deletes the caller's status and returns `204`.
 Another account's status, a missing status or an already deleted status is
@@ -443,9 +470,11 @@ one. There is no extra idempotency table and no cleanup job. The key is
 scoped to the user, so two users may use the same client key.
 
 Repeating a key with different content returns the original status, as an
-idempotency key should. A failed validation or storage attempt writes no row
-and no delivery job; a later retry may succeed. Keys are meant to be unique per
-logical write, not per request body.
+idempotency key should. Poll rows are part of the same transaction and are
+returned from the original post on a retry, so they are not duplicated. A
+failed validation or storage attempt writes no row and no delivery job; a later
+retry may succeed. Keys are meant to be unique per logical write, not per
+request body.
 
 ## Pagination
 
@@ -488,7 +517,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
-| `validation_failed` | 422 | Missing/invalid status fields, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
+| `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
 | `not_found` | 404 | Missing/private status, unknown cursor, unknown local account or unknown relationship target |
 
 Authentication failures use the existing `401 authentication_required`; the
@@ -498,8 +527,16 @@ invent a second error shape for the compatibility surface.
 ## Database and cleanup
 
 Statuses live in `social_post` / `social_post_attachment`; uploaded images use
-`social_attachment` and the same `BlobStore` as `/api/v1/media`. Status
-idempotency uses the primary key and a deterministic post id; media
+`social_attachment` and the same `BlobStore` as `/api/v1/media`. Polls add
+`social_poll` and ordered `social_poll_option` rows from `PollSchema`, keyed by
+`post_id` and written in the same transaction as the post. Existing hosts must
+create both tables before accepting a `poll` parameter or serving statuses
+whose repository reads the poll table; a fresh host gets them from
+`PollSchema::create()`. Poll rows and their options are removed with the post's
+hard-delete cleanup, while a soft-deleted post leaves them as a tombstone like
+favourites and attachments. There is no vote or expiry row: `expired` is
+derived at read time. Status idempotency uses the primary key and a
+deterministic post id; media
 idempotency uses the existing unique `source_url` column with a deterministic
 internal key. Media update changes only `social_attachment.alt_text`; media
 delete removes that row and both blobs, but only while no `social_post_attachment`
@@ -532,6 +569,27 @@ schema in place will fail on follower reads and on follow/unfollow. There is
 no cleanup job for the marker: it is part of the edge and disappears with it.
 
 ```sql
+CREATE TABLE social_poll (
+  post_id VARCHAR(64) NOT NULL PRIMARY KEY,
+  multiple SMALLINT NOT NULL,
+  hide_totals SMALLINT NOT NULL,
+  expires_at VARCHAR(20) NOT NULL,
+  votes_count INTEGER NOT NULL DEFAULT 0,
+  voters_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX social_poll_expiry ON social_poll (expires_at);
+
+CREATE TABLE social_poll_option (
+  post_id VARCHAR(64) NOT NULL,
+  position INTEGER NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  votes_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (post_id, position)
+);
+CREATE INDEX social_poll_option_post ON social_poll_option (post_id);
+```
+
+```sql
 CREATE TABLE social_notification (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   recipient_id VARCHAR(255) NOT NULL,
@@ -557,12 +615,14 @@ notification listing route answers `503 notifications_unavailable` until the
 table exists.
 There is no backfill from old favourites or followers: only events recorded
 after the table exists appear. Deleting a post
-follows the normal soft-delete path and deliberately leaves favourite and
-notification rows for an explicit host cleanup; the post is not visible, so its
-count and status are not served. Deleting a follower or unfavouriting removes
-the interaction, not its historical notification. Notification rows can be
-removed by recipient or by age in a host cleanup job; no read/dismiss state is
-stored. Attachment rows and blobs remain governed by the existing media
+follows the normal soft-delete path and deliberately leaves favourite,
+poll, option and notification rows for an explicit host cleanup; the post is
+not visible, so its count and status are not served. Deleting a follower or
+unfavouriting removes the interaction, not its historical notification.
+Notification rows can be removed by recipient or by age in a host cleanup job;
+no read/dismiss state is stored. Poll cleanup should delete options first or
+rely on the host's `ON DELETE CASCADE`; the core schema does not add a foreign
+key. Attachment rows and blobs remain governed by the existing media
 cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
@@ -575,7 +635,9 @@ missing/invalid/corrupt/oversized file, no orphan rows or blobs, idempotency),
 media update (JSON/form/multipart, absent/empty description, ownership,
 attached refusal, binary refusal) and delete (empty object, blob cleanup,
 attached refusal, foreign/missing ids, scopes and disabled feature),
-timeline, create (JSON and form), read, local favourite/unfavourite (counts,
+timeline, create (JSON and form), poll creation (JSON/form, `expires_in` and
+`expires_at`, expiry flip, options/expiry/boolean validation with no partial
+rows, idempotent retry, instance limits), read, local favourite/unfavourite (counts,
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
 deleted status and custom prefix), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
@@ -608,12 +670,13 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   streaming and remote search need remote data the core does not fetch for
   this surface. Local notification listing and local status/actor search are
   done above.
-- Poll creation on an own status, domain/instance info beyond the current
-  instance endpoint, notification dismissal/unread state, and narrower local
-  account/profile endpoints are locally implementable and remain on the
-  roadmap; they are not host-side prerequisites. Remote relationship APIs and
-  remote search remain external; the local follow/unfollow, relationship,
-  notification and search views above are done.
+- Domain/instance info beyond the current instance endpoint, notification
+  dismissal/unread state, and narrower local account/profile endpoints are
+  locally implementable and remain on the roadmap; they are not host-side
+  prerequisites. Remote relationship APIs, remote polls (fetching, voting or
+  federating a `Question`) and remote search remain external; the local
+  follow/unfollow, relationship, notification, search and poll-creation views
+  above are done.
 - Following a remote actor through the compatibility prefix and remote
   follower/following listings are not part of this slice; moderation/admin
   APIs are also external. The core `/api/v1/following` path remains the

@@ -262,7 +262,26 @@ POST {mastodon.prefix}/statuses
 Reads project the same `social_post` rows through `MastodonPresenter`; there is
 no compatibility table. The deterministic post id (`mastodon-` + hash of user
 and key) makes an idempotent retry collide with the existing primary key and
-return the stored row. Media upload reuses the same service as the core route:
+return the stored row. An optional `poll` is validated before `PostService`,
+built as a `Domain\Post\Poll`, and inserted in the same post transaction:
+
+```
+POST {mastodon.prefix}/statuses  with poll
+  └─ MastodonCreateStatusHandler  poll must be an object
+      └─ MastodonService::pollFromInput
+          ├─ 2–4 PollOption values, 1–50 characters after trim
+          ├─ expires_in (300–604800 s) or expires_at, expires_in wins
+          └─ CreatePost(poll: Poll)
+              └─ PostRepository::insert
+                  └─ same transaction: social_post → social_poll → social_poll_option
+```
+
+`PdoPostRepository` batches the poll and ordered option rows for a page of
+posts instead of querying per status. `MastodonPresenter` projects the Mastodon
+poll object and derives `expired` from the injected clock against `expires_at`;
+there is no vote row or expiry job, and a status without a poll returns `null`.
+The core `Post::toArray()` carries the same optional object for `/api/v1/posts`
+and timeline consumers. Media upload reuses the same service as the core route:
 
 ```
 POST {mastodon.prefix}/media
@@ -491,8 +510,8 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  and post-attachment tables once; `FavouriteSchema`, `NotificationSchema`,
-  `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
+  and post-attachment tables once; `PollSchema`, `FavouriteSchema`,
+  `NotificationSchema`, `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
   `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` do the same
   for favourites, notifications, media metadata, remote content, per-user
   blocks, AT Protocol publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
@@ -557,7 +576,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow, relationship reads and local status/actor search; locally implementable poll/instance/account/dismissal slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow, relationship reads, local poll creation and local status/actor search; locally implementable instance/account/dismissal slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -615,11 +634,14 @@ genuinely owns the capability.
   oversized/slow targets. `CurlHttpClientTest` covers the production client's
   body cap and address pinning against the same fixture server.
   `MastodonApiTest` drives the optional compatibility routes through the same
-  kernel, including JSON/form writes, media upload/update/delete, local
-  follow/unfollow and relationship reads, local search, scopes,
-  disabled-before-auth, cursor/offset pagination, idempotency and media
-  projection; `ApplicationHostTest` repeats the idempotent write and a SQL
-  search over SQL repositories. `MastodonCompatibilityTest` covers the prefix,
-  scope and route metadata. `FollowerRepositoryTestCase` covers the local edge
-  and its exclusion from delivery; the post contract now also covers
-  `PostSearchRepository` visibility, author filtering and offset paging.
+  kernel, including JSON/form writes, poll creation (options, both expiry
+  forms, expiry flip, validation with no partial rows, idempotent retry),
+  media upload/update/delete, local follow/unfollow and relationship reads,
+  local search, scopes, disabled-before-auth, cursor/offset pagination,
+  idempotency and media projection; `ApplicationHostTest` repeats the
+  idempotent write, poll persistence and a SQL search over SQL repositories.
+  `MastodonCompatibilityTest` covers the prefix, scope and route metadata.
+  `FollowerRepositoryTestCase` covers the local edge and its exclusion from
+  delivery; the post contract now also covers poll round-tripping, soft-delete
+  retention and `PostSearchRepository` visibility, author filtering and offset
+  paging.

@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Post\Poll;
+use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
@@ -335,6 +337,37 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->search('   ', 10, 0));
 	}
 
+	public function testPollRoundTripsWithThePostAndSurvivesSoftDelete(): void
+	{
+		$repository = $this->repository();
+		$poll = new Poll(
+			options: [new PollOption('Yes'), new PollOption('No')],
+			multiple: false,
+			hideTotals: true,
+			expiresAt: Time::parse('2026-11-11T11:00:00Z'),
+		);
+		$repository->insert($this->post(
+			'p1',
+			'alice',
+			Visibility::Public,
+			'2026-11-11T10:00:00Z',
+			poll: $poll,
+		));
+
+		$stored = $repository->find('p1')?->poll;
+		self::assertNotNull($stored);
+		self::assertSame(['Yes', 'No'], array_map(
+			static fn (PollOption $option): string => $option->title,
+			$stored->options,
+		));
+		self::assertFalse($stored->multiple);
+		self::assertTrue($stored->hideTotals);
+		self::assertSame('2026-11-11T11:00:00Z', $stored->toArray()['expires_at']);
+
+		$repository->softDelete('p1', Time::parse('2026-11-11T10:30:00Z'));
+		self::assertNotNull($repository->find('p1')?->poll);
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();
@@ -354,6 +387,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		?string $contentWarning = null,
 		array $attachmentIds = [],
 		?string $content = null,
+		?Poll $poll = null,
 	): Post {
 		return new Post(
 			$id,
@@ -364,6 +398,7 @@ abstract class PostRepositoryTestCase extends TestCase
 			$contentWarning,
 			null,
 			$attachmentIds,
+			$poll,
 		);
 	}
 }

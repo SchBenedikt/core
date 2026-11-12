@@ -33,6 +33,7 @@ final readonly class Post
 		public ?DateTimeImmutable $deletedAt = null,
 		/** @var list<string> */
 		public array $attachmentIds = [],
+		public ?Poll $poll = null,
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A post needs an id.');
@@ -84,6 +85,7 @@ final readonly class Post
 			'visibility' => $this->visibility->value,
 			'published_at' => Time::format($this->publishedAt),
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
+			'poll' => $this->poll?->toArray(),
 		];
 	}
 }

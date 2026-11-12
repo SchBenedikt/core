@@ -16,6 +16,8 @@ use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\Poll;
+use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
@@ -34,6 +36,7 @@ use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
+use InvalidArgumentException;
 
 /**
  * The local, disabled-by-default Mastodon compatibility surface.
@@ -148,6 +151,9 @@ final class MastodonService
 	 *
 	 * @return array<string, mixed>
 	 */
+	/**
+	 * @param array<string, mixed>|null $poll the raw Mastodon `poll` parameter
+	 */
 	public function createStatus(
 		string $userId,
 		string $content,
@@ -155,10 +161,12 @@ final class MastodonService
 		?string $spoilerText,
 		array $mediaIds,
 		?string $idempotencyKey,
+		?array $poll = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
 
+		$pollModel = $poll === null ? null : $this->pollFromInput($poll);
 		$postId = $idempotencyKey === null
 			? null
 			: 'mastodon-' . substr(hash('sha256', $userId . "\0" . $idempotencyKey), 0, 32);
@@ -171,6 +179,7 @@ final class MastodonService
 				contentWarning: $spoilerText,
 				attachmentIds: $mediaIds,
 				postId: $postId,
+				poll: $pollModel,
 			));
 		} catch (DatabaseException $exception) {
 			// A repeated idempotency key maps to the same deterministic post id.
@@ -751,6 +760,149 @@ final class MastodonService
 		}
 
 		return $this->favourites;
+	}
+
+	/**
+	 * Maps the Mastodon `poll` parameter into the core value object.
+	 *
+	 * `expires_in` wins when both expiration forms are present. The bounds are
+	 * the same values the instance endpoint advertises, so a client cannot
+	 * create a poll the server would describe as unsupported.
+	 *
+	 * @param array<string, mixed> $input
+	 */
+	private function pollFromInput(array $input): Poll
+	{
+		$rawOptions = $input['options'] ?? null;
+		if (!is_array($rawOptions) || !array_is_list($rawOptions)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'poll options must be a list.');
+		}
+
+		$options = [];
+		foreach ($rawOptions as $rawOption) {
+			if (!is_string($rawOption)) {
+				throw new MastodonRequestException(422, 'validation_failed', 'poll options must be strings.');
+			}
+
+			$title = trim($rawOption);
+			if ($title === '') {
+				throw new MastodonRequestException(422, 'validation_failed', 'A poll option must not be empty.');
+			}
+
+			if (mb_strlen($title) > PollOption::MAX_TITLE_LENGTH) {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'A poll option may be at most ' . PollOption::MAX_TITLE_LENGTH . ' characters long.',
+				);
+			}
+
+			try {
+				$options[] = new PollOption($title);
+			} catch (InvalidArgumentException $exception) {
+				throw new MastodonRequestException(422, 'validation_failed', $exception->getMessage());
+			}
+		}
+
+		if (count($options) < Poll::MIN_OPTIONS || count($options) > Poll::MAX_OPTIONS) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'A poll needs between ' . Poll::MIN_OPTIONS . ' and ' . Poll::MAX_OPTIONS . ' options.',
+			);
+		}
+
+		return new Poll(
+			options: $options,
+			multiple: $this->pollBoolean($input['multiple'] ?? false, 'multiple'),
+			hideTotals: $this->pollBoolean($input['hide_totals'] ?? false, 'hide_totals'),
+			expiresAt: $this->pollExpiry($input),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 */
+	private function pollExpiry(array $input): DateTimeImmutable
+	{
+		$now = $this->now();
+		$expiresIn = $input['expires_in'] ?? null;
+		if ($expiresIn !== null) {
+			if (!is_int($expiresIn) && !(is_string($expiresIn) && preg_match('/^\d+$/', trim($expiresIn)) === 1)) {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'poll expires_in must be an integer number of seconds.',
+				);
+			}
+
+			$seconds = (int) $expiresIn;
+			if ($seconds < Poll::MIN_EXPIRY_SECONDS || $seconds > Poll::MAX_EXPIRY_SECONDS) {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'poll expires_in must be between ' . Poll::MIN_EXPIRY_SECONDS
+						. ' and ' . Poll::MAX_EXPIRY_SECONDS . ' seconds.',
+				);
+			}
+
+			return $now->modify('+' . $seconds . ' seconds');
+		}
+
+		$expiresAt = $input['expires_at'] ?? null;
+		if (is_string($expiresAt) && trim($expiresAt) !== '') {
+			try {
+				$parsed = Time::toSecondPrecision(new DateTimeImmutable(trim($expiresAt)));
+			} catch (\Exception) {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'poll expires_at must be a valid date and time.',
+				);
+			}
+
+			$seconds = $parsed->getTimestamp() - $now->getTimestamp();
+			if ($seconds < Poll::MIN_EXPIRY_SECONDS || $seconds > Poll::MAX_EXPIRY_SECONDS) {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'poll expiry must be between ' . Poll::MIN_EXPIRY_SECONDS
+						. ' and ' . Poll::MAX_EXPIRY_SECONDS . ' seconds from now.',
+				);
+			}
+
+			return $parsed;
+		}
+
+		throw new MastodonRequestException(
+			422,
+			'validation_failed',
+			'poll expires_in or expires_at is required.',
+		);
+	}
+
+	private function pollBoolean(mixed $value, string $field): bool
+	{
+		if (is_bool($value)) {
+			return $value;
+		}
+
+		if (is_int($value) && ($value === 0 || $value === 1)) {
+			return $value === 1;
+		}
+
+		if (is_string($value)) {
+			$normalized = strtolower(trim($value));
+			if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+				return true;
+			}
+
+			if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+				return false;
+			}
+		}
+
+		throw new MastodonRequestException(422, 'validation_failed', 'poll ' . $field . ' must be a boolean.');
 	}
 
 	private function now(): DateTimeImmutable

@@ -20,6 +20,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
@@ -47,6 +48,7 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 	{
 		$connection = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($connection);
+		PollSchema::create($connection);
 		FollowingSchema::create($connection);
 		RemotePostSchema::create($connection);
 		BlockSchema::create($connection);
