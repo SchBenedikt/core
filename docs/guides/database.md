@@ -25,6 +25,7 @@ timestamp, and anything else is refused.
 Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
+- `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
@@ -75,7 +76,12 @@ cleanup API and is not scheduled by the core. Rows are deliberately not shown
 in the home timeline and do not import media blobs.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
-who created it; see [blocks](blocks.md).
+who created it; see [blocks](blocks.md). `social_favourite` is unique by
+(local user, post) and stores the creation time. The composite primary key
+makes a repeat favourite idempotent, the post index serves public counts and
+the `(user, created_at)` index supports a future favourites timeline. A post
+deletion is a soft delete and does not cascade here; the host may remove
+orphaned favourites on its own cleanup schedule.
 
 `social_atproto_publication` stores the idempotency mapping from a local post
 to the AT Protocol record written for one account. Its primary key is

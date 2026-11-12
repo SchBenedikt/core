@@ -14,7 +14,7 @@ that prints or skips is a failure.
 | Directory | What lives there |
 | --- | --- |
 | `tests/Platform` | clock, config, PDO connection, blob stores and image processing |
-| `tests/Domain` | post, attachment, follower, followed-actor, remote-post, remote-thread and block entities, local/remote/thread/block/timeline/attachment repository contracts and the activity-log contract |
+| `tests/Domain` | post, favourite, attachment, follower, followed-actor, remote-post, remote-thread and block entities, local/remote/thread/block/timeline/attachment/favourite repository contracts and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
@@ -34,15 +34,16 @@ that prints or skips is a failure.
 | `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
-| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), create (form/JSON), read, account statuses, verify, delete, scopes, disabled-before-auth, custom prefix and cursor pagination |
-| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload |
+| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), account statuses, verify, delete, scopes, disabled-before-auth, custom prefix and cursor pagination |
+| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload and favourites |
+| `tests/Domain/InMemoryFavouriteRepositoryTest.php`, `tests/Domain/PdoFavouriteRepositoryTest.php` | the shared `FavouriteRepositoryTestCase`: pair uniqueness, per-user removal, batch public counts and viewer flags |
 | `tests/Protocol/XrpcAtprotoPublisherTest.php` | exact `putRecord`/`deleteRecord` requests, bearer header, successful URI, 404-as-idempotent-delete, non-2xx status without leaking the body, transport failure and malformed success |
 | `tests/Protocol/TidTest.php`, `tests/Protocol/AtprotoPostRecordTest.php` | deterministic valid TIDs, record shape, content-warning labels and AT Protocol text limits |
 | `tests/Service/Federation/RemoteMediaFetcherTest.php` | guard reasons for private IPv4/IPv6, redirect revalidation, redirect budget, HTTP error, timeout, size limit and disabled switch |
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination; the application-level backfill→media path is covered by `RemoteMediaTest` |
-| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write and an AT Protocol remote delete over SQL |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL favourite row and an AT Protocol remote delete over SQL |
 
 ## Contract tests
 
@@ -62,6 +63,8 @@ final class InMemoryRemoteThreadRepositoryTest extends RemoteThreadRepositoryTes
 final class PdoRemoteThreadRepositoryTest extends RemoteThreadRepositoryTestCase { … }
 final class InMemoryBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class PdoBlockRepositoryTest extends BlockRepositoryTestCase { … }
+final class InMemoryFavouriteRepositoryTest extends FavouriteRepositoryTestCase { … }
+final class PdoFavouriteRepositoryTest extends FavouriteRepositoryTestCase { … }
 final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class InMemoryAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }

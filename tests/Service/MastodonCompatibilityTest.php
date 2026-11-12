@@ -81,12 +81,16 @@ final class MastodonCompatibilityTest extends TestCase
 		$verify = $manifest->find('mastodon.accounts.verify_credentials');
 		$public = $manifest->find('mastodon.timelines.public');
 		$media = $manifest->find('mastodon.media.upload');
+		$favourite = $manifest->find('mastodon.statuses.favourite');
+		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
 
 		self::assertNotNull($create);
 		self::assertNotNull($delete);
 		self::assertNotNull($verify);
 		self::assertNotNull($public);
 		self::assertNotNull($media);
+		self::assertNotNull($favourite);
+		self::assertNotNull($unfavourite);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
 		self::assertSame('30/900', $create->rateLimit);
@@ -98,5 +102,11 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['write:media'], $media->requiredScopes);
 		self::assertSame('20/900', $media->rateLimit);
 		self::assertSame('/api/mastodon/v1/media', $media->path);
+		self::assertTrue($favourite->requiresAuth);
+		self::assertSame(['write:favourites'], $favourite->requiredScopes);
+		self::assertSame('30/900', $favourite->rateLimit);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/favourite', $favourite->path);
+		self::assertSame(['write:favourites'], $unfavourite->requiredScopes);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/unfavourite', $unfavourite->path);
 	}
 }

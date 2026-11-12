@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local favourites: `POST {mastodon.prefix}/statuses/{id}/favourite`
+  and `.../unfavourite` require `write:favourites`, declare a `30/900` rate
+  limit and return the normal Mastodon status shape. A repeat favourite is
+  idempotent and unfavouriting an absent row is a no-op; only the caller's row
+  can be removed. `MastodonPresenter` now reports the public
+  `favourites_count` and a viewer-specific `favourited` flag, using batched
+  count/exists queries for timelines. The new `social_favourite` table comes
+  from `FavouriteSchema` and is implemented by in-memory and PDO repositories
+  behind one contract test; a host migration must create the table, with no
+  backfill. An assembly without a `FavouriteRepository` answers `503
+  favourites_not_configured`. The route manifest and OpenAPI export now have
+  36 routes. Favourite federation (outbound `Like`/`Undo`, remote counts) and
+  the rest of the full Mastodon server API remain external; see
+  `docs/guides/mastodon-api.md`.
 - Mastodon-compatible media upload: `POST {mastodon.prefix}/media` accepts the
   same `multipart/form-data` envelope as `POST /api/v1/media`, including the
   `file` field and an optional Mastodon `description` (`alt_text` is also
@@ -19,11 +33,12 @@ All notable changes to this project are documented here. The format follows
   to the core route; a rejected upload leaves no `social_attachment` row and
   no blob. An optional `Idempotency-Key` maps to a deterministic internal
   source key, so a retry returns the original attachment without a duplicate
-  row or blob; no new table or migration is added. The route manifest and
-  OpenAPI export now have 34 routes. The rest of the full Mastodon server API
-  (OAuth/token issuance, remote timelines, favourites, boosts, notifications,
-  streaming, polls, search and the account/admin/relationship surface) remains
-  external; see `docs/guides/mastodon-api.md`.
+  row or blob; no new table or migration is added for media. The route
+  manifest and OpenAPI export include this route. The rest of the full
+  Mastodon server API (OAuth/token issuance, remote timelines, favourite
+  federation, boosts, notifications, streaming, polls, search and the
+  account/admin/relationship surface) remains external; see
+  `docs/guides/mastodon-api.md`.
 - AT Protocol OAuth session refresh: `AtprotoOAuthSession` validates the token
   endpoint, client id, DID, rotating access/refresh tokens, mandatory `atproto`
   scope and expiry. `AtprotoSessionService` refreshes inside a 60-second

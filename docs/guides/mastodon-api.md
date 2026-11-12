@@ -17,24 +17,27 @@ Locally implemented (core):
 - `GET /timelines/public`
 - `GET /statuses/{id}`
 - `POST /statuses`
+- `POST /statuses/{id}/favourite`
+- `POST /statuses/{id}/unfavourite`
 - `POST /media`
 - `DELETE /statuses/{id}`
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
 
-The local subset covers public/unlisted/followers-only text posts, media
-upload and local media attachments. It deliberately does **not** implement
-remote timelines, favourites, boosts, notifications, streaming, polls,
-scheduled posts, filters, followed tags, lists, OAuth authorization/token
-endpoints, search, admin APIs or the full account/profile surface. Those
-remain external work; see the section at the end.
+The local subset covers public/unlisted/followers-only text posts, local
+favourite/unfavourite bookkeeping, media upload and local media attachments.
+It deliberately does **not** implement remote timelines, favourite federation
+(outbound `Like`/`Undo` or remote favourite counts), boosts, notifications,
+streaming, polls, scheduled posts, filters, followed tags, lists, OAuth
+authorization/token endpoints, search, admin APIs or the full account/profile
+surface. Those remain external work; see the section at the end.
 
 ## Configuration and prefix
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all eight routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all ten routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -67,18 +70,21 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/unfavourite` | yes | `write:favourites` | 30 / 900 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`, `write`
-grants `write:media`); a granular scope does not grant its parent. `*` grants
-everything. A token with too few scopes gets `403 insufficient_scope`. The host
-still owns bearer parsing, token expiry/revocation and the actual rate limiter;
-the route manifest only declares the budget, exactly like the rest of the core
-API.
+grants `write:favourites` and `write:media`); a granular scope does not grant
+its parent. `*` grants everything. A token with too few scopes gets `403
+insufficient_scope`. The host still owns bearer parsing, token expiry/revocation
+and the actual rate limiter; the route manifest only declares the budget,
+exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
-`verify_credentials`, status creation, media upload and account statuses.
+`verify_credentials`, status creation, favourite/unfavourite, media upload and
+account statuses.
 Without a directory the core cannot distinguish local from remote account ids;
 a host that enables this API should always pass one.
 
@@ -96,6 +102,10 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
   warning. A content warning implies `sensitive: true`.
 - `media_attachments` projects the existing attachments, their alt text and
   original/thumbnail URLs. No new blob or media row is created by this API.
+- `favourites_count` is the number of local accounts that favourited the post;
+  `favourited` is true only when the authenticated viewer owns a favourite.
+  The public timeline is unauthenticated, so it always reports `favourited`
+  false while still reporting the count.
 - `uri`/`url` point at the core post URL; `created_at` is the stored publish
   time.
 
@@ -130,6 +140,36 @@ validation_failed` and `error.fields`. `in_reply_to_id` is also refused with
 Another account's status, a missing status or an already deleted status is
 `404 not_found`; the ownership check happens in `PostService`, not in a
 handler copy.
+
+### Favouriting statuses
+
+`POST /statuses/{id}/favourite` records the signed-in local account's
+favourite and returns the same Mastodon status shape with `favourited: true`
+and an incremented `favourites_count`. `POST /statuses/{id}/unfavourite`
+removes only that account's favourite and returns `favourited: false`.
+
+Both endpoints require `write:favourites`, declare a `30/900` rate limit and
+are idempotent: repeating a favourite returns the existing count without a
+second row, and unfavouriting an absent favourite is a successful no-op. The
+composite `(user_id, post_id)` primary key in `social_favourite` is the
+idempotency boundary, so no client key is needed. The local-account directory
+and the same visibility rule as status reads apply: a missing, deleted,
+private or otherwise invisible status is `404 not_found`, and a non-local
+account is refused before any write.
+
+```json
+{
+  "id": "…",
+  "favourites_count": 1,
+  "favourited": true,
+  "…": "the usual status fields"
+}
+```
+
+An assembly without a `FavouriteRepository` answers `503
+favourites_not_configured` instead of silently dropping the write. The normal
+`Application::inMemory()`/`Application::forHost()` assemblies always supply
+one.
 
 ### Uploading media
 
@@ -214,6 +254,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | --- | --- | --- |
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off |
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
+| `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility or `in_reply_to_id` in this slice |
@@ -226,27 +267,46 @@ invent a second error shape for the compatibility surface.
 
 ## Database and cleanup
 
-No new table is needed. Statuses live in `social_post` /
-`social_post_attachment`; uploaded images use `social_attachment` and the same
-`BlobStore` as `/api/v1/media`. Status idempotency uses the primary key and a
-deterministic post id; media idempotency uses the existing unique
-`source_url` column with a deterministic internal key. There is no migration
-for this slice. Deleting a status follows the normal soft-delete path;
-attachment rows and blobs are governed by the existing media cleanup policy,
-not duplicated here.
+Statuses live in `social_post` / `social_post_attachment`; uploaded images use
+`social_attachment` and the same `BlobStore` as `/api/v1/media`. Status
+idempotency uses the primary key and a deterministic post id; media
+idempotency uses the existing unique `source_url` column with a deterministic
+internal key. Local favourites use the new `social_favourite` table from
+`FavouriteSchema`:
+
+```sql
+CREATE TABLE social_favourite (
+  user_id VARCHAR(255) NOT NULL,
+  post_id VARCHAR(64) NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX social_favourite_post ON social_favourite (post_id);
+CREATE INDEX social_favourite_user ON social_favourite (user_id, created_at);
+```
+
+An existing host must create the table through its migration path before
+exposing the two favourite routes; there is no data backfill. A fresh host can
+run `FavouriteSchema::create()`. Deleting a post follows the normal soft-delete
+path and deliberately leaves favourite rows for an explicit host cleanup; the
+post is not visible, so its count is not served. Attachment rows and blobs
+remain governed by the existing media cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The eight routes are in the manifest with auth, scope and rate-limit metadata.
+The ten routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
 media upload (success, description, media-in-status, auth, scope, disabled,
 missing/invalid/corrupt/oversized file, no orphan rows or blobs, idempotency),
-timeline, create (JSON and form), read, account statuses, verify, delete,
-custom prefix, cursor and invalid-media cases. `MastodonCompatibilityTest`
-covers prefix validation, scope matching and route metadata. The post
-repository contract now covers the id-aware cursor and duplicate-id behavior
-used by the API; no new repository contract is introduced.
+timeline, create (JSON and form), read, local favourite/unfavourite (counts,
+viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
+deleted status and custom prefix), account statuses, verify, delete and cursor
+cases. `FavouriteRepositoryTestCase` is the shared contract for the in-memory
+and PDO stores (pair uniqueness, ownership, batch counts and removal).
+`MastodonCompatibilityTest` covers prefix validation, scope matching and route
+metadata. The post repository contract still covers the id-aware cursor used
+by the API.
 
 ## What remains external
 
@@ -254,9 +314,10 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 
 - OAuth authorization, token issuance/refresh/revocation and app registration
   belong to the host or a dedicated identity service.
-- Remote statuses, public/remote timelines, favourites, boosts, bookmarks,
-  notifications, streaming and search need remote data the core does not
-  fetch for this surface.
+- Remote statuses, public/remote timelines, favourite federation (outbound
+  `Like`/`Undo` and remote counts), boosts, bookmarks, notifications,
+  streaming and search need remote data the core does not fetch for this
+  surface.
 - Polls, scheduled posts, filters, lists and the full account
   profile/relationship APIs are separate features.
 - Follow/follower endpoints and moderation/admin APIs are not part of this

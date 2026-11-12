@@ -90,14 +90,20 @@ advertises the local shared route in the actor document. See
 
 With `mastodon.api` disabled, no Mastodon compatibility handler runs and every
 route under `mastodon.prefix` answers `404 mastodon_api_disabled`; the routes
-are still in the manifest and OpenAPI export. Enabling it adds no table and
-no migration: statuses use `social_post`/`social_post_attachment`, media
-upload uses `social_attachment` and the existing `BlobStore`, and an
-`Idempotency-Key` is translated into a deterministic post id or media source
-key. Media upload needs the same `MediaService`/`BlobStore` as
-`/api/v1/media`; without one the route answers `503 media_not_configured`,
-and a storage failure after validation answers `503
-media_storage_unavailable`. The host must
+are still in the manifest and OpenAPI export. Enabling it reuses
+`social_post`/`social_post_attachment` for statuses and `social_attachment`
+plus the existing `BlobStore` for media upload; an `Idempotency-Key` is
+translated into a deterministic post id or media source key. Local
+favourite/unfavourite writes the new `social_favourite` table through
+`FavouriteRepository`; create it with `FavouriteSchema::statements()` through
+the host migration path before exposing those routes. There is no backfill,
+and the table has a composite `(user_id, post_id)` primary key, so a repeat
+cannot duplicate a favourite. Media upload needs the same
+`MediaService`/`BlobStore` as `/api/v1/media`; without one the route answers
+`503 media_not_configured`, and a storage failure after validation answers
+`503 media_storage_unavailable`. A manually assembled service without a
+`FavouriteRepository` answers `503 favourites_not_configured`; the standard
+`Application` assemblies always provide one. The host must
 map bearer tokens to `Request::$userId` and `Request::$scopes`; a parent scope
 such as `read` grants `read:accounts`, a granular scope does not grant its
 parent, and a token without the route's scope gets `403 insufficient_scope`.

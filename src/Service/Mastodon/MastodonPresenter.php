@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -31,6 +32,7 @@ final class MastodonPresenter
 		private readonly InstanceInfo $instance,
 		private readonly ActivityFactory $activities,
 		private readonly ?MediaService $media = null,
+		private readonly ?FavouriteRepository $favourites = null,
 	) {
 	}
 
@@ -70,8 +72,12 @@ final class MastodonPresenter
 	/**
 	 * @return array<string, mixed>
 	 */
-	public function status(Post $post): array
-	{
+	public function status(
+		Post $post,
+		?string $viewerId = null,
+		?int $favouritesCount = null,
+		?bool $favourited = null,
+	): array {
 		$attachments = [];
 		$presented = $this->media === null ? [] : ($this->media->presentPost($post)['attachments'] ?? []);
 		foreach ($presented as $attachment) {
@@ -97,7 +103,7 @@ final class MastodonPresenter
 			'url' => $url,
 			'replies_count' => 0,
 			'reblogs_count' => 0,
-			'favourites_count' => 0,
+			'favourites_count' => $favouritesCount ?? ($this->favourites?->countForPost($post->id) ?? 0),
 			'edited_at' => null,
 			'content' => $this->html($post->content),
 			'reblog' => null,
@@ -109,7 +115,8 @@ final class MastodonPresenter
 			'emojis' => [],
 			'card' => null,
 			'poll' => null,
-			'favourited' => false,
+			'favourited' => $favourited
+				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
 			'reblogged' => false,
 			'muted' => false,
 			'bookmarked' => false,
@@ -122,9 +129,23 @@ final class MastodonPresenter
 	 *
 	 * @return list<array<string, mixed>>
 	 */
-	public function statuses(array $posts): array
+	public function statuses(array $posts, ?string $viewerId = null): array
 	{
-		return array_map(fn (Post $post): array => $this->status($post), $posts);
+		$postIds = array_map(static fn (Post $post): string => $post->id, $posts);
+		$counts = $this->favourites?->countsForPosts($postIds) ?? [];
+		$favourited = $viewerId === null
+			? []
+			: ($this->favourites?->existsForPosts($viewerId, $postIds) ?? []);
+
+		return array_map(
+			fn (Post $post): array => $this->status(
+				$post,
+				$viewerId,
+				$counts[$post->id] ?? 0,
+				$favourited[$post->id] ?? false,
+			),
+			$posts,
+		);
 	}
 
 	/**

@@ -10,25 +10,32 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Post\Favourite;
+use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 
 /**
  * The local, disabled-by-default Mastodon compatibility surface.
  *
  * It reuses the existing post service for writes and the existing repositories
  * for reads. There is no second status table: a Mastodon status is a core
- * post with an API-shaped projection. Remote posts, favourites, boosts,
- * notifications and streaming are intentionally outside this local slice.
+ * post with an API-shaped projection. Remote posts, boosts, notifications and
+ * streaming are intentionally outside this local slice; favourites are local
+ * bookkeeping because the compatibility surface only exposes local posts.
  */
 final class MastodonService
 {
@@ -43,6 +50,8 @@ final class MastodonService
 		private readonly MastodonPresenter $presenter,
 		private readonly ?LocalActorDirectory $localActors = null,
 		private readonly ?MediaService $media = null,
+		private readonly ?FavouriteRepository $favourites = null,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -114,13 +123,7 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 
-		try {
-			$post = $this->postService->getVisible($postId, $viewerId);
-		} catch (PostNotFoundException) {
-			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
-		}
-
-		return $this->presenter->status($post);
+		return $this->presenter->status($this->visiblePost($postId, $viewerId), $viewerId);
 	}
 
 	/**
@@ -172,7 +175,7 @@ final class MastodonService
 			$post = $existing;
 		}
 
-		return $this->presenter->status($post);
+		return $this->presenter->status($post, $userId);
 	}
 
 	public function deleteStatus(string $userId, string $postId): void
@@ -184,6 +187,56 @@ final class MastodonService
 		} catch (PostNotFoundException|PostAccessDeniedException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 		}
+	}
+
+	/**
+	 * Adds the caller's favourite to a visible local status.
+	 *
+	 * The repository's (user, post) key makes a repeat idempotent; a race is
+	 * resolved by re-reading the winner instead of returning a storage error.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function favouriteStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$post = $this->visiblePost($postId, $userId);
+		$favourites = $this->requireFavourites();
+
+		try {
+			$favourites->insert(new Favourite(
+				userId: $userId,
+				postId: $post->id,
+				createdAt: $this->now(),
+			));
+		} catch (DatabaseException $exception) {
+			if (!$favourites->exists($userId, $post->id)) {
+				throw $exception;
+			}
+		}
+
+		return $this->presenter->status($post, $userId);
+	}
+
+	/**
+	 * Removes the caller's favourite from a visible local status.
+	 *
+	 * Removing an absent favourite is a successful no-op, matching Mastodon's
+	 * idempotent unfavourite semantics.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function unfavouriteStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$post = $this->visiblePost($postId, $userId);
+		$this->requireFavourites()->remove($userId, $post->id);
+
+		return $this->presenter->status($post, $userId);
 	}
 
 	/**
@@ -264,6 +317,33 @@ final class MastodonService
 	public function baseUrl(): string
 	{
 		return $this->presenter->baseUrl();
+	}
+
+	private function visiblePost(string $postId, ?string $viewerId): Post
+	{
+		try {
+			return $this->postService->getVisible($postId, $viewerId);
+		} catch (PostNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		}
+	}
+
+	private function requireFavourites(): FavouriteRepository
+	{
+		if ($this->favourites === null) {
+			throw new MastodonRequestException(
+				503,
+				'favourites_not_configured',
+				'Favourite storage is not configured.',
+			);
+		}
+
+		return $this->favourites;
+	}
+
+	private function now(): DateTimeImmutable
+	{
+		return Time::toSecondPrecision(($this->clock ?? new SystemClock())->now());
 	}
 
 	/**

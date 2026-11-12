@@ -42,6 +42,8 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
+| `mastodon.statuses.unfavourite` | `POST` | `/api/mastodon/v1/statuses/{id}/unfavourite` | yes, `write:favourites` | 30 / 900 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
 | `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 
@@ -455,7 +457,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The eight routes above are additive and disabled by default. Their paths use
+The ten routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -465,6 +467,8 @@ mastodon_api_disabled` before auth and scope checks. They never shadow
 GET /api/mastodon/v1/instance
 GET /api/mastodon/v1/timelines/public?limit=20&max_id=…
 GET /api/mastodon/v1/statuses/{id}
+POST /api/mastodon/v1/statuses/{id}/favourite
+POST /api/mastodon/v1/statuses/{id}/unfavourite
 POST /api/mastodon/v1/statuses
 Idempotency-Key: client-key-1
 Content-Type: application/json
@@ -473,12 +477,21 @@ Content-Type: application/json
 ```
 
 A status response is the usual Mastodon shape (`id`, `content`,
-`spoiler_text`, `sensitive`, `visibility`, `account`, `media_attachments`, …).
-`private` maps to followers-only; `direct` and `in_reply_to_id` are `422
-unsupported_parameter` in this slice. The write goes through `PostService`, so
-validation, ownership, soft deletion and delivery are identical to
-`/api/v1/posts`. `Idempotency-Key` makes a retry return the same status
-instead of inserting a duplicate.
+`spoiler_text`, `sensitive`, `visibility`, `account`, `media_attachments`,
+`favourites_count`, `favourited`, …). `private` maps to followers-only;
+`direct` and `in_reply_to_id` are `422 unsupported_parameter` in this slice.
+The write goes through `PostService`, so validation, ownership, soft deletion
+and delivery are identical to `/api/v1/posts`. `Idempotency-Key` makes a retry
+return the same status instead of inserting a duplicate.
+
+`POST /api/mastodon/v1/statuses/{id}/favourite` and
+`POST /api/mastodon/v1/statuses/{id}/unfavourite` require
+`write:favourites`. They write only the caller's row in `social_favourite` and
+return the projected status; a repeat favourite and an absent unfavourite are
+both idempotent. The public count is visible to every reader, while
+`favourited` is true only for the authenticated viewer. Missing, deleted or
+invisible statuses answer `404 not_found`; an assembly without a
+`FavouriteRepository` answers `503 favourites_not_configured`.
 
 To upload an image first, send the same multipart envelope as
 `/api/v1/media`:
@@ -506,7 +519,7 @@ with `since_id`/`min_id`, and an unknown cursor is `404 not_found`. The routes
 declare scopes in the manifest and OpenAPI (`x-required-scopes`); the host maps
 tokens to `Request::$scopes` and enforces the declared rate limits. Errors:
 `404 mastodon_api_disabled`, `403 insufficient_scope`, `422 validation_failed`,
-`422 unsupported_parameter`, `404 not_found`.
+`422 unsupported_parameter`, `404 not_found`, `503 favourites_not_configured`.
 
 ## Route parameters
 

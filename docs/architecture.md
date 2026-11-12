@@ -274,8 +274,26 @@ POST {mastodon.prefix}/media
 The response is a projection in `MastodonPresenter`, not a second attachment
 model. A client idempotency key becomes a deterministic internal `source_url`,
 so `MediaService`'s existing source lookup returns the original attachment on a
-retry; no idempotency table is added. `MastodonApiGate` answers `404
-mastodon_api_disabled` before auth while the switch is off. The prefix is
+retry; no idempotency table is added. Local favourite/unfavourite writes one
+`social_favourite` row through `FavouriteRepository`, keyed by the local user
+and post, and the presenter batches counts and viewer flags for list reads:
+
+```
+POST {mastodon.prefix}/statuses/{id}/favourite
+  └─ MastodonFavouriteStatusHandler
+      └─ MastodonService::favouriteStatus   visible post + local account check
+          └─ FavouriteRepository::insert   social_favourite (user, post) primary key
+
+GET {mastodon.prefix}/timelines/public
+  └─ MastodonPresenter::statuses
+      └─ FavouriteRepository::countsForPosts / existsForPosts
+```
+
+`favourites_count` is public; `favourited` is only true for the authenticated
+viewer and is false on the unauthenticated timeline. A repeat favourite is
+idempotent through the composite primary key, and unfavourite removes only the
+caller's row and is a successful no-op when absent. `MastodonApiGate` answers
+`404 mastodon_api_disabled` before auth while the switch is off. The prefix is
 validated against `/api/v1` and the protocol paths at boot. Pagination uses the
 id-aware cursor on `PostRepository`, not an offset. See
 [Mastodon-compatible API](guides/mastodon-api.md).
@@ -361,12 +379,13 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  and post-attachment tables once;   `AttachmentSchema`, `RemotePostSchema`,
-  `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema`
-  do the same for media metadata, remote content, per-user blocks, AT Protocol
-  publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates the
-  same columns through its schema API. A dump can therefore move between the
-  two.
+  and post-attachment tables once; `FavouriteSchema`, `AttachmentSchema`,
+  `RemotePostSchema`, `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema`
+  and `ActivityLogSchema` do the same for favourites, media metadata, remote
+  content, per-user blocks, AT Protocol publications, the durable queue and the
+  replay log. The standalone runs those statements; the Nextcloud host creates
+  the same columns through its schema API. A dump can therefore move between
+  the two.
 - **Media metadata and bytes are separate.** A row points at one original and
   one thumbnail key. The service writes both blobs before the row and cleans
   them up if the row fails; the original bytes are never rewritten by the
@@ -426,7 +445,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media upload; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media upload and local favourites; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |

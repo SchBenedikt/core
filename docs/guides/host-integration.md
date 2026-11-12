@@ -176,6 +176,7 @@ host must strip it before passing the request to the kernel.
 The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
+- `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox)
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
@@ -203,8 +204,12 @@ VARCHAR(512)` and its unique index, and create
 For thread/context fetching, create `social_remote_thread_post` from
 `RemoteThreadSchema::statements()` and wire a `RemoteThreadRepository` into
 `Application::forHost()`; a host that does not create the table must not expose
-the route. For AT Protocol publishing, create `social_atproto_publication` from
-`AtprotoPublicationSchema::statements()` and supply an `AtprotoAccountResolver`;
+the route. For local Mastodon favourites, create `social_favourite` from
+`FavouriteSchema::statements()` before exposing the favourite/unfavourite
+routes; existing posts need no backfill, and deleting a post leaves the row for
+the host's cleanup policy. For AT Protocol publishing, create
+`social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
+supply an `AtprotoAccountResolver`;
 supplying no resolver leaves the existing route at `503 atproto_not_configured`
 without writing anything. There is no migration runner and no automatic retention job in this
 repository. A host that wants context to expire calls

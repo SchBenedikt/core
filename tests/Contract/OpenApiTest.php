@@ -71,6 +71,18 @@ final class OpenApiTest extends TestCase
 		self::assertSame('20/900', $media['x-rate-limit']);
 		self::assertSame(['write:media'], $media['x-required-scopes']);
 
+		$favourite = $document['paths']['/api/mastodon/v1/statuses/{id}/favourite']['post'];
+		self::assertSame('mastodon_statuses_favourite', $favourite['operationId']);
+		self::assertSame([['bearerAuth' => []]], $favourite['security']);
+		self::assertSame('30/900', $favourite['x-rate-limit']);
+		self::assertSame(['write:favourites'], $favourite['x-required-scopes']);
+
+		$unfavourite = $document['paths']['/api/mastodon/v1/statuses/{id}/unfavourite']['post'];
+		self::assertSame('mastodon_statuses_unfavourite', $unfavourite['operationId']);
+		self::assertSame([['bearerAuth' => []]], $unfavourite['security']);
+		self::assertSame('30/900', $unfavourite['x-rate-limit']);
+		self::assertSame(['write:favourites'], $unfavourite['x-required-scopes']);
+
 		$post = $document['paths']['/api/v1/posts/{id}']['get'];
 		self::assertSame(
 			[['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],
@@ -91,6 +103,8 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/v1/media', $decoded['paths']);
 		self::assertArrayHasKey('post', $decoded['paths']['/api/v1/media']);
 		self::assertArrayHasKey('/api/v1/media/{id}', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/favourite', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/unfavourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/v1/remote-posts/{id}/thread', $decoded['paths']);
 		self::assertSame(
 			[['bearerAuth' => []]],

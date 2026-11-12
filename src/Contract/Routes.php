@@ -36,10 +36,12 @@ use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
@@ -337,6 +339,26 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Delete one of the signed-in account\'s statuses.',
+			),
+			new Route(
+				name: 'mastodon.statuses.favourite',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/favourite',
+				handler: MastodonFavouriteStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:favourites'],
+				summary: 'Favourite a visible local status; idempotent per account and status.',
+			),
+			new Route(
+				name: 'mastodon.statuses.unfavourite',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/unfavourite',
+				handler: MastodonUnfavouriteStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:favourites'],
+				summary: 'Remove the signed-in account\'s favourite from a visible local status.',
 			),
 			new Route(
 				name: 'mastodon.accounts.statuses',

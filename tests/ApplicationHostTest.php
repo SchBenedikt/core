@@ -26,6 +26,7 @@ use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
+use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobSchema;
@@ -79,7 +80,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(34, $app->routes->routes());
+		self::assertCount(36, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -221,6 +222,29 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $timeline->status);
 		self::assertCount(1, $timeline->decodedBody());
 		self::assertSame('<p>from sql</p>', $timeline->decodedBody()[0]['content']);
+
+		$favourite = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $first->decodedBody()['id'] . '/favourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(200, $favourite->status);
+		self::assertTrue($favourite->decodedBody()['favourited']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . FavouriteSchema::TABLE,
+		));
+
+		$repeat = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $first->decodedBody()['id'] . '/favourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(1, $repeat->decodedBody()['favourites_count']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . FavouriteSchema::TABLE,
+		));
 	}
 
 	public function testForHostDeletesTheRemoteAtprotoRecordAfterALocalDelete(): void
@@ -287,6 +311,7 @@ final class ApplicationHostTest extends TestCase
 	{
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
+		FavouriteSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);

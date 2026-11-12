@@ -10,15 +10,19 @@ This document is the checklist that host is built against.
 
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `AttachmentSchema`, `FollowerSchema`,
-   `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`, `JobSchema`,
-   `ActivityLogSchema`) from the migration step.
+   statements (`PostSchema`, `FavouriteSchema`, `AttachmentSchema`,
+   `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
+   `RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
+   the migration step. `social_favourite` is needed only when the optional
+   Mastodon compatibility surface exposes favourite/unfavourite; there is no
+   backfill.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
-   `PdoRemotePostRepository`, `PdoBlockRepository` and the combined
+   `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`
+   when local favourites are exposed, and the combined
    `PdoHomeTimelineRepository`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery

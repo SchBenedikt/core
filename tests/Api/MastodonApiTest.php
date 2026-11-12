@@ -13,6 +13,8 @@ use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -388,6 +390,112 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(2, $attachments->count());
 	}
 
+	public function testFavouriteAndUnfavouriteAreIdempotentAndProjected(): void
+	{
+		$favourites = new InMemoryFavouriteRepository();
+		$app = $this->app(favourites: $favourites);
+		$status = $this->createStatus($app, ['status' => 'favourite me'])->decodedBody();
+
+		$first = $this->favourite($app, $status['id']);
+		self::assertSame(200, $first->status);
+		self::assertTrue($first->decodedBody()['favourited']);
+		self::assertSame(1, $first->decodedBody()['favourites_count']);
+		self::assertSame(1, $favourites->countForPost($status['id']));
+
+		$again = $this->favourite($app, $status['id']);
+		self::assertSame(200, $again->status);
+		self::assertSame(1, $again->decodedBody()['favourites_count']);
+		self::assertSame(1, $favourites->countForPost($status['id']));
+
+		$ownerView = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'alice',
+		));
+		self::assertTrue($ownerView->decodedBody()['favourited']);
+
+		$otherView = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'bob',
+		));
+		self::assertFalse($otherView->decodedBody()['favourited']);
+		self::assertSame(1, $otherView->decodedBody()['favourites_count']);
+
+		$timeline = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public'));
+		self::assertSame(1, $timeline->decodedBody()[0]['favourites_count']);
+		self::assertFalse($timeline->decodedBody()[0]['favourited']);
+
+		$unfavourite = $this->favourite($app, $status['id'], 'unfavourite');
+		self::assertSame(200, $unfavourite->status);
+		self::assertFalse($unfavourite->decodedBody()['favourited']);
+		self::assertSame(0, $unfavourite->decodedBody()['favourites_count']);
+		self::assertSame(0, $favourites->countForPost($status['id']));
+
+		$againUnfavourite = $this->favourite($app, $status['id'], 'unfavourite');
+		self::assertSame(200, $againUnfavourite->status);
+		self::assertSame(0, $againUnfavourite->decodedBody()['favourites_count']);
+	}
+
+	public function testFavouriteRequiresAuthAndWriteFavouritesScope(): void
+	{
+		$favourites = new InMemoryFavouriteRepository();
+		$app = $this->app(favourites: $favourites);
+		$status = $this->createStatus($app, ['status' => 'scope me'])->decodedBody();
+
+		$anonymous = $this->favourite($app, $status['id'], userId: null);
+		self::assertSame(401, $anonymous->status);
+		self::assertSame('authentication_required', $anonymous->decodedBody()['error']['code']);
+
+		$wrongScope = $this->favourite($app, $status['id'], scopes: ['write:statuses']);
+		self::assertSame(403, $wrongScope->status);
+		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
+		self::assertSame(0, $favourites->countForPost($status['id']));
+
+		$parentScope = $this->favourite($app, $status['id'], scopes: ['write']);
+		self::assertSame(200, $parentScope->status);
+		self::assertSame(1, $favourites->countForPost($status['id']));
+	}
+
+	public function testFavouriteRejectsAStatusTheLocalCallerCannotSee(): void
+	{
+		$favourites = new InMemoryFavouriteRepository();
+		$app = $this->app(favourites: $favourites, actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, [
+			'status' => 'followers only',
+			'visibility' => 'private',
+		])->decodedBody();
+
+		$response = $this->favourite($app, $status['id'], userId: 'bob');
+
+		self::assertSame(404, $response->status);
+		self::assertSame('not_found', $response->decodedBody()['error']['code']);
+		self::assertSame(0, $favourites->countForPost($status['id']));
+	}
+
+	public function testFavouriteIsDisabledBeforeAuthAndRejectsMissingOrDeletedStatuses(): void
+	{
+		$disabled = $this->app(enabled: false);
+		$response = $this->favourite($disabled, 'anything', userId: null);
+		self::assertSame(404, $response->status);
+		self::assertSame('mastodon_api_disabled', $response->decodedBody()['error']['code']);
+
+		$app = $this->app();
+		$missing = $this->favourite($app, 'does-not-exist');
+		self::assertSame(404, $missing->status);
+		self::assertSame('not_found', $missing->decodedBody()['error']['code']);
+
+		$status = $this->createStatus($app, ['status' => 'delete me'])->decodedBody();
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(204, $deleted->status);
+		self::assertSame(404, $this->favourite($app, $status['id'])->status);
+	}
+
 	public function testAnExistingAttachmentIsProjectedOnTheStatus(): void
 	{
 		$app = $this->app();
@@ -427,6 +535,11 @@ final class MastodonApiTest extends TestCase
 			'GET',
 			'/compat/mastodon/statuses/' . $created->decodedBody()['id'],
 		))->status);
+		self::assertSame(200, $this->favourite(
+			$app,
+			$created->decodedBody()['id'],
+			prefix: '/compat/mastodon',
+		)->status);
 
 		$uploaded = $this->upload($app, $this->png(), 'custom prefix', prefix: '/compat/mastodon');
 		self::assertSame(200, $uploaded->status);
@@ -474,6 +587,8 @@ final class MastodonApiTest extends TestCase
 		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
 		?InMemoryAttachmentRepository $attachments = null,
 		?InMemoryBlobStore $blobs = null,
+		?FavouriteRepository $favourites = null,
+		array $actors = ['alice'],
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -486,9 +601,31 @@ final class MastodonApiTest extends TestCase
 				],
 			]),
 			attachmentRepository: $attachments,
+			favouriteRepository: $favourites,
 			blobStore: $blobs,
-			localActors: new InMemoryActorDirectory(['alice']),
+			localActors: new InMemoryActorDirectory($actors),
 		);
+	}
+
+	/**
+	 * @param array<string, string> $headers
+	 * @param list<string>          $scopes
+	 * @param string                $prefix  compatibility prefix to target
+	 */
+	private function favourite(
+		Application $app,
+		string $postId,
+		string $action = 'favourite',
+		array $scopes = ['write:favourites'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: $prefix . '/statuses/' . rawurlencode($postId) . '/' . $action,
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	/**

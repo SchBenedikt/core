@@ -27,10 +27,12 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
@@ -78,7 +80,10 @@ use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
+use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\PdoFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
@@ -195,6 +200,7 @@ final readonly class Application
 		?BlockRepository $blockRepository = null,
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
+		?FavouriteRepository $favouriteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
@@ -223,6 +229,7 @@ final readonly class Application
 		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient);
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository();
+		$favouriteRepository ??= new InMemoryFavouriteRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -253,6 +260,7 @@ final readonly class Application
 			blockedActors: $blockedActors,
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository,
+			favouriteRepository: $favouriteRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -301,6 +309,7 @@ final readonly class Application
 		?BlockRepository $blockRepository = null,
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
+		?FavouriteRepository $favouriteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
@@ -330,6 +339,7 @@ final readonly class Application
 			blockedActors: $blockedActors,
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
+			favouriteRepository: $favouriteRepository ?? new PdoFavouriteRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -367,6 +377,7 @@ final readonly class Application
 		?BlockedActorPolicy $blockedActors,
 		?FollowPolicy $followPolicy,
 		AttachmentRepository $attachmentRepository,
+		FavouriteRepository $favouriteRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -448,9 +459,11 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository),
 			$localActors,
 			$mediaService,
+			$favouriteRepository,
+			$clock,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -578,6 +591,8 @@ final readonly class Application
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
+			->with(MastodonFavouriteStatusHandler::class, static fn (): MastodonFavouriteStatusHandler => new MastodonFavouriteStatusHandler($mastodonService))
+			->with(MastodonUnfavouriteStatusHandler::class, static fn (): MastodonUnfavouriteStatusHandler => new MastodonUnfavouriteStatusHandler($mastodonService))
 			->with(MastodonAccountStatusesHandler::class, static fn (): MastodonAccountStatusesHandler => new MastodonAccountStatusesHandler($mastodonService))
 			->with(MastodonVerifyCredentialsHandler::class, static fn (): MastodonVerifyCredentialsHandler => new MastodonVerifyCredentialsHandler($mastodonService));
 

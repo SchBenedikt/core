@@ -92,9 +92,9 @@ deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
 rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
 proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
 compatibility subset (instance, public timeline, status read/create/delete,
-media upload, account statuses, verify credentials; `write:statuses`,
-`write:media` and `read:accounts` scopes, id-aware pagination and
-`Idempotency-Key`), the
+local favourite/unfavourite, media upload, account statuses, verify
+credentials; `write:statuses`, `write:favourites`, `write:media` and
+`read:accounts` scopes, id-aware pagination and `Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
 backfill with historical media catch-up, bounded thread/context fetching with
@@ -110,7 +110,7 @@ happen in their host workflows.
 Not implemented in the core: AT Protocol account linking, the
 authorization-code/PAR flow and token revocation, the full
 repository/AppView/media/firehose stack, the full Mastodon server API
-(OAuth/token issuance, remote timelines, favourites, boosts, notifications,
+(OAuth/token issuance, remote timelines, favourite federation, boosts, notifications,
 streaming, polls, search, account/admin and relationship APIs)
 and an object-storage adapter. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility
