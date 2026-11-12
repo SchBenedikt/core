@@ -77,6 +77,15 @@ final class ActivityFactory
 	}
 
 	/**
+	 * The following URL the actor document advertises and the collection
+	 * route serves.
+	 */
+	public function followingId(string $userId): string
+	{
+		return $this->actorId($userId) . '/following';
+	}
+
+	/**
 	 * The outbox URL the actor document advertises and the outbox route
 	 * serves. One function, so a peer never has to guess the id.
 	 */

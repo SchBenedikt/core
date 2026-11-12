@@ -14,9 +14,10 @@ use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\FollowerService;
+use AlohaSocial\Core\Service\FollowingService;
 
 /**
- * The public description of a local account and its followers.
+ * The public description of a local account, its followers and following.
  *
  * Every id is derived from the same `ActivityFactory` the outbound side uses,
  * so the actor id here is exactly the actor id a signed request is checked
@@ -32,6 +33,7 @@ final class ActorDocumentService
 		private readonly RsaKeyPair $keys,
 		private readonly LocalActorDirectory $actors,
 		private readonly FollowerService $followers,
+		private readonly FollowingService $following,
 	) {
 	}
 
@@ -56,6 +58,7 @@ final class ActorDocumentService
 			'inbox' => $this->activities->baseUrl() . '/inbox',
 			'outbox' => $this->activities->outboxId($userId),
 			'followers' => $this->activities->followersId($userId),
+			'following' => $this->activities->followingId($userId),
 			'publicKey' => [
 				'id' => $this->activities->keyId($userId),
 				'owner' => $actorId,
@@ -77,6 +80,25 @@ final class ActorDocumentService
 		return [
 			'@context' => ActivityFactory::CONTEXT,
 			'id' => $this->activities->followersId($userId),
+			'type' => 'OrderedCollection',
+			'totalItems' => count($actors),
+			'orderedItems' => $actors,
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws UnknownLocalActorException when the handle is not an account here
+	 */
+	public function following(string $handle): array
+	{
+		$userId = $this->knownUser($handle);
+		$actors = $this->following->actorIds($userId);
+
+		return [
+			'@context' => ActivityFactory::CONTEXT,
+			'id' => $this->activities->followingId($userId),
 			'type' => 'OrderedCollection',
 			'totalItems' => count($actors),
 			'orderedItems' => $actors,

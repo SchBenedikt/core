@@ -76,6 +76,7 @@ final class ActorDocumentTest extends TestCase
 		self::assertSame('alice', $document['name']);
 		self::assertSame('https://localhost:8080/@alice/outbox', $document['outbox']);
 		self::assertSame('https://localhost:8080/@alice/followers', $document['followers']);
+		self::assertSame('https://localhost:8080/@alice/following', $document['following']);
 		self::assertSame(self::KEY_ID, $document['publicKey']['id']);
 		self::assertSame(self::ACTOR, $document['publicKey']['owner']);
 		self::assertSame(self::$localKey->publicKeyPem(), $document['publicKey']['publicKeyPem']);

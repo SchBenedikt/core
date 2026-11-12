@@ -14,6 +14,7 @@ use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
+use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
@@ -152,6 +153,15 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'OrderedCollection of the actors following a local account.',
+			),
+			new Route(
+				name: 'actors.following',
+				method: 'GET',
+				path: '/@{handle}/following',
+				handler: FollowingCollectionHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'OrderedCollection of the actors a local account follows.',
 			),
 			new Route(
 				name: 'actors.outbox',

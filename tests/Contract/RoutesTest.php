@@ -22,12 +22,13 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(15, $manifest->routes());
+		self::assertCount(16, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
 		self::assertNotNull($manifest->find('actors.get'));
 		self::assertNotNull($manifest->find('actors.followers'));
+		self::assertNotNull($manifest->find('actors.following'));
 		self::assertNotNull($manifest->find('actors.outbox'));
 		self::assertNotNull($manifest->find('webfinger'));
 	}
@@ -51,7 +52,7 @@ final class RoutesTest extends TestCase
 		foreach (Routes::manifest()->routes() as $route) {
 			// The liveness probe and the ActivityPub inbox are protocol
 			// endpoints, not part of the versioned client API.
-			if (in_array($route->name, ['health', 'inbox', 'actors.get', 'actors.followers', 'actors.outbox', 'webfinger'], true)) {
+			if (in_array($route->name, ['health', 'inbox', 'actors.get', 'actors.followers', 'actors.following', 'actors.outbox', 'webfinger'], true)) {
 				continue;
 			}
 
@@ -90,7 +91,7 @@ final class RoutesTest extends TestCase
 
 	public function testTheActorRoutesArePublic(): void
 	{
-		foreach (['actors.get', 'actors.followers', 'actors.outbox'] as $name) {
+		foreach (['actors.get', 'actors.followers', 'actors.following', 'actors.outbox'] as $name) {
 			$route = Routes::manifest()->find($name);
 
 			self::assertNotNull($route);
@@ -100,6 +101,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame('/@{handle}', Routes::manifest()->find('actors.get')?->path);
 		self::assertSame('/@{handle}/followers', Routes::manifest()->find('actors.followers')?->path);
+		self::assertSame('/@{handle}/following', Routes::manifest()->find('actors.following')?->path);
 		self::assertSame('/@{handle}/outbox', Routes::manifest()->find('actors.outbox')?->path);
 	}
 
@@ -119,7 +121,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(15, $decoded['routes']);
+		self::assertCount(16, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -129,6 +131,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(15, $app->routes->routes());
+		self::assertCount(16, $app->routes->routes());
 	}
 }

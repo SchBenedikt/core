@@ -15,6 +15,7 @@ use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
+use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
@@ -29,9 +30,11 @@ use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -60,6 +63,7 @@ use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
+use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\TimelineService;
@@ -87,6 +91,7 @@ final readonly class Application
 		public ?InboxService $inbox,
 		public JobWorker $worker,
 		public JobQueue $queue,
+		public FollowingService $following,
 	) {
 	}
 
@@ -99,6 +104,7 @@ final readonly class Application
 		?ActorResolver $actorResolver = null,
 		?ActivityLog $activityLog = null,
 		?LocalActorDirectory $localActors = null,
+		?FollowingRepository $followingRepository = null,
 		?LoggerInterface $logger = null,
 		bool $debug = false,
 	): self {
@@ -115,6 +121,7 @@ final readonly class Application
 		$ids = new RandomIdGenerator();
 		$repository = new InMemoryPostRepository();
 		$followers = new InMemoryFollowerRepository();
+		$followingRepository ??= new InMemoryFollowingRepository();
 
 		// With a client and a key the reference assembly federates to the real
 		// follow graph. Without them it reports no audience, so a post never
@@ -143,6 +150,7 @@ final readonly class Application
 		);
 		$timelines = new TimelineService($repository);
 		$followerService = new FollowerService($followers, $clock, $ids);
+		$followingService = new FollowingService($followingRepository, $clock, $ids);
 		$instance = new InstanceInfo($config);
 
 		// Inbound federation needs a way to resolve a key id, a client to
@@ -155,7 +163,7 @@ final readonly class Application
 		// An actor document needs a key to publish and a directory to answer
 		// whether a handle exists. Missing either keeps the routes at 503.
 		$actorDocuments = ($signingKey !== null && $localActors !== null)
-			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService)
+			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService, $followingService)
 			: null;
 
 		// The outbox reads the same post repository the local API writes.
@@ -186,6 +194,7 @@ final readonly class Application
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
+			->with(FollowingCollectionHandler::class, static fn (): FollowingCollectionHandler => new FollowingCollectionHandler($actorDocuments))
 			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox))
 			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger));
 
@@ -231,6 +240,7 @@ final readonly class Application
 			$inboxService,
 			new JobWorker($queue, $jobHandlers, $clock, $logger),
 			$queue,
+			$followingService,
 		);
 	}
 
