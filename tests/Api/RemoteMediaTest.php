@@ -42,6 +42,7 @@ use function json_encode;
 use function mkdir;
 use function random_bytes;
 use function scandir;
+use function str_contains;
 use function sys_get_temp_dir;
 use function unlink;
 
@@ -73,6 +74,8 @@ final class RemoteMediaTest extends TestCase
 	private InMemoryFollowingRepository $following;
 
 	private InMemoryAttachmentRepository $attachments;
+
+	private InMemoryRemotePostRepository $remotePosts;
 
 	private LocalBlobStore $blobs;
 
@@ -109,6 +112,7 @@ final class RemoteMediaTest extends TestCase
 		$this->directory = sys_get_temp_dir() . '/alohasocial-remote-blobs-' . bin2hex(random_bytes(8));
 		mkdir($this->directory, 0o770, true);
 		$this->attachments = new InMemoryAttachmentRepository();
+		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->blobs = new LocalBlobStore($this->directory);
 		$this->http = new LocalHttpClient(self::$server->baseUrl);
 		$this->logger = new RecordingLogger();
@@ -198,6 +202,133 @@ final class RemoteMediaTest extends TestCase
 		self::assertCount(1, $this->attachments->findMany(array_column($posts[0]['attachments'], 'id')));
 		self::assertCount(1, $this->http->requests);
 		self::assertCount(2, $this->blobs->list('media/' . $posts[0]['attachments'][0]['id']));
+	}
+
+	public function testBackfillImportsMediaForAnExistingHistoricalPostAndIsIdempotent(): void
+	{
+		$disabled = new ArrayConfig([
+			'social' => [
+				'instance.url' => 'https://social.example',
+				'media.remote_fetch' => 'false',
+			],
+		]);
+
+		$first = $this->app($disabled);
+		self::assertNotNull($first->backfill);
+		$stored = $first->backfill->backfill(self::BOB, 'https://remote.example/users/bob/outbox');
+		self::assertSame(1, $stored->stored);
+		self::assertSame(0, $this->attachments->count());
+		self::assertSame([], $this->blobs->list('media'));
+		self::assertCount(1, $this->http->requests);
+
+		$second = $this->app();
+		self::assertNotNull($second->backfill);
+		$repaired = $second->backfill->backfill(self::BOB, 'https://remote.example/users/bob/outbox');
+		self::assertSame(0, $repaired->stored);
+		self::assertSame(1, $repaired->duplicates);
+
+		$posts = $this->feed($second)->decodedBody()['posts'];
+		self::assertCount(1, $posts);
+		self::assertCount(1, $posts[0]['attachments']);
+		$shape = $posts[0]['attachments'][0];
+		self::assertSame('A historical test image', $shape['alt_text']);
+		self::assertStringStartsWith('https://social.example/api/v1/media/', $shape['url']);
+		self::assertStringEndsWith('?variant=thumbnail', $shape['thumbnail_url']);
+
+		$storedAttachment = $this->attachments->find($shape['id']);
+		self::assertNotNull($storedAttachment);
+		self::assertSame(self::MEDIA_HOST . '/image.png', $storedAttachment->sourceUrl);
+		self::assertSame(1, $this->attachments->count());
+		self::assertCount(2, $this->blobs->list('media/' . $shape['id']));
+
+		$mediaRequests = 0;
+		foreach ($this->http->requests as $url) {
+			if (str_contains($url, '/image.png')) {
+				++$mediaRequests;
+			}
+		}
+		self::assertSame(1, $mediaRequests);
+
+		$again = $second->backfill->backfill(self::BOB, 'https://remote.example/users/bob/outbox');
+		self::assertSame(1, $again->duplicates);
+		self::assertSame(1, $this->attachments->count());
+		$mediaRequestsAfterRepeat = 0;
+		foreach ($this->http->requests as $url) {
+			if (str_contains($url, '/image.png')) {
+				++$mediaRequestsAfterRepeat;
+			}
+		}
+		self::assertSame(1, $mediaRequestsAfterRepeat);
+	}
+
+	public function testBackfillImportsMediaFromAnEmbeddedAnnounce(): void
+	{
+		$app = $this->app();
+		self::assertNotNull($app->backfill);
+
+		$report = $app->backfill->backfill(
+			self::BOB,
+			'https://remote.example/users/bob/outbox?type=Announce&activity=announce-media',
+		);
+		self::assertSame(1, $report->stored);
+
+		$posts = $this->feed($app)->decodedBody()['posts'];
+		self::assertCount(1, $posts);
+		self::assertSame('boost', $posts[0]['kind']);
+		self::assertCount(1, $posts[0]['attachments']);
+		self::assertSame('A historical test image', $posts[0]['attachments'][0]['alt_text']);
+		self::assertSame(1, $this->attachments->count());
+	}
+
+	public function testBackfillPreservesExistingLinksWhenOneHistoricalImageDisappears(): void
+	{
+		$app = $this->app();
+		self::assertNotNull($app->backfill);
+
+		$first = $app->backfill->backfill(
+			self::BOB,
+			'https://remote.example/users/bob/outbox?media=two&activity=preserve',
+		);
+		self::assertSame(1, $first->stored);
+		self::assertSame(2, $this->attachments->count());
+
+		$second = $app->backfill->backfill(
+			self::BOB,
+			'https://remote.example/users/bob/outbox?media=two-missing&activity=preserve',
+		);
+		self::assertSame(1, $second->duplicates);
+
+		$posts = $this->feed($app)->decodedBody()['posts'];
+		self::assertCount(1, $posts);
+		self::assertCount(2, $posts[0]['attachments']);
+		self::assertSame(2, $this->attachments->count());
+		self::assertContains('remote_media_http_error', $this->logger->reasons());
+	}
+
+	public function testBackfillKeepsPostsWhoseHistoricalMediaIsBlockedOrCorrupt(): void
+	{
+		$app = $this->app();
+		self::assertNotNull($app->backfill);
+
+		foreach (['ssrf', 'corrupt'] as $mode) {
+			$report = $app->backfill->backfill(
+				self::BOB,
+				'https://remote.example/users/bob/outbox?media=' . $mode,
+			);
+			self::assertSame(1, $report->stored, $mode);
+		}
+
+		$posts = $this->feed($app)->decodedBody()['posts'];
+		self::assertCount(2, $posts);
+		foreach ($posts as $post) {
+			self::assertArrayNotHasKey('attachments', $post);
+			self::assertSame('historical post with a remote picture', $post['content']);
+		}
+
+		self::assertSame(0, $this->attachments->count());
+		self::assertSame([], $this->blobs->list('media'));
+		self::assertContains('remote_media_ssrf_blocked', $this->logger->reasons());
+		self::assertContains('remote_media_invalid_image', $this->logger->reasons());
 	}
 
 	public function testBadRemoteMediaLeavesThePostAvailableWithoutAttachments(): void
@@ -341,7 +472,7 @@ final class RemoteMediaTest extends TestCase
 			]),
 			activityLog: new InMemoryActivityLog(),
 			followingRepository: $this->following,
-			remotePostRepository: $remotePosts,
+			remotePostRepository: $remotePosts ?? $this->remotePosts,
 			attachmentRepository: $this->attachments,
 			blobStore: $this->blobs,
 			hostResolver: new TestHostResolver([

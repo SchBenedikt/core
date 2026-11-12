@@ -340,15 +340,6 @@ final readonly class Application
 		$logger ??= new NullLogger();
 		$activities = new ActivityFactory($config);
 		$remotePostFactory = new RemotePostFactory($clock);
-		$backfill = $httpClient === null
-			? null
-			: new RemoteOutboxBackfill(
-				$httpClient,
-				$remotePosts,
-				$remotePostFactory,
-				$followingRepository,
-				$blockedActors,
-			);
 
 		$mediaService = $blobStore === null
 			? null
@@ -404,6 +395,21 @@ final readonly class Application
 				$logger,
 			)
 			: null;
+
+		// The backfill uses the same media importer as the inbox. This lets a
+		// later run repair historical posts whose media was disabled or failed
+		// without creating a second post row.
+		$backfill = $httpClient === null
+			? null
+			: new RemoteOutboxBackfill(
+				$httpClient,
+				$remotePosts,
+				$remotePostFactory,
+				$followingRepository,
+				$blockedActors,
+				$remoteMedia,
+				$logger,
+			);
 
 		// Inbound federation needs a way to resolve a key id, a client to
 		// reach the peer and a key to sign the Accept. Missing any of them

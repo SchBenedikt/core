@@ -70,7 +70,11 @@ final class RemoteMediaService
 			return;
 		}
 
-		$linkedIds = [];
+		// Keep links from an earlier successful import. A transient failure on
+		// one URL during a repeat or backfill must not orphan an already local
+		// copy or make the post lose an attachment it previously showed.
+		$existingIds = $this->remotePosts->attachmentIdsFor([$post->activityId])[$post->activityId] ?? [];
+		$linkedIds = $existingIds;
 		$created = [];
 
 		foreach ($candidates as $candidate) {

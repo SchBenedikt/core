@@ -51,6 +51,57 @@ switch ($path) {
 		readfile($fixture);
 		return;
 
+	case '/users/bob/outbox':
+		$mode = $_GET['media'] ?? 'image';
+		$activitySuffix = $_GET['activity'] ?? $mode;
+		$activityType = $_GET['type'] ?? 'Create';
+		$mediaUrl = match ($mode) {
+			'ssrf' => 'http://127.0.0.1:' . $_SERVER['SERVER_PORT'] . '/image.png',
+			'corrupt' => 'http://media.remote.example/corrupt',
+			'too-large' => 'http://media.remote.example/too-large',
+			'wrong-type' => 'http://media.remote.example/wrong-type',
+			'slow' => 'http://media.remote.example/slow',
+			default => 'http://media.remote.example/image.png',
+		};
+		$image = static fn (string $url, string $name): array => [
+			'type' => 'Image',
+			'url' => $url,
+			'mediaType' => 'image/png',
+			'name' => $name,
+		];
+		$attachments = match ($mode) {
+			'two' => [
+				$image('http://media.remote.example/image.png?first', 'First historical test image'),
+				$image('http://media.remote.example/image.png?second', 'Second historical test image'),
+			],
+			'two-missing' => [
+				$image('http://media.remote.example/image.png?first', 'First historical test image'),
+				$image('http://media.remote.example/missing', 'Missing historical test image'),
+			],
+			default => [$image($mediaUrl, 'A historical test image')],
+		};
+		header('Content-Type: application/activity+json');
+		echo json_encode([
+			'id' => 'https://remote.example/users/bob/outbox',
+			'type' => 'OrderedCollectionPage',
+			'totalItems' => 1,
+			'orderedItems' => [[
+				'id' => 'https://remote.example/activities/create-backfill-' . $activitySuffix,
+				'type' => $activityType,
+				'actor' => 'https://remote.example/users/bob',
+				'published' => '2026-11-11T10:01:00Z',
+				'object' => [
+					'id' => 'https://remote.example/notes/backfill-' . $activitySuffix,
+					'type' => 'Note',
+					'attributedTo' => 'https://remote.example/users/bob',
+					'content' => 'historical post with a remote picture',
+					'published' => '2026-11-11T10:01:00Z',
+					'attachments' => $attachments,
+				],
+			]],
+		], JSON_THROW_ON_ERROR);
+		return;
+
 	default:
 		http_response_code(404);
 		echo 'not found';

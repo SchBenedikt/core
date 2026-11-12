@@ -24,9 +24,9 @@ Implemented and tested here:
 | Platform ports | config, clock, blob storage (local and in-memory), image thumbnails (GD), database (PDO), outbound HTTP (curl) |
 | Domain | posts, visibility, remote posts/boosts, per-user blocks, media metadata with local and remote post links, post/remote-post/block/attachment repositories (in-memory and SQL, same contract tests), combined home-timeline repository |
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
-| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up and per-user timeline blocking |
+| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up with historical media repair and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
-| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, and guarded remote-image import for incoming federated posts |
+| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 23 routes and its JSON export |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
@@ -53,7 +53,7 @@ remaining seams.
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, 588 tests
+composer check          # lint, boundary, attribution, links, 592 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (23 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1
@@ -133,6 +133,8 @@ uploads a PNG through the real route into a temporary local blob store, checks
 that the original and thumbnail are separate objects, attaches it to a post
 and reads the alt text and URLs back through the post and both timelines. It
 also proves wrong, corrupt and oversized uploads leave no blob and no post.
+`RemoteMediaTest` adds the guarded inbound and outbox-backfill media paths,
+including historical repair, idempotent repeats and failing candidates.
 `ApplicationHostTest` repeats the Create-to-home path against SQL repositories.
 
 ## Documentation

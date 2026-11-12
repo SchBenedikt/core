@@ -164,6 +164,8 @@ The clock window for the signed `Date` is 300 seconds; see
 
 A bounded outbox catch-up for missed `Create`/`Announce` activities exists as
 an explicit host operation; see [remote outbox backfill](remote-backfill.md).
-It is not a full mirror: it does not fetch threads or media, and it does not
-apply `Delete` activities. Media is imported by the live inbox path; a host
-that backfills historic posts still needs a separate media catch-up policy.
+It is not a full mirror: it does not fetch threads and it does not apply
+`Delete` activities. It does import embedded-object images through the same
+guarded `RemoteMediaService` as the live inbox, including for already-present
+activities whose media was disabled or failed earlier. Scheduling and retrying
+that explicit operation remain host concerns.

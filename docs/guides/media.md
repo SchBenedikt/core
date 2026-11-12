@@ -136,6 +136,18 @@ link and returns the same `attachments` shape as a local post: `alt_text`,
 `url` and `thumbnail_url`, with URLs pointing at this instance. A post with no
 successful imports keeps its previous shape and no `attachments` key.
 
+### Historical catch-up through the outbox backfill
+
+`RemoteOutboxBackfill` imports the same embedded-object attachments when it
+stores a missed `Create` or `Announce`. It also re-runs the importer for an
+activity that is already present, so a post stored while remote media was
+disabled, before media ingestion existed, or after a failed attachment can be
+repaired without a second post row. The unique `source_url` reuses an existing
+local copy; an existing link is preserved when one advertised URL can no longer
+be fetched. Backfill media uses the same fetcher, host resolver, validation,
+limits and `media.remote_fetch` switch as the inbox. See
+[remote outbox backfill](remote-backfill.md).
+
 ### Fetch guard rails
 
 Remote bytes are hostile input. The fetch path enforces all of these before a
@@ -157,9 +169,10 @@ request is made and again for every redirect:
   `Content-Length` header;
 - a request timeout applies to each hop.
 
-The fetch is synchronous in the inbox request. The default limits are one
-connection per attachment, a 10-second timeout per hop and at most 3 redirects.
-Four attachments can therefore add bounded latency to one inbox delivery.
+The fetch is synchronous in the inbox request or explicit backfill run. The
+default limits are one connection per attachment, a 10-second timeout per hop
+and at most 3 redirects. Four attachments can therefore add bounded latency to
+one delivery or one backfilled activity.
 
 ### Configuration
 
@@ -175,11 +188,13 @@ All keys use the `social` app.
 | `media.thumbnail_max_dimension` | 640 | Longest thumbnail side, clamped to 1–2000 |
 
 With `media.remote_fetch` disabled, the parser/fetcher is not called, no
-outbound request is made and no new attachment row is created. The remote post
-is still stored and delivered without an `attachments` key. Existing links and
-local copies from an earlier enabled period remain readable; disabling the
-feature is not a deletion. Set the switch to exactly `false`, `0`, `off` or
-`no` (using the normal `Config::getBool()` spellings) to disable it.
+outbound request is made and no new attachment row is created. This applies to
+both the live inbox and the outbox backfill. The remote post is still stored
+and delivered without an `attachments` key. Existing links and local copies
+from an earlier enabled period remain readable; disabling the feature is not a
+deletion. Set the switch to exactly `false`, `0`, `off` or `no` (using the
+normal `Config::getBool()` spellings) to disable it. A later backfill with the
+switch enabled can repair a post that was stored during the disabled period.
 
 A host that supplies only `HttpClient` rather than `BoundedHttpClient` gets the
 same disabled behavior: there is no safe way to fetch an infinite body without
@@ -215,7 +230,14 @@ available. The stable reasons are:
 A failed individual attachment does not create a metadata row before its bytes
 validate. If the link insert fails, newly created rows and their two blobs are
 removed; an already existing local copy is kept for the next delivery to
-reuse. The error is logged and the post stays available.
+reuse. The error is logged and the post stays available. A repeat or backfill
+merges the links from an earlier import with the ones that still succeed, so a
+transient failure does not orphan a previously displayed local attachment.
+
+For a historical post, run the outbox backfill again after the cause is fixed
+(disabled fetch, transient network error, corrected peer content). There is no
+background media retry queue; each explicit backfill run retries the advertised
+candidates in its bounded item window.
 
 ## Configuration and operation of local storage
 

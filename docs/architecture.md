@@ -151,6 +151,26 @@ is the only place that maps a reason to an HTTP status. The inbox is enabled
 only when an actor resolver, an HTTP client and a signing key are all present —
 otherwise it answers 503 instead of pretending.
 
+## Backfilling an outbox
+
+```
+RemoteOutboxBackfill::backfill
+  ├─ following/filter and outbox paging guards
+  ├─ RemotePostFactory          same Create/Announce rules as the inbox
+  ├─ RemotePostRepository::insert
+  └─ RemoteMediaService::import
+      └─ the bounded fetcher/validator/storage path above
+```
+
+A new activity is handed to the media importer after its insert. An activity
+whose primary key already exists is still passed to the idempotent importer:
+this is how an explicit backfill repairs a post stored while
+`social/media.remote_fetch` was off or while an attachment failed, without a
+second post row. The importer keeps existing links when one advertised URL can
+no longer be fetched, and media failures never change the post's
+stored/duplicate result. The backfill remains an explicit host operation; it
+is not a route and does not schedule itself.
+
 ## Home timeline
 
 ```
@@ -330,7 +350,10 @@ genuinely owns the capability.
   request that left. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `RemoteOutboxBackfillTest` exercises paging,
-  deduplication and scope limits without a network. `ApplicationHostTest`
+  deduplication and scope limits without a network; `RemoteMediaTest` also
+  stores a historical post through the backfill, repairs its media after a
+  disabled period, repeats the URL without duplicates and proves that a bad or
+  blocked historical image leaves the post available. `ApplicationHostTest`
   repeats the Create-to-home path through `forHost()` with SQL repositories,
   `PdoJobQueue` and `PdoActivityLog`. `MediaTest` uploads a PNG through the
   real route into a temporary `LocalBlobStore`, fetches the original and
@@ -339,5 +362,5 @@ genuinely owns the capability.
   and no post. `RemoteMediaTest` delivers a signed Create containing attachments
   through the real inbox while a local HTTP server answers the guarded fetch;
   it covers redirects, SSRF targets, size, corrupt bytes, a false type, a
-  timeout and duplicate URLs. `CurlHttpClientTest` covers the production
+  timeout, duplicate URLs and historical backfill media. `CurlHttpClientTest` covers the production
   client's body cap and address pinning against the same fixture server.

@@ -12,12 +12,15 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use InvalidArgumentException;
 use JsonException;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 use function is_array;
 use function is_int;
@@ -32,8 +35,10 @@ use function is_string;
  * arbitrary host) and never claims activity ids: a post already delivered is
  * found through the remote-post primary key and counted as a duplicate.
  *
- * It imports Create and Announce only. Deletes, threads, replies and media are
- * outside this slice; the docs say so rather than implying a complete mirror.
+ * It imports Create and Announce only. Deletes, threads and replies are
+ * outside this slice; an optional RemoteMediaService catches up attachments
+ * through the same bounded importer the inbox uses. The docs say so rather
+ * than implying a complete mirror.
  */
 final class RemoteOutboxBackfill
 {
@@ -45,6 +50,8 @@ final class RemoteOutboxBackfill
 		private readonly RemotePostFactory $posts,
 		private readonly FollowingRepository $following,
 		private readonly ?BlockedActorPolicy $blockedActors = null,
+		private readonly ?RemoteMediaService $remoteMedia = null,
+		private readonly ?LoggerInterface $logger = null,
 	) {
 	}
 
@@ -179,14 +186,47 @@ final class RemoteOutboxBackfill
 		try {
 			$this->remotePosts->insert($post);
 		} catch (DatabaseException $exception) {
-			if ($this->remotePosts->findByActivityId($post->activityId) !== null) {
+			$existing = $this->remotePosts->findByActivityId($post->activityId);
+			if ($existing !== null) {
+				// A historical row may predate media ingestion or have failed
+				// imports earlier. Re-run the idempotent importer so a later
+				// backfill can repair it without creating a second post.
+				if ($existing->deletedAt === null) {
+					$this->importMedia($existing, $activity);
+				}
+
 				return 'duplicate';
 			}
 
 			throw $exception;
 		}
 
+		$this->importMedia($post, $activity);
+
 		return 'stored';
+	}
+
+	/**
+	 * Media is best-effort like the live inbox: a broken historical image must
+	 * not discard the post or turn a stored activity into a skipped one.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function importMedia(RemotePost $post, array $activity): void
+	{
+		if ($this->remoteMedia === null) {
+			return;
+		}
+
+		try {
+			$this->remoteMedia->import($post, $activity['object'] ?? null);
+		} catch (\Throwable $exception) {
+			($this->logger ?? new NullLogger())->warning('Backfill media import failed.', [
+				'activity_id' => $post->activityId,
+				'reason' => 'remote_media_import_failed',
+				'error' => $exception->getMessage(),
+			]);
+		}
 	}
 
 	/**

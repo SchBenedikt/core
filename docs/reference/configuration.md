@@ -12,7 +12,7 @@ the database — the core does not care.
 | `social` | `instance.name` | no | Display name; defaults to the product name |
 | `social` | `media.max_bytes` | no | Local upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
 | `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
-| `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
+| `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts and historical posts processed by the outbox backfill; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
 | `social` | `media.remote_max_bytes` | no | Hard per-response body limit for a remote image; defaults to 5 MiB, clamped to 1 byte–`Attachment::MAX_BYTES` |
 | `social` | `media.remote_timeout_seconds` | no | Per-hop remote fetch timeout; defaults to 10, clamped to 1–30 |
 | `social` | `media.remote_max_redirects` | no | Redirects followed per remote fetch; defaults to 3, clamped to 0–5 |
@@ -25,10 +25,13 @@ not for federation.
 
 With `media.remote_fetch` disabled, an incoming `Create` or `Announce` is
 still stored and appears in the home timeline, but no remote request is made
-and the post has no `attachments` key. Existing imported attachments remain
-readable; disabling the switch does not delete rows or blobs. A host that only
-supplies `HttpClient` and not `BoundedHttpClient` also gets no remote fetch:
-`Application` wires the importer only when the bounded capability is present.
+and the post has no `attachments` key. The same applies when an explicit
+outbox backfill stores a historical post or revisits an existing one. Existing
+imported attachments remain readable; disabling the switch does not delete
+rows or blobs. A later backfill with the switch enabled can repair a post from
+that period. A host that only supplies `HttpClient` and not
+`BoundedHttpClient` also gets no remote fetch: `Application` wires the
+importer only when the bounded capability is present.
 
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.

@@ -65,6 +65,16 @@ Status of the core, not a promise about dates.
   present local original/thumbnail URLs plus alt text. The switch
   `social/media.remote_fetch` disables all outbound fetching without deleting
   existing copies.
+- Historical remote media catch-up: the outbox backfill passes every newly
+  stored and every already-present `Create`/`Announce` object to the same
+  `RemoteMediaService` the inbox uses. A later run therefore repairs posts
+  whose media was disabled or failed earlier, without a second post row;
+  repeated source URLs reuse the existing local attachment. The bounded
+  fetcher, SSRF checks, limits, validation, stable failure reasons and the
+  `social/media.remote_fetch` switch apply unchanged. Existing links survive a
+  repeat in which one candidate can no longer be fetched. This closes the
+  local media catch-up gap that was previously left to each host; scheduling
+  the backfill remains a host operation.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
@@ -92,6 +102,10 @@ Status of the core, not a promise about dates.
   contract in [ADR 0005](adr/0005-shared-ui.md).
 
 ## Next
+
+The remaining items are host-owned migrations or integrations. There is no
+core-only vertical slice waiting in this table; the local media catch-up gap is
+closed in Done above.
 
 | Item | Seam |
 | --- | --- |

@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Historical remote media catch-up: `RemoteOutboxBackfill` now passes every
+  stored and every already-present `Create`/`Announce` object to the same
+  `RemoteMediaService` as the live inbox. A later explicit backfill run can
+  repair a historical post whose media was disabled or failed earlier without
+  creating a second post; repeated source URLs reuse the local attachment and
+  the existing link set survives a repeat in which one candidate disappears.
+  All SSRF, redirect, timeout, body-size, MIME, attachment-count and
+  `social/media.remote_fetch` rules apply unchanged.
 - Remote media ingestion: a signed inbound `Create` or `Announce` can now
   import up to four image attachments from its embedded object after the post
   is stored. The new `RemoteMediaFetcher` enforces http(s)-only URLs, public
@@ -158,6 +166,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A repeated remote-media import no longer drops an already linked local
+  attachment when one other advertised URL fails to fetch. Existing links are
+  merged with the current successful set instead of replacing them.
 - A post with `followers` visibility was readable by anyone who knew its id.
   Single-post reads now apply visibility and answer 404 to non-authors.
 
