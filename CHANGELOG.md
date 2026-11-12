@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible API (local subset): an additive, disabled-by-default
+  compatibility surface under `social/mastodon.prefix` (default
+  `/api/mastodon/v1`) with seven routes: instance, public timeline, status
+  read/create/delete, local account statuses and verify credentials. It is a
+  projection over the existing `social_post` rows and `PostService`, not a
+  second status store. Auth and scope metadata (`write:statuses`,
+  `read:accounts`), `max_id`/`since_id`/`min_id` pagination with an id
+  tie-break and `Link` headers, form and JSON writes, content warnings, media
+  ids, and an `Idempotency-Key` that maps to a deterministic post id are
+  included. `social/mastodon.api` defaults to `false`; while off, every
+  compatibility route answers `404 mastodon_api_disabled`, including
+  authenticated writes, because the gate runs before auth and scopes. The
+  prefix is validated at boot and must not overlap `/api/v1` or the reserved
+  protocol paths. The route manifest and OpenAPI export now have 33 routes
+  (tag `mastodon`, `x-required-scopes`); no schema or migration is added.
+  OAuth/token issuance, remote timelines, favourites, boosts, notifications,
+  streaming, media upload, polls, search and the full account/admin and
+  relationship surface remain external; see `docs/guides/mastodon-api.md`.
 - AT Protocol publishing foundation: the core now owns ATProto account/record
   primitives, deterministic TIDs encoded as valid `base32-sortable` record
   keys, the authenticated XRPC `com.atproto.repo.putRecord` adapter, the

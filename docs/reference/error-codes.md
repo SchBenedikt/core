@@ -19,7 +19,9 @@ change. `fields` appears only when an error belongs to specific input.
 | `invalid_resource` | 400 | WebFinger `resource` is missing or not a usable `acct:` URI |
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
 | `forbidden` | 403 | The user is known but may not do this (deleting somebody else's post) |
-| `not_found` | 404 | Missing — or private and therefore indistinguishable from missing |
+| `insufficient_scope` | 403 | A Mastodon-compatible route requires a token scope the caller does not hold |
+| `not_found` | 404 | Missing — or private and therefore indistinguishable from missing; also an unknown Mastodon status cursor or local account |
+| `mastodon_api_disabled` | 404 | `social/mastodon.api` is off; every compatibility route answers this before auth |
 | `unknown_actor` | 404 | An inbox request signed with a key id that does not resolve to an actor |
 | `unknown_object` | 404 | An inbox activity does not address an actor on this instance |
 | `actor_mismatch` | 403 | A valid inbox signature whose activity claims another actor, a created object belongs to another actor, or a Delete targets another actor's row |
@@ -49,8 +51,21 @@ change. `fields` appears only when an error belongs to specific input.
 | `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
+| `unsupported_parameter` | 422 | A Mastodon write asks for `direct` visibility or `in_reply_to_id`, which this local slice does not support |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
+
+## Mastodon compatibility failures
+
+A disabled compatibility surface is `404 mastodon_api_disabled`, including for
+authenticated writes. A missing token is still `401
+authentication_required`; a valid token without the route's scope is `403
+insufficient_scope`. An unknown `max_id`/`since_id`/`min_id`, a missing or
+deleted status, a private status for anyone but its author, and an unknown
+local account are all `404 not_found`. `direct` visibility and
+`in_reply_to_id` are `422 unsupported_parameter`; other input problems use
+`422 validation_failed` with `error.fields`. See
+[Mastodon-compatible API](../guides/mastodon-api.md).
 
 ## Remote thread failures
 

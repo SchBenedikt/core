@@ -51,8 +51,10 @@ when advertised, the server's shared inbox.
 1. The host authenticates and builds a `Core\Http\Request` with `userId`.
 2. `Kernel` asks the `Router` for a `RouteMatch` (404/405 are decided here).
 3. The matched route and its path parameters become request attributes.
-4. Middleware runs outermost first — `RequireAuthentication` refuses a route
-   with `requires_auth` when there is no user.
+4. Middleware runs outermost first — `MastodonApiGate` hides the optional
+   compatibility routes when their switch is off, `RequireAuthentication`
+   refuses a route with `requires_auth` when there is no user, and
+   `RequireScopes` checks the token scopes a compatibility route declares.
 5. The `HandlerResolver` builds the handler lazily and it produces a `Response`.
 6. Any `HttpException` becomes the documented JSON error; anything else is
    logged and answered with a 500 that does not leak internals unless the
@@ -243,6 +245,27 @@ host and every redirect, manual redirect following, timeout and body cap.
 `thread_*` reasons without reimplementing the network guard. The thread cache
 stores text/structure only; media is not imported.
 
+## Mastodon compatibility
+
+`POST /api/mastodon/v1/statuses` is not a second write path:
+
+```
+POST {mastodon.prefix}/statuses
+  └─ MastodonCreateStatusHandler  parse JSON/form, map visibility, read Idempotency-Key
+      └─ MastodonService::createStatus
+          └─ PostService::create   same validation, storage and delivery as /api/v1/posts
+              └─ PostRepository::insert
+```
+
+Reads project the same `social_post` rows through `MastodonPresenter`; there is
+no compatibility table. The deterministic post id (`mastodon-` + hash of user
+and key) makes an idempotent retry collide with the existing primary key and
+return the stored row. The prefix is validated against `/api/v1` and the
+protocol paths at boot, and `MastodonApiGate` answers `404
+mastodon_api_disabled` before auth while the switch is off. Pagination uses the
+id-aware cursor on `PostRepository`, not an offset. See
+[Mastodon-compatible API](guides/mastodon-api.md).
+
 ## Following an actor
 
 ```
@@ -366,7 +389,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, OAuth/session refresh, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation in `Protocol\Atproto` and `Domain\Atproto` |
-| Mastodon-compatible API | more routes in the manifest; handlers over the same services |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, media upload, polls, search, account/admin and relationship APIs) | host/integration work over the completed local compatibility subset; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -416,3 +439,8 @@ genuinely owns the capability.
   fetching, an invalid target, a blocked ancestor, an SSRF ancestor and
   oversized/slow targets. `CurlHttpClientTest` covers the production client's
   body cap and address pinning against the same fixture server.
+  `MastodonApiTest` drives the optional compatibility routes through the same
+  kernel, including JSON/form writes, scopes, disabled-before-auth, cursor
+  pagination, idempotency and media projection; `ApplicationHostTest` repeats
+  the idempotent write over SQL. `MastodonCompatibilityTest` covers the prefix
+  and scope rules.

@@ -38,7 +38,28 @@ interface PostRepository
 	 *
 	 * @return list<Post>
 	 */
-	public function publicTimeline(int $limit, ?DateTimeImmutable $before = null): array;
+	public function publicTimeline(
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array;
+
+	/**
+	 * Publicly visible posts of one author, with the same id-aware cursor as
+	 * {@see publicTimeline()}.
+	 *
+	 * @return list<Post>
+	 */
+	public function authorTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array;
 
 	/**
 	 * Every publicly visible post of one author, newest first, for the outbox.

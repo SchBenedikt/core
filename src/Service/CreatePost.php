@@ -26,6 +26,7 @@ final readonly class CreatePost
 		public ?string $contentWarning = null,
 		/** @var list<string> */
 		public array $attachmentIds = [],
+		public ?string $postId = null,
 	) {
 	}
 }

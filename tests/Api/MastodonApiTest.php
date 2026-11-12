@@ -1,0 +1,397 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Tests\Api;
+
+use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
+use AlohaSocial\Core\Support\Time;
+use PHPUnit\Framework\TestCase;
+
+use function imagecolorallocate;
+use function imagecreatetruecolor;
+use function imagefill;
+use function imagepng;
+use function imagedestroy;
+use function ob_get_clean;
+use function ob_start;
+
+/**
+ * End-to-end coverage for the optional Mastodon compatibility surface.
+ *
+ * The routes are additive and disabled by default; this test exercises the
+ * real HTTP kernel, the shared post service, scopes, form/JSON input,
+ * idempotency keys and the id-aware cursor.
+ */
+final class MastodonApiTest extends TestCase
+{
+	private FrozenClock $clock;
+
+	protected function setUp(): void
+	{
+		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
+	}
+
+	public function testInstanceIsServedUnderTheDefaultPrefix(): void
+	{
+		$response = $this->app()->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/instance'));
+
+		self::assertSame(200, $response->status);
+		self::assertSame('Aloha Social', $response->decodedBody()['title']);
+		self::assertSame('4.2.0 (compatible; Aloha Social 0.1.0)', $response->decodedBody()['version']);
+	}
+
+	public function testTheSurfaceIsDisabledByDefaultAndWithTheFlagOff(): void
+	{
+		$app = $this->app(enabled: false);
+		$response = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/instance',
+		));
+
+		self::assertSame(404, $response->status);
+		self::assertSame('mastodon_api_disabled', $response->decodedBody()['error']['code']);
+
+		// The gate runs before auth and scopes: a hidden feature must not
+		// reveal a different error to a caller with a token.
+		$write = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
+			body: 'status=no',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(404, $write->status);
+		self::assertSame('mastodon_api_disabled', $write->decodedBody()['error']['code']);
+	}
+
+	public function testCreateReadAndDeleteAStatus(): void
+	{
+		$app = $this->app();
+		$created = $this->createStatus($app, [
+			'status' => 'hello <world>',
+			'spoiler_text' => 'spoilers',
+		]);
+
+		self::assertSame(200, $created->status);
+		$status = $created->decodedBody();
+		self::assertSame('public', $status['visibility']);
+		self::assertTrue($status['sensitive']);
+		self::assertSame('spoilers', $status['spoiler_text']);
+		self::assertSame('<p>hello &lt;world&gt;</p>', $status['content']);
+		self::assertSame('alice', $status['account']['acct']);
+		self::assertSame('https://social.example/@alice', $status['account']['url']);
+
+		$shown = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id']));
+		self::assertSame(200, $shown->status);
+		self::assertSame($status['id'], $shown->decodedBody()['id']);
+
+		$account = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/alice/statuses',
+		));
+		self::assertSame(200, $account->status);
+		self::assertCount(1, $account->decodedBody());
+		self::assertSame($status['id'], $account->decodedBody()[0]['id']);
+
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(204, $deleted->status);
+
+		$missing = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+		));
+		self::assertSame(404, $missing->status);
+	}
+
+	public function testScopesAreEnforcedAndAParentScopeGrantsItsChildren(): void
+	{
+		$app = $this->app();
+
+		$anonymous = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
+			body: 'status=no-auth',
+		));
+		self::assertSame(401, $anonymous->status);
+
+		$noScope = $this->createStatus($app, ['status' => 'no scope'], scopes: ['read:statuses']);
+		self::assertSame(403, $noScope->status);
+		self::assertSame('insufficient_scope', $noScope->decodedBody()['error']['code']);
+
+		$withParent = $this->createStatus($app, ['status' => 'parent scope'], scopes: ['write']);
+		self::assertSame(200, $withParent->status);
+
+		$verifyWithoutScope = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/accounts/verify_credentials',
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(403, $verifyWithoutScope->status);
+
+		$verify = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/accounts/verify_credentials',
+			userId: 'alice',
+			scopes: ['read:accounts'],
+		));
+		self::assertSame(200, $verify->status);
+		self::assertSame('alice', $verify->decodedBody()['id']);
+	}
+
+	public function testAnIdempotencyKeyReturnsTheSameStatus(): void
+	{
+		$app = $this->app();
+		$first = $this->createStatus(
+			$app,
+			['status' => 'once'],
+			['Idempotency-Key' => 'client-key-1'],
+		);
+		$second = $this->createStatus(
+			$app,
+			['status' => 'once'],
+			['Idempotency-Key' => 'client-key-1'],
+		);
+
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+
+		$timeline = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		));
+		self::assertCount(1, $timeline->decodedBody());
+	}
+
+	public function testPaginationUsesTheStatusIdAndReturnsALink(): void
+	{
+		$app = $this->app();
+		$ids = [];
+		foreach (['one', 'two', 'three'] as $content) {
+			$ids[] = $this->createStatus($app, ['status' => $content])->decodedBody()['id'];
+			$this->clock->advance(1);
+		}
+
+		$first = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+			['limit' => '2'],
+		));
+		self::assertSame(200, $first->status);
+		self::assertCount(2, $first->decodedBody());
+		self::assertSame([$ids[2], $ids[1]], array_column($first->decodedBody(), 'id'));
+		self::assertStringContainsString('max_id=' . rawurlencode($ids[1]), (string) $first->header('Link'));
+
+		$second = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+			['limit' => '2', 'max_id' => $ids[1]],
+		));
+		self::assertSame(200, $second->status);
+		self::assertSame([$ids[0]], array_column($second->decodedBody(), 'id'));
+	}
+
+	public function testSinceIdReturnsOnlyNewerStatusesAndLimitIsClamped(): void
+	{
+		$app = $this->app();
+		$ids = [];
+		foreach (['one', 'two', 'three'] as $content) {
+			$ids[] = $this->createStatus($app, ['status' => $content])->decodedBody()['id'];
+			$this->clock->advance(1);
+		}
+
+		$since = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+			['since_id' => $ids[0], 'limit' => '100'],
+		));
+		self::assertSame(200, $since->status);
+		self::assertSame([$ids[2], $ids[1]], array_column($since->decodedBody(), 'id'));
+
+		$unknown = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+			['max_id' => 'does-not-exist'],
+		));
+		self::assertSame(404, $unknown->status);
+	}
+
+	public function testJsonAndMediaValidationDoNotCreateAPost(): void
+	{
+		$app = $this->app();
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['status' => 'json body'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $created->status);
+
+		$invalidMedia = $this->createStatus($app, [
+			'status' => 'bad media',
+			'media_ids' => ['missing-attachment'],
+		]);
+		self::assertSame(422, $invalidMedia->status);
+		self::assertSame('validation_failed', $invalidMedia->decodedBody()['error']['code']);
+
+		$timeline = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		));
+		self::assertCount(1, $timeline->decodedBody());
+		self::assertSame('<p>json body</p>', $timeline->decodedBody()[0]['content']);
+	}
+
+	public function testAnExistingAttachmentIsProjectedOnTheStatus(): void
+	{
+		$app = $this->app();
+		self::assertNotNull($app->media);
+		$attachment = $app->media->upload('alice', $this->png(), 'a test image');
+
+		$created = $this->createStatus($app, [
+			'status' => 'with media',
+			'media_ids' => [$attachment->id],
+		]);
+		self::assertSame(200, $created->status);
+		$media = $created->decodedBody()['media_attachments'];
+		self::assertCount(1, $media);
+		self::assertSame($attachment->id, $media[0]['id']);
+		self::assertSame('a test image', $media[0]['description']);
+		self::assertStringContainsString('/api/v1/media/' . $attachment->id, $media[0]['url']);
+	}
+
+	public function testThePrefixIsConfigurableAndDoesNotShadowTheCoreApi(): void
+	{
+		$app = $this->app(prefix: '/compat/mastodon');
+
+		self::assertSame(200, $app->handle(new Request('GET', '/compat/mastodon/instance'))->status);
+		self::assertSame(404, $app->handle(new Request('GET', '/api/mastodon/v1/instance'))->status);
+		self::assertSame(200, $app->handle(new Request('GET', '/api/v1/instance'))->status);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/compat/mastodon/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: 'status=custom-prefix',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $created->status);
+		self::assertSame(200, $app->handle(new Request(
+			'GET',
+			'/compat/mastodon/statuses/' . $created->decodedBody()['id'],
+		))->status);
+	}
+
+	public function testDirectVisibilityAndMissingInputAreRejected(): void
+	{
+		$app = $this->app();
+
+		$direct = $this->createStatus($app, ['status' => 'private', 'visibility' => 'direct']);
+		self::assertSame(422, $direct->status);
+		self::assertSame('unsupported_parameter', $direct->decodedBody()['error']['code']);
+
+		$missing = $this->createStatus($app, []);
+		self::assertSame(422, $missing->status);
+		self::assertSame('validation_failed', $missing->decodedBody()['error']['code']);
+	}
+
+	public function testAPrivateStatusIsNotPubliclyReadable(): void
+	{
+		$app = $this->app();
+		$status = $this->createStatus($app, [
+			'status' => 'followers only',
+			'visibility' => 'private',
+		])->decodedBody();
+
+		self::assertSame(404, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+		))->status);
+		self::assertSame(200, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'alice',
+		))->status);
+		self::assertCount(0, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		))->decodedBody());
+	}
+
+	private function app(
+		bool $enabled = true,
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Application {
+		return Application::inMemory(
+			clock: $this->clock,
+			config: new ArrayConfig([
+				InstanceInfo::CONFIG_APP => [
+					'instance.url' => 'https://social.example',
+					'instance.name' => 'Aloha Social',
+					'mastodon.api' => $enabled ? 'true' : 'false',
+					'mastodon.prefix' => $prefix,
+				],
+			]),
+			localActors: new InMemoryActorDirectory(['alice']),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed>  $fields
+	 * @param array<string, string> $headers
+	 */
+	private function png(): string
+	{
+		$image = imagecreatetruecolor(32, 32);
+		self::assertNotFalse($image);
+		$color = imagecolorallocate($image, 20, 120, 200);
+		imagefill($image, 0, 0, $color);
+
+		ob_start();
+		imagepng($image);
+		$bytes = ob_get_clean();
+		imagedestroy($image);
+
+		self::assertIsString($bytes);
+
+		return $bytes;
+	}
+
+	private function createStatus(
+		Application $app,
+		array $fields,
+		array $headers = [],
+		array $scopes = ['write:statuses'],
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
+			headers: array_merge(['Content-Type' => 'application/x-www-form-urlencoded'], $headers),
+			body: http_build_query($fields),
+			userId: 'alice',
+			scopes: $scopes,
+		));
+	}
+}

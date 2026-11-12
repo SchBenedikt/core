@@ -75,7 +75,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(26, $app->routes->routes());
+		self::assertCount(33, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -179,6 +179,46 @@ final class ApplicationHostTest extends TestCase
 		);
 	}
 
+	public function testForHostServesTheMastodonSubsetIdempotentlyOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+		$body = 'status=from+sql&visibility=public';
+
+		$first = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: [
+				'Content-Type' => 'application/x-www-form-urlencoded',
+				'Idempotency-Key' => 'sql-key-1',
+			],
+			body: $body,
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		$second = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: [
+				'Content-Type' => 'application/x-www-form-urlencoded',
+				'Idempotency-Key' => 'sql-key-1',
+			],
+			body: $body,
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+
+		$timeline = $app->handle(new Request('GET', '/api/mastodon/v1/timelines/public'));
+		self::assertSame(200, $timeline->status);
+		self::assertCount(1, $timeline->decodedBody());
+		self::assertSame('<p>from sql</p>', $timeline->decodedBody()[0]['content']);
+	}
+
 	public function testForHostLeavesTheInboxAt503WithoutAnActorResolver(): void
 	{
 		$app = $this->host($this->database(), new FakeHttpClient());
@@ -215,12 +255,14 @@ final class ApplicationHostTest extends TestCase
 		Connection $database,
 		FakeHttpClient $http,
 		?ActorResolver $actorResolver = null,
+		bool $mastodon = false,
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
 				'social' => [
 					'instance.url' => 'https://localhost:8080',
 					'instance.name' => 'Aloha Social',
+					'mastodon.api' => $mastodon ? 'true' : 'false',
 				],
 			]),
 			database: $database,

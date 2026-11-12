@@ -3,8 +3,10 @@
 The manifest in [`src/Contract/Routes.php`](../../src/Contract/Routes.php) is the
 source of truth; `php bin/export-routes` prints it as JSON and
 `php bin/export-openapi` renders the same routes as OpenAPI 3.1. Paths are absolute
-and versioned under `/api/v1` except the liveness probe and the protocol
-endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`).
+and versioned under `/api/v1` except the liveness probe, the protocol
+endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
+and the optional, disabled-by-default Mastodon compatibility prefix (which
+defaults to `/api/mastodon/v1`).
 
 | Name | Method | Path | Auth | Rate limit |
 | --- | --- | --- | --- | --- |
@@ -34,6 +36,13 @@ endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`).
 | `actors.following` | `GET` | `/@{handle}/following` | no | 120 / 60 s |
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
+| `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |
+| `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
+| `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
+| `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
+| `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -442,6 +451,41 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 `resource` is `400 invalid_resource`; a foreign host or unknown handle is
 `404 actor_not_found`; an instance without a key or directory is
 `503 actor_not_configured`.
+
+## Mastodon-compatible API
+
+The seven routes above are additive and disabled by default. Their paths use
+`social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
+default. With `social/mastodon.api` off, every one answers `404
+mastodon_api_disabled` before auth and scope checks. They never shadow
+`/api/v1`. See [the compatibility guide](../guides/mastodon-api.md).
+
+```http
+GET /api/mastodon/v1/instance
+GET /api/mastodon/v1/timelines/public?limit=20&max_id=…
+GET /api/mastodon/v1/statuses/{id}
+POST /api/mastodon/v1/statuses
+Idempotency-Key: client-key-1
+Content-Type: application/json
+
+{"status": "hello", "visibility": "public"}
+```
+
+A status response is the usual Mastodon shape (`id`, `content`,
+`spoiler_text`, `sensitive`, `visibility`, `account`, `media_attachments`, …).
+`private` maps to followers-only; `direct` and `in_reply_to_id` are `422
+unsupported_parameter` in this slice. The write goes through `PostService`, so
+validation, ownership, soft deletion and delivery are identical to
+`/api/v1/posts`. `Idempotency-Key` makes a retry return the same status
+instead of inserting a duplicate.
+
+Pagination accepts `limit` (1–40), `max_id`, `since_id` and `min_id`; a
+non-empty page carries a `Link` with `rel="next"`. `max_id` cannot be combined
+with `since_id`/`min_id`, and an unknown cursor is `404 not_found`. The routes
+declare scopes in the manifest and OpenAPI (`x-required-scopes`); the host maps
+tokens to `Request::$scopes` and enforces the declared rate limits. Errors:
+`404 mastodon_api_disabled`, `403 insufficient_scope`, `422 validation_failed`,
+`422 unsupported_parameter`, `404 not_found`.
 
 ## Route parameters
 

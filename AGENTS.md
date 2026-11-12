@@ -89,7 +89,10 @@ signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 public text-only AT Protocol publishing foundation (account/publisher ports,
 deterministic TIDs, XRPC `putRecord`, idempotent publication rows and a
-disabled-by-default route), the
+disabled-by-default route), the optional disabled-by-default Mastodon
+compatibility subset (instance, public timeline, status read/create/delete,
+account statuses, verify credentials; scopes, id-aware pagination and
+`Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
 backfill with historical media catch-up, bounded thread/context fetching with
@@ -103,9 +106,13 @@ The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.
 Not implemented in the core: AT Protocol account linking/OAuth, the full
-repository/AppView/media/firehose stack, a Mastodon-compatible API and an
-object-storage adapter. The local AT Protocol publishing slice is documented
-in `docs/guides/atproto.md`; the rest is in `docs/roadmap.md`. Local
+repository/AppView/media/firehose stack, the full Mastodon server API
+(OAuth/token issuance, remote timelines, favourites, boosts, notifications,
+streaming, media upload, polls, search, account/admin and relationship APIs)
+and an object-storage adapter. The local AT Protocol publishing slice is
+documented in `docs/guides/atproto.md`; the local Mastodon compatibility
+subset is in `docs/guides/mastodon-api.md`; the rest is in
+`docs/roadmap.md`. Local
 and remote media, including the SSRF/size limits, failure reasons, switch and
 cleanup contract, are documented in `docs/guides/media.md`; thread/context
 fetching is documented in `docs/guides/remote-threads.md`. See `docs/roadmap.md` before starting a large feature,

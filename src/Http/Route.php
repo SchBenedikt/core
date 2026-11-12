@@ -35,9 +35,13 @@ final readonly class Route
 
 	public ?string $summary;
 
+	/** @var list<string> */
+	public array $requiredScopes;
+
 	/**
 	 * @param class-string<Handler> $handler
 	 * @param string|null           $rateLimit e.g. "30/900" — 30 requests per 900 seconds
+	 * @param list<string>          $requiredScopes token scopes the host must enforce
 	 */
 	public function __construct(
 		string $name,
@@ -47,6 +51,7 @@ final readonly class Route
 		bool $requiresAuth = true,
 		?string $rateLimit = null,
 		?string $summary = null,
+		array $requiredScopes = [],
 	) {
 		$method = strtoupper(trim($method));
 		if (preg_match('/^[A-Z]+$/', $method) !== 1) {
@@ -69,6 +74,19 @@ final readonly class Route
 			throw new InvalidArgumentException('A rate limit is "<requests>/<seconds>": ' . $rateLimit);
 		}
 
+		$seenScopes = [];
+		foreach ($requiredScopes as $scope) {
+			if (!is_string($scope) || trim($scope) === '') {
+				throw new InvalidArgumentException('A required scope must be a non-empty string.');
+			}
+
+			if (isset($seenScopes[$scope])) {
+				throw new InvalidArgumentException('A required scope is listed twice: ' . $scope);
+			}
+
+			$seenScopes[$scope] = true;
+		}
+
 		$this->name = $name;
 		$this->method = $method;
 		$this->path = $path;
@@ -76,6 +94,7 @@ final readonly class Route
 		$this->requiresAuth = $requiresAuth;
 		$this->rateLimit = $rateLimit;
 		$this->summary = $summary;
+		$this->requiredScopes = array_values($requiredScopes);
 	}
 
 	/**
@@ -91,6 +110,7 @@ final readonly class Route
 			'requires_auth' => $this->requiresAuth,
 			'rate_limit' => $this->rateLimit,
 			'summary' => $this->summary,
+			'required_scopes' => $this->requiredScopes,
 		];
 	}
 }

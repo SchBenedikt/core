@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Post;
 
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
 
 /**
@@ -26,6 +27,10 @@ final class InMemoryPostRepository implements PostRepository
 
 	public function insert(Post $post): void
 	{
+		if (isset($this->posts[$post->id])) {
+			throw new DatabaseException('The post id already exists.');
+		}
+
 		$this->posts[$post->id] = $post;
 	}
 
@@ -53,8 +58,13 @@ final class InMemoryPostRepository implements PostRepository
 		);
 	}
 
-	public function publicTimeline(int $limit, ?DateTimeImmutable $before = null): array
-	{
+	public function publicTimeline(
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array {
 		return $this->slice(
 			array_values(array_filter(
 				$this->posts,
@@ -62,6 +72,32 @@ final class InMemoryPostRepository implements PostRepository
 			)),
 			$limit,
 			$before,
+			$beforeId,
+			$after,
+			$afterId,
+		);
+	}
+
+	public function authorTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array {
+		return $this->slice(
+			array_values(array_filter(
+				$this->posts,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& $post->authorId === $userId
+					&& $post->visibility->isPubliclyVisible(),
+			)),
+			$limit,
+			$before,
+			$beforeId,
+			$after,
+			$afterId,
 		);
 	}
 
@@ -122,8 +158,14 @@ final class InMemoryPostRepository implements PostRepository
 	 *
 	 * @return list<Post>
 	 */
-	private function slice(array $posts, int $limit, ?DateTimeImmutable $before): array
-	{
+	private function slice(
+		array $posts,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array {
 		usort($posts, static function (Post $a, Post $b): int {
 			$byTime = $b->publishedAt <=> $a->publishedAt;
 
@@ -132,8 +174,32 @@ final class InMemoryPostRepository implements PostRepository
 
 		$result = [];
 		foreach ($posts as $post) {
-			if ($before !== null && $post->publishedAt >= $before) {
-				continue;
+			if ($before !== null) {
+				if ($post->publishedAt > $before) {
+					continue;
+				}
+
+				if ($post->publishedAt == $before && $beforeId !== null && strcmp($post->id, $beforeId) >= 0) {
+					continue;
+				}
+
+				if ($post->publishedAt == $before && $beforeId === null) {
+					continue;
+				}
+			}
+
+			if ($after !== null) {
+				if ($post->publishedAt < $after) {
+					continue;
+				}
+
+				if ($post->publishedAt == $after && $afterId !== null && strcmp($post->id, $afterId) <= 0) {
+					continue;
+				}
+
+				if ($post->publishedAt == $after && $afterId === null) {
+					continue;
+				}
 			}
 
 			$result[] = $post;

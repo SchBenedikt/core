@@ -57,6 +57,13 @@ final class OpenApiTest extends TestCase
 		$health = $document['paths']['/healthz']['get'];
 		self::assertArrayNotHasKey('security', $health);
 
+		$mastodon = $document['paths']['/api/mastodon/v1/statuses']['post'];
+		self::assertSame('mastodon', $mastodon['tags'][0]);
+		self::assertSame('mastodon_statuses_create', $mastodon['operationId']);
+		self::assertSame([['bearerAuth' => []]], $mastodon['security']);
+		self::assertSame('30/900', $mastodon['x-rate-limit']);
+		self::assertSame(['write:statuses'], $mastodon['x-required-scopes']);
+
 		$post = $document['paths']['/api/v1/posts/{id}']['get'];
 		self::assertSame(
 			[['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']]],

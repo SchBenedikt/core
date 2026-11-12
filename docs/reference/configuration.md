@@ -23,6 +23,8 @@ the database — the core does not care.
 | `social` | `thread.timeout_seconds` | no | Per-hop thread fetch timeout; defaults to 10, clamped to 1–30 |
 | `social` | `thread.max_redirects` | no | Redirects followed per thread fetch; defaults to 3, clamped to 0–5 |
 | `social` | `atproto.publish` | no | Enables the AT Protocol publication job and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher` in the assembly |
+| `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
+| `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
 
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503
@@ -73,6 +75,20 @@ with `shared_inbox_url = NULL` uses its individual inbox. The protocol always
 advertises the local shared route in the actor document. See
 [shared inboxes](../guides/shared-inboxes.md).
 
+With `mastodon.api` disabled, no Mastodon compatibility handler runs and every
+route under `mastodon.prefix` answers `404 mastodon_api_disabled`; the routes
+are still in the manifest and OpenAPI export. Enabling it adds no table and
+no migration: statuses use `social_post`/`social_post_attachment`, and an
+`Idempotency-Key` is translated into a deterministic post id. The host must
+map bearer tokens to `Request::$userId` and `Request::$scopes`; a parent scope
+such as `read` grants `read:accounts`, a granular scope does not grant its
+parent, and a token without the route's scope gets `403 insufficient_scope`.
+The declared rate limits are enforced by the host like every other route. The
+prefix must not overlap `/api/v1`; changing it changes both the served routes
+and, when passed explicitly, the exported manifest. Existing data needs no
+cleanup or backfill, and disabling the feature deletes nothing. See
+[Mastodon-compatible API](../guides/mastodon-api.md).
+
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.
 
@@ -86,7 +102,9 @@ documented in [remote threads](../guides/remote-threads.md).
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
-| `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming |
+| `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming; also the compatibility status ceiling |
+| `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines |
+| `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
 | `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |

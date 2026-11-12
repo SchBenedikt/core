@@ -29,18 +29,20 @@ Implemented and tested here:
 | Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing for public text posts |
 | AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`, an idempotent publication table with in-memory/PDO adapters, and a disabled-by-default publish route; the full OAuth/AppView/repository stack is still external (see the [guide](docs/guides/atproto.md)) |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 26 routes and its JSON export |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 33 routes and its JSON export |
+| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, account statuses, verify credentials) over the same posts, with scopes, id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: the rest of the AT Protocol stack (OAuth/account
-linking, full repository/AppView, media and firehose), the Mastodon-compatible
-API, an admin UI, a migration runner, the Vue UI package and the
-Nextcloud/standalone host applications. Local image upload, thumbnails, guarded
-remote-media ingestion for incoming federated posts and bounded thread/context
-fetches are implemented; an object-storage adapter remains a host choice. The
+linking, full repository/AppView, media and firehose), the full Mastodon server
+API (the local compatibility subset is in `docs/guides/mastodon-api.md`), an
+admin UI, a migration runner, the Vue UI package and the Nextcloud/standalone
+host applications. Local image upload, thumbnails, guarded remote-media
+ingestion for incoming federated posts and bounded thread/context fetches are
+implemented; an object-storage adapter remains a host choice. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists the
 remaining seams.
 
@@ -57,7 +59,7 @@ remaining seams.
 composer install
 composer check          # lint, boundary, attribution, links, tests
 php bin/core-demo       # drives the core through real HTTP requests
-php bin/export-routes   # the HTTP contract as JSON (26 routes)
+php bin/export-routes   # the HTTP contract as JSON (33 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
 ```
@@ -147,7 +149,12 @@ path against SQL repositories. `AtprotoPublishTest` drives post creation through
 the queued AT Protocol job to the XRPC request and publication row, including
 repeat idempotency, unsupported posts, disabled/auth/missing-account and PDS
 failure paths; the XRPC adapter, record builder, TID and publication
-repositories have their own tests.
+repositories have their own tests. `MastodonApiTest` drives the optional
+compatibility routes through the real kernel: instance, public timeline,
+create (form and JSON), read, account statuses, verify, delete, scopes,
+disabled, custom prefix, cursor pagination, idempotency and invalid media.
+`MastodonCompatibilityTest` covers prefix validation, scope matching and route
+metadata.
 
 ## Documentation
 
@@ -162,6 +169,7 @@ repositories have their own tests.
   [configuration](docs/reference/configuration.md)
 - [Inbound federation](docs/guides/inbound-federation.md),
   [shared inboxes](docs/guides/shared-inboxes.md),
+  [Mastodon-compatible API](docs/guides/mastodon-api.md),
   [AT Protocol publishing](docs/guides/atproto.md),
   [media](docs/guides/media.md), [blocks](docs/guides/blocks.md),
   [inbox activities](docs/reference/inbox-activities.md),

@@ -45,10 +45,14 @@ final readonly class Request
 
 	public ?string $userId;
 
+	/** @var list<string> */
+	public array $scopes;
+
 	/**
 	 * @param array<string, mixed>  $query      query parameters, values cast to string
 	 * @param array<string, string> $headers    header names in any case
 	 * @param array<string, mixed>  $attributes
+	 * @param list<string>          $scopes     token scopes supplied by the host
 	 */
 	public function __construct(
 		string $method,
@@ -59,7 +63,12 @@ final readonly class Request
 		array $attributes = [],
 		?string $remoteAddress = null,
 		?string $userId = null,
+		array $scopes = [],
 	) {
+		$this->scopes = array_values(array_filter(
+			array_map(static fn (mixed $scope): string => is_string($scope) ? trim($scope) : '', $scopes),
+			static fn (string $scope): bool => $scope !== '',
+		));
 		$this->method = strtoupper(trim($method));
 		$this->path = self::normalizePath($path);
 		$this->query = self::normalizeQuery($query);
@@ -164,6 +173,34 @@ final readonly class Request
 	}
 
 	/**
+	 * @param list<string> $scopes
+	 */
+	public function withScopes(array $scopes): self
+	{
+		return $this->with(scopes: $scopes);
+	}
+
+	/**
+	 * Form or JSON object fields, the two encodings Mastodon clients use for
+	 * status writes. A form body is parsed with PHP's own URL decoder; a JSON
+	 * body goes through {@see json()}.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function payload(): array
+	{
+		$contentType = strtolower($this->header('content-type') ?? '');
+		if (!str_contains($contentType, 'application/x-www-form-urlencoded')) {
+			return $this->json();
+		}
+
+		$fields = [];
+		parse_str($this->body, $fields);
+
+		return $fields;
+	}
+
+	/**
 	 * The decoded JSON body.
 	 *
 	 * @return array<string, mixed>
@@ -200,6 +237,7 @@ final readonly class Request
 		?array $headers = null,
 		?array $attributes = null,
 		?string $userId = null,
+		?array $scopes = null,
 	): self {
 		$next = new self(
 			$this->method,
@@ -210,6 +248,7 @@ final readonly class Request
 			$attributes ?? $this->attributes,
 			$this->remoteAddress,
 			$userId ?? $this->userId,
+			$scopes ?? $this->scopes,
 		);
 
 		return $next;

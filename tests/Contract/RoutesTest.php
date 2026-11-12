@@ -14,6 +14,7 @@ use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\RouteManifest;
+use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use PHPUnit\Framework\TestCase;
 
 final class RoutesTest extends TestCase
@@ -22,7 +23,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(26, $manifest->routes());
+		self::assertCount(33, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('atproto.publish'));
 		self::assertNotNull($manifest->find('timelines.home'));
@@ -62,6 +63,12 @@ final class RoutesTest extends TestCase
 			// The liveness probe and the ActivityPub inbox are protocol
 			// endpoints, not part of the versioned client API.
 			if (in_array($route->name, ['health', 'inbox', 'inbox.shared', 'actors.get', 'actors.followers', 'actors.following', 'actors.outbox', 'webfinger'], true)) {
+				continue;
+			}
+
+			if (str_starts_with($route->name, 'mastodon.')) {
+				self::assertStringStartsWith(MastodonApiConfig::DEFAULT_PREFIX . '/', $route->path);
+
 				continue;
 			}
 
@@ -201,7 +208,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(26, $decoded['routes']);
+		self::assertCount(33, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -211,6 +218,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(26, $app->routes->routes());
+		self::assertCount(33, $app->routes->routes());
 	}
 }

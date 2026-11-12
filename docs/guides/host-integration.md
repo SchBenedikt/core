@@ -110,6 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
+| `$app->mastodon` | Mastodon compatibility service; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -156,7 +157,11 @@ The media keys are optional and documented in
 [media](media.md#configuration). In particular, remote attachment ingestion
 is controlled by `social/media.remote_fetch` (default on), with
 `media.remote_max_bytes`, `media.remote_timeout_seconds` and
-`media.remote_max_redirects` as limits.
+`media.remote_max_redirects` as limits. The Mastodon compatibility surface is
+off by default; `social/mastodon.api` enables it and `social/mastodon.prefix`
+selects the path (default `/api/mastodon/v1`). The prefix must not overlap
+`/api/v1` or the protocol paths. See
+[Mastodon-compatible API](mastodon-api.md).
 
 `instance.url` is what every actor, post and activity id is built from. It must
 be the public URL under which the core's routes are actually served. If that
@@ -289,6 +294,7 @@ $request = new Request(
     headers: $hostRequest->getHeaders(),
     body: $rawBody,
     userId: $hostUser?->getUID(),      // null for a public request
+    scopes: $hostToken?->getScopes() ?? [], // token scopes for compatibility routes
 );
 
 $response = $app->kernel->handle($request);
@@ -312,7 +318,11 @@ content type and media type, and JSON re-encoding can change both.
 The kernel's `RequireAuthentication` middleware only checks that `userId` is
 present for a route with `requiresAuth: true`. The host still owns the session
 or bearer-token check that produces `userId`. A missing user becomes a core
-`401 authentication_required` response.
+`401 authentication_required` response. For the optional Mastodon
+compatibility routes, the host also maps the token scopes onto
+`Request::$scopes`; `RequireScopes` compares them with the route's
+`requiredScopes` and answers `403 insufficient_scope`. A parent scope grants
+its children; the host must not synthesize a parent from a granular token.
 
 Rate limits are declared in `src/Contract/Routes.php` (for example `30/900`
 for a post write). The host enforces its own limiter with that budget; the core

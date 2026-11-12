@@ -126,6 +126,22 @@ Status of the core, not a promise about dates.
 
 ## Partially done
 
+- **Mastodon-compatible API**: the core now owns the additive,
+  disabled-by-default compatibility subset under `social/mastodon.prefix`
+  (default `/api/mastodon/v1`): instance description, public timeline, status
+  read/create/delete, local account statuses and verify credentials. It maps
+  to the existing posts and `PostService` rather than a second status table,
+  carries auth and scope metadata (`write:statuses`, `read:accounts`),
+  implements `max_id`/`since_id`/`min_id` pagination with an id tie-break and
+  `Link` headers, and makes `Idempotency-Key` idempotent through a
+  deterministic post id. The prefix is configurable and cannot overlap
+  `/api/v1`; the whole surface answers `404 mastodon_api_disabled` when
+  `social/mastodon.api` is off. See
+  [Mastodon-compatible API](guides/mastodon-api.md). The full Mastodon server
+  API is **not** done: OAuth/token issuance, remote timelines, favourites,
+  boosts, notifications, streaming, media upload, polls, search, and the full
+  account/admin surface remain external. They are listed in the Next table,
+  not as a completed item.
 - **AT Protocol stack**: the core now owns the public text-only publishing
   foundation — ATProto identity/record primitives, deterministic TIDs, the
   authenticated XRPC `com.atproto.repo.putRecord` adapter, the
@@ -140,13 +156,14 @@ Status of the core, not a promise about dates.
 
 ## Next
 
-The remaining items are host-owned migrations or integrations. There is no
-core-only vertical slice waiting in this table; the local media catch-up and
-thread/context gaps are closed in Done above, and the local AT Protocol
-publishing foundation is in Partially done.
+The remaining items are host-owned migrations, integrations or the external
+parts of the two partially done stacks. There is no core-only vertical slice
+waiting in this table; the local media catch-up, thread/context, AT Protocol
+publishing and Mastodon compatibility slices are recorded above.
 
 | Item | Seam |
 | --- | --- |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, media upload, polls, search, account/admin and relationship APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset |
 | AT Protocol account linking, OAuth/session refresh, remote delete and full client/AppView extraction | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
@@ -155,7 +172,6 @@ publishing foundation is in Partially done.
 
 ## Later
 
-- Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
 
 ## Explicitly not planned

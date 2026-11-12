@@ -24,6 +24,13 @@ use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
@@ -77,7 +84,9 @@ use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
+use AlohaSocial\Core\Http\Middleware\MastodonApiGate;
 use AlohaSocial\Core\Http\Middleware\RequireAuthentication;
+use AlohaSocial\Core\Http\Middleware\RequireScopes;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Http\RouteManifest;
@@ -121,6 +130,9 @@ use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
+use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
+use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\TimelineService;
@@ -159,6 +171,7 @@ final readonly class Application
 		public ?MediaService $media,
 		public ?RemoteThreadService $threads,
 		public ?AtprotoPublishService $atproto = null,
+		public ?MastodonService $mastodon = null,
 	) {
 	}
 
@@ -427,6 +440,13 @@ final readonly class Application
 			$federationDelivery,
 		);
 		$instance = new InstanceInfo($config);
+		$mastodonService = new MastodonService(
+			$config,
+			$posts,
+			$postService,
+			new MastodonPresenter($instance, $activities, $mediaService),
+			$localActors,
+		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
 
@@ -546,7 +566,14 @@ final readonly class Application
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
 			->with(FollowingCollectionHandler::class, static fn (): FollowingCollectionHandler => new FollowingCollectionHandler($actorDocuments))
 			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox))
-			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger));
+			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger))
+			->with(MastodonInstanceHandler::class, static fn (): MastodonInstanceHandler => new MastodonInstanceHandler($mastodonService))
+			->with(MastodonPublicTimelineHandler::class, static fn (): MastodonPublicTimelineHandler => new MastodonPublicTimelineHandler($mastodonService))
+			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
+			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
+			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
+			->with(MastodonAccountStatusesHandler::class, static fn (): MastodonAccountStatusesHandler => new MastodonAccountStatusesHandler($mastodonService))
+			->with(MastodonVerifyCredentialsHandler::class, static fn (): MastodonVerifyCredentialsHandler => new MastodonVerifyCredentialsHandler($mastodonService));
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($federationDelivery !== null) {
@@ -557,7 +584,7 @@ final readonly class Application
 			new AtprotoPublishHandler($atprotoService, $logger),
 		);
 
-		$routes = Routes::manifest();
+		$routes = Routes::manifest(MastodonApiConfig::prefix($config));
 
 		// A manifest entry without a handler would only fail when somebody
 		// hits it. Checking at boot turns that into a start-up error.
@@ -577,7 +604,7 @@ final readonly class Application
 		$kernel = new Kernel(
 			new Router($routes),
 			$handlers,
-			[new RequireAuthentication()],
+			[new MastodonApiGate($mastodonService), new RequireAuthentication(), new RequireScopes()],
 			$logger,
 			$debug,
 		);
@@ -597,6 +624,7 @@ final readonly class Application
 			$mediaService,
 			$remoteThreadService,
 			$atprotoService,
+			$mastodonService,
 		);
 	}
 

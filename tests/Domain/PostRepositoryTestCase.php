@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
 
@@ -34,6 +35,16 @@ abstract class PostRepositoryTestCase extends TestCase
 
 		self::assertSame('p1', $repository->find('p1')?->id);
 		self::assertNull($repository->find('unknown'));
+	}
+
+	public function testInsertRejectsADuplicateId(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+
+		$this->expectException(DatabaseException::class);
+
+		$repository->insert($this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
 	}
 
 	public function testPublicTimelineHidesNonPublicAndDeletedPosts(): void
@@ -86,6 +97,51 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame(
 			['p5', 'p4'],
 			array_map(static fn (Post $post): string => $post->id, $repository->publicTimeline(2)),
+		);
+	}
+
+	public function testBeforeIdKeepsSameSecondPostsOlderThanTheBoundary(): void
+	{
+		$repository = $this->repository();
+		$time = Time::parse('2026-11-11T10:02:00Z');
+		$repository->insert($this->post('aaa', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('bbb', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('ccc', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+
+		$page = $repository->publicTimeline(10, $time, 'bbb');
+
+		self::assertSame(['aaa', 'ccc'], array_map(static fn (Post $post): string => $post->id, $page));
+	}
+
+	public function testAfterIdReturnsOnlyNewerPosts(): void
+	{
+		$repository = $this->repository();
+		$time = Time::parse('2026-11-11T10:02:00Z');
+		$repository->insert($this->post('aaa', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('bbb', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('ccc', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
+
+		$page = $repository->publicTimeline(10, null, null, $time, 'aaa');
+
+		self::assertSame(['ccc', 'bbb'], array_map(static fn (Post $post): string => $post->id, $page));
+	}
+
+	public function testAuthorTimelineUsesThePublicIdCursor(): void
+	{
+		$repository = $this->repository();
+		$time = Time::parse('2026-11-11T10:02:00Z');
+		$repository->insert($this->post('a1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('a2', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('a3', 'alice', Visibility::Followers, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post('b1', 'bob', Visibility::Public, '2026-11-11T10:02:00Z'));
+
+		self::assertSame(
+			['a2', 'a1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10)),
+		);
+		self::assertSame(
+			['a1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10, $time, 'a2')),
 		);
 	}
 

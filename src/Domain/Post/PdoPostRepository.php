@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Post;
 
 use AlohaSocial\Core\Platform\Db\Connection;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
+use PDOException;
 
 /**
  * Post storage in SQL.
@@ -31,34 +33,38 @@ final class PdoPostRepository implements PostRepository
 
 	public function insert(Post $post): void
 	{
-		$this->db->transaction(function () use ($post): void {
-			$this->db->execute(
-				'INSERT INTO ' . PostSchema::TABLE
-				. ' (id, author_id, content, content_warning, visibility, published_at, deleted_at)'
-				. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :published_at, :deleted_at)',
-				[
-					'id' => $post->id,
-					'author_id' => $post->authorId,
-					'content' => $post->content,
-					'content_warning' => $post->contentWarning,
-					'visibility' => $post->visibility->value,
-					'published_at' => Time::format($post->publishedAt),
-					'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
-				],
-			);
-
-			foreach ($post->attachmentIds as $position => $attachmentId) {
+		try {
+			$this->db->transaction(function () use ($post): void {
 				$this->db->execute(
-					'INSERT INTO ' . PostSchema::ATTACHMENT_TABLE
-					. ' (post_id, attachment_id, position) VALUES (:post_id, :attachment_id, :position)',
+					'INSERT INTO ' . PostSchema::TABLE
+					. ' (id, author_id, content, content_warning, visibility, published_at, deleted_at)'
+					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :published_at, :deleted_at)',
 					[
-						'post_id' => $post->id,
-						'attachment_id' => $attachmentId,
-						'position' => $position,
+						'id' => $post->id,
+						'author_id' => $post->authorId,
+						'content' => $post->content,
+						'content_warning' => $post->contentWarning,
+						'visibility' => $post->visibility->value,
+						'published_at' => Time::format($post->publishedAt),
+						'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
 					],
 				);
-			}
-		});
+
+				foreach ($post->attachmentIds as $position => $attachmentId) {
+					$this->db->execute(
+						'INSERT INTO ' . PostSchema::ATTACHMENT_TABLE
+						. ' (post_id, attachment_id, position) VALUES (:post_id, :attachment_id, :position)',
+						[
+							'post_id' => $post->id,
+							'attachment_id' => $attachmentId,
+							'position' => $position,
+						],
+					);
+				}
+			});
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The post could not be stored.', 0, $exception);
+		}
 	}
 
 	public function find(string $id): ?Post
@@ -80,8 +86,13 @@ final class PdoPostRepository implements PostRepository
 		);
 	}
 
-	public function publicTimeline(int $limit, ?DateTimeImmutable $before = null): array
-	{
+	public function publicTimeline(
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND visibility IN (:public, :unlisted)';
 		$parameters = [
@@ -90,8 +101,65 @@ final class PdoPostRepository implements PostRepository
 		];
 
 		if ($before !== null) {
-			$sql .= ' AND published_at < :before';
+			if ($beforeId === null) {
+				$sql .= ' AND published_at < :before';
+			} else {
+				$sql .= ' AND (published_at < :before OR (published_at = :before AND id < :before_id))';
+				$parameters['before_id'] = $beforeId;
+			}
 			$parameters['before'] = Time::format($before);
+		}
+
+		if ($after !== null) {
+			if ($afterId === null) {
+				$sql .= ' AND published_at > :after';
+			} else {
+				$sql .= ' AND (published_at > :after OR (published_at = :after AND id > :after_id))';
+				$parameters['after_id'] = $afterId;
+			}
+			$parameters['after'] = Time::format($after);
+		}
+
+		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	public function authorTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array {
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' AND visibility IN (:public, :unlisted)';
+		$parameters = [
+			'author' => $userId,
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+		];
+
+		if ($before !== null) {
+			if ($beforeId === null) {
+				$sql .= ' AND published_at < :before';
+			} else {
+				$sql .= ' AND (published_at < :before OR (published_at = :before AND id < :before_id))';
+				$parameters['before_id'] = $beforeId;
+			}
+			$parameters['before'] = Time::format($before);
+		}
+
+		if ($after !== null) {
+			if ($afterId === null) {
+				$sql .= ' AND published_at > :after';
+			} else {
+				$sql .= ' AND (published_at > :after OR (published_at = :after AND id > :after_id))';
+				$parameters['after_id'] = $afterId;
+			}
+			$parameters['after'] = Time::format($after);
 		}
 
 		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);

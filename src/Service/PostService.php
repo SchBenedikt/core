@@ -62,7 +62,7 @@ final class PostService
 		$this->validate($command, $content, $warning);
 
 		$post = new Post(
-			id: $this->ids->generate(),
+			id: $command->postId ?? $this->ids->generate(),
 			authorId: $command->authorId,
 			content: $content,
 			visibility: $command->visibility,

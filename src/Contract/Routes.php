@@ -33,10 +33,18 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Route;
 use AlohaSocial\Core\Http\RouteManifest;
+use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 
 /**
  * The HTTP contract both hosts serve.
@@ -47,9 +55,10 @@ use AlohaSocial\Core\Http\RouteManifest;
  */
 final class Routes
 {
-	public static function manifest(): RouteManifest
+	public static function manifest(?string $mastodonPrefix = null): RouteManifest
 	{
 		$base = ApiVersion::BASE_PATH;
+		$mastodon = MastodonApiConfig::normalizePrefix($mastodonPrefix ?? MastodonApiConfig::DEFAULT_PREFIX);
 
 		return new RouteManifest(
 			new Route(
@@ -270,6 +279,72 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'OrderedCollection of a local account\'s public posts as Create activities.',
+			),
+			new Route(
+				name: 'mastodon.instance',
+				method: 'GET',
+				path: $mastodon . '/instance',
+				handler: MastodonInstanceHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Mastodon-compatible instance description.',
+			),
+			new Route(
+				name: 'mastodon.timelines.public',
+				method: 'GET',
+				path: $mastodon . '/timelines/public',
+				handler: MastodonPublicTimelineHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Public local statuses in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.statuses.show',
+				method: 'GET',
+				path: $mastodon . '/statuses/{id}',
+				handler: MastodonStatusHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Read one local status in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.statuses.create',
+				method: 'POST',
+				path: $mastodon . '/statuses',
+				handler: MastodonCreateStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Write a local status through the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.statuses.delete',
+				method: 'DELETE',
+				path: $mastodon . '/statuses/{id}',
+				handler: MastodonDeleteStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Delete one of the signed-in account\'s statuses.',
+			),
+			new Route(
+				name: 'mastodon.accounts.statuses',
+				method: 'GET',
+				path: $mastodon . '/accounts/{id}/statuses',
+				handler: MastodonAccountStatusesHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Public statuses of one local account in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.accounts.verify_credentials',
+				method: 'GET',
+				path: $mastodon . '/accounts/verify_credentials',
+				handler: MastodonVerifyCredentialsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:accounts'],
+				summary: 'The signed-in account in the Mastodon shape.',
 			),
 			new Route(
 				name: 'webfinger',

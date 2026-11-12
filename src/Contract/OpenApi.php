@@ -41,7 +41,7 @@ final class OpenApi
 			$operation = [
 				'operationId' => self::operationId($route),
 				'summary' => $route->summary ?? $route->name,
-				'tags' => [self::tag($route->path)],
+				'tags' => [self::tag($route)],
 				'responses' => [
 					'default' => [
 						'description' => 'Handler-defined response; see docs/reference/routes.md.',
@@ -60,6 +60,10 @@ final class OpenApi
 
 			if ($route->rateLimit !== null) {
 				$operation['x-rate-limit'] = $route->rateLimit;
+			}
+
+			if ($route->requiredScopes !== []) {
+				$operation['x-required-scopes'] = $route->requiredScopes;
 			}
 
 			$path = $paths[$route->path] ?? [];
@@ -104,8 +108,13 @@ final class OpenApi
 		return str_replace(['.', '-'], '_', $route->name);
 	}
 
-	private static function tag(string $path): string
+	private static function tag(Route $route): string
 	{
+		if (str_starts_with($route->name, 'mastodon.')) {
+			return 'mastodon';
+		}
+
+		$path = $route->path;
 		$prefix = '/api/v1/';
 		if (str_starts_with($path, $prefix)) {
 			$segment = explode('/', substr($path, strlen($prefix)))[0];
