@@ -324,10 +324,10 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  and post-attachment tables once; `AttachmentSchema`, `RemotePostSchema`,
-  `BlockSchema`, `JobSchema` and `ActivityLogSchema` do the same for media
-  metadata, remote content, per-user blocks, the durable queue and the replay
-  log. The standalone runs those statements; the Nextcloud host creates the
+  and post-attachment tables once;   `AttachmentSchema`, `RemotePostSchema`,
+  `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema`
+  do the same for media metadata, remote content, per-user blocks, AT Protocol
+  publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates the
   same columns through its schema API. A dump can therefore move between the
   two.
 - **Media metadata and bytes are separate.** A row points at one original and
@@ -351,6 +351,12 @@ maximum is 40, and generated links carry a non-default limit.
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
+AT Protocol has two domain-level host ports instead of new platform methods:
+`AtprotoAccountResolver` returns a linked account and `AtprotoPublisher` writes
+one record. `XrpcAtprotoPublisher` is the default adapter over `HttpClient`;
+fakes cover the network in tests. Account linking, OAuth/token refresh and PDS
+credentials remain host-owned.
+
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
 
@@ -359,7 +365,7 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| AT Protocol | `Protocol\Atproto`, moved from the app |
+| AT Protocol account linking, OAuth/session refresh, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation in `Protocol\Atproto` and `Domain\Atproto` |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
@@ -375,7 +381,7 @@ genuinely owns the capability.
   `AttachmentRepositoryTestCase`, `FollowerRepositoryTestCase`,
   `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
   `RemoteThreadRepositoryTestCase`, `BlockRepositoryTestCase`,
-  `HomeTimelineRepositoryTestCase`,
+  `HomeTimelineRepositoryTestCase`, `AtprotoPublicationRepositoryTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
@@ -384,7 +390,8 @@ genuinely owns the capability.
   unsigned digest and a foreign key.
 - **End to end** — `Application::inMemory()` is a real object graph; the test
   writes a post over HTTP, drains the queue, and verifies the signature on the
-  request that left. `InboundTimelineTest` delivers a signed Create, Announce
+  request that left. AT Protocol publishing follows the same pattern: a real
+  post and job, a fake XRPC adapter, and the resulting publication row. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `ApplicationTest` proves that two followers on
   one server sharing an advertised inbox produce one signed job to the shared

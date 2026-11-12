@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- AT Protocol publishing foundation: the core now owns ATProto account/record
+  primitives, deterministic TIDs encoded as valid `base32-sortable` record
+  keys, the authenticated XRPC `com.atproto.repo.putRecord` adapter, the
+  `AtprotoAccountResolver`/`AtprotoPublisher` host ports and an idempotent
+  `social_atproto_publication` table with in-memory and PDO adapters behind one
+  contract test. Public text-only posts are scheduled after the local write
+  when `social/atproto.publish` is enabled and an account is linked; the
+  explicit authenticated `POST /api/v1/posts/{id}/atproto` returns the stored
+  publication and is disabled by default. Non-public, attachment and over-limit
+  posts are refused with a stable reason; a PDS failure writes no publication
+  row, and a retry uses the same rkey so `putRecord` is an upsert rather than a
+  duplicate. The route manifest and OpenAPI export now have 26 routes.
+  Accounts/OAuth session refresh, linked-account storage, remote deletes,
+  media, AppView/CAR/MST/firehose and the extraction from the Nextcloud app
+  remain external; see `docs/guides/atproto.md`. The new table is created from
+  `AtprotoPublicationSchema::statements()`; hosts that do not create it must
+  not enable the feature.
 - Shared inboxes and delivery batching: every actor document advertises
   `endpoints.sharedInbox`, pointing at the new signed `POST /inbox/shared`
   route. Both inbox routes use the same handler, signature-over-path checks,

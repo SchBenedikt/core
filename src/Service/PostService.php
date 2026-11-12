@@ -20,6 +20,7 @@ use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 use Closure;
@@ -46,6 +47,7 @@ final class PostService
 		private readonly ActivityFactory $activities,
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
+		private readonly ?AtprotoPublishService $atproto = null,
 	) {
 	}
 
@@ -70,6 +72,7 @@ final class PostService
 		);
 
 		$this->posts->insert($post);
+		$this->atproto?->schedule($post);
 		$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
 
 		return $post;

@@ -22,6 +22,7 @@ the database — the core does not care.
 | `social` | `thread.max_bytes` | no | Hard per-response body limit for a thread object or replies collection; defaults to 1 MiB, clamped to 1 byte–5 MiB |
 | `social` | `thread.timeout_seconds` | no | Per-hop thread fetch timeout; defaults to 10, clamped to 1–30 |
 | `social` | `thread.max_redirects` | no | Redirects followed per thread fetch; defaults to 3, clamped to 0–5 |
+| `social` | `atproto.publish` | no | Enables the AT Protocol publication job and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher` in the assembly |
 
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503
@@ -53,6 +54,16 @@ automatic cleanup timer: a host that wants a TTL calls
 to the whole response. Depth and reply limits are applied after fetching, so a
 collection can be read up to the body limit and then truncated to
 `thread.max_replies`; the cache never receives the truncated-away nodes.
+
+With `atproto.publish` disabled, post creation schedules no AT Protocol job and
+the explicit route answers `503 atproto_publish_disabled` without a PDS
+request. Existing rows in `social_atproto_publication` remain; turning the
+switch back on does not publish old posts automatically and does not delete
+remote records. With the switch enabled but no resolver/publisher assembled,
+the route answers `503 atproto_not_configured`. The feature only mirrors
+public text posts without attachments; other posts are skipped automatically
+and refused with `422 atproto_post_unsupported` when published explicitly.
+See [AT Protocol publishing](../guides/atproto.md).
 
 Shared inboxes have no configuration key. Both inbox routes are controlled by
 the same prerequisites as the normal inbox: without an actor resolver, an
@@ -98,6 +109,8 @@ documented in [remote threads](../guides/remote-threads.md).
 | `Attachment::MAX_DIMENSION` | 10000 | Longest stored image side |
 | `Attachment::MAX_PIXELS` | 40,000,000 | Decode guard against decompression bombs |
 | `Post::MAX_ATTACHMENTS` | 4 | Attachments per post |
+| `AtprotoPostRecord::MAX_TEXT_GRAPHEMES` | 300 | AT Protocol post text in graphemes |
+| `AtprotoPostRecord::MAX_TEXT_BYTES` | 3000 | AT Protocol post text in bytes |
 | `MediaService::DEFAULT_THUMBNAIL_MAX_DIMENSION` | 640 | Default longest thumbnail side |
 | `TimelineService::DEFAULT_LIMIT` | 20 | Default page size |
 | `TimelineService::MAX_LIMIT` | 40 | Page size ceiling |

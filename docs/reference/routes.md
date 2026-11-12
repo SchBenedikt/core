@@ -14,6 +14,7 @@ endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`).
 | `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
+| `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
@@ -132,6 +133,33 @@ no post. Delivery is queued after the write, as for any other post.
 `attachments` is omitted for a post without attachments, so existing shapes do
 not change. Errors: `400 invalid_json`, `401 authentication_required`,
 `422 validation_failed` with `error.fields`.
+
+## Publish to AT Protocol
+
+```http
+POST /api/v1/posts/{id}/atproto
+Authorization: Bearer …
+```
+
+Mirrors one public, attachment-free local text post to the account's PDS with
+`com.atproto.repo.putRecord`. The request has no body; the post is identified
+by the path. `200` with the stored publication:
+
+```json
+{"publication": {"post_id": "…", "rkey": "3mabcdefghijk",
+  "uri": "at://did:plc:alice/app.bsky.feed.post/3mabcdefghijk",
+  "published_at": "2026-11-11T10:00:00Z"}}
+```
+
+A repeat returns the same row and makes no second PDS request. Errors:
+`401 authentication_required`; `404 not_found` for a missing/deleted post or
+another account's post; `409 atproto_account_not_connected`;
+`422 atproto_post_unsupported` with `error.fields.reason` equal to
+`not_public`, `attachments_unsupported` or `text_too_long`;
+`502 atproto_publish_failed`; `503 atproto_publish_disabled` when
+`social/atproto.publish` is off; `503 atproto_not_configured` when no
+resolver/publisher is assembled. No refusal writes a publication row. See
+[AT Protocol publishing](../guides/atproto.md).
 
 ## Read a post
 

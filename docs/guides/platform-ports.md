@@ -32,8 +32,8 @@ A two-level store (`app`, `key`) with typed getters that take a default. The
 core reads `social/instance.url`, `social/instance.name` and the optional
 media limits (`media.max_bytes`, `media.thumbnail_max_dimension`,
 `media.remote_fetch`, `media.remote_max_bytes`, `media.remote_timeout_seconds`
-and `media.remote_max_redirects`); a host may store them in `config.php`, an
-`.env` file or the database. `Config` is not a secret store — private keys
+and `media.remote_max_redirects`) and `atproto.publish`; a host may store them
+in `config.php`, an `.env` file or the database. `Config` is not a secret store — private keys
 belong in the host's secret handling, sealed with `Security\SecretBox` when
 persisted.
 
@@ -80,6 +80,15 @@ the media guard rejects the fetch if any answer is private, loopback or
 otherwise non-public. Tests use a small map, and a host may supply its own DNS
 policy. Returning an empty list means the name did not resolve.
 
+## Domain-level host ports
+
+AT Protocol adds two domain-level ports rather than new `Platform` methods:
+`Domain\Atproto\AtprotoAccountResolver` returns the host's linked account for a
+local user (or `null`), and `Domain\Atproto\AtprotoPublisher` writes one record
+to a PDS. `XrpcAtprotoPublisher` is the production adapter over the existing
+`HttpClient`; tests use a fake. Account linking, token storage and refresh stay
+in the host. See [AT Protocol publishing](atproto.md).
+
 ## Contract tests
 
 Several ports have a shared test case that every implementation must pass:
@@ -89,6 +98,7 @@ Several ports have a shared test case that every implementation must pass:
 - `tests/Domain/AttachmentRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
+- `tests/Domain/AtprotoPublicationRepositoryTestCase.php`
 
 A new adapter is done when it passes the existing case, not when its own tests
 pass. That is the mechanism that keeps `InMemoryPostRepository` and

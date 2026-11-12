@@ -25,6 +25,7 @@ use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
+use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -83,6 +84,15 @@ final class Routes
 				handler: ShowPostHandler::class,
 				requiresAuth: false,
 				summary: 'Read one post.',
+			),
+			new Route(
+				name: 'atproto.publish',
+				method: 'POST',
+				path: $base . '/posts/{id}/atproto',
+				handler: PublishAtprotoHandler::class,
+				requiresAuth: true,
+				rateLimit: '10/900',
+				summary: 'Publish one public post to the signed-in account\'s AT Protocol PDS.',
 			),
 			new Route(
 				name: 'threads.get',

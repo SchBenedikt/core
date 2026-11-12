@@ -33,6 +33,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
+- `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
 
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
@@ -75,6 +76,17 @@ in the home timeline and do not import media blobs.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md).
+
+`social_atproto_publication` stores the idempotency mapping from a local post
+to the AT Protocol record written for one account. Its primary key is
+`(local_user_id, post_id)` and `(local_user_id, rkey)` is unique; `rkey` is
+the deterministic TID, `uri` is the PDS-returned `at://` URI and
+`published_at` is the canonical timestamp. The row is written only after the
+PDS accepted the record, so a failed publish leaves no partial row. Deleting
+the local row does not delete the remote record; a host that wants that must
+call `com.atproto.repo.deleteRecord` itself. `removeForPost()` is the cleanup
+hook and is not scheduled by the core. See
+[AT Protocol publishing](atproto.md).
 
 `social_attachment` stores only metadata; the original and thumbnail bytes live
 under the keys in the host's `BlobStore`. `source_url` is nullable for local

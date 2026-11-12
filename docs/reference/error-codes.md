@@ -40,6 +40,11 @@ change. `fields` appears only when an error belongs to specific input.
 | `thread_not_configured` | 503 | The thread route is present but no bounded HTTP client/service was assembled |
 | `thread_fetch_disabled` | 503 | `social/thread.fetch` is off, so no request is made to the peer |
 | `thread_fetch_failed` | 502 | The target remote object could not be fetched, was too large/timed out, or was not a usable ActivityPub object |
+| `atproto_publish_disabled` | 503 | `social/atproto.publish` is off, so no PDS request is made |
+| `atproto_not_configured` | 503 | The AT Protocol route is present but no account resolver or publisher was assembled |
+| `atproto_account_not_connected` | 409 | The local user has no AT Protocol account linked by the host |
+| `atproto_post_unsupported` | 422 | The post cannot be represented (non-public, attachments or too long); `error.fields.reason` is stable |
+| `atproto_publish_failed` | 502 | The PDS refused the record or could not be reached; no publication row is written |
 | `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers/following collections, outbox, WebFinger) |
 | `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
@@ -58,6 +63,15 @@ not fail the request: `thread_invalid_url`, `thread_dns_failed`,
 `thread_store_failed` (the cache write failed but the fetched response is
 still returned). The target failure is logged with the same reason before the
 handler answers `502`. See [remote threads](../guides/remote-threads.md).
+
+## AT Protocol job failures
+
+AT Protocol job failures are logged by the existing worker. A disabled or
+unconfigured feature, a missing account and an unsupported post finish the job
+without retrying; a PDS transport/refusal failure is retried with the normal
+queue backoff and the same deterministic record key. A retry that follows a
+lost success returns the stored row instead of writing a duplicate. See
+[AT Protocol publishing](../guides/atproto.md).
 
 ## Remote media failures
 

@@ -49,6 +49,11 @@ final class OpenApiTest extends TestCase
 		self::assertSame([['bearerAuth' => []]], $create['security']);
 		self::assertSame('30/900', $create['x-rate-limit']);
 
+		$atproto = $document['paths']['/api/v1/posts/{id}/atproto']['post'];
+		self::assertSame('atproto_publish', $atproto['operationId']);
+		self::assertSame([['bearerAuth' => []]], $atproto['security']);
+		self::assertSame('10/900', $atproto['x-rate-limit']);
+
 		$health = $document['paths']['/healthz']['get'];
 		self::assertArrayNotHasKey('security', $health);
 

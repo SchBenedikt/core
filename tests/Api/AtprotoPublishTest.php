@@ -1,0 +1,281 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Tests\Api;
+
+use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * The complete AT Protocol publication path:
+ * local post -> queued job or explicit route -> XRPC putRecord -> idempotency
+ * row -> JSON. The HTTP adapter is a fake so the test can inspect the exact
+ * request without a PDS account.
+ */
+final class AtprotoPublishTest extends TestCase
+{
+	private const ALICE = 'alice';
+
+	private const URI = 'at://did:plc:alice/app.bsky.feed.post/234567abcdefg';
+
+	private FrozenClock $clock;
+
+	private FakeHttpClient $http;
+
+	private AtprotoPublicationRepository $publications;
+
+	protected function setUp(): void
+	{
+		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
+		$this->http = new FakeHttpClient();
+		$this->publications = new InMemoryAtprotoPublicationRepository();
+	}
+
+	public function testCreatingAPostQueuesAndPublishesIt(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+
+		$post = $this->createPost($app, 'hello AT Protocol');
+
+		self::assertCount(0, $this->http->requests, 'Creating a post must not perform a network write inline.');
+
+		self::assertSame(1, $app->worker->runOnce());
+
+		self::assertCount(1, $this->http->requests);
+		$request = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.post', $request['collection']);
+		self::assertSame('hello AT Protocol', $request['record']['text']);
+		self::assertSame('2026-11-11T10:00:00Z', $request['record']['createdAt']);
+
+		$publication = $this->publications->findForPost(self::ALICE, $post);
+		self::assertNotNull($publication);
+		self::assertSame(self::URI, $publication->uri);
+	}
+
+	public function testARetryAfterAPdsFailureUsesTheSameRecordKey(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse(new HttpResponse(500, [], '{"error":"InternalError"}'));
+		$this->http->queueResponse($this->success());
+		$post = $this->createPost($app, 'retry me');
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+
+		$this->clock->advance(30);
+		self::assertSame(1, $app->worker->runOnce());
+
+		self::assertCount(2, $this->http->requests);
+		$first = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		$second = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame($first['rkey'], $second['rkey']);
+		self::assertNotNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
+	public function testTheExplicitRoutePublishesAndReturnsTheSameOnRepeat(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+		$post = $this->createPost($app, 'hello route');
+
+		$first = $this->publish($app, $post);
+		$second = $this->publish($app, $post);
+
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame($first->decodedBody()['publication'], $second->decodedBody()['publication']);
+		self::assertCount(1, $this->http->requests, 'A repeat must return the stored publication.');
+		self::assertSame(1, $this->publications->findForPost(self::ALICE, $post) === null ? 0 : 1);
+	}
+
+	public function testAnUnsupportedPostIsRefusedWithoutAWrite(): void
+	{
+		$app = $this->app();
+		$post = $this->createPost($app, str_repeat('a', 301));
+
+		$response = $this->publish($app, $post);
+
+		self::assertSame(422, $response->status);
+		self::assertSame('atproto_post_unsupported', $response->decodedBody()['error']['code']);
+		self::assertSame('text_too_long', $response->decodedBody()['error']['fields']['reason']);
+		self::assertCount(0, $this->http->requests);
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
+	public function testANonPublicPostIsNotScheduled(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'only followers', 'visibility' => 'followers'], JSON_THROW_ON_ERROR),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(201, $response->status);
+		self::assertSame(0, $app->worker->runOnce());
+		self::assertCount(0, $this->http->requests);
+	}
+
+	public function testTheRouteRequiresAuthentication(): void
+	{
+		$app = $this->app();
+		$post = $this->createPost($app, 'hello');
+
+		$response = $app->handle(new Request('POST', '/api/v1/posts/' . $post . '/atproto'));
+
+		self::assertSame(401, $response->status);
+		self::assertSame('authentication_required', $response->decodedBody()['error']['code']);
+	}
+
+	public function testUnknownPostsAre404(): void
+	{
+		$response = $this->publish($this->app(), 'missing');
+
+		self::assertSame(404, $response->status);
+		self::assertSame('not_found', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnAccountMustBeConnected(): void
+	{
+		$app = $this->app(accounts: new InMemoryAtprotoAccountResolver([
+			'bob' => $this->account(),
+		]));
+		$post = $this->createPost($app, 'hello');
+
+		$response = $this->publish($app, $post);
+
+		self::assertSame(409, $response->status);
+		self::assertSame('atproto_account_not_connected', $response->decodedBody()['error']['code']);
+	}
+
+	public function testTheFeatureIsDisabledByDefault(): void
+	{
+		$app = $this->app(enabled: false);
+		$post = $this->createPost($app, 'hello');
+
+		$response = $this->publish($app, $post);
+
+		self::assertSame(503, $response->status);
+		self::assertSame('atproto_publish_disabled', $response->decodedBody()['error']['code']);
+		self::assertCount(0, $app->queue->pending());
+	}
+
+	public function testAPdsFailureLeavesNoPublicationRow(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse(new HttpResponse(500, [], '{"error":"InternalError"}'));
+		$post = $this->createPost($app, 'hello');
+
+		$response = $this->publish($app, $post);
+
+		self::assertSame(502, $response->status);
+		self::assertSame('atproto_publish_failed', $response->decodedBody()['error']['code']);
+		self::assertNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
+	public function testAContentWarningBecomesALabel(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode([
+				'content' => 'chapter one',
+				'content_warning' => 'spoilers',
+			], JSON_THROW_ON_ERROR),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(201, $response->status);
+		$post = $response->decodedBody()['post']['id'];
+		self::assertSame(1, $app->worker->runOnce());
+
+		$request = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame(
+			[['val' => 'content-warning']],
+			$request['record']['labels']['values'],
+		);
+		self::assertNotNull($this->publications->findForPost(self::ALICE, $post));
+	}
+
+	private function app(
+		bool $enabled = true,
+		?InMemoryAtprotoAccountResolver $accounts = null,
+	): Application {
+		$accounts ??= new InMemoryAtprotoAccountResolver([
+			self::ALICE => $this->account(),
+		]);
+
+		return Application::inMemory(
+			clock: $this->clock,
+			config: new ArrayConfig([
+				InstanceInfo::CONFIG_APP => ['atproto.publish' => $enabled ? 'true' : 'false'],
+			]),
+			httpClient: $this->http,
+			atprotoAccounts: $accounts,
+			atprotoPublications: $this->publications,
+		);
+	}
+
+	private function account(): AtprotoAccount
+	{
+		return new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'secret-token');
+	}
+
+	private function success(): HttpResponse
+	{
+		return new HttpResponse(200, [], json_encode(['uri' => self::URI, 'cid' => 'bafyrei'], JSON_THROW_ON_ERROR));
+	}
+
+	private function createPost(Application $app, string $content): string
+	{
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => $content], JSON_THROW_ON_ERROR),
+			userId: self::ALICE,
+		));
+
+		self::assertSame(201, $response->status, (string) json_encode($response->decodedBody()));
+
+		return $response->decodedBody()['post']['id'];
+	}
+
+	private function publish(Application $app, string $postId): Response
+	{
+		return $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts/' . rawurlencode($postId) . '/atproto',
+			headers: ['Content-Type' => 'application/json'],
+			body: '{}',
+			userId: self::ALICE,
+		));
+	}
+}

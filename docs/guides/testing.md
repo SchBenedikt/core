@@ -28,6 +28,9 @@ that prints or skips is a failure.
 | `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |
 | `tests/Api/RemoteMediaTest.php` | signed inbound Create → guarded fetch from a local HTTP server → local original/thumbnail → home timeline, plus SSRF, redirect, oversized, corrupt, false type, 404, timeout, duplicate URL and attachment-limit cases; outbox backfill of a historical post, repair of an existing post after disabled media, idempotent repeats, SSRF/corrupt backfill entries and preservation of existing links when one candidate disappears |
 | `tests/Api/RemoteThreadTest.php` | authenticated thread request → guarded target/parent/reply fetch from a local HTTP server → cache → JSON; ordered ancestors, direct replies, depth/reply limits, idempotent repeats, auth, missing/unfollowed/deleted/blocked targets, disabled fetching, invalid target, blocked ancestor, SSRF ancestor and oversized/slow targets |
+| `tests/Api/AtprotoPublishTest.php` | post creation → queued AT Protocol job → fake XRPC `putRecord` → publication row → JSON; explicit route, repeat idempotency, unsupported/disabled/auth/missing-account and PDS-failure paths |
+| `tests/Protocol/XrpcAtprotoPublisherTest.php` | exact XRPC request, bearer header, successful URI, non-2xx status without leaking the body, transport failure and malformed success |
+| `tests/Protocol/TidTest.php`, `tests/Protocol/AtprotoPostRecordTest.php` | deterministic valid TIDs, record shape, content-warning labels and AT Protocol text limits |
 | `tests/Service/Federation/RemoteMediaFetcherTest.php` | guard reasons for private IPv4/IPv6, redirect revalidation, redirect budget, HTTP error, timeout, size limit and disabled switch |
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
@@ -54,6 +57,8 @@ final class InMemoryBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class PdoBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
+final class InMemoryAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }
+final class PdoAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }
 ```
 
 If a behaviour is not in the case, the two implementations may drift. Add the

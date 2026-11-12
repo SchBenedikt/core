@@ -124,14 +124,30 @@ Status of the core, not a promise about dates.
   read-only cutover validator (`bin/validate-cutover`) and the shared UI
   contract in [ADR 0005](adr/0005-shared-ui.md).
 
+## Partially done
+
+- **AT Protocol stack**: the core now owns the public text-only publishing
+  foundation — ATProto identity/record primitives, deterministic TIDs, the
+  authenticated XRPC `com.atproto.repo.putRecord` adapter, the
+  `AtprotoAccountResolver`/`AtprotoPublisher` ports, the idempotent publication
+  table and the disabled-by-default `POST /api/v1/posts/{id}/atproto` path.
+  Only public text posts are mirrored; media, edits, deletes, replies and long
+  posts are refused. See [AT Protocol publishing](guides/atproto.md). The full
+  stack is **not** done: OAuth/account linking and token refresh, a full
+  repository/AppView client, CAR/MST, blob uploads, firehose and the extraction
+  from the Nextcloud app remain external. They are tracked in the Next table
+  below, not as a completed item.
+
 ## Next
 
 The remaining items are host-owned migrations or integrations. There is no
 core-only vertical slice waiting in this table; the local media catch-up and
-thread/context gaps are closed in Done above.
+thread/context gaps are closed in Done above, and the local AT Protocol
+publishing foundation is in Partially done.
 
 | Item | Seam |
 | --- | --- |
+| AT Protocol account linking, OAuth/session refresh, remote delete and full client/AppView extraction | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
@@ -139,8 +155,6 @@ thread/context gaps are closed in Done above.
 
 ## Later
 
-- AT Protocol stack, moved out of the Nextcloud app only after the core owns
-  the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
 

@@ -25,6 +25,7 @@ use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
+use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -34,6 +35,11 @@ use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\PdoAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Federation\AcceptAllFollows;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
@@ -96,6 +102,9 @@ use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
+use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
@@ -149,6 +158,7 @@ final readonly class Application
 		public ?RemoteOutboxBackfill $backfill,
 		public ?MediaService $media,
 		public ?RemoteThreadService $threads,
+		public ?AtprotoPublishService $atproto = null,
 	) {
 	}
 
@@ -173,6 +183,9 @@ final readonly class Application
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
 		?RemoteThreadRepository $remoteThreadRepository = null,
+		?AtprotoAccountResolver $atprotoAccounts = null,
+		?AtprotoPublisher $atprotoPublisher = null,
+		?AtprotoPublicationRepository $atprotoPublications = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -190,6 +203,8 @@ final readonly class Application
 		$followingRepository ??= new InMemoryFollowingRepository();
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
 		$remoteThreadRepository ??= new InMemoryRemoteThreadRepository();
+		$atprotoPublications ??= new InMemoryAtprotoPublicationRepository();
+		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient);
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository();
 		$blobStore ??= new InMemoryBlobStore();
@@ -225,6 +240,9 @@ final readonly class Application
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
+			atprotoPublications: $atprotoPublications,
+			atprotoAccounts: $atprotoAccounts,
+			atprotoPublisher: $atprotoPublisher,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -270,6 +288,9 @@ final readonly class Application
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
+		?AtprotoAccountResolver $atprotoAccounts = null,
+		?AtprotoPublisher $atprotoPublisher = null,
+		?AtprotoPublicationRepository $atprotoPublications = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -296,6 +317,9 @@ final readonly class Application
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
+			atprotoPublications: $atprotoPublications ?? new PdoAtprotoPublicationRepository($database),
+			atprotoAccounts: $atprotoAccounts,
+			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient),
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -330,6 +354,9 @@ final readonly class Application
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
+		AtprotoPublicationRepository $atprotoPublications,
+		?AtprotoAccountResolver $atprotoAccounts,
+		?AtprotoPublisher $atprotoPublisher,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
@@ -367,6 +394,15 @@ final readonly class Application
 				remotePosts: $remotePosts,
 			);
 
+		$atprotoService = new AtprotoPublishService(
+			$config,
+			$posts,
+			$atprotoPublications,
+			$atprotoAccounts,
+			$atprotoPublisher,
+			$queue,
+			$clock,
+		);
 		$postService = new PostService(
 			$posts,
 			$attachmentRepository,
@@ -375,6 +411,7 @@ final readonly class Application
 			$activities,
 			$clock,
 			$ids,
+			$atprotoService,
 		);
 		$timelines = new TimelineService($posts, $homeTimeline);
 		$followerService = new FollowerService($followers, $clock, $ids);
@@ -489,6 +526,7 @@ final readonly class Application
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
 			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService))
+			->with(PublishAtprotoHandler::class, static fn (): PublishAtprotoHandler => new PublishAtprotoHandler($atprotoService))
 			->with(ShowRemoteThreadHandler::class, static fn (): ShowRemoteThreadHandler => new ShowRemoteThreadHandler($remoteThreadService))
 			->with(UploadMediaHandler::class, static fn (): UploadMediaHandler => new UploadMediaHandler($mediaService))
 			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService))
@@ -514,6 +552,10 @@ final readonly class Application
 		if ($federationDelivery !== null) {
 			$jobHandlers = $jobHandlers->with(JobType::FEDERATION_DELIVER, $federationDelivery);
 		}
+		$jobHandlers = $jobHandlers->with(
+			JobType::ATPROTO_PUBLISH,
+			new AtprotoPublishHandler($atprotoService, $logger),
+		);
 
 		$routes = Routes::manifest();
 
@@ -554,6 +596,7 @@ final readonly class Application
 			$backfill,
 			$mediaService,
 			$remoteThreadService,
+			$atprotoService,
 		);
 	}
 

@@ -313,10 +313,15 @@ stacks must not both own writes for the same handle.
    [the shared UI guide](shared-ui.md); do not move the backend and the screen
    in one flag flip.
 
-Do not migrate AT Protocol until the core implements the protocol. Remote-post
-backfill, thread/context fetching and media processing now exist in the core,
-so migrate those only through the normal cutover phases. A core feature that
-does not exist cannot be replaced by a host-specific branch in `src/`.
+The core now owns the public text-only AT Protocol publishing foundation, but
+not account linking, OAuth/session storage or the full repository/AppView
+stack. Do not migrate those account credentials or the old AT Protocol stack
+until the host adapter is ready; publication rows in
+`social_atproto_publication` are new core rows, not a copy of the old app's
+data. Remote-post backfill, thread/context fetching and media processing now
+exist in the core, so migrate those only through the normal cutover phases. A
+core feature that does not exist cannot be replaced by a host-specific branch
+in `src/`. See [AT Protocol publishing](atproto.md).
 
 ## Phase 4 — Close the old path
 
@@ -345,4 +350,4 @@ period and the migration must be treated as a separate federation event.
 - A universal migration runner in this repository.
 - Replacing the Nextcloud admin UI, auth or media jobs during the core
   migration.
-- AT Protocol data migration before the core implements the protocol.
+- AT Protocol account/OAuth credential migration and the full repository/AppView stack before their host adapter exists.

@@ -19,6 +19,8 @@ final class JobType
 {
 	public const FEDERATION_DELIVER = 'federation.deliver';
 
+	public const ATPROTO_PUBLISH = 'atproto.publish';
+
 	private function __construct()
 	{
 	}

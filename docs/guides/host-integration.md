@@ -17,6 +17,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
+| ATProto record/TID publishing through the `AtprotoAccountResolver` and `AtprotoPublisher` ports | Account linking, OAuth/app-password sessions, token refresh and PDS credentials |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -88,6 +89,9 @@ $app = Application::forHost(
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
     hostResolver: $dns,          // optional; default is DnsHostResolver
+    atprotoAccounts: $atprotoAccounts, // optional; enables AT Protocol publishing
+    atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http)
+    atprotoPublications: null,   // optional; default is PdoAtprotoPublicationRepository($database)
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
 );
@@ -105,6 +109,7 @@ The object exposes the parts a host needs:
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
+| `$app->atproto` | AT Protocol publishing service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -135,6 +140,8 @@ production bootstrap.
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
 | `ImageProcessor` | Produce a bounded thumbnail; the default GD adapter is complete for local use | `GdImageProcessor` |
+| `AtprotoAccountResolver` | Resolve a local user to a linked DID, handle, PDS URL and access token; refresh the token before returning it | none; host-specific |
+| `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client | `XrpcAtprotoPublisher`; fake in tests |
 
 ### Config keys
 
@@ -169,6 +176,7 @@ The core owns the schema classes, not the migration mechanism:
 - `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
+- `AtprotoPublicationSchema` → `social_atproto_publication` (AT Protocol idempotency rows)
 
 A host with PDO can wrap its handle in `PdoConnection` and call the schema
 `create()` methods for a fresh installation. A host without PDO implements
@@ -187,7 +195,10 @@ VARCHAR(512)` and its unique index, and create
 For thread/context fetching, create `social_remote_thread_post` from
 `RemoteThreadSchema::statements()` and wire a `RemoteThreadRepository` into
 `Application::forHost()`; a host that does not create the table must not expose
-the route. There is no migration runner and no automatic retention job in this
+the route. For AT Protocol publishing, create `social_atproto_publication` from
+`AtprotoPublicationSchema::statements()` and supply an `AtprotoAccountResolver`;
+supplying no resolver leaves the existing route at `503 atproto_not_configured`
+without writing anything. There is no migration runner and no automatic retention job in this
 repository. A host that wants context to expire calls
 `RemoteThreadRepository::deleteFetchedBefore()` on its own schedule.
 
