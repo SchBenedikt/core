@@ -21,8 +21,11 @@ interface JobQueue
 - `complete` removes it.
 - `fail` returns it with a later `availableAt`, or dead-letters it.
 
-`InMemoryJobQueue` implements the same rules as the durable queue must:
-`MAX_ATTEMPTS = 5`, first retry after 30 s, doubling to a 3600 s ceiling.
+`InMemoryJobQueue` is the reference implementation. `PdoJobQueue` applies the
+same rules against `social_job`: `MAX_ATTEMPTS = 5`, first retry after 30 s,
+doubling to a 3600 s ceiling. Its reservation TTL is
+`PdoJobQueue::RESERVATION_SECONDS = 300`, so a worker that dies after reserving
+does not strand the job.
 
 | Attempt | Next try |
 | --- | --- |
@@ -31,6 +34,22 @@ interface JobQueue
 | 3 | +120 s |
 | 4 | +240 s |
 | 5 | dead letter |
+
+## Durable queue
+
+```php
+use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
+
+JobSchema::create($connection);
+$queue = new PdoJobQueue($connection, $clock, $ids);
+```
+
+`PdoJobQueue` stores each job in `social_job`, reserves with a conditional
+update inside a transaction, and implements `complete()`/`fail()` in SQL. A new
+process or connection sees the same pending jobs. The columns and indexes are
+in `JobSchema::statements()`; a host applies that DDL and passes the adapter to
+`Application::forHost()`. Tests may keep `InMemoryJobQueue`.
 
 ## Worker
 

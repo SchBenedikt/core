@@ -57,10 +57,12 @@ live?" belongs to the application, only the inbox URLs are data.
 `Application::forHost()` is the production composition root. It takes the
 host's `Config`, `Connection`, `HttpClient`, `RsaKeyPair`, `LocalActorDirectory`,
 durable `JobQueue` and `ActivityLog`, builds the PDO repositories and services,
-and returns the same `Kernel` the reference assembly uses. `Application::inMemory()`
-remains the test/demo path; both go through one private assembly, so the two
-cannot drift apart. The host still owns authentication, migrations, the HTTP
-controller and the worker process. See [using the core from a host](guides/host-integration.md).
+and returns the same `Kernel` the reference assembly uses. The core supplies
+`PdoJobQueue` and `PdoActivityLog` for the last two over that same connection.
+`Application::inMemory()` remains the test/demo path; both go through one
+private assembly, so the two cannot drift apart. The host still owns
+authentication, migrations, the HTTP controller and the worker process. See
+[using the core from a host](guides/host-integration.md).
 
 ## Writing a post (the implemented vertical slice)
 
@@ -168,9 +170,11 @@ exactly the document URL, which tests walk end to end.
   object id are derived from it.
 - **Soft deletion.** Deleting sets `deleted_at`; every read filters it. The row
   survives so a `Delete` can still be delivered and a later import can see it.
-- **Schema next to the repository.** `PostSchema` defines the table once. The
-  standalone runs those statements; the Nextcloud host creates the same columns
-  through its schema API. A dump can therefore move between the two.
+- **Schema next to the repository or adapter.** `PostSchema` defines the post
+  table once; `JobSchema` and `ActivityLogSchema` do the same for the durable
+  queue and replay log. The standalone runs those statements; the Nextcloud
+  host creates the same columns through its schema API. A dump can therefore
+  move between the two.
 
 ## Ports
 
@@ -181,6 +185,8 @@ exactly the document URL, which tests walk end to end.
 | `BlobStore` | put/read/exists/delete/size/list | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
 | `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+| `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
+| `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
@@ -206,12 +212,15 @@ genuinely owns the capability.
 - **Unit** for value objects, formatting and validation.
 - **Contract tests** — one abstract case run against every implementation of a
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
-  `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`). A new adapter
-  is only done when it passes the shared case.
+  `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
+  `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
+  it passes the shared case. The PDO queue and log cases also use a real SQLite
+  file and a fresh connection, so a restart is part of the contract.
 - **Protocol vectors** — a signature is verified by the same code that produced
   it *and* rejected for a changed body, a changed header, a stale date, an
   unsigned digest and a foreign key.
 - **End to end** — `Application::inMemory()` is a real object graph; the test
   writes a post over HTTP, drains the queue, and verifies the signature on the
   request that left. `ApplicationHostTest` repeats the important paths through
-  `forHost()` with SQL repositories and a fake inbox.
+  `forHost()` with SQL repositories, `PdoJobQueue`, `PdoActivityLog` and a fake
+  inbox.

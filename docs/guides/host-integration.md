@@ -16,7 +16,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | The route manifest and one handler per route | Mapping its HTTP framework to `Core\Http\Request`/`Response` |
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard and delivery | Key storage, TLS, proxy configuration and DNS |
-| In-memory and PDO repositories, plus their contract tests | The migration runner and the durable queue/activity log |
+| In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -69,6 +69,11 @@ SQL repositories and takes your ports:
 
 ```php
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
+
+$queue = new PdoJobQueue($connection, $clock, $ids);
+$activityLog = new PdoActivityLog($connection);
 
 $app = Application::forHost(
     config: $config,             // Core\Platform\Config\Config
@@ -98,7 +103,8 @@ The object exposes the parts a host needs:
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
 again after a restart. Tests may pass `InMemoryJobQueue` and
-`InMemoryActivityLog`; production should not.
+`InMemoryActivityLog`; production should pass the core's `PdoJobQueue` and
+`PdoActivityLog` over the host's `Connection`.
 
 `Application::inMemory()` remains the demo/test assembly. Do not use it as a
 production bootstrap.
@@ -113,8 +119,8 @@ production bootstrap.
 | `Http\HttpClient` | Return non-2xx answers as `HttpResponse`; throw `HttpClientException` only on transport failure | `CurlHttpClient` |
 | `Storage\BlobStore` | Store future media and avatar blobs | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
-| `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `InMemoryJobQueue` only for tests |
-| `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `InMemoryActivityLog` only for tests |
+| `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
+| `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver` |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
@@ -140,6 +146,8 @@ The core owns the schema classes, not the migration mechanism:
 - `PostSchema` → `social_post`
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
+- `JobSchema` → `social_job`
+- `ActivityLogSchema` → `social_activity_log`
 
 A host with PDO can wrap its handle in `PdoConnection` and call the schema
 `create()` methods for a fresh installation. A host without PDO implements
@@ -149,6 +157,62 @@ port is small; see [database](database.md).
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.
 There is no migration runner in this repository.
+
+### Durable queue and activity log
+
+The core now supplies the two adapters a production host needs, both over the
+same `Connection`:
+
+```php
+use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
+use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
+use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
+
+JobSchema::create($connection);
+ActivityLogSchema::create($connection);
+
+$queue = new PdoJobQueue($connection, $clock, $ids);
+$activityLog = new PdoActivityLog($connection);
+```
+
+`JobSchema::statements()` and `ActivityLogSchema::statements()` are the
+canonical DDL. The tables below are exactly those columns; the indexes belong
+to the same schema classes.
+
+`social_job`:
+
+| Column | Type | Null |
+| --- | --- | --- |
+| `id` | `VARCHAR(64)` | no, primary key |
+| `type` | `VARCHAR(64)` | no |
+| `payload` | `TEXT` | no |
+| `available_at` | `VARCHAR(20)` | no |
+| `attempts` | `INTEGER` | no |
+| `reserved_at` | `VARCHAR(20)` | yes |
+| `dead_at` | `VARCHAR(20)` | yes |
+
+Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`.
+
+`social_activity_log`:
+
+| Column | Type | Null |
+| --- | --- | --- |
+| `activity_id` | `VARCHAR(512)` | no, primary key |
+| `seen_at` | `VARCHAR(20)` | no |
+
+Index: `social_activity_log_seen (seen_at)`.
+
+`PdoJobQueue` reserves with a conditional update inside a transaction (two
+workers cannot both claim a row), retries five times with the same 30 s to
+3600 s backoff as `InMemoryJobQueue`, and dead-letters on the fifth failure. A
+reservation older than `PdoJobQueue::RESERVATION_SECONDS` (300 s) is treated
+as abandoned by a crashed worker and may be reserved again. `PdoActivityLog`
+uses the `activity_id` primary key as the replay guard; a claim older than
+`PdoActivityLog::RETENTION_SECONDS` (86400 s) is pruned on the next claim.
+
+The host still applies the DDL through its migration mechanism and runs the
+worker. It does not implement the queue's SQL, retry rules or replay handling.
 
 ### HTTP client and signatures
 
@@ -269,11 +333,14 @@ done when it passes the existing case, not when its own smoke test passes:
 - `tests/Domain/PostRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
+- `tests/Jobs/JobQueueTestCase.php`
+- `tests/Domain/ActivityLogTestCase.php`
 
-`tests/ApplicationHostTest.php` boots `Application::forHost()` with SQLite and
-a fake inbox. Copy that shape into the host's test suite: it proves that the
-host's ports, the SQL repositories and the HTTP contract work together. Keep
-the core's `composer check` green and run the host's own tests as well.
+`tests/ApplicationHostTest.php` boots `Application::forHost()` with SQLite, the
+PDO queue and activity log, and a fake inbox. Copy that shape into the host's
+test suite: it proves that the host's ports, the SQL repositories and the HTTP
+contract work together. Keep the core's `composer check` green and run the
+host's own tests as well.
 
 ## What this buys you
 
@@ -285,6 +352,10 @@ the core's `composer check` green and run the host's own tests as well.
   error shape, which is what lets one front end talk to both.
 - **A testable core.** The suite runs without a server or network; the demo
   exercises real HTTP requests through the kernel.
+- **A production-ready queue and replay guard.** `PdoJobQueue` and
+  `PdoActivityLog` provide the durable behaviour a host needs over the same
+  database port, instead of every host writing its own reserve/retry/prune
+  logic.
 - **A standalone path.** The same objects work with PDO, curl and a plain PHP
   process, so the standalone server is an assembly, not a rewrite.
 - **Smaller hosts.** A host keeps its UI, accounts, permissions and deployment
@@ -305,8 +376,9 @@ owners for the same handle.
 ## Adoption order
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
-2. Create the three tables through the host's migration system.
-3. Boot `Application::forHost()` in a test with SQLite and a fake HTTP client.
+2. Create the five tables through the host's migration system.
+3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
+   `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).
 5. Add actor documents, WebFinger and the follow collection.
 6. Add `POST /inbox` only when the host has a durable activity log and actor

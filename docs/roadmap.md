@@ -11,7 +11,8 @@ Status of the core, not a promise about dates.
 - ActivityPub: RSA keys, HTTP signatures (sign and verify), `Create`/`Delete`
   documents, audience mapping.
 - Delivery: durable queue contract, retries with backoff, dead letters,
-  signed POSTs, idempotent activity ids.
+  signed POSTs, idempotent activity ids. `PdoJobQueue` and `PdoActivityLog`
+  provide the durable SQL implementations.
 - Follow graph: follower storage (in-memory and SQL), inbox resolution, three
   endpoints, isolated per account.
 - Inbound federation: `POST /inbox` with signature verification, actor-key
@@ -40,7 +41,6 @@ Status of the core, not a promise about dates.
 | Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
 | A follow-based home timeline | `FollowingService` + `TimelineService` |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
-| Durable queue adapter | `Jobs\JobQueue` |
 | Migration runner for the standalone | host concern, schemas already exist |
 
 ## Later

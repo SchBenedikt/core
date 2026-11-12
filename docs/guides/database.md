@@ -22,11 +22,13 @@ timestamp, and anything else is refused.
 
 ## Schemas
 
-Each table's definition lives next to its repository:
+Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post`
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
+- `src/Jobs/JobSchema.php` → `social_job`
+- `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
@@ -36,6 +38,21 @@ Adding a column means changing the schema class **and** both hosts' migration
 paths in the same release. There is no automatic migration runner in the core:
 it would need to know the host's migration mechanism, which is exactly the kind
 of host concern ports exist to keep out.
+
+`social_job` is the durable queue used by `PdoJobQueue`; `social_activity_log`
+is the replay guard used by `PdoActivityLog`. The queue reserves a row with a
+conditional update in a transaction, and the activity log's primary key is the
+claim. Both rely on the database, not on a process-local cache, so a restart or
+a second worker does not lose a delivery or accept a replayed activity.
+
+## Transactions and uniqueness
+
+`PdoJobQueue::reserve()` uses `transaction()` to select due rows and update the
+ones it wins. The conditional `UPDATE` is what makes a concurrent reservation
+safe; a select followed by an unconditional update would not be.
+`PdoActivityLog::claim()` deliberately does not use a select-then-insert: the
+`activity_id` primary key rejects the duplicate, and the adapter checks the row
+after a rejected insert so a real database error is not reported as a replay.
 
 ## Timestamps
 
@@ -72,4 +89,8 @@ caller catches it. Partial commits are never what a caller meant.
   `LIMIT`, and the value is a clamped integer from the service.
 - `INSERT`/`UPDATE` avoid `RETURNING` and upsert syntax; both differ across the
   three supported databases. Uniqueness is a database guarantee, the service
-  checks first for a friendly answer.
+  checks first for a friendly answer. The activity log uses a plain `INSERT`
+  and treats the resulting duplicate-key error as the replay answer.
+- `social_job` reserves with `UPDATE ... WHERE id = ... AND (reserved_at IS
+  NULL OR reserved_at <= ...)`, which works on SQLite, PostgreSQL and MySQL
+  without vendor-specific locking syntax.

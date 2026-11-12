@@ -75,8 +75,8 @@ pin a tag or a commit rather than floating `dev-main`.
 | `Http\HttpClient` | `OCP\Http\Client\IClientService` | Keep Nextcloud's CA/proxy policy; or use `CurlHttpClient` |
 | `Storage\BlobStore` | `OCP\Files\IAppData` | Needed for future media, not for the current post/follow core |
 | `LocalActorDirectory` | `OCP\IUserManager` / external user backend | The app already has external users; include them |
-| `Jobs\JobQueue` | the app's existing queue service/table | Must reserve, complete, retry and dead-letter durably |
-| `ActivityLog` | new table or existing activity store | Unique activity id, claim/release, expiry |
+| `Jobs\JobQueue` | core `PdoJobQueue` over `NextcloudConnection` | Nothing to implement; the core owns atomic reserve, retry and dead-letter rules |
+| `ActivityLog` | core `PdoActivityLog` over `NextcloudConnection` | Nothing to implement; the primary key is the replay guard |
 | `ActorResolver` | `HttpActorResolver` or the app's actor cache | Resolve key id → actor, never trust a supplied key |
 | `RsaKeyPair` | sealed key in app config | Open with `OpenSslSecretBox`, then `RsaKeyPair::fromPems()` |
 
@@ -230,40 +230,82 @@ core only needs the `RsaKeyPair` object.
 ## 4. Queue and activity log
 
 These are the two ports that make the difference between a demo and a server.
+The core supplies both adapters; the app does not implement the algorithms.
 
-### Queue
+### Use the core adapters
 
-The app already has a queue and cron jobs. Implement `JobQueue` over that
-store rather than adding the core's in-memory queue. A workable table shape is:
+```php
+use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
+use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
+use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
+use AlohaSocial\Core\Support\RandomIdGenerator;
 
+JobSchema::create($connection);
+ActivityLogSchema::create($connection);
+
+$queue = new PdoJobQueue($connection, new SystemClock(), new RandomIdGenerator());
+$activityLog = new PdoActivityLog($connection);
+
+$app = Application::forHost(
+    config: $config,
+    database: $connection,
+    httpClient: $http,
+    signingKey: $keys,
+    localActors: $actors,
+    queue: $queue,
+    activityLog: $activityLog,
+);
 ```
-id            VARCHAR(64) primary key
-type          VARCHAR(64)
-payload       TEXT
-available_at  VARCHAR(20)
-attempts      INTEGER
-reserved_at   VARCHAR(20) NULL
-dead_at       VARCHAR(20) NULL
-```
 
-`reserve()` must atomically take due rows so two workers cannot run the same
-job. `fail()` must apply the same exponential backoff and five-attempt ceiling
-as `InMemoryJobQueue` (or document a deliberate difference). `complete()`
-removes the reservation. `pendingCount()` and `deadLetterCount()` feed the
-app's health page.
+`$connection` is the `NextcloudConnection` adapter from section 3. Its
+`transaction()` method must really join the DBAL transaction, because
+`PdoJobQueue::reserve()` relies on the conditional update being atomic.
+`JobSchema` and `ActivityLogSchema` are the canonical definitions; the app's
+migration should translate their statements into Nextcloud's schema API rather
+than maintaining a second column list.
 
-### Activity log
+### Queue table
 
-Inbound requests need a replay guard that survives restarts:
+`social_job` has exactly these columns:
 
-```
-activity_id  VARCHAR(512) primary key
-seen_at      VARCHAR(20)
-```
+| Column | Type | Null |
+| --- | --- | --- |
+| `id` | `VARCHAR(64)` | no, primary key |
+| `type` | `VARCHAR(64)` | no |
+| `payload` | `TEXT` | no |
+| `available_at` | `VARCHAR(20)` | no |
+| `attempts` | `INTEGER` | no |
+| `reserved_at` | `VARCHAR(20)` | yes |
+| `dead_at` | `VARCHAR(20)` | yes |
+
+Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`.
+
+The adapter reserves due rows with a conditional update inside a transaction,
+so two workers cannot run the same job. It applies the same five-attempt
+ceiling and 30 s to 3600 s backoff as `InMemoryJobQueue`; `complete()` removes
+the row and `fail()` either reschedules it or sets `dead_at`. A reservation
+older than `PdoJobQueue::RESERVATION_SECONDS` (300 s) is recoverable after a
+worker crash. `pendingCount()` and `deadLetterCount()` feed the app's health
+page.
+
+### Activity-log table
+
+`social_activity_log` has exactly these columns:
+
+| Column | Type | Null |
+| --- | --- | --- |
+| `activity_id` | `VARCHAR(512)` | no, primary key |
+| `seen_at` | `VARCHAR(20)` | no |
+
+Index: `social_activity_log_seen (seen_at)`.
 
 `claim()` inserts the id and returns false on a duplicate; `release()` deletes
-it when handling failed; a cleanup job removes rows older than a day. A unique
-index is the actual guard — a select-then-insert is a race.
+it when handling failed. Rows older than `PdoActivityLog::RETENTION_SECONDS`
+(86400 s) are pruned on the next claim, so no separate cleanup job is needed.
+The primary key is the actual guard — a select-then-insert would be a race.
 
 ## 5. Serve the routes
 
@@ -333,8 +375,10 @@ limiter in the controller.
 
 Create the app's tables through Nextcloud migrations, with the same columns
 and indexes as the core's schema classes. The SQL strings in `PostSchema`,
-`FollowerSchema` and `FollowingSchema` are the canonical definition; translate
-them into the app's schema API rather than copying a second column list.
+`FollowerSchema`, `FollowingSchema`, `JobSchema` and `ActivityLogSchema` are
+the canonical definition; translate them into the app's schema API rather than
+copying a second column list. The two tables in section 4 are the queue and
+replay-log tables; do not hand-write a different shape.
 
 If the app already has a `social_following` table from the earlier core
 version, add:
@@ -388,6 +432,9 @@ one owner, or a peer will see two different answers for the same account.
   stops maintaining a second federation core.
 - Signatures, actor documents, inbox verification, Follow/Undo and delivery
   are shared with the standalone product and tested without Nextcloud.
+- The core's `PdoJobQueue` and `PdoActivityLog` provide durable delivery and
+  replay protection over the app's database; the app no longer has to build
+  its own reserve/retry/prune implementation.
 - The route manifest gives the app and the standalone one API contract, which
   is what makes a shared front end possible.
 - A bug in validation or replay handling is fixed once, not twice.
@@ -398,6 +445,6 @@ one owner, or a peer will see two different answers for the same account.
 - Media, the Mastodon-compatible API, inbound `Create`/`Delete` and the
   follow-based home timeline are not in the core yet. Keep the app's existing
   implementation for those until the corresponding core milestone.
-- The durable queue, activity log, key storage and migrations are host
-  adapters; the core supplies the interfaces and the schema definitions, not
-  the Nextcloud implementations.
+- Key storage and migrations are host adapters; the core supplies the
+  interfaces and the schema definitions. The durable queue and activity log
+  are core adapters and only need the app's `Connection`.

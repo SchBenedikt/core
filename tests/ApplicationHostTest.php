@@ -10,13 +10,15 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
-use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
-use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
@@ -116,6 +118,8 @@ final class ApplicationHostTest extends TestCase
 		PostSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
+		JobSchema::create($database);
+		ActivityLogSchema::create($database);
 
 		return $database;
 	}
@@ -133,8 +137,8 @@ final class ApplicationHostTest extends TestCase
 			httpClient: $http,
 			signingKey: self::$key,
 			localActors: new InMemoryActorDirectory(['alice']),
-			queue: new InMemoryJobQueue($this->clock, new RandomIdGenerator()),
-			activityLog: new InMemoryActivityLog(),
+			queue: new PdoJobQueue($database, $this->clock, new RandomIdGenerator()),
+			activityLog: new PdoActivityLog($database),
 			clock: $this->clock,
 		);
 	}

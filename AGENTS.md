@@ -42,7 +42,7 @@ full documentation index is `docs/README.md`.
 - A route exists only in `src/Contract/Routes.php`.
 - Every new behaviour needs a test that fails without it. Every new port
   implementation must pass the existing contract test (`BlobStoreTestCase`,
-  `PostRepositoryTestCase`).
+  `PostRepositoryTestCase`, `JobQueueTestCase`, `ActivityLogTestCase`).
 - Conventional Commits with a scope: `feat(posts): …`, `fix(signature): …`.
 - Commits carry no tool or AI attribution trailers; the author is the human
   who submits the work.
@@ -63,9 +63,9 @@ Do not log request bodies, private keys or sealed payloads.
 Implemented: posts and timelines, the follow graph, inbound and outbound
 ActivityPub (signed `POST /inbox`, signed `Follow`/`Undo` delivery, `Accept`),
 the actor document, followers and following collections, outbox and WebFinger,
-the HTTP contract, the platform ports and `Application::forHost()` for a real
-host. Not implemented: inbound `Create`/`Delete`, a follow-based home timeline,
-media. See `docs/roadmap.md` before starting a large feature, and
+the HTTP contract, the platform ports, durable `PdoJobQueue`/`PdoActivityLog`
+and `Application::forHost()` for a real host. Not implemented: inbound
+`Create`/`Delete`, a follow-based home timeline, media. See `docs/roadmap.md` before starting a large feature, and
 `docs/guides/host-integration.md` before wiring a host.
 
 ## What not to do

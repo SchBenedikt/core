@@ -18,7 +18,7 @@ that prints or skips is a failure.
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
-| `tests/Jobs` | queue retry/dead-letter and the worker |
+| `tests/Jobs` | queue contract, PDO persistence/retry, dead letters and the worker |
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly |
@@ -32,10 +32,15 @@ case:
 ```php
 final class InMemoryPostRepositoryTest extends PostRepositoryTestCase { … }
 final class PdoPostRepositoryTest extends PostRepositoryTestCase { … }
+final class PdoJobQueueTest extends JobQueueTestCase { … }
+final class PdoActivityLogTest extends ActivityLogTestCase { … }
 ```
 
 If a behaviour is not in the case, the two implementations may drift. Add the
-expectation to the case, not to one subclass.
+expectation to the case, not to one subclass. The PDO queue and activity-log
+tests also open a fresh SQLite connection to prove that a reservation, a retry
+and a replay decision survive a restart; the in-memory versions cannot prove
+that.
 
 ## Fakes and determinism
 

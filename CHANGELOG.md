@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Durable queue and replay log: `PdoJobQueue` and `PdoActivityLog` implement
+  the existing ports over `Platform\Db\Connection`, with `JobSchema` and
+  `ActivityLogSchema` as the canonical DDL. A job survives a fresh connection;
+  reserve/complete/fail, retry, dead-letter and replay rejection are tested
+  against a SQLite file. `Application::forHost()` now has production-ready
+  adapters instead of requiring every host to build its own.
 - Host integration: `Application::forHost()` wires the SQL repositories and a
   host's ports into the same kernel, worker and services as the reference
   assembly. The host integration and Nextcloud guides cover Composer setup,

@@ -52,12 +52,13 @@ Operationally:
 ## Replay window
 
 Accepted activity ids are remembered for **24 hours**
-(`InMemoryActivityLog::RETENTION_SECONDS`). Within that window a replay is
+(`PdoActivityLog::RETENTION_SECONDS`, the same value as
+`InMemoryActivityLog::RETENTION_SECONDS`). Within that window a replay is
 refused with `400 replayed_activity` even with a fresh signature.
 
-The in-memory implementation is per process. A host that runs several workers
-or restarts often needs a shared store (a table or Redis) implementing the
-same `ActivityLog` interface; otherwise a replay can land on another process.
+The in-memory implementation is per process. A production host should pass
+`PdoActivityLog` so several workers and restarts share the same
+`social_activity_log` table; otherwise a replay can land on another process.
 
 ## Key rotation
 

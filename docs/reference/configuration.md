@@ -33,13 +33,20 @@ host persists them it seals them with `Security\SecretBox`.
 | `FollowingService::MAX_ACTOR_LENGTH` | 255 | Indexed actor URL length of an outgoing follow |
 | `FollowingService::MAX_INBOX_LENGTH` | 512 | Inbox URL length of an outgoing follow |
 | `InboxService::MAX_SKEW_SECONDS` | 300 | Allowed clock skew of a signed inbox request |
-| `InMemoryActivityLog::RETENTION_SECONDS` | 86400 | How long an accepted activity id blocks a replay |
-| `InMemoryJobQueue::MAX_ATTEMPTS` | 5 | Attempts before a dead letter |
-| `InMemoryJobQueue::BASE_BACKOFF_SECONDS` | 30 | First retry delay |
-| `InMemoryJobQueue::MAX_BACKOFF_SECONDS` | 3600 | Backoff ceiling |
+| `InMemoryActivityLog::RETENTION_SECONDS` / `PdoActivityLog::RETENTION_SECONDS` | 86400 | How long an accepted activity id blocks a replay |
+| `InMemoryJobQueue::MAX_ATTEMPTS` / `PdoJobQueue::MAX_ATTEMPTS` | 5 | Attempts before a dead letter |
+| `InMemoryJobQueue::BASE_BACKOFF_SECONDS` / `PdoJobQueue::BASE_BACKOFF_SECONDS` | 30 | First retry delay |
+| `InMemoryJobQueue::MAX_BACKOFF_SECONDS` / `PdoJobQueue::MAX_BACKOFF_SECONDS` | 3600 | Backoff ceiling |
+| `PdoJobQueue::RESERVATION_SECONDS` | 300 | A reservation older than this may be claimed by another worker |
 | `RandomIdGenerator::BYTES` | 12 | 96 bits of randomness |
 | `RouteManifest::VERSION` | 1 | Export document version |
 | `ApiVersion::BASE_PATH` | `/api/v1` | API prefix |
+
+The queue and activity-log limits are shared by the in-memory and PDO
+implementations; `PdoJobQueue` aliases the retry constants from
+`InMemoryJobQueue` so a successful retry and a dead letter happen at the same
+attempt in both. `PdoJobQueue::RESERVATION_SECONDS` only affects crash
+recovery; it does not make a normal retry faster.
 
 Changing a limit is a product decision, not a refactor: a client may render
 "5000 characters" and a test asserts it. Change the constant, the test and the

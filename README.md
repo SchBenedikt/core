@@ -29,7 +29,7 @@ Implemented and tested here:
 | Services | write/read/delete a post, timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
-| Host integration | `Application::forHost()` with injected ports, SQL repositories and a documented Nextcloud adapter path |
+| Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
@@ -49,7 +49,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, 422 tests
+composer check          # lint, host-neutrality guard, 436 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (18 routes)
 ```
@@ -65,10 +65,10 @@ network.
 ```
 src/
   Platform/        ports the hosts implement — no host code ever enters here
-  Domain/          posts, followers, visibility, repositories, inbox resolution
+  Domain/          posts, followers, visibility, repositories, inbox resolution, activity log
   Service/         application behaviour and its validation
   Protocol/        ActivityPub documents, RSA keys, HTTP signatures
-  Jobs/            durable queue contract, in-memory queue, worker
+  Jobs/            durable queue contract, PDO and in-memory queues, worker
   Http/            request, response, router, middleware, kernel
   Api/             one handler per route
   Contract/        Routes::manifest() — the single HTTP contract
@@ -90,11 +90,13 @@ docs/              index, architecture, guides, reference, operations, ADRs
    `src/Platform/`. The Nextcloud and standalone adapters implement them; the
    core imports nothing from either. Enforced by `tools/check-core-boundary.php`
    on every run.
-3. **Data** — the schema of a table lives next to its repository
+3. **Data** — the schema of a table lives next to its repository or adapter
    ([`PostSchema`](src/Domain/Post/PostSchema.php),
    [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php),
-   [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php)), so both
-   databases have the same columns and a dump can move between them.
+   [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php),
+   [`JobSchema`](src/Jobs/JobSchema.php),
+   [`ActivityLogSchema`](src/Domain/Federation/ActivityLogSchema.php)), so
+   both databases have the same columns and a dump can move between them.
 
 ## Tests
 
@@ -108,8 +110,11 @@ The suite covers the platform adapters, the domain, both repository
 implementations against one contract, the signature and ActivityPub
 primitives, the queue's retry and dead-letter rules, routing and error
 rendering, and end-to-end paths from HTTP through the queue to a signed
-delivery to a real follower. The outgoing follow path is tested end to end:
-Follow/Undo requests, signature verification, rollback and retry.
+delivery to a real follower. The PDO queue and activity log are also tested
+against a SQLite file with a fresh connection, proving that a pending job, a
+retry and a replay decision survive a restart. The outgoing follow path is
+tested end to end: Follow/Undo requests, signature verification, rollback and
+retry.
 
 ## Documentation
 
