@@ -38,6 +38,8 @@ defaults to `/api/mastodon/v1`).
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
 | `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |
 | `mastodon.media.upload` | `POST` | `/api/mastodon/v1/media` | yes, `write:media` | 20 / 900 s |
+| `mastodon.media.update` | `PUT` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
+| `mastodon.media.delete` | `DELETE` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
@@ -457,7 +459,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The ten routes above are additive and disabled by default. Their paths use
+The twelve routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -512,6 +514,30 @@ optional `Idempotency-Key` makes a retry return the same attachment without a
 second row or blob. Errors: `400 invalid_multipart`, `413 payload_too_large`,
 `422 validation_failed` with `error.fields`, `503 media_not_configured` and
 `503 media_storage_unavailable`; a rejected upload leaves no row or blob.
+
+The metadata and lifecycle endpoints stay on the same attachment row and
+blobs:
+
+```http
+PUT /api/mastodon/v1/media/{id}
+Authorization: Bearer …
+Content-Type: application/x-www-form-urlencoded
+
+description=A cat on a keyboard&focus=0.0,0.0
+
+DELETE /api/mastodon/v1/media/{id}
+Authorization: Bearer …
+```
+
+`PUT` accepts JSON, form or multipart and returns `200` with the updated
+attachment; an omitted `description` leaves the value unchanged and an empty
+one clears it. `file` and `thumbnail` are refused with `422
+unsupported_parameter`. Only an owned, unattached attachment can be changed or
+deleted; a missing/foreign/attached id is `404 not_found` for `PUT`, while
+`DELETE` answers `200 {}` for success and `422 validation_failed` when a status
+still references the media. `DELETE` removes the row and both blobs. Both
+routes require `write:media` and declare a `30/900` rate limit; no new table or
+migration is involved.
 
 Pagination accepts `limit` (1–40), `max_id`, `since_id` and `min_id`; a
 non-empty page carries a `Link` with `rel="next"`. `max_id` cannot be combined

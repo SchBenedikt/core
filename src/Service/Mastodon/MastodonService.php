@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -257,14 +258,7 @@ final class MastodonService
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
-
-		if ($this->media === null) {
-			throw new MastodonRequestException(
-				503,
-				'media_not_configured',
-				'Media storage is not configured.',
-			);
-		}
+		$this->requireMedia();
 
 		$sourceUrl = $idempotencyKey === null
 			? null
@@ -286,6 +280,61 @@ final class MastodonService
 		}
 
 		return $this->presenter->media($this->media->present($attachment));
+	}
+
+	/**
+	 * Updates the description of an unattached attachment the caller owns.
+	 *
+	 * Mastodon only exposes metadata updates before the media is attached to a
+	 * status. Keeping the same rule here means a published post cannot keep a
+	 * link to an attachment whose description later changed.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function updateMedia(
+		string $userId,
+		string $mediaId,
+		bool $hasDescription,
+		?string $description,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$media = $this->requireMedia();
+
+		$attachment = $this->ownedUnattachedMedia($media, $userId, $mediaId);
+		if ($hasDescription) {
+			$attachment = $media->updateAltText($attachment, $description);
+		}
+
+		return $this->presenter->media($media->present($attachment));
+	}
+
+	/**
+	 * Deletes an unattached attachment the caller owns.
+	 *
+	 * A missing or foreign id is hidden as 404. An attached attachment is a
+	 * 422 because Mastodon distinguishes that usage conflict explicitly.
+	 */
+	public function deleteMedia(string $userId, string $mediaId): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$media = $this->requireMedia();
+
+		$attachment = $media->find($mediaId);
+		if ($attachment === null || $attachment->ownerId !== $userId) {
+			throw new MastodonRequestException(404, 'not_found', 'Media attachment not found.');
+		}
+
+		if ($media->isAttachedToPost($attachment)) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'Media attachment is currently used by a status.',
+			);
+		}
+
+		$media->discard($attachment);
 	}
 
 	/**
@@ -326,6 +375,35 @@ final class MastodonService
 		} catch (PostNotFoundException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 		}
+	}
+
+	private function ownedUnattachedMedia(
+		MediaService $media,
+		string $userId,
+		string $mediaId,
+	): Attachment {
+		$attachment = $media->find($mediaId);
+		if ($attachment === null
+			|| $attachment->ownerId !== $userId
+			|| $media->isAttachedToPost($attachment)
+		) {
+			throw new MastodonRequestException(404, 'not_found', 'Media attachment not found.');
+		}
+
+		return $attachment;
+	}
+
+	private function requireMedia(): MediaService
+	{
+		if ($this->media === null) {
+			throw new MastodonRequestException(
+				503,
+				'media_not_configured',
+				'Media storage is not configured.',
+			);
+		}
+
+		return $this->media;
 	}
 
 	private function requireFavourites(): FavouriteRepository

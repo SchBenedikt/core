@@ -12,6 +12,8 @@ namespace AlohaSocial\Core\Domain\Post;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
 
+use function in_array;
+
 /**
  * Post storage in memory, for tests, the demo and tools.
  *
@@ -151,6 +153,17 @@ final class InMemoryPostRepository implements PostRepository
 		}
 
 		return $result;
+	}
+
+	public function isAttachmentLinked(string $attachmentId): bool
+	{
+		foreach ($this->posts as $post) {
+			if (in_array($attachmentId, $post->attachmentIds, true)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

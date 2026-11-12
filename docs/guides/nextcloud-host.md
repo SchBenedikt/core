@@ -473,7 +473,7 @@ one owner, or a peer will see two different answers for the same account.
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
 - The core now owns the optional Mastodon-compatible subset (instance,
   public timeline, status read/create/delete, local favourite/unfavourite,
-  media upload, account statuses and verify credentials). The app can delegate
+  media upload/update/delete, account statuses and verify credentials). The app can delegate
   those routes instead of keeping a second implementation; OAuth/token
   issuance, remote timelines, favourite federation, boosts, notifications and
   the remaining account/admin surface stay host-specific. Remote-post

@@ -35,6 +35,7 @@ use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
@@ -42,6 +43,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
@@ -301,6 +303,26 @@ final class Routes
 				rateLimit: '20/900',
 				requiredScopes: ['write:media'],
 				summary: 'Upload one image through the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.media.update',
+				method: 'PUT',
+				path: $mastodon . '/media/{id}',
+				handler: MastodonUpdateMediaHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:media'],
+				summary: 'Update an unattached media description before it is used in a status.',
+			),
+			new Route(
+				name: 'mastodon.media.delete',
+				method: 'DELETE',
+				path: $mastodon . '/media/{id}',
+				handler: MastodonDeleteMediaHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:media'],
+				summary: 'Delete an owned media attachment that is not attached to a status.',
 			),
 			new Route(
 				name: 'mastodon.timelines.public',

@@ -20,13 +20,16 @@ Locally implemented (core):
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
 - `POST /media`
+- `PUT /media/{id}`
+- `DELETE /media/{id}`
 - `DELETE /statuses/{id}`
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
 
 The local subset covers public/unlisted/followers-only text posts, local
-favourite/unfavourite bookkeeping, media upload and local media attachments.
-It deliberately does **not** implement remote timelines, favourite federation
+favourite/unfavourite bookkeeping, media upload, metadata update/delete and
+local media attachments. It deliberately does **not** implement remote
+timelines, favourite federation
 (outbound `Like`/`Undo` or remote favourite counts), boosts, notifications,
 streaming, polls, scheduled posts, filters, followed tags, lists, OAuth
 authorization/token endpoints, search, admin APIs or the full account/profile
@@ -37,7 +40,7 @@ surface. Those remain external work; see the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all ten routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twelve routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -66,6 +69,8 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | --- | --- | --- | --- |
 | `GET {prefix}/instance` | no | — | 120 / 60 s |
 | `POST {prefix}/media` | yes | `write:media` | 20 / 900 s |
+| `PUT {prefix}/media/{id}` | yes | `write:media` | 30 / 900 s |
+| `DELETE {prefix}/media/{id}` | yes | `write:media` | 30 / 900 s |
 | `GET {prefix}/timelines/public` | no | — | 60 / 60 s |
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
@@ -83,8 +88,8 @@ and the actual rate limiter; the route manifest only declares the budget,
 exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
-`verify_credentials`, status creation, favourite/unfavourite, media upload and
-account statuses.
+`verify_credentials`, status creation, favourite/unfavourite, media management
+and account statuses.
 Without a directory the core cannot distinguish local from remote account ids;
 a host that enables this API should always pass one.
 
@@ -212,6 +217,37 @@ returns the same attachment with no second row or blob, and a different key
 creates a distinct attachment. A failed first attempt stores nothing, so a
 retry can succeed. This needs no second table or cleanup job.
 
+### Updating and deleting media
+
+`PUT /media/{id}` updates the description of an owned, unattached attachment.
+It accepts `application/json`, `application/x-www-form-urlencoded` and
+`multipart/form-data`, reuses the same multipart parser as upload, and returns
+the usual Mastodon attachment shape. `description` is optional: omitting it
+leaves the current value unchanged, while an empty value clears it. `alt_text`
+is accepted as a fallback. `focus` is ignored because the core has no focal
+point metadata, and `file`/`thumbnail` are refused with `422
+unsupported_parameter` rather than silently discarded.
+
+Only an attachment owned by the caller and not linked to any local post can be
+updated; a missing, foreign or attached id is `404 not_found`. The bytes and
+storage keys never change, and no new row is created.
+
+`DELETE /media/{id}` removes an owned attachment that is not linked to a post,
+including its original and thumbnail blobs, and answers the Mastodon empty
+object with status `200`:
+
+```json
+{}
+```
+
+An attached attachment is refused with `422 validation_failed` and the message
+`Media attachment is currently used by a status.`; a missing or foreign id is
+`404 not_found`. Both routes require `write:media`, declare a `30/900` rate
+limit and are unavailable before auth when `social/mastodon.api` is off. A
+soft-deleted post still counts as a link: its `social_post_attachment` row
+survives the tombstone, so a host that wants to reclaim the media must remove
+that link in its own cleanup path.
+
 ### Status idempotency
 
 Send `Idempotency-Key: <client-key>` on `POST /statuses`. The core derives a
@@ -257,7 +293,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
-| `unsupported_parameter` | 422 | `direct` visibility or `in_reply_to_id` in this slice |
+| `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
 | `validation_failed` | 422 | Missing/invalid status fields or media ids; see `error.fields` |
 | `not_found` | 404 | Missing/private status, unknown cursor or unknown local account |
 
@@ -271,7 +307,10 @@ Statuses live in `social_post` / `social_post_attachment`; uploaded images use
 `social_attachment` and the same `BlobStore` as `/api/v1/media`. Status
 idempotency uses the primary key and a deterministic post id; media
 idempotency uses the existing unique `source_url` column with a deterministic
-internal key. Local favourites use the new `social_favourite` table from
+internal key. Media update changes only `social_attachment.alt_text`; media
+delete removes that row and both blobs, but only while no `social_post_attachment`
+row references it. Neither operation adds a table or migration. Local
+favourites use the new `social_favourite` table from
 `FavouriteSchema`:
 
 ```sql
@@ -294,11 +333,14 @@ remain governed by the existing media cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The ten routes are in the manifest with auth, scope and rate-limit metadata.
+The twelve routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
 media upload (success, description, media-in-status, auth, scope, disabled,
 missing/invalid/corrupt/oversized file, no orphan rows or blobs, idempotency),
+media update (JSON/form/multipart, absent/empty description, ownership,
+attached refusal, binary refusal) and delete (empty object, blob cleanup,
+attached refusal, foreign/missing ids, scopes and disabled feature),
 timeline, create (JSON and form), read, local favourite/unfavourite (counts,
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
 deleted status and custom prefix), account statuses, verify, delete and cursor

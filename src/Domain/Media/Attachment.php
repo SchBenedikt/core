@@ -104,6 +104,27 @@ final readonly class Attachment
 	}
 
 	/**
+	 * Returns the same attachment with a new description. Metadata updates
+	 * must not replace the bytes or storage keys.
+	 */
+	public function withAltText(?string $altText): self
+	{
+		return new self(
+			id: $this->id,
+			ownerId: $this->ownerId,
+			storageKey: $this->storageKey,
+			thumbnailKey: $this->thumbnailKey,
+			mimeType: $this->mimeType,
+			width: $this->width,
+			height: $this->height,
+			byteSize: $this->byteSize,
+			altText: $altText,
+			createdAt: $this->createdAt,
+			sourceUrl: $this->sourceUrl,
+		);
+	}
+
+	/**
 	 * The metadata shape. URLs are added by the media service because only it
 	 * knows the instance base URL.
 	 *

@@ -92,8 +92,8 @@ deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
 rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
 proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
 compatibility subset (instance, public timeline, status read/create/delete,
-local favourite/unfavourite, media upload, account statuses, verify
-credentials; `write:statuses`, `write:favourites`, `write:media` and
+local favourite/unfavourite, media upload/update/delete, account statuses,
+verify credentials; `write:statuses`, `write:favourites`, `write:media` and
 `read:accounts` scopes, id-aware pagination and `Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox

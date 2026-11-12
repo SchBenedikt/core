@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible media management: `PUT {mastodon.prefix}/media/{id}`
+  updates an unattached attachment's description from JSON, form or multipart
+  input and returns the usual Mastodon attachment shape. `DELETE
+  {mastodon.prefix}/media/{id}` removes an owned, unattached row and both
+  local blobs and answers the Mastodon empty object with status `200`. Both
+  routes require `write:media` and declare a `30/900` rate limit; a foreign or
+  missing id is `404`, while an attachment already linked to a post is a `422`
+  for deletion and `404` for metadata update, matching Mastodon's unattached
+  rule. The shared multipart parser is reused for field-only requests, and an
+  absent `description` leaves the current value unchanged while an empty one
+  clears it. No new table or migration is added: the existing
+  `social_attachment` row is updated or removed with its original and
+  thumbnail blobs. The route manifest and OpenAPI export now have 38 routes.
+  The remaining Mastodon server API surface stays external; see
+  `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local favourites: `POST {mastodon.prefix}/statuses/{id}/favourite`
   and `.../unfavourite` require `write:favourites`, declare a `30/900` rate
   limit and return the normal Mastodon status shape. A repeat favourite is
@@ -18,8 +33,8 @@ All notable changes to this project are documented here. The format follows
   from `FavouriteSchema` and is implemented by in-memory and PDO repositories
   behind one contract test; a host migration must create the table, with no
   backfill. An assembly without a `FavouriteRepository` answers `503
-  favourites_not_configured`. The route manifest and OpenAPI export now have
-  36 routes. Favourite federation (outbound `Like`/`Undo`, remote counts) and
+  favourites_not_configured`. The route manifest and OpenAPI export include
+  these routes. Favourite federation (outbound `Like`/`Undo`, remote counts) and
   the rest of the full Mastodon server API remain external; see
   `docs/guides/mastodon-api.md`.
 - Mastodon-compatible media upload: `POST {mastodon.prefix}/media` accepts the

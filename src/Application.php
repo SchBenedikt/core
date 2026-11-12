@@ -26,6 +26,7 @@ use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
@@ -33,6 +34,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
@@ -591,6 +593,8 @@ final readonly class Application
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
+			->with(MastodonUpdateMediaHandler::class, static fn (): MastodonUpdateMediaHandler => new MastodonUpdateMediaHandler($mastodonService))
+			->with(MastodonDeleteMediaHandler::class, static fn (): MastodonDeleteMediaHandler => new MastodonDeleteMediaHandler($mastodonService))
 			->with(MastodonFavouriteStatusHandler::class, static fn (): MastodonFavouriteStatusHandler => new MastodonFavouriteStatusHandler($mastodonService))
 			->with(MastodonUnfavouriteStatusHandler::class, static fn (): MastodonUnfavouriteStatusHandler => new MastodonUnfavouriteStatusHandler($mastodonService))
 			->with(MastodonAccountStatusesHandler::class, static fn (): MastodonAccountStatusesHandler => new MastodonAccountStatusesHandler($mastodonService))

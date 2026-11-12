@@ -105,4 +105,13 @@ interface PostRepository
 	 * @return array<string, list<string>> keyed by post id
 	 */
 	public function attachmentIdsFor(array $postIds): array;
+
+	/**
+	 * Whether any post link still references the attachment.
+	 *
+	 * Soft-deleted posts count: their link row survives the tombstone, so
+	 * deleting the metadata would leave a dangling reference. A host cleanup
+	 * may remove such links after the post is gone.
+	 */
+	public function isAttachmentLinked(string $attachmentId): bool;
 }

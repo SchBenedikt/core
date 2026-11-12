@@ -72,6 +72,14 @@ final class PdoAttachmentRepository implements AttachmentRepository
 		return $row === null ? null : $this->hydrate($row);
 	}
 
+	public function updateAltText(string $id, ?string $altText): void
+	{
+		$this->db->execute(
+			'UPDATE ' . AttachmentSchema::TABLE . ' SET alt_text = :alt_text WHERE id = :id',
+			['id' => $id, 'alt_text' => $altText],
+		);
+	}
+
 	public function findBySourceUrl(string $sourceUrl): ?Attachment
 	{
 		$row = $this->db->fetchOne(

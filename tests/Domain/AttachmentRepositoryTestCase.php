@@ -59,6 +59,28 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 		self::assertNull($repository->find('a1')?->altText);
 	}
 
+	public function testUpdateAltTextChangesOnlyTheDescription(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->attachment('a1', 'alice', 'old description'));
+
+		$repository->updateAltText('a1', 'new description');
+
+		$stored = $repository->find('a1');
+		self::assertNotNull($stored);
+		self::assertSame('new description', $stored->altText);
+		self::assertSame('media/a1/original.png', $stored->storageKey);
+		self::assertSame('media/a1/thumbnail.png', $stored->thumbnailKey);
+
+		$repository->updateAltText('a1', null);
+		self::assertNull($repository->find('a1')?->altText);
+
+		// A caller that lost a race may still issue the update; an unknown id
+		// must not create a row or throw.
+		$repository->updateAltText('missing', 'ignored');
+		self::assertNull($repository->find('missing'));
+	}
+
 	public function testSourceUrlsRoundTripAndAreUnique(): void
 	{
 		$repository = $this->repository();

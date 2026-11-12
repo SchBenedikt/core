@@ -92,8 +92,10 @@ With `mastodon.api` disabled, no Mastodon compatibility handler runs and every
 route under `mastodon.prefix` answers `404 mastodon_api_disabled`; the routes
 are still in the manifest and OpenAPI export. Enabling it reuses
 `social_post`/`social_post_attachment` for statuses and `social_attachment`
-plus the existing `BlobStore` for media upload; an `Idempotency-Key` is
-translated into a deterministic post id or media source key. Local
+plus the existing `BlobStore` for media upload, metadata update and delete;
+an `Idempotency-Key` is translated into a deterministic post id or media
+source key. Media update changes only the description, and delete is allowed
+only while no post link references the attachment; neither adds a table. Local
 favourite/unfavourite writes the new `social_favourite` table through
 `FavouriteRepository`; create it with `FavouriteSchema::statements()` through
 the host migration path before exposing those routes. There is no backfill,

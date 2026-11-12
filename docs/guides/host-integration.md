@@ -110,7 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including media upload through the same `$app->media`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity

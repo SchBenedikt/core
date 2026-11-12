@@ -229,6 +229,15 @@ final class PdoPostRepository implements PostRepository
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
 
+	public function isAttachmentLinked(string $attachmentId): bool
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . PostSchema::ATTACHMENT_TABLE
+			. ' WHERE attachment_id = :attachment_id',
+			['attachment_id' => $attachmentId],
+		) > 0;
+	}
+
 	public function attachmentIdsFor(array $postIds): array
 	{
 		if ($postIds === []) {

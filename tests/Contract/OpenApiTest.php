@@ -71,6 +71,18 @@ final class OpenApiTest extends TestCase
 		self::assertSame('20/900', $media['x-rate-limit']);
 		self::assertSame(['write:media'], $media['x-required-scopes']);
 
+		$mediaUpdate = $document['paths']['/api/mastodon/v1/media/{id}']['put'];
+		self::assertSame('mastodon_media_update', $mediaUpdate['operationId']);
+		self::assertSame([['bearerAuth' => []]], $mediaUpdate['security']);
+		self::assertSame('30/900', $mediaUpdate['x-rate-limit']);
+		self::assertSame(['write:media'], $mediaUpdate['x-required-scopes']);
+
+		$mediaDelete = $document['paths']['/api/mastodon/v1/media/{id}']['delete'];
+		self::assertSame('mastodon_media_delete', $mediaDelete['operationId']);
+		self::assertSame([['bearerAuth' => []]], $mediaDelete['security']);
+		self::assertSame('30/900', $mediaDelete['x-rate-limit']);
+		self::assertSame(['write:media'], $mediaDelete['x-required-scopes']);
+
 		$favourite = $document['paths']['/api/mastodon/v1/statuses/{id}/favourite']['post'];
 		self::assertSame('mastodon_statuses_favourite', $favourite['operationId']);
 		self::assertSame([['bearerAuth' => []]], $favourite['security']);
@@ -103,6 +115,9 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/v1/media', $decoded['paths']);
 		self::assertArrayHasKey('post', $decoded['paths']['/api/v1/media']);
 		self::assertArrayHasKey('/api/v1/media/{id}', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/media/{id}', $decoded['paths']);
+		self::assertArrayHasKey('put', $decoded['paths']['/api/mastodon/v1/media/{id}']);
+		self::assertArrayHasKey('delete', $decoded['paths']['/api/mastodon/v1/media/{id}']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/favourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/unfavourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/v1/remote-posts/{id}/thread', $decoded['paths']);

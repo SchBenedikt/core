@@ -39,6 +39,16 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 		return $this->attachments[$id] ?? null;
 	}
 
+	public function updateAltText(string $id, ?string $altText): void
+	{
+		$attachment = $this->attachments[$id] ?? null;
+		if ($attachment === null) {
+			return;
+		}
+
+		$this->attachments[$id] = $attachment->withAltText($altText);
+	}
+
 	public function findBySourceUrl(string $sourceUrl): ?Attachment
 	{
 		foreach ($this->attachments as $attachment) {

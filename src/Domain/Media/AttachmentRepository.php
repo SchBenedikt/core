@@ -25,6 +25,12 @@ interface AttachmentRepository
 	public function find(string $id): ?Attachment;
 
 	/**
+	 * Updates only the description. Unknown ids are a no-op; the caller has
+	 * already loaded the row and validated ownership.
+	 */
+	public function updateAltText(string $id, ?string $altText): void;
+
+	/**
 	 * Finds an attachment imported from a remote URL, so the same media is
 	 * fetched and stored at most once.
 	 */

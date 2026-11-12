@@ -208,6 +208,45 @@ final class MediaService
 		return $this->attachments->find($id);
 	}
 
+	/**
+	 * Whether a post still links this attachment.
+	 *
+	 * This is deliberately the same repository rule used by post creation.
+	 * Soft-deleted posts count, because their link rows survive the tombstone.
+	 */
+	public function isAttachedToPost(Attachment $attachment): bool
+	{
+		return $this->posts->isAttachmentLinked($attachment->id);
+	}
+
+	/**
+	 * Changes only the description of an existing attachment.
+	 *
+	 * Callers that expose this operation must first check ownership and that
+	 * the attachment is not linked to a post. The bytes and storage keys are
+	 * never touched here.
+	 *
+	 * @throws ValidationException when the description is too long
+	 */
+	public function updateAltText(Attachment $attachment, ?string $altText): Attachment
+	{
+		$altText = $altText === null ? null : trim($altText);
+		if ($altText === '') {
+			$altText = null;
+		}
+
+		if ($altText !== null && mb_strlen($altText) > Attachment::MAX_ALT_TEXT_LENGTH) {
+			throw new ValidationException([
+				'alt_text' => 'Alt text may be at most ' . Attachment::MAX_ALT_TEXT_LENGTH . ' characters long.',
+			]);
+		}
+
+		$updated = $attachment->withAltText($altText);
+		$this->attachments->updateAltText($updated->id, $altText);
+
+		return $updated;
+	}
+
 	public function findBySourceUrl(string $sourceUrl): ?Attachment
 	{
 		return $this->attachments->findBySourceUrl($sourceUrl);

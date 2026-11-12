@@ -231,6 +231,27 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->attachmentIdsFor(['unknown']));
 	}
 
+	public function testAttachmentLinksAreVisibleIncludingSoftDeletedPosts(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post(
+			'p1',
+			'alice',
+			Visibility::Public,
+			'2026-11-11T10:00:00Z',
+			attachmentIds: ['a1'],
+		));
+
+		self::assertTrue($repository->isAttachmentLinked('a1'));
+		self::assertFalse($repository->isAttachmentLinked('a2'));
+
+		$repository->softDelete('p1', Time::parse('2026-11-11T11:00:00Z'));
+
+		// The link row survives the tombstone, so media deletion must still
+		// refuse rather than leave a dangling reference.
+		self::assertTrue($repository->isAttachmentLinked('a1'));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();

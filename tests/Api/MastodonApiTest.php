@@ -390,6 +390,166 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(2, $attachments->count());
 	}
 
+	public function testMediaDescriptionCanBeUpdatedAndClearedWithoutChangingBlobs(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+		$uploaded = $this->upload($app, $this->png(), 'old description')->decodedBody();
+		$keys = $blobs->list('media/' . $uploaded['id']);
+
+		$updated = $this->updateMedia($app, $uploaded['id'], ['description' => 'new description']);
+
+		self::assertSame(200, $updated->status);
+		self::assertSame($uploaded['id'], $updated->decodedBody()['id']);
+		self::assertSame('new description', $updated->decodedBody()['description']);
+		self::assertSame($uploaded['url'], $updated->decodedBody()['url']);
+		self::assertSame('new description', $attachments->find($uploaded['id'])?->altText);
+		self::assertSame(1, $attachments->count());
+		self::assertSame($keys, $blobs->list('media/' . $uploaded['id']));
+
+		$unchanged = $this->updateMedia($app, $uploaded['id'], []);
+		self::assertSame('new description', $unchanged->decodedBody()['description']);
+
+		$cleared = $this->updateMedia($app, $uploaded['id'], ['description' => '']);
+		self::assertNull($cleared->decodedBody()['description']);
+		self::assertNull($attachments->find($uploaded['id'])?->altText);
+	}
+
+	public function testMediaUpdateAcceptsFormAndMultipartFields(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+		$uploaded = $this->upload($app, $this->png())->decodedBody();
+
+		$form = $app->handle(new Request(
+			method: 'PUT',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/media/' . $uploaded['id'],
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: 'description=form+description&focus=0.5%2C0.5',
+			userId: 'alice',
+			scopes: ['write:media'],
+		));
+		self::assertSame(200, $form->status);
+		self::assertSame('form description', $form->decodedBody()['description']);
+
+		$boundary = '----AlohaSocialMediaUpdate' . bin2hex(random_bytes(8));
+		$body = '--' . $boundary . "\r\n"
+			. "Content-Disposition: form-data; name=\"alt_text\"\r\n\r\n"
+			. "multipart description\r\n"
+			. '--' . $boundary . "--\r\n";
+		$multipart = $app->handle(new Request(
+			method: 'PUT',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/media/' . $uploaded['id'],
+			headers: ['Content-Type' => 'multipart/form-data; boundary=' . $boundary],
+			body: $body,
+			userId: 'alice',
+			scopes: ['write:media'],
+		));
+		self::assertSame(200, $multipart->status);
+		self::assertSame('multipart description', $multipart->decodedBody()['description']);
+	}
+
+	public function testMediaUpdateRejectsForeignAttachedMissingAndBinaryChanges(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs, actors: ['alice', 'bob']);
+		$uploaded = $this->upload($app, $this->png(), 'owned by alice')->decodedBody();
+
+		$foreign = $this->updateMedia($app, $uploaded['id'], ['description' => 'not mine'], userId: 'bob');
+		self::assertSame(404, $foreign->status);
+		self::assertSame('owned by alice', $attachments->find($uploaded['id'])?->altText);
+
+		$missing = $this->updateMedia($app, 'missing', ['description' => 'nothing']);
+		self::assertSame(404, $missing->status);
+
+		$binary = $this->updateMedia($app, $uploaded['id'], ['file' => 'replacement']);
+		self::assertSame(422, $binary->status);
+		self::assertSame('unsupported_parameter', $binary->decodedBody()['error']['code']);
+
+		$invalid = $this->updateMedia($app, $uploaded['id'], ['description' => ['not a string']]);
+		self::assertSame(422, $invalid->status);
+		self::assertArrayHasKey('description', $invalid->decodedBody()['error']['fields']);
+
+		$long = $this->updateMedia($app, $uploaded['id'], [
+			'description' => str_repeat('a', Attachment::MAX_ALT_TEXT_LENGTH + 1),
+		]);
+		self::assertSame(422, $long->status);
+		self::assertArrayHasKey('description', $long->decodedBody()['error']['fields']);
+
+		$created = $this->createStatus($app, [
+			'status' => 'attached',
+			'media_ids' => [$uploaded['id']],
+		])->decodedBody();
+		$attached = $this->updateMedia($app, $uploaded['id'], ['description' => 'too late']);
+		self::assertSame(404, $attached->status);
+		self::assertSame('owned by alice', $attachments->find($uploaded['id'])?->altText);
+		self::assertSame($uploaded['id'], $created['media_attachments'][0]['id']);
+	}
+
+	public function testMediaDeleteRemovesOnlyUnattachedOwnedMedia(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs, actors: ['alice', 'bob']);
+		$uploaded = $this->upload($app, $this->png())->decodedBody();
+
+		$deleted = $this->deleteMedia($app, $uploaded['id']);
+		self::assertSame(200, $deleted->status);
+		self::assertSame('{}', $deleted->body);
+		self::assertNull($attachments->find($uploaded['id']));
+		self::assertSame(0, $attachments->count());
+		self::assertSame([], $blobs->list('media/' . $uploaded['id']));
+		self::assertSame(404, $this->deleteMedia($app, $uploaded['id'])->status);
+
+		$attachedUpload = $this->upload($app, $this->png(), 'attached')->decodedBody();
+		$this->createStatus($app, [
+			'status' => 'keeps media',
+			'media_ids' => [$attachedUpload['id']],
+		]);
+		$attached = $this->deleteMedia($app, $attachedUpload['id']);
+		self::assertSame(422, $attached->status);
+		self::assertSame('validation_failed', $attached->decodedBody()['error']['code']);
+		self::assertNotNull($attachments->find($attachedUpload['id']));
+		self::assertCount(2, $blobs->list('media/' . $attachedUpload['id']));
+
+		$foreignUpload = $this->upload($app, $this->png(), 'foreign')->decodedBody();
+		$foreign = $this->deleteMedia($app, $foreignUpload['id'], userId: 'bob');
+		self::assertSame(404, $foreign->status);
+		self::assertNotNull($attachments->find($foreignUpload['id']));
+	}
+
+	public function testMediaUpdateAndDeleteRequireAuthScopeAndTheFeatureFlag(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->app(attachments: $attachments, blobs: $blobs);
+		$uploaded = $this->upload($app, $this->png())->decodedBody();
+
+		$anonymousUpdate = $this->updateMedia($app, $uploaded['id'], ['description' => 'no auth'], userId: null);
+		self::assertSame(401, $anonymousUpdate->status);
+		$wrongUpdateScope = $this->updateMedia($app, $uploaded['id'], ['description' => 'no scope'], scopes: ['write:statuses']);
+		self::assertSame(403, $wrongUpdateScope->status);
+		$anonymousDelete = $this->deleteMedia($app, $uploaded['id'], userId: null);
+		self::assertSame(401, $anonymousDelete->status);
+		$wrongDeleteScope = $this->deleteMedia($app, $uploaded['id'], scopes: ['write:statuses']);
+		self::assertSame(403, $wrongDeleteScope->status);
+		self::assertNotNull($attachments->find($uploaded['id']));
+
+		$parentUpdate = $this->updateMedia($app, $uploaded['id'], ['description' => 'parent'], scopes: ['write']);
+		self::assertSame(200, $parentUpdate->status);
+
+		$disabled = $this->app(enabled: false);
+		$disabledUpdate = $this->updateMedia($disabled, $uploaded['id'], ['description' => 'off']);
+		self::assertSame(404, $disabledUpdate->status);
+		self::assertSame('mastodon_api_disabled', $disabledUpdate->decodedBody()['error']['code']);
+		$disabledDelete = $this->deleteMedia($disabled, $uploaded['id']);
+		self::assertSame(404, $disabledDelete->status);
+		self::assertSame('mastodon_api_disabled', $disabledDelete->decodedBody()['error']['code']);
+	}
+
 	public function testFavouriteAndUnfavouriteAreIdempotentAndProjected(): void
 	{
 		$favourites = new InMemoryFavouriteRepository();
@@ -544,6 +704,17 @@ final class MastodonApiTest extends TestCase
 		$uploaded = $this->upload($app, $this->png(), 'custom prefix', prefix: '/compat/mastodon');
 		self::assertSame(200, $uploaded->status);
 		self::assertStringContainsString('/api/v1/media/', $uploaded->decodedBody()['url']);
+		self::assertSame(200, $this->updateMedia(
+			$app,
+			$uploaded->decodedBody()['id'],
+			['description' => 'custom update'],
+			prefix: '/compat/mastodon',
+		)->status);
+		self::assertSame(200, $this->deleteMedia(
+			$app,
+			$uploaded->decodedBody()['id'],
+			prefix: '/compat/mastodon',
+		)->status);
 	}
 
 	public function testDirectVisibilityAndMissingInputAreRejected(): void
@@ -605,6 +776,39 @@ final class MastodonApiTest extends TestCase
 			blobStore: $blobs,
 			localActors: new InMemoryActorDirectory($actors),
 		);
+	}
+
+	private function updateMedia(
+		Application $app,
+		string $mediaId,
+		array $fields,
+		array $scopes = ['write:media'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'PUT',
+			path: $prefix . '/media/' . rawurlencode($mediaId),
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode($fields, JSON_THROW_ON_ERROR),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	private function deleteMedia(
+		Application $app,
+		string $mediaId,
+		array $scopes = ['write:media'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'DELETE',
+			path: $prefix . '/media/' . rawurlencode($mediaId),
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	/**

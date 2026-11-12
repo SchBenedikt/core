@@ -274,7 +274,29 @@ POST {mastodon.prefix}/media
 The response is a projection in `MastodonPresenter`, not a second attachment
 model. A client idempotency key becomes a deterministic internal `source_url`,
 so `MediaService`'s existing source lookup returns the original attachment on a
-retry; no idempotency table is added. Local favourite/unfavourite writes one
+retry; no idempotency table is added. Metadata updates and deletes stay on the
+same row and blobs:
+
+```
+PUT {mastodon.prefix}/media/{id}
+  └─ MastodonUpdateMediaHandler  JSON/form/multipart description
+      └─ MastodonService::updateMedia
+          ├─ MediaService::find + ownership + isAttachedToPost
+          │   └─ PostRepository::isAttachmentLinked
+          └─ MediaService::updateAltText   social_attachment.alt_text only
+
+DELETE {mastodon.prefix}/media/{id}
+  └─ MastodonDeleteMediaHandler
+      └─ MastodonService::deleteMedia
+          ├─ MediaService::find + ownership
+          ├─ isAttachedToPost → 422 while a post link exists
+          └─ MediaService::discard      row + original + thumbnail
+```
+
+`isAttachmentLinked` deliberately counts soft-deleted posts: their link row
+survives, so deleting the metadata would leave a dangling reference. The
+delete response is the Mastodon empty object `{}` with `200`, and both routes
+require `write:media`. Local favourite/unfavourite writes one
 `social_favourite` row through `FavouriteRepository`, keyed by the local user
 and post, and the presenter batches counts and viewer flags for list reads:
 
@@ -445,7 +467,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media upload and local favourites; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media management and local favourites; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -501,7 +523,7 @@ genuinely owns the capability.
   oversized/slow targets. `CurlHttpClientTest` covers the production client's
   body cap and address pinning against the same fixture server.
   `MastodonApiTest` drives the optional compatibility routes through the same
-  kernel, including JSON/form writes, media upload, scopes,
+  kernel, including JSON/form writes, media upload/update/delete, scopes,
   disabled-before-auth, cursor pagination, idempotency and media projection;
   `ApplicationHostTest` repeats the idempotent write over SQL.
   `MastodonCompatibilityTest` covers the prefix and scope rules.

@@ -81,6 +81,8 @@ final class MastodonCompatibilityTest extends TestCase
 		$verify = $manifest->find('mastodon.accounts.verify_credentials');
 		$public = $manifest->find('mastodon.timelines.public');
 		$media = $manifest->find('mastodon.media.upload');
+		$mediaUpdate = $manifest->find('mastodon.media.update');
+		$mediaDelete = $manifest->find('mastodon.media.delete');
 		$favourite = $manifest->find('mastodon.statuses.favourite');
 		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
 
@@ -89,6 +91,8 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($verify);
 		self::assertNotNull($public);
 		self::assertNotNull($media);
+		self::assertNotNull($mediaUpdate);
+		self::assertNotNull($mediaDelete);
 		self::assertNotNull($favourite);
 		self::assertNotNull($unfavourite);
 		self::assertTrue($create->requiresAuth);
@@ -102,6 +106,14 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['write:media'], $media->requiredScopes);
 		self::assertSame('20/900', $media->rateLimit);
 		self::assertSame('/api/mastodon/v1/media', $media->path);
+		self::assertTrue($mediaUpdate->requiresAuth);
+		self::assertSame(['write:media'], $mediaUpdate->requiredScopes);
+		self::assertSame('30/900', $mediaUpdate->rateLimit);
+		self::assertSame('/api/mastodon/v1/media/{id}', $mediaUpdate->path);
+		self::assertTrue($mediaDelete->requiresAuth);
+		self::assertSame(['write:media'], $mediaDelete->requiredScopes);
+		self::assertSame('30/900', $mediaDelete->rateLimit);
+		self::assertSame('/api/mastodon/v1/media/{id}', $mediaDelete->path);
 		self::assertTrue($favourite->requiresAuth);
 		self::assertSame(['write:favourites'], $favourite->requiredScopes);
 		self::assertSame('30/900', $favourite->rateLimit);

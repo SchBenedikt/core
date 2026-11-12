@@ -16,6 +16,7 @@ use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\Mastodon\MastodonRequestException;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\ValidationException;
+use stdClass;
 
 /**
  * Shared error mapping and pagination links for the compatibility handlers.
@@ -50,6 +51,28 @@ abstract class MastodonHandler implements Handler
 	 */
 	protected function respondEmpty(callable $work): Response
 	{
+		$this->run($work);
+
+		return Response::empty();
+	}
+
+	/**
+	 * A 200 with an empty JSON object, the shape Mastodon uses for DELETE media.
+	 *
+	 * @param callable(): void $work
+	 */
+	protected function respondEmptyObject(callable $work): Response
+	{
+		$this->run($work);
+
+		return Response::json(new stdClass());
+	}
+
+	/**
+	 * @param callable(): void $work
+	 */
+	private function run(callable $work): void
+	{
 		try {
 			$work();
 		} catch (MastodonRequestException $exception) {
@@ -61,8 +84,6 @@ abstract class MastodonHandler implements Handler
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($this->fields($exception->fields()), $exception->getMessage());
 		}
-
-		return Response::empty();
 	}
 
 	/**

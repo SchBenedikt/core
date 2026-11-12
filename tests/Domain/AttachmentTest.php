@@ -34,6 +34,19 @@ final class AttachmentTest extends TestCase
 		self::assertArrayNotHasKey('thumbnail_key', $shape);
 	}
 
+	public function testWithAltTextKeepsTheBytesAndStorageKeys(): void
+	{
+		$attachment = $this->attachment();
+		$updated = $attachment->withAltText('new description');
+
+		self::assertSame('new description', $updated->altText);
+		self::assertSame($attachment->id, $updated->id);
+		self::assertSame($attachment->storageKey, $updated->storageKey);
+		self::assertSame($attachment->thumbnailKey, $updated->thumbnailKey);
+		self::assertSame($attachment->byteSize, $updated->byteSize);
+		self::assertSame('a description', $attachment->altText, 'The original object stays immutable.');
+	}
+
 	public function testRejectsAnUnsupportedMimeType(): void
 	{
 		$this->expectException(InvalidArgumentException::class);
