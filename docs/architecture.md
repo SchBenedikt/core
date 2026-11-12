@@ -268,7 +268,7 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| remote-post backfill, thread/context fetching and media fetching | `HttpClient` + the remote-post repository; inbound delivery only stores embedded objects |
+| thread/context fetching and media fetching | `HttpClient` + the remote-post repository; outbox backfill already catches up missed `Create`/`Announce`, but does not walk replies or download media |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
@@ -296,6 +296,7 @@ genuinely owns the capability.
   writes a post over HTTP, drains the queue, and verifies the signature on the
   request that left. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
-  authenticated home timeline. `ApplicationHostTest` repeats the
-  Create-to-home path through `forHost()` with SQL repositories,
+  authenticated home timeline. `RemoteOutboxBackfillTest` exercises paging,
+  deduplication and scope limits without a network. `ApplicationHostTest`
+  repeats the Create-to-home path through `forHost()` with SQL repositories,
   `PdoJobQueue` and `PdoActivityLog`.

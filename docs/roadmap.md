@@ -39,6 +39,11 @@ Status of the core, not a promise about dates.
 - OpenAPI export: `bin/export-openapi` renders the route manifest as OpenAPI
   3.1, including paths, methods, operation ids, auth, rate limits and path
   parameters. It does not invent payload schemas the manifest does not have.
+- Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
+  `Announce` activities from a followed actor's public outbox. It is bounded by
+  pages and items, stays on the outbox origin, skips unsupported or malformed
+  entries and deduplicates by activity id. Thread, context and media fetching
+  remain separate.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
@@ -81,8 +86,7 @@ Status of the core, not a promise about dates.
   the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
-- Remote-post backfill, thread/context fetching and media fetching (the
-  current implementation only stores embedded objects delivered to the inbox).
+- Thread/context fetching and media fetching for remote posts.
 - Shared inboxes and delivery batching.
 
 ## Explicitly not planned

@@ -149,5 +149,9 @@ The clock window for the signed `Date` is 300 seconds; see
 
 ## What is missing
 
-- fetching/backfilling remote posts or threads that were not delivered;
+- thread/context fetching and media fetching for remote posts;
 - shared-inbox handling and delivery batching.
+
+A bounded outbox catch-up for missed `Create`/`Announce` activities exists as
+an explicit host operation; see [remote outbox backfill](remote-backfill.md).
+It is not a full mirror and does not fetch threads or media.

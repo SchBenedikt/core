@@ -86,10 +86,10 @@ ActivityPub (signed `POST /inbox`, signed `Follow`/`Undo` delivery, `Accept`,
 signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 actor document, followers and following collections, outbox and WebFinger, a
-bounded actor-key cache, an optional `FollowPolicy`, the HTTP contract, the
-platform ports, durable `PdoJobQueue`/`PdoActivityLog` and
-`Application::forHost()` for a real host, plus the read-only cutover validator
-for the neutral migration export.
+bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
+backfill, the HTTP contract, the platform ports, durable
+`PdoJobQueue`/`PdoActivityLog` and `Application::forHost()` for a real host,
+plus the read-only cutover validator for the neutral migration export.
 The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.

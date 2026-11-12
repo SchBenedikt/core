@@ -25,6 +25,7 @@ that prints or skips is a failure.
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
+| `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination |
 | `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create and the SQL home timeline |
 
 ## Contract tests

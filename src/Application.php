@@ -84,6 +84,8 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
+use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
+use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -122,6 +124,7 @@ final readonly class Application
 		public JobQueue $queue,
 		public FollowingService $following,
 		public BlockService $blocks,
+		public ?RemoteOutboxBackfill $backfill,
 	) {
 	}
 
@@ -296,6 +299,16 @@ final readonly class Application
 		}
 
 		$activities = new ActivityFactory($config);
+		$remotePostFactory = new RemotePostFactory($clock);
+		$backfill = $httpClient === null
+			? null
+			: new RemoteOutboxBackfill(
+				$httpClient,
+				$remotePosts,
+				$remotePostFactory,
+				$followingRepository,
+				$blockedActors,
+			);
 
 		$postService = new PostService(
 			$posts,
@@ -333,6 +346,7 @@ final readonly class Application
 				$remotePosts,
 				$activityLog,
 				$activities,
+				$remotePostFactory,
 				$queue,
 				$clock,
 				$blockedActors,
@@ -424,6 +438,7 @@ final readonly class Application
 			$queue,
 			$followingService,
 			$blockService,
+			$backfill,
 		);
 	}
 

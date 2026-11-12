@@ -24,7 +24,7 @@ Implemented and tested here:
 | Platform ports | config, clock, blob storage (local and in-memory), database (PDO), outbound HTTP (curl) |
 | Domain | posts, visibility, remote posts/boosts, per-user blocks, post/remote-post/block repositories (in-memory and SQL, same contract tests), combined home-timeline repository |
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
-| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence and per-user timeline blocking |
+| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, bounded outbox catch-up and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
 | Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
@@ -34,7 +34,7 @@ Implemented and tested here:
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
-Deliberately not here yet: remote-post backfill/thread fetching, media
+Deliberately not here yet: thread/context and media fetching, media
 processing, the AT Protocol stack, the Mastodon-compatible API, an admin UI, a
 migration runner, the Vue UI package and the Nextcloud/standalone host
 applications. The
@@ -51,7 +51,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, 529 tests
+composer check          # lint, boundary, attribution, links, 534 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (21 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1

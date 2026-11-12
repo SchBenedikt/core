@@ -100,6 +100,7 @@ The object exposes the parts a host needs:
 | `$app->queue` | The same queue the services write to |
 | `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
 | `$app->inbox` | `null` when inbound federation is not configured |
+| `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -372,9 +373,10 @@ host's own tests as well.
 
 The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It does not contain media processing, an admin UI, the Mastodon-compatible
-API, or remote-post backfill/thread fetching. A host that needs those features
-either keeps its existing implementation for them or waits for the
-corresponding core milestone.
+API, or thread/context and media fetching. It does provide a bounded outbox
+backfill for missed `Create`/`Announce` activities. A host that needs the
+remaining features either keeps its existing implementation for them or waits
+for the corresponding core milestone.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two

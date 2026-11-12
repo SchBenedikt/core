@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
+  `Announce` activities from a followed actor's public outbox. It follows
+  `first`/`next` only on the outbox origin, is bounded by pages and items,
+  skips unsupported or malformed entries, and deduplicates by activity id
+  without claiming the id in the replay log. An optional `BlockedActorPolicy`
+  refuses a blocked actor before the fetch. `RemotePostFactory` now holds the
+  object mapping shared with the inbox.
 - OpenAPI export: `Contract\OpenApi`, `bin/export-openapi` and the
   `composer openapi:export` script render the existing route manifest as
   OpenAPI 3.1 with exact paths, methods, operation ids, auth, rate limits and
