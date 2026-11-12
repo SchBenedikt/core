@@ -1,0 +1,81 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Domain\Federation;
+
+/**
+ * The outgoing follow graph in memory, for tests, the demo and tools.
+ *
+ * It mirrors the SQL implementation's ordering, uniqueness and ownership
+ * rules, so the two cannot drift without a contract test failing.
+ */
+final class InMemoryFollowingRepository implements FollowingRepository
+{
+	/**
+	 * @var array<string, FollowedActor>
+	 */
+	private array $following = [];
+
+	public function insert(FollowedActor $actor): void
+	{
+		$this->following[$actor->id] = $actor;
+	}
+
+	public function find(string $localUserId, string $actorId): ?FollowedActor
+	{
+		foreach ($this->following as $followed) {
+			if ($followed->localUserId === $localUserId && $followed->actorId === $actorId) {
+				return $followed;
+			}
+		}
+
+		return null;
+	}
+
+	public function remove(string $localUserId, string $actorId): bool
+	{
+		foreach ($this->following as $id => $followed) {
+			if ($followed->localUserId === $localUserId && $followed->actorId === $actorId) {
+				unset($this->following[$id]);
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	public function actorIds(string $localUserId): array
+	{
+		$matching = array_values(array_filter(
+			$this->following,
+			static fn (FollowedActor $followed): bool => $followed->localUserId === $localUserId,
+		));
+
+		usort($matching, static function (FollowedActor $a, FollowedActor $b): int {
+			$byTime = $b->followedAt <=> $a->followedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_map(static fn (FollowedActor $followed): string => $followed->actorId, $matching);
+	}
+
+	public function count(string $localUserId): int
+	{
+		$count = 0;
+		foreach ($this->following as $followed) {
+			if ($followed->localUserId === $localUserId) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+}
