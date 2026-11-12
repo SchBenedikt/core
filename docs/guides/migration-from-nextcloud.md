@@ -313,10 +313,10 @@ stacks must not both own writes for the same handle.
    [the shared UI guide](shared-ui.md); do not move the backend and the screen
    in one flag flip.
 
-Do not migrate AT Protocol, media processing or remote-post backfill/thread
-fetching until those features exist in the core. Keep the old implementation
-for them. A core feature that does not exist cannot be replaced by a
-host-specific branch in `src/`.
+Do not migrate AT Protocol until the core implements the protocol. Remote-post
+backfill, thread/context fetching and media processing now exist in the core,
+so migrate those only through the normal cutover phases. A core feature that
+does not exist cannot be replaced by a host-specific branch in `src/`.
 
 ## Phase 4 — Close the old path
 

@@ -471,12 +471,12 @@ one owner, or a peer will see two different answers for the same account.
 ## What is still host-specific
 
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
-- The Mastodon-compatible API and remote-post backfill/thread fetching are
-  not in the core yet. Keep the app's existing implementation for those until
-  the corresponding core milestone. Local and remote media are now in the
+- The Mastodon-compatible API is not in the core yet. Keep the app's existing
+  implementation for it until the corresponding core milestone. Remote-post
+  backfill, thread/context fetching and local/remote media are now in the
   core; the Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use
-  the supplied `CurlHttpClient`) before remote attachment ingestion can be
-  enabled.
+  the supplied `CurlHttpClient`) before remote attachment ingestion or thread
+  fetching can be enabled.
 - Key storage and migrations are host adapters; the core supplies the
   interfaces and the schema definitions. The durable queue and activity log
   are core adapters and only need the app's `Connection`.
