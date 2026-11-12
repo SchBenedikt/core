@@ -26,6 +26,7 @@ normally finds it from `@handle@host` through
   "inbox": "https://social.example/inbox",
   "outbox": "https://social.example/@alice/outbox",
   "followers": "https://social.example/@alice/followers",
+  "following": "https://social.example/@alice/following",
   "publicKey": {
     "id": "https://social.example/@alice#main-key",
     "owner": "https://social.example/@alice",
@@ -47,7 +48,8 @@ normally finds it from `@handle@host` through
 | `name` | the handle | Display names are a host concern; the core has no profile store |
 | `inbox` | `{instance}/inbox` | The endpoint that actually accepts signed activities |
 | `outbox` | `{actor}/outbox` | The public outbox collection; the same id the route serves |
-| `followers` | `{actor}/followers` | The collection route |
+| `followers` | `{actor}/followers` | The incoming collection route |
+| `following` | `{actor}/following` | The outgoing collection route |
 | `publicKey.id` | `{actor}#main-key` | **Exactly** the key id the inbox resolves on a signed request |
 | `publicKey.owner` | `{actor}` | The actor that owns the key |
 | `publicKey.pem` | the instance public key | What a peer verifies the instance's signatures with |
@@ -62,10 +64,12 @@ normally finds it from `@handle@host` through
 - `inbox` is the path of the `inbox` route in the manifest, not a second
   endpoint that only looks similar.
 - `followers` is the path of the `actors.followers` route.
+- `following` is the path of the `actors.following` route; its collection id
+  is built by `ActivityFactory::followingId()`.
 - `outbox` is built by `ActivityFactory::outboxId()`, the same function the
   [outbox collection](../guides/outbox.md) uses for its `id`.
 
-A test asserts all three, so the document cannot drift away from the routes.
+Tests assert each of these, so the document cannot drift away from the routes.
 
 ## Errors
 

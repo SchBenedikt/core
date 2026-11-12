@@ -8,6 +8,11 @@ Accept: application/activity+json
 An `OrderedCollection` of the actors that follow a local account. It is public
 and reads the same table the inbox writes.
 
+This is the incoming direction. The actors this account follows are served at
+`/@{handle}/following` from a separate outgoing table; `POST
+/api/v1/followers` does not affect it. See the
+[following collection](following-collection.md).
+
 ## Example
 
 ```json

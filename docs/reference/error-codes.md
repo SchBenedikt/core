@@ -27,8 +27,8 @@ change. `fields` appears only when an error belongs to specific input.
 | `unsupported_activity` | 400 | An inbox activity type the core does not apply |
 | `replayed_activity` | 400 | An activity id that was already accepted |
 | `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
-| `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers collection, outbox, WebFinger) |
-| `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers collection, outbox, WebFinger) |
+| `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers/following collections, outbox, WebFinger) |
+| `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |

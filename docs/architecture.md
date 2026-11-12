@@ -106,6 +106,9 @@ GET /@{handle}
 GET /@{handle}/followers
   └─ FollowersCollectionHandler
       └─ ActorDocumentService::followers → FollowerRepository::actorIds
+GET /@{handle}/following
+  └─ FollowingCollectionHandler
+      └─ ActorDocumentService::following → FollowingRepository::actorIds
 GET /@{handle}/outbox
   └─ OutboxHandler
       └─ ActorOutboxService → PostRepository::authorPosts
@@ -114,11 +117,12 @@ GET /.well-known/webfinger
       └─ WebFingerService → ActivityFactory::actorId
 ```
 
-All four are disabled (503) unless the host provides a signing key and a
+All five are disabled (503) unless the host provides a signing key and a
 `LocalActorDirectory`; an unknown handle or foreign WebFinger host answers 404
 without echoing it. The document's key id is exactly the id the inbox
-resolves, its `outbox` URL is exactly the collection id, and the WebFinger
-`self` href is exactly the document URL, which tests walk end to end.
+resolves, its `outbox` URL is exactly the collection id, its `following` URL
+is exactly the following collection id, and the WebFinger `self` href is
+exactly the document URL, which tests walk end to end.
 
 ## Data invariants
 
@@ -154,7 +158,7 @@ genuinely owns the capability.
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
 | Paged collections | the existing `actors.*` handlers and repositories |
-| local follows and a follow-based home timeline | `Domain\Federation` next to the follower table |
+| local follow API/delivery and a follow-based home timeline | `FollowingService` + the delivery queue |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |

@@ -62,9 +62,10 @@ Do not log request bodies, private keys or sealed payloads.
 
 Implemented: posts and timelines, the follow graph, inbound and outbound
 ActivityPub (signed `POST /inbox`, `Follow`/`Undo`, `Accept`), the actor
-document, followers collection, outbox and WebFinger, the HTTP contract and
-the platform ports. Not implemented: inbound `Create`/`Delete`, local
-follows, media. See `docs/roadmap.md` before starting a large feature.
+document, followers and following collections, outbox and WebFinger, the HTTP
+contract and the platform ports. Not implemented: inbound `Create`/`Delete`,
+local follow delivery, media. See `docs/roadmap.md` before starting a large
+feature.
 
 ## What not to do
 

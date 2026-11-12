@@ -25,7 +25,7 @@ Implemented and tested here:
 | Domain | posts, visibility, post repositories (in-memory and SQL, same contract test) |
 | Follow graph | followers per local account, in-memory and SQL repositories behind one contract test, inbox resolution |
 | Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay guard |
-| Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, the followers `OrderedCollection` and the public outbox |
+| Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, the followers/following `OrderedCollection`s and the public outbox |
 | Services | write/read/delete a post, timelines, followers, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
@@ -48,9 +48,9 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, 387 tests
+composer check          # lint, host-neutrality guard, 408 tests
 php bin/core-demo       # drives the core through real HTTP requests
-php bin/export-routes   # the HTTP contract as JSON (15 routes)
+php bin/export-routes   # the HTTP contract as JSON (16 routes)
 ```
 
 The demo builds the in-memory assembly, writes a post, reads the timeline,
@@ -120,6 +120,7 @@ delivery to a real follower.
 - [Actor document](docs/reference/actor-document.md),
   [peer discovery](docs/guides/peer-discovery.md),
   [followers collection](docs/guides/followers-collection.md),
+  [following collection](docs/guides/following-collection.md),
   [outbox](docs/guides/outbox.md),
   [WebFinger](docs/guides/webfinger.md)
 - [ADR 0001 — one core, two hosts](docs/adr/0001-shared-core-two-hosts.md)

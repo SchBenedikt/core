@@ -1,8 +1,10 @@
 # Follow graph
 
-The follow graph answers one question: **where do this account's posts have to
-be delivered?** It stores remote actors that follow a local account, together
-with the inbox to use.
+The follow graph has two directions. The incoming graph answers **where do
+this account's posts have to be delivered?** It stores remote actors that
+follow a local account, together with the inbox to use. The outgoing graph
+answers **whom does this account follow?** It is a separate table, because the
+directions mean different things.
 
 ## Model
 
@@ -80,13 +82,33 @@ Two paths write the graph:
 Either way the actor and its inbox come from the actor document, never from an
 unauthenticated request body.
 
+The outgoing graph is written separately: `FollowingService::follow()`
+records whom a local account follows, and no inbound activity can change it.
+
+## Following graph
+
+`social_following` stores the outgoing edge:
+
+```
+id            VARCHAR(64)  primary key
+local_user_id VARCHAR(255)
+actor_id      VARCHAR(255) unique with local_user_id
+followed_at   VARCHAR(20)  canonical UTC timestamp
+```
+
+There is no inbox column: this graph is for reading who the account follows,
+not for delivery. `FollowingService::follow()` and `unfollow()` write it, and
+`FollowingRepository::actorIds()` feeds the public
+[following collection](following-collection.md). A local follow HTTP route and
+the outbound `Follow` activity are still missing.
+
 ## What is missing
 
-- WebFinger, so a `@user@host` handle resolves to the actor URL;
-- a `following` collection and local follows (accounts on this instance
-  following each other), which the home timeline would need;
+- a local follow HTTP route and outbound Follow delivery; the following
+  collection is read-only for now;
+- a follow-based home timeline that reads the outgoing graph;
 - a policy for approving Follows instead of accepting every valid one;
-- paging for very large follower collections.
+- paging for very large follower and following collections.
 
 The follower list is published at `/@{handle}/followers`; see the
 [followers collection](followers-collection.md).

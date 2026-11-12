@@ -20,6 +20,7 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
+| `actors.following` | `GET` | `/@{handle}/following` | no | 120 / 60 s |
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
 
@@ -173,6 +174,19 @@ GET /@alice/followers
 `200` with an `OrderedCollection` (`totalItems`, `orderedItems`). It reflects
 accepted Follows and Undos immediately; see the
 [followers collection guide](../guides/followers-collection.md).
+
+## Following collection
+
+```http
+GET /@alice/following
+```
+
+`200` with an `OrderedCollection` whose `id` is exactly the `following` URL
+of the actor document. It reads the outgoing follow repository; `POST
+/api/v1/followers` and inbound Follows do not change it. See the
+[following collection guide](../guides/following-collection.md). An unknown
+handle is `404 actor_not_found`; an instance without a key or directory is
+`503 actor_not_configured`.
 
 ## Outbox
 

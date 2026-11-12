@@ -78,14 +78,15 @@ of a remote actor and applies `Follow` and `Undo(Follow)`. See
 A local account is described by its [actor document](../reference/actor-document.md)
 at `/@{handle}`, including the public key and the inbox. A peer finds it from
 `@handle@host` through [WebFinger](webfinger.md), which returns the document
-URL as a `self` link. The [followers collection](followers-collection.md) and
-the [outbox](outbox.md) are served next to it; the outbox lists the account's
-public posts as the same `Create` activities delivery sends.
+URL as a `self` link. The [followers](followers-collection.md) and
+[following](following-collection.md) collections and the [outbox](outbox.md)
+are served next to it; the outbox lists the account's public posts as the same
+`Create` activities delivery sends.
 
 ## Not implemented yet
 
 - inbound `Create`/`Delete`/`Announce`, and fetching remote posts;
-- a `following` collection;
+- outbound `Follow` delivery and a follow-based home timeline;
 - delivery to shared inboxes;
 - a key cache (the HTTP resolver fetches per request).
 

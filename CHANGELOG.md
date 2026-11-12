@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
   `application/jrd+json` with a single `self` link of type
   `application/activity+json`. The configured host is enforced; foreign hosts
   and unknown handles share one 404 without echoing either.
+- Following: `GET /@{handle}/following` serves the `OrderedCollection` of the
+  actors a local account follows, newest first. It reads a separate outgoing
+  follow repository (`social_following`), so it is not a copy of the
+  followers table; the collection id is exactly the `following` URL the actor
+  document advertises.
 - Inbound `POST /inbox`: signature verification against an actor resolved by
   key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
   replay guard. The endpoint stays at 503 without a configured resolver.

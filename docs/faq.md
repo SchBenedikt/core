@@ -61,6 +61,14 @@ key, the inbox and the outbox. See [WebFinger](guides/webfinger.md) and
 the actor document advertises. Followers-only posts are not listed, because
 the route is public. See [outbox](guides/outbox.md).
 
+### What is the difference between followers and following?
+
+`followers` lists the actors that follow this account; `following` lists the
+actors this account follows. They are separate repositories because the
+directions are opposite. Following is populated by `FollowingService`; there
+is no local follow HTTP route yet, and outbound `Follow` delivery is still
+open. See [following collection](guides/following-collection.md).
+
 ### How is an inbound activity authenticated?
 
 By its HTTP signature over `(request-target) host date digest`. The `keyid` is

@@ -25,6 +25,9 @@ From the document a peer takes three things:
 - `publicKey.publicKeyPem` — the key it verifies the instance's signatures with;
 - `inbox` — where it delivers activities.
 
+The same document advertises the `followers`, `following` and `outbox`
+collections.
+
 ## 3. Deliver a Follow
 
 ```http

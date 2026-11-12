@@ -21,6 +21,8 @@ Status of the core, not a promise about dates.
   the followers `OrderedCollection` read from the follower repository.
 - Outbox: the public `OrderedCollection` of an account's public posts as
   `Create` activities, read from the same post repository the local API uses.
+- Following: the public `OrderedCollection` of the actors a local account
+  follows, read from a separate outgoing follow repository.
 - WebFinger: `GET /.well-known/webfinger` resolves a local `acct:` handle to
   the actor document URL, with the configured host enforced.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
@@ -33,7 +35,7 @@ Status of the core, not a promise about dates.
 | --- | --- |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
 | Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
-| Local follows and a real home timeline | `Domain\Federation` + a local follow table |
+| Local follow API, outbound Follow delivery and a follow-based home timeline | `FollowingService` + the delivery queue |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Durable queue adapter | `Jobs\JobQueue` |
 | Migration runner for the standalone | host concern, schemas already exist |
