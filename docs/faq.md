@@ -39,7 +39,15 @@ author still sees it because the visibility check includes the viewer.
 The mechanism differs per host: Nextcloud has its own schema API, the standalone
 server will use Doctrine Migrations. The core shares the *schema*
 (`PostSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
-`JobSchema`, `ActivityLogSchema`), not the runner.
+`BlockSchema`, `JobSchema`, `ActivityLogSchema`), not the runner.
+
+### How do I block an actor?
+
+Use `POST /api/v1/blocks` with the actor URL and remove the block with
+`DELETE /api/v1/blocks/{id}`. The block is private to your account: it hides
+that actor's posts and boosts from **your** home timeline, but does not delete
+the shared remote rows or change another account's view. It does not send an
+ActivityPub `Block` to the peer. See [blocks](guides/blocks.md).
 
 ### Why is the activity built when the post is written, not when it is sent?
 

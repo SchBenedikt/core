@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Contract;
 
 use AlohaSocial\Core\Api\ActorHandler;
+use AlohaSocial\Core\Api\BlockActorHandler;
+use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
@@ -24,6 +26,7 @@ use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -128,6 +131,33 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/900',
 				summary: 'Forget a follower and stop delivering to it.',
+			),
+			new Route(
+				name: 'blocks.list',
+				method: 'GET',
+				path: $base . '/blocks',
+				handler: BlocksHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Actors the signed-in account blocks.',
+			),
+			new Route(
+				name: 'blocks.block',
+				method: 'POST',
+				path: $base . '/blocks',
+				handler: BlockActorHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Block a remote actor for the signed-in account; idempotent per actor.',
+			),
+			new Route(
+				name: 'blocks.unblock',
+				method: 'DELETE',
+				path: $base . '/blocks/{id}',
+				handler: UnblockActorHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove one of the signed-in account\'s blocks.',
 			),
 			new Route(
 				name: 'following.follow',

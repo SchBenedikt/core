@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Service;
 
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -39,6 +40,7 @@ final class TimelineServiceTest extends TestCase
 				$this->repository,
 				new InMemoryRemotePostRepository(),
 				$this->following,
+				new InMemoryBlockRepository(),
 			),
 		);
 	}

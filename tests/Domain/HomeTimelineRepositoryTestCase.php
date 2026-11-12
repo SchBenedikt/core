@@ -39,6 +39,8 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 
 	abstract protected function follow(string $localUserId, string $actorId): void;
 
+	abstract protected function block(string $localUserId, string $actorId): void;
+
 	abstract protected function deleteRemote(string $activityId, string $actorId): void;
 
 	public function testOwnAndFollowedRemoteEntriesAreMergedInTimeOrder(): void
@@ -103,6 +105,35 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 
 		self::assertNotContains('remote-post', $ids);
 		self::assertContains('remote-boost', $ids);
+	}
+
+	public function testABlockedActorIsHiddenOnlyForTheReaderWhoBlockedIt(): void
+	{
+		$this->seed();
+		$this->block('alice', self::BOB);
+
+		$alice = $this->repository()->forUser('alice', 10);
+		self::assertNotContains('remote-post', $this->ids($alice));
+		self::assertNotContains('remote-boost', $this->ids($alice));
+		self::assertContains('own-public', $this->ids($alice));
+
+		$this->follow('carol', self::BOB);
+		$this->addPost($this->post('carol-own', 'carol', 'carol content', '2026-11-11T10:07:00Z'));
+
+		$carol = $this->repository()->forUser('carol', 10);
+		self::assertContains('remote-post', $this->ids($carol));
+		self::assertContains('carol-own', $this->ids($carol));
+	}
+
+	public function testABlockedObjectAuthorHidesABoostEvenWhenTheBoosterIsNotBlocked(): void
+	{
+		$this->seed();
+		$this->block('alice', self::DAVE);
+
+		$ids = $this->ids($this->repository()->forUser('alice', 10));
+
+		self::assertNotContains('remote-boost', $ids);
+		self::assertContains('remote-post', $ids);
 	}
 
 	public function testTheTimelineIsScopedToTheReader(): void

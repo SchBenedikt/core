@@ -93,9 +93,10 @@ A peer that received a post in its inbox and later reads the outbox sees the
 same activity id and can deduplicate it. That is why both paths call
 `ActivityFactory::createNote()` instead of building JSON separately.
 
-`POST /inbox` currently applies only `Follow` and `Undo(Follow)`, so the
-outbox is the read direction and delivery is the push direction; inbound
-posts are a later milestone.
+`POST /inbox` applies `Follow`, `Undo(Follow)`, `Create`, `Delete` and
+`Announce`. The outbox is the read direction and delivery is the push
+direction; both use the same activity id so a peer can reconcile them. See
+[inbound federation](inbound-federation.md).
 
 ## How a peer consumes it
 

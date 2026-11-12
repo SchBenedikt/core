@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Per-user blocks: `Block`/`BlockRepository` with in-memory and PDO adapters,
+  one contract test and the canonical `BlockSchema` (`social_block`).
+  `GET`/`POST /api/v1/blocks` and `DELETE /api/v1/blocks/{id}` let an account
+  manage its own list; the list is private and idempotent per actor. The
+  combined home timeline filters remote posts and boosts by the reader's
+  blocks, both in memory and in the SQL union, without deleting shared rows or
+  affecting another local account. 21 routes.
 - Inbound content: signed `Create`, `Delete` and `Announce` are now processed
   for actors followed by at least one local account. A new
   `RemotePostRepository` (in-memory and PDO, one contract test) stores the

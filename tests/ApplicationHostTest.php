@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests;
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
+use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
@@ -72,7 +73,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(18, $app->routes->routes());
+		self::assertCount(21, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -153,6 +154,27 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $feed->status);
 		self::assertSame('stored in SQL', $feed->decodedBody()['posts'][0]['content']);
 		self::assertSame('https://remote.example/activities/create-1', $feed->decodedBody()['posts'][0]['id']);
+
+		$block = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/blocks',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => self::BOB], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $block->status);
+		$blockId = $block->decodedBody()['block']['id'];
+		self::assertSame([], $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts']);
+
+		self::assertSame(
+			204,
+			$app->handle(new Request('DELETE', '/api/v1/blocks/' . $blockId, userId: 'alice'))->status,
+		);
+		self::assertSame(
+			'stored in SQL',
+			$app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts'][0]['content'],
+		);
 	}
 
 	public function testForHostLeavesTheInboxAt503WithoutAnActorResolver(): void
@@ -178,6 +200,7 @@ final class ApplicationHostTest extends TestCase
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);
+		BlockSchema::create($database);
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);
 

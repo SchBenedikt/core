@@ -147,6 +147,40 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
 	}
 
+	public function testBlockingAnActorHidesItsStoredPostsAndUnblockingRestoresThem(): void
+	{
+		$app = $this->app();
+
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-blocked',
+			self::NOTE_1,
+			'blocked later',
+			'2026-11-11T10:01:00Z',
+		))->status);
+		self::assertCount(1, $this->feed($app)->decodedBody()['posts']);
+
+		$blocked = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/blocks',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => self::BOB], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $blocked->status);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+
+		$blockId = $blocked->decodedBody()['block']['id'];
+		self::assertSame(
+			204,
+			$app->handle(new Request('DELETE', '/api/v1/blocks/' . $blockId, userId: 'alice'))->status,
+		);
+		self::assertSame(
+			'blocked later',
+			$this->feed($app)->decodedBody()['posts'][0]['content'],
+		);
+	}
+
 	public function testAnUnfollowedActorChangesNothing(): void
 	{
 		$app = $this->app(new InMemoryFollowingRepository());

@@ -149,6 +149,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts)
+- `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
 
@@ -370,9 +371,9 @@ host's own tests as well.
 
 The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It does not contain media processing, an admin UI, the Mastodon-compatible
-API, remote-post backfill/thread fetching, or per-user block management. A host
-that needs those features either keeps its existing implementation for them or
-waits for the corresponding core milestone.
+API, or remote-post backfill/thread fetching. A host that needs those features
+either keeps its existing implementation for them or waits for the
+corresponding core milestone.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two
@@ -381,8 +382,8 @@ owners for the same handle.
 ## Adoption order
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
-2. Create the six tables through the host's migration system (including
-   `social_remote_post`).
+2. Create the seven tables through the host's migration system (including
+   `social_remote_post` and `social_block`).
 3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
    `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).

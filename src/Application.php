@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core;
 
 use AlohaSocial\Core\Api\ActorHandler;
+use AlohaSocial\Core\Api\BlockActorHandler;
+use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
@@ -24,6 +26,7 @@ use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -31,17 +34,20 @@ use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
+use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
@@ -76,6 +82,7 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
+use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
@@ -112,6 +119,7 @@ final readonly class Application
 		public JobWorker $worker,
 		public JobQueue $queue,
 		public FollowingService $following,
+		public BlockService $blocks,
 	) {
 	}
 
@@ -129,6 +137,7 @@ final readonly class Application
 		bool $debug = false,
 		?RemotePostRepository $remotePostRepository = null,
 		?BlockedActorPolicy $blockedActors = null,
+		?BlockRepository $blockRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -145,10 +154,12 @@ final readonly class Application
 		$followers = new InMemoryFollowerRepository();
 		$followingRepository ??= new InMemoryFollowingRepository();
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
+		$blockRepository ??= new InMemoryBlockRepository();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
 			$posts,
 			$remotePostRepository,
 			$followingRepository,
+			$blockRepository,
 		);
 
 		if ($inboxResolver === null) {
@@ -167,6 +178,7 @@ final readonly class Application
 			followingRepository: $followingRepository,
 			remotePosts: $remotePostRepository,
 			homeTimeline: $homeTimeline,
+			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
@@ -207,6 +219,7 @@ final readonly class Application
 		?LoggerInterface $logger = null,
 		bool $debug = false,
 		?BlockedActorPolicy $blockedActors = null,
+		?BlockRepository $blockRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -215,6 +228,7 @@ final readonly class Application
 		$followers = new PdoFollowerRepository($database);
 		$inboxResolver ??= new FollowerInboxResolver($followers);
 		$remotePosts = new PdoRemotePostRepository($database);
+		$blockRepository ??= new PdoBlockRepository($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -224,6 +238,7 @@ final readonly class Application
 			followingRepository: new PdoFollowingRepository($database),
 			remotePosts: $remotePosts,
 			homeTimeline: new PdoHomeTimelineRepository($database),
+			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
@@ -251,6 +266,7 @@ final readonly class Application
 		FollowingRepository $followingRepository,
 		RemotePostRepository $remotePosts,
 		HomeTimelineRepository $homeTimeline,
+		BlockRepository $blockRepository,
 		?BlockedActorPolicy $blockedActors,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
@@ -284,6 +300,7 @@ final readonly class Application
 		);
 		$timelines = new TimelineService($posts, $homeTimeline);
 		$followerService = new FollowerService($followers, $clock, $ids);
+		$blockService = new BlockService($blockRepository, $clock, $ids);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
 			: null;
@@ -344,6 +361,9 @@ final readonly class Application
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
+			->with(BlocksHandler::class, static fn (): BlocksHandler => new BlocksHandler($blockService))
+			->with(BlockActorHandler::class, static fn (): BlockActorHandler => new BlockActorHandler($blockService))
+			->with(UnblockActorHandler::class, static fn (): UnblockActorHandler => new UnblockActorHandler($blockService))
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
 			->with(FollowRemoteActorHandler::class, static fn (): FollowRemoteActorHandler => new FollowRemoteActorHandler($followingService))
 			->with(UnfollowRemoteActorHandler::class, static fn (): UnfollowRemoteActorHandler => new UnfollowRemoteActorHandler($followingService))
@@ -394,6 +414,7 @@ final readonly class Application
 			new JobWorker($queue, $jobHandlers, $clock, $logger),
 			$queue,
 			$followingService,
+			$blockService,
 		);
 	}
 

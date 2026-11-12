@@ -28,6 +28,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post`
+- `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 
@@ -53,6 +54,9 @@ keeps the object id, object author, signing actor, kind (`post`/`boost`),
 content, optional content warning, published time and `deleted_at`. The home
 timeline joins the table to `social_following`; remote rows are shared by all
 local followers and the join, rather than a per-user copy, scopes visibility.
+`social_block` is unique by (local user, actor) and is applied to the same
+home query with a `NOT EXISTS`, so a block hides an actor only for the reader
+who created it; see [blocks](blocks.md).
 
 ## Transactions and uniqueness
 

@@ -83,16 +83,17 @@ Do not log request bodies, private keys or sealed payloads.
 Implemented: posts and timelines, the follow graph, inbound and outbound
 ActivityPub (signed `POST /inbox`, signed `Follow`/`Undo` delivery, `Accept`,
 signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
-follow-based home timeline, the actor document, followers and following
-collections, outbox and WebFinger, the HTTP contract, the platform ports,
-durable `PdoJobQueue`/`PdoActivityLog` and `Application::forHost()` for a real
-host, plus the read-only cutover validator for the neutral migration export.
+follow-based home timeline, per-user blocks and their timeline filter, the
+actor document, followers and following collections, outbox and WebFinger, the
+HTTP contract, the platform ports, durable `PdoJobQueue`/`PdoActivityLog` and
+`Application::forHost()` for a real host, plus the read-only cutover validator
+for the neutral migration export.
 The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.
-Not implemented in the core: remote-post backfill/thread fetching, per-user
-block management, media, AT Protocol. See `docs/roadmap.md` before starting a
-large feature, and `docs/guides/host-integration.md` before wiring a host.
+Not implemented in the core: remote-post backfill/thread fetching, media,
+AT Protocol. See `docs/roadmap.md` before starting a large feature, and
+`docs/guides/host-integration.md` before wiring a host.
 
 ## What not to do
 

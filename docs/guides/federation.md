@@ -77,7 +77,8 @@ request can be retried. See the [following collection](following-collection.md).
 The other direction is implemented too: `POST /inbox` verifies the signature
 of a remote actor, applies `Follow`/`Undo(Follow)`, and stores `Create`,
 `Delete` and `Announce` from actors followed by at least one local account.
-The home timeline reads those remote rows through the outgoing follow graph.
+The home timeline reads those remote rows through the outgoing follow graph
+and applies each reader's private block list; see [blocks](blocks.md).
 See [inbound federation](inbound-federation.md) for the order of checks and
 [inbox activities](../reference/inbox-activities.md) for the refusal table.
 
@@ -95,8 +96,6 @@ are served next to it; the outbox lists the account's public posts as the same
 
 - fetching/backfilling remote posts, threads or media that were not delivered;
 - delivery to shared inboxes;
-- per-user block management (the optional `BlockedActorPolicy` is
-  instance-wide);
 - a key cache (the HTTP resolver fetches per request).
 
 The seams are named in [the architecture](../architecture.md#what-is-not-here-yet),

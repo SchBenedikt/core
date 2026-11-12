@@ -36,9 +36,9 @@ about the host, and everything a host must provide is an interface in
 | `Jobs` | queue contract, worker loop, retry rules | know what a job means |
 | `Platform` | ports a host implements | import a host |
 
-`Domain\Federation` holds the follow graph, the remote-post store and the
-`InboxResolver` seam. `Domain\Timeline` owns the combined home-timeline read
-model. These are domain ports, not platform ports: the question "where does
+`Domain\Federation` holds the follow graph, the remote-post store, the
+per-user block store and the `InboxResolver` seam. `Domain\Timeline` owns the
+combined home-timeline read model. These are domain ports, not platform ports: the question "where does
 this audience live?" belongs to the application, only the inbox URLs are data.
 
 ## Request lifecycle
@@ -147,20 +147,24 @@ GET /api/v1/timelines/home
           └─ HomeTimelineRepository::forUser
               ├─ PostRepository::ownTimeline        reader's own posts
               └─ RemotePostRepository::timelineForActors
-                    └─ FollowingRepository::actorIds reader's outgoing graph
+                    ├─ FollowingRepository::actorIds reader's outgoing graph
+                    └─ BlockRepository::actorIds     actors the reader blocks
 ```
 
 `PdoHomeTimelineRepository` performs the same combination in one SQL union:
 the local branch is scoped to the reader, the remote branch joins
-`social_following` on `actor_id`, and only then are the rows sorted and
-limited. Filtering each half separately and merging in PHP would make the
+`social_following` on `actor_id` and excludes the reader's `social_block`
+rows, and only then are the rows sorted and limited. Filtering each half separately and merging in PHP would make the
 cursor ambiguous at a page boundary. A boost is a remote row with
 `kind = 'boost'`; it is returned with `boosted_by` set, never duplicated as a
 standalone post.
 
 Remote rows are shared by all local followers; the join, not a per-user copy,
-is what scopes visibility. Deleting a remote post sets `deleted_at`, so the
-next home query excludes it while the activity id stays claimed.
+is what scopes visibility. A per-user block is a second, private filter on the
+same rows: it hides the actor's own content and boosts of that actor's content
+from that reader's timeline without deleting the row or affecting another
+follower. Deleting a remote post sets `deleted_at`,
+so the next home query excludes it while the activity id stays claimed.
 
 ## Following an actor
 
@@ -233,9 +237,13 @@ maximum is 40, and generated links carry a non-default limit.
 - **Remote idempotence.** `social_remote_post.activity_id` is the primary key,
   so one signed activity can create at most one row. `object_id` is not unique:
   two actors may boost the same object.
+- **Private blocks.** `social_block` is unique by (local user, actor) and is
+  applied only to that user's home query. A block never deletes a shared remote
+  row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  table once; `RemotePostSchema`, `JobSchema` and `ActivityLogSchema` do the
-  same for remote content, the durable queue and the replay log. The
+  table once; `RemotePostSchema`, `BlockSchema`, `JobSchema` and
+  `ActivityLogSchema` do the same for remote content, per-user blocks, the
+  durable queue and the replay log. The
   standalone runs those statements; the Nextcloud host creates the same
   columns through its schema API. A dump can therefore move between the two.
 
@@ -260,7 +268,6 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | remote-post backfill, thread/context fetching and media fetching | `HttpClient` + the remote-post repository; inbound delivery only stores embedded objects |
-| per-user block management | a future `BlockedActorRepository`; the current `BlockedActorPolicy` is instance-wide |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
@@ -276,8 +283,9 @@ genuinely owns the capability.
 - **Contract tests** — one abstract case run against every implementation of a
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
   `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
-  `RemotePostRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
-  `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
+  `RemotePostRepositoryTestCase`, `BlockRepositoryTestCase`,
+  `HomeTimelineRepositoryTestCase`, `JobQueueTestCase`,
+  `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
 - **Protocol vectors** — a signature is verified by the same code that produced

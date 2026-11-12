@@ -19,6 +19,9 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
 | `following.follow` | `POST` | `/api/v1/following` | yes | 30 / 900 s |
 | `following.unfollow` | `DELETE` | `/api/v1/following/{id}` | yes | 60 / 900 s |
+| `blocks.list` | `GET` | `/api/v1/blocks` | yes | 120 / 60 s |
+| `blocks.block` | `POST` | `/api/v1/blocks` | yes | 30 / 900 s |
+| `blocks.unblock` | `DELETE` | `/api/v1/blocks/{id}` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
@@ -175,6 +178,38 @@ DELETE /api/v1/following/{id}
 can be retried. An id of another account is `404 not_found`; a write without
 an HTTP client or signing key is `503 federation_not_configured`. See the
 [following collection guide](../guides/following-collection.md).
+
+## Blocks
+
+```http
+POST /api/v1/blocks
+Content-Type: application/json
+
+{"actor": "https://remote.example/users/bob"}
+```
+
+`201` with `Location: /api/v1/blocks/{id}` when the actor is newly blocked,
+`200` with the existing block when the caller already blocked it:
+
+```json
+{"block": {"id": "…", "actor": "https://remote.example/users/bob",
+  "blocked_at": "2026-11-11T10:00:00Z"}}
+```
+
+```http
+GET /api/v1/blocks?limit=20&before=2026-11-11T10:00:00Z
+```
+
+```json
+{"blocks": [ … ], "total": 1}
+```
+
+`limit` defaults to 20 and is clamped to 1–100. `before` is exclusive; a value
+that is not a canonical timestamp is `400 invalid_cursor`. A block hides the
+actor's remote posts and boosts from this caller's home timeline only; it does
+not remove the shared remote rows or change another account's view. Delete it
+with `DELETE /api/v1/blocks/{id}` (`204`, or `404` when it is not the caller's).
+See [blocks](../guides/blocks.md).
 
 ## Inbox
 

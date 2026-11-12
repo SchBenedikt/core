@@ -201,6 +201,7 @@ Create the core tables with the schema classes from the host's migration:
 - `social_follower` — `FollowerSchema`
 - `social_following` — `FollowingSchema`
 - `social_remote_post` — `RemotePostSchema` (new remote content; no legacy import)
+- `social_block` — `BlockSchema` (per-user blocks; no legacy import)
 - `social_job` — `JobSchema`
 - `social_activity_log` — `ActivityLogSchema`
 

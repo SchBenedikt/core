@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
@@ -27,7 +28,9 @@ use DateTimeImmutable;
  *
  * The remote half joins `social_following` on `actor_id` and scopes the join
  * to the reader, so unfollowing immediately removes the actor's content
- * without deleting the shared remote rows.
+ * without deleting the shared remote rows. A reader's `social_block` rows are
+ * excluded by signing actor and object author, so a block also hides a boost
+ * of the blocked actor's content by somebody else.
  */
 final class PdoHomeTimelineRepository implements HomeTimelineRepository
 {
@@ -61,7 +64,12 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' CASE WHEN r.kind = :boost_kind THEN r.actor_id ELSE NULL END AS boosted_by'
 			. ' FROM ' . RemotePostSchema::TABLE . ' r'
 			. ' INNER JOIN ' . FollowingSchema::TABLE . ' f ON f.actor_id = r.actor_id'
-			. ' WHERE f.local_user_id = :remote_user AND r.deleted_at IS NULL' . $remoteCursor
+			. ' WHERE f.local_user_id = :remote_user AND r.deleted_at IS NULL'
+			. ' AND NOT EXISTS ('
+			. ' SELECT 1 FROM ' . BlockSchema::TABLE . ' b'
+			. ' WHERE b.local_user_id = :block_user'
+			. ' AND (b.actor_id = r.actor_id OR b.actor_id = r.object_author_id)'
+			. ')' . $remoteCursor
 			. ') timeline'
 			. ' ORDER BY published_at DESC, item_id DESC'
 			. ' LIMIT ' . max(1, $limit);
@@ -69,6 +77,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		$parameters = [
 			'local_user' => $localUserId,
 			'remote_user' => $localUserId,
+			'block_user' => $localUserId,
 			'boost_kind' => RemotePostKind::Boost->value,
 		];
 

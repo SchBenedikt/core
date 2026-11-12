@@ -28,6 +28,10 @@ Status of the core, not a promise about dates.
 - Inbound content authorization: an actor must be followed by at least one
   local account, an optional host `BlockedActorPolicy` can refuse an actor,
   and an object/Delete ownership mismatch is refused without changing state.
+- Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
+  test) over `social_block`, an authenticated block API and a home-timeline
+  filter scoped to the reader. Blocks hide shared remote rows without deleting
+  them or affecting another local account.
 - Discovery: the ActivityStreams actor document with its published key, and
   the followers `OrderedCollection` read from the follower repository.
 - Outbox: the public `OrderedCollection` of an account's public posts as
@@ -69,8 +73,6 @@ Status of the core, not a promise about dates.
 - Remote-post backfill, thread/context fetching and media fetching (the
   current implementation only stores embedded objects delivered to the inbox).
 - Shared inboxes and delivery batching.
-- Per-user block management; the current core only exposes an optional
-  instance-wide `BlockedActorPolicy` seam.
 - OpenAPI generation from the route manifest.
 
 ## Explicitly not planned

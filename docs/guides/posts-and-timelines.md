@@ -32,9 +32,12 @@ is honest; sending an empty audience to the network is not.
 
 The home timeline contains the reader's **own** local posts regardless of
 visibility, plus remote posts and boosts by actors in the reader's outgoing
-follow graph. It does not contain local public posts from other accounts:
-local-to-local follow edges are not modelled yet. Remote entries have no local
-visibility field and are serialized with `visibility: null`.
+follow graph. Entries in the reader's private block list are excluded before
+the page limit; both a blocked signing actor and a blocked boosted author are
+filtered. See [blocks](blocks.md). It does not contain local public posts
+from other accounts: local-to-local follow edges are not modelled yet. Remote
+entries have no local visibility field and are serialized with
+`visibility: null`.
 
 The single-post rule is enforced by `PostService::getVisible()`: a non-public
 post answers 404 to anyone but its author. `unlisted` is publicly readable by
@@ -47,9 +50,10 @@ newest first, with the id as the tie-break. Remote posts are not copied into
 the public timeline.
 
 `GET /api/v1/timelines/home` is the combined repository page: the caller's own
-local posts plus live remote posts/boosts from followed remote actors. The two
-halves are sorted together by published time and id before the page limit is
-applied, so a cursor cannot skip or duplicate an entry at the boundary.
+local posts plus live remote posts/boosts from followed remote actors, minus
+actors the caller blocks. The two halves are filtered, sorted together by
+published time and id, and only then limited, so a cursor cannot skip or
+duplicate an entry at the boundary.
 
 Home entries have a common shape:
 

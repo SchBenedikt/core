@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
@@ -31,6 +32,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		private readonly PostRepository $posts,
 		private readonly RemotePostRepository $remotePosts,
 		private readonly FollowingRepository $following,
+		private readonly BlockRepository $blocks,
 	) {
 	}
 
@@ -45,11 +47,23 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 			$entries[] = $this->fromPost($post);
 		}
 
+		$blocked = array_fill_keys($this->blocks->actorIds($localUserId), true);
+
 		foreach ($this->remotePosts->timelineForActors(
 			$this->following->actorIds($localUserId),
 			self::UNBOUNDED,
 			$before,
 		) as $post) {
+			if (isset($blocked[$post->actorId])) {
+				continue;
+			}
+
+			// A boost can carry content by somebody other than the booster;
+			// blocking that author must hide the boosted content too.
+			if ($post->objectAuthorId !== null && isset($blocked[$post->objectAuthorId])) {
+				continue;
+			}
+
 			$entries[] = $this->fromRemotePost($post);
 		}
 

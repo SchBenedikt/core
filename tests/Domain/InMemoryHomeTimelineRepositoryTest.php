@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -27,19 +29,25 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 
 	private InMemoryFollowingRepository $following;
 
+	private InMemoryBlockRepository $blocks;
+
 	private HomeTimelineRepository $repository;
 
 	private int $followCounter = 0;
+
+	private int $blockCounter = 0;
 
 	protected function setUp(): void
 	{
 		$this->posts = new InMemoryPostRepository();
 		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->following = new InMemoryFollowingRepository();
+		$this->blocks = new InMemoryBlockRepository();
 		$this->repository = new InMemoryHomeTimelineRepository(
 			$this->posts,
 			$this->remotePosts,
 			$this->following,
+			$this->blocks,
 		);
 	}
 
@@ -66,6 +74,16 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 			$actorId,
 			$actorId . '/inbox',
 			Time::parse('2026-11-11T09:00:00Z'),
+		));
+	}
+
+	protected function block(string $localUserId, string $actorId): void
+	{
+		$this->blocks->insert(new Block(
+			'b' . ++$this->blockCounter,
+			$localUserId,
+			$actorId,
+			Time::parse('2026-11-11T09:30:00Z'),
 		));
 	}
 

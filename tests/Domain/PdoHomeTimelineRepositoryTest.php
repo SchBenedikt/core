@@ -9,8 +9,11 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -32,9 +35,13 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 
 	private PdoFollowingRepository $following;
 
+	private PdoBlockRepository $blocks;
+
 	private HomeTimelineRepository $repository;
 
 	private int $followCounter = 0;
+
+	private int $blockCounter = 0;
 
 	protected function setUp(): void
 	{
@@ -42,10 +49,12 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 		PostSchema::create($connection);
 		FollowingSchema::create($connection);
 		RemotePostSchema::create($connection);
+		BlockSchema::create($connection);
 
 		$this->posts = new PdoPostRepository($connection);
 		$this->remotePosts = new PdoRemotePostRepository($connection);
 		$this->following = new PdoFollowingRepository($connection);
+		$this->blocks = new PdoBlockRepository($connection);
 		$this->repository = new PdoHomeTimelineRepository($connection);
 	}
 
@@ -72,6 +81,16 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 			$actorId,
 			$actorId . '/inbox',
 			Time::parse('2026-11-11T09:00:00Z'),
+		));
+	}
+
+	protected function block(string $localUserId, string $actorId): void
+	{
+		$this->blocks->insert(new Block(
+			'b' . ++$this->blockCounter,
+			$localUserId,
+			$actorId,
+			Time::parse('2026-11-11T09:30:00Z'),
 		));
 	}
 

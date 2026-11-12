@@ -19,8 +19,11 @@ not accept activities it could neither verify nor answer. The reference
 assembly (`Application::inMemory()`) is therefore disabled by default.
 
 A host may additionally pass a `BlockedActorPolicy`. It is optional and
-instance-wide; the core has no block table yet. Without one, `NoBlockedActors`
-allows every verified actor.
+instance-wide: it refuses an actor's inbound content before anything is
+stored. Without one, `NoBlockedActors` allows every verified actor. Per-user
+blocks are separate; they hide shared remote rows from one reader's home
+timeline and do not reject a delivery for other followers. See
+[blocks](blocks.md).
 
 ## Order of checks
 
@@ -102,7 +105,8 @@ is `invalid_activity`, not a silently invented date.
 Remote rows are shared by all local followers. The home timeline joins the
 row against the reader's `social_following` edge, so the same row is visible to
 every local account that follows the actor and disappears for a reader who
-unfollows.
+unfollows. A per-user block is an additional `NOT EXISTS` filter on the same
+query, so it hides the actor only for the reader who blocked it.
 
 ## What a Delete does
 
@@ -141,5 +145,4 @@ The clock window for the signed `Date` is 300 seconds; see
 - a key cache (the core fetches on every request when using
   `HttpActorResolver`);
 - a policy layer for approving Follows instead of accepting every valid one;
-- per-user block management (the current optional policy is instance-wide);
 - shared-inbox handling and delivery batching.

@@ -130,10 +130,20 @@ inbound inbox uses `localUserIdsForActor()` as the reverse check: a remote
 `Create`/`Delete`/`Announce` is accepted only when at least one local account
 follows its actor.
 
+## Blocks
+
+A per-user block is stored in `social_block` (`BlockSchema`) and is separate
+from both follow directions. `BlockRepository::actorIds()` returns the actors
+the reader blocks; the home timeline excludes those remote rows for that reader
+only. The outgoing edge is not removed, and another local account that follows
+the same actor still sees its posts. See [blocks](blocks.md).
+
+The optional instance-wide `BlockedActorPolicy` is a different seam: it
+refuses inbound activities before they are stored. It is not the per-user block
+list.
+
 ## What is missing
 
-- a per-user block model; inbound blocking is the optional instance-wide
-  `BlockedActorPolicy` seam;
 - local-to-local follow edges and a local-follow home timeline;
 - a policy for approving Follows instead of accepting every valid one.
 
