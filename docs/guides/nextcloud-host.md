@@ -1,0 +1,403 @@
+# Nextcloud host integration
+
+This is the concrete mapping for [`AlohaSocial/social`](https://github.com/AlohaSocial/social),
+the Nextcloud app. Read [using the core from a host](host-integration.md) first;
+this page only adds the Nextcloud-specific decisions.
+
+The app already implements posts, federation and a large UI. The core is not a
+drop-in replacement for all of it. Treat the integration as a migration of one
+slice at a time, behind a feature flag, while the old path keeps serving
+everything that the core does not cover yet.
+
+## 1. Choose the URL shape before writing code
+
+The core builds actor, post, inbox and collection URLs from
+`social/instance.url`. For a Nextcloud app there are two valid shapes:
+
+**A. Prefix (no webserver rewrite).** Serve the core under a path the app
+already owns, for example:
+
+```
+https://cloud.example/apps/social/federation/@alice
+https://cloud.example/apps/social/federation/inbox
+https://cloud.example/apps/social/federation/api/v1/posts
+```
+
+Set `social/instance.url` to `https://cloud.example/apps/social/federation`,
+strip that prefix from the request path before calling the core kernel, and
+make the app's WebFinger handler return the prefixed actor URL as `self`.
+ActivityPub permits paths in actor ids.
+
+**B. Root paths through a rewrite.** A webserver rule maps `/api/v1`, `/inbox`,
+`/@{handle}` and `/.well-known/webfinger` to the app's core controller. Set
+`social/instance.url` to the root. This is the shape the current app uses for
+its Mastodon-compatible API, so the rewrite mechanism may already exist.
+
+Either shape works. Do not mix them: an actor URL that points at a path the
+controller does not serve is worse than a slightly longer URL.
+
+## 2. Add the dependency
+
+The app's `composer.json` uses `nextcloud/social` and has a committed
+`vendor/` autoloader. Add the VCS repository and the package, then update:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/SchBenedikt/core"
+    }
+  ],
+  "require": {
+    "alohasocial/core": "dev-main"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
+```
+
+```bash
+composer update alohasocial/core
+composer dump-autoload -o
+```
+
+The app already does `require_once __DIR__ . '/../../vendor/autoload.php'` in
+`lib/AppInfo/Application.php`; no second autoloader is required. For a release,
+pin a tag or a commit rather than floating `dev-main`.
+
+## 3. Implement the ports with OCP
+
+| Core port | Nextcloud source | Note |
+| --- | --- | --- |
+| `Config` | `OCP\IConfig` | App id `social`; values are strings |
+| `Db\Connection` | `OCP\IDBConnection` | Doctrine DBAL; see the adapter below |
+| `Http\HttpClient` | `OCP\Http\Client\IClientService` | Keep Nextcloud's CA/proxy policy; or use `CurlHttpClient` |
+| `Storage\BlobStore` | `OCP\Files\IAppData` | Needed for future media, not for the current post/follow core |
+| `LocalActorDirectory` | `OCP\IUserManager` / external user backend | The app already has external users; include them |
+| `Jobs\JobQueue` | the app's existing queue service/table | Must reserve, complete, retry and dead-letter durably |
+| `ActivityLog` | new table or existing activity store | Unique activity id, claim/release, expiry |
+| `ActorResolver` | `HttpActorResolver` or the app's actor cache | Resolve key id → actor, never trust a supplied key |
+| `RsaKeyPair` | sealed key in app config | Open with `OpenSslSecretBox`, then `RsaKeyPair::fromPems()` |
+
+### Config adapter
+
+```php
+final class NextcloudConfig implements Config
+{
+    public function __construct(private IConfig $config) {}
+
+    public function get(string $app, string $key, ?string $default = null): ?string
+    {
+        $value = $this->config->getAppValue($app, $key, $default ?? '');
+        return $value === '' ? $default : $value;
+    }
+
+    public function set(string $app, string $key, string $value): void
+    {
+        $this->config->setAppValue($app, $key, $value);
+    }
+
+    public function delete(string $app, string $key): void
+    {
+        $this->config->deleteAppValue($app, $key);
+    }
+
+    // getBool(), getInt(), has() and all() are small helpers over the same
+    // calls. Keep the values as strings, exactly like the port promises.
+}
+```
+
+Store `instance.url` without a trailing slash. It must include the prefix from
+step 1 when you use shape A.
+
+### Database adapter
+
+`IDBConnection` is Doctrine DBAL, not PDO. Wrap it; do not change the core's
+repositories to speak Doctrine. The port is deliberately small:
+
+```php
+final class NextcloudConnection implements Connection
+{
+    public function __construct(private IDBConnection $db) {}
+
+    public function execute(string $sql, array $parameters = []): int
+    {
+        return (int) $this->db->executeStatement($sql, $parameters);
+    }
+
+    public function fetchAll(string $sql, array $parameters = []): array
+    {
+        return $this->db->executeQuery($sql, $parameters)->fetchAllAssociative();
+    }
+
+    public function fetchOne(string $sql, array $parameters = []): ?array
+    {
+        $row = $this->db->executeQuery($sql, $parameters)->fetchAssociative();
+        return $row === false ? null : $row;
+    }
+
+    public function fetchValue(string $sql, array $parameters = []): mixed
+    {
+        $value = $this->db->executeQuery($sql, $parameters)->fetchOne();
+        return $value === false ? null : $value;
+    }
+
+    public function transaction(callable $work): mixed
+    {
+        return $this->db->transactional(fn (): mixed => $work($this));
+    }
+
+    public function driver(): string
+    {
+        // Adjust to the DBAL version Nextcloud ships; only a few SQL
+        // statements use this value.
+        return $this->db->getDatabasePlatform()->getName();
+    }
+}
+```
+
+Normalize booleans and `DateTimeImmutable` parameters exactly as
+`PdoConnection` does if you pass them; the core's repositories currently pass
+strings and null, but the port contract allows the wider set. Test the adapter
+against `PostRepositoryTestCase`, `FollowerRepositoryTestCase` and
+`FollowingRepositoryTestCase` with the app's database, not only with SQLite.
+
+### HTTP client adapter
+
+The core treats a non-2xx answer as data and a transport failure as an
+exception. Preserve that distinction:
+
+```php
+final class NextcloudHttpClient implements HttpClient
+{
+    public function __construct(private IClientService $clients) {}
+
+    public function request(string $method, string $url, array $headers = [], string $body = '', int $timeoutSeconds = 10): HttpResponse
+    {
+        try {
+            $response = $this->clients->newClient()->request($method, $url, [
+                'headers' => $headers,
+                'body' => $body,
+                'timeout' => $timeoutSeconds,
+                'http_errors' => false,
+            ]);
+        } catch (ClientException $exception) {
+            throw new HttpClientException($exception->getMessage(), 0, $exception);
+        }
+
+        return new HttpResponse(
+            $response->getStatusCode(),
+            $response->getHeaders(),
+            (string) $response->getBody(),
+        );
+    }
+}
+```
+
+Check the exact option names against the Nextcloud/Guzzle version you build
+against. The contract is what matters: no exception for a 404/503, TLS
+verification on, and a stable exception type for DNS/TLS/timeout failures.
+
+### Users and keys
+
+```php
+final class NextcloudActorDirectory implements LocalActorDirectory
+{
+    public function __construct(private IUserManager $users) {}
+
+    public function has(string $userId): bool
+    {
+        return $this->users->userExists($userId);
+    }
+}
+```
+
+The app's external users are still users in the host's sense; include them if
+they can own an Aloha account. The core does not have a user table.
+
+The private key belongs in the host's secret storage. If it is sealed in app
+config:
+
+```php
+$box = OpenSslSecretBox::fromBase64Key($sealedKey);
+$keys = RsaKeyPair::fromPems($box->open($sealedPrivatePem), $publicPem);
+```
+
+Do not put the PEM into a log line, an exception message or a response. The
+core only needs the `RsaKeyPair` object.
+
+## 4. Queue and activity log
+
+These are the two ports that make the difference between a demo and a server.
+
+### Queue
+
+The app already has a queue and cron jobs. Implement `JobQueue` over that
+store rather than adding the core's in-memory queue. A workable table shape is:
+
+```
+id            VARCHAR(64) primary key
+type          VARCHAR(64)
+payload       TEXT
+available_at  VARCHAR(20)
+attempts      INTEGER
+reserved_at   VARCHAR(20) NULL
+dead_at       VARCHAR(20) NULL
+```
+
+`reserve()` must atomically take due rows so two workers cannot run the same
+job. `fail()` must apply the same exponential backoff and five-attempt ceiling
+as `InMemoryJobQueue` (or document a deliberate difference). `complete()`
+removes the reservation. `pendingCount()` and `deadLetterCount()` feed the
+app's health page.
+
+### Activity log
+
+Inbound requests need a replay guard that survives restarts:
+
+```
+activity_id  VARCHAR(512) primary key
+seen_at      VARCHAR(20)
+```
+
+`claim()` inserts the id and returns false on a duplicate; `release()` deletes
+it when handling failed; a cleanup job removes rows older than a day. A unique
+index is the actual guard — a select-then-insert is a race.
+
+## 5. Serve the routes
+
+Register one thin controller that maps the host request to the core request
+and the core response back. Do not write a controller per core route.
+
+```php
+final class CoreApiController extends Controller
+{
+    public function __construct(
+        private Application $core,
+        private IUserSession $session,
+        string $appName,
+    ) {
+        parent::__construct($appName);
+    }
+
+    #[NoCSRFRequired]
+    #[PublicPage]
+    public function dispatch(string $path): Response
+    {
+        $request = new CoreRequest(
+            method: $this->request->getMethod(),
+            path: '/' . ltrim($path, '/'),
+            query: $this->request->getParams(),
+            headers: $this->request->getHeaders(),
+            body: (string) file_get_contents('php://input'),
+            userId: $this->session->getUser()?->getUID(),
+        );
+
+        $coreResponse = $this->core->kernel->handle($request);
+
+        $response = new Response();
+        $response->setStatus($coreResponse->status);
+        foreach ($coreResponse->headers as $name => $value) {
+            $response->addHeader($name, $value);
+        }
+        $response->setContent($coreResponse->body);
+
+        return $response;
+    }
+}
+```
+
+The route grep in `appinfo/routes.php` needs a catch-all below the chosen
+prefix, for all methods the manifest uses:
+
+```php
+['name' => 'core_api#dispatch', 'url' => '/federation/{path}',
+ 'requirements' => ['path' => '.+'], 'verb' => 'GET|POST|PUT|DELETE'],
+```
+
+Map `GET|POST|...` to the manifest's methods. Keep `#[NoCSRFRequired]` on API
+routes: API clients authenticate with a token/session, not a Nextcloud form
+token. `#[PublicPage]` lets the controller build a request with `userId: null`;
+the core's `RequireAuthentication` still answers 401 for a protected route.
+Do not let Nextcloud redirect a JSON request to the login page instead.
+
+Authentication is still the host's job: the session or bearer token produces
+`userId`. The core only decides whether the route requires one.
+
+Rate limits are declared by the core manifest. Reuse the app's existing rate
+limit middleware with the route's `rateLimit` value; do not add a second
+limiter in the controller.
+
+## 6. Migrations and existing tables
+
+Create the app's tables through Nextcloud migrations, with the same columns
+and indexes as the core's schema classes. The SQL strings in `PostSchema`,
+`FollowerSchema` and `FollowingSchema` are the canonical definition; translate
+them into the app's schema API rather than copying a second column list.
+
+If the app already has a `social_following` table from the earlier core
+version, add:
+
+```
+inbox_url VARCHAR(512) NOT NULL
+```
+
+before enabling `POST /api/v1/following`; the repository writes that column.
+
+## 7. Test the integration in the app
+
+Add a PHPUnit test that boots `Application::forHost()` with the app's database
+(an in-memory SQLite database is enough for the composition test) and a fake
+HTTP client. Assert:
+
+1. the app's `Kernel` serves a post write and a public timeline read;
+2. a `POST /api/v1/following` reaches the fake peer inbox;
+3. `GET /@{handle}/following` contains the actor;
+4. the app's registered routes match `Routes::manifest()` by name, method and
+   path;
+5. a request without a user gets the core's 401 shape, not a redirect.
+
+Then run the core's contract tests against the Nextcloud adapters. A smoke test
+through the app is not enough: the adapter has to satisfy the same case as the
+in-memory implementation.
+
+## 8. Rollout
+
+1. **Preparation:** add the package, adapters and migrations; boot the core in
+   a test only. No production route yet.
+2. **Posts/timelines slice:** enable the core's post and timeline routes for a
+   test account or a feature flag. Keep the old endpoints for everyone else.
+3. **Actor surface:** enable the actor document, WebFinger, followers,
+   following and outbox for that account. Verify with a real peer that the
+   actor URL, key id and WebFinger `self` agree.
+4. **Outbound follow:** enable `POST`/`DELETE /api/v1/following`; check that
+   the peer receives the signed `Follow` and `Undo`.
+5. **Inbound inbox:** only after a durable activity log and actor resolver are
+   in place. Start with a test domain; a replay or a wrong key must be refused,
+   not logged and ignored.
+6. **UI:** point one page at the core routes. Keep the old path until the page
+   has no feature the core lacks.
+
+Do not run the old and new stacks for the same handle. One actor URL must have
+one owner, or a peer will see two different answers for the same account.
+
+## What this buys the Nextcloud app
+
+- The app keeps its users, permissions, navigation, Vue UI and deployment; it
+  stops maintaining a second federation core.
+- Signatures, actor documents, inbox verification, Follow/Undo and delivery
+  are shared with the standalone product and tested without Nextcloud.
+- The route manifest gives the app and the standalone one API contract, which
+  is what makes a shared front end possible.
+- A bug in validation or replay handling is fixed once, not twice.
+
+## What is still host-specific
+
+- Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
+- Media, the Mastodon-compatible API, inbound `Create`/`Delete` and the
+  follow-based home timeline are not in the core yet. Keep the app's existing
+  implementation for those until the corresponding core milestone.
+- The durable queue, activity log, key storage and migrations are host
+  adapters; the core supplies the interfaces and the schema definitions, not
+  the Nextcloud implementations.

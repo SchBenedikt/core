@@ -52,6 +52,16 @@ live?" belongs to the application, only the inbox URLs are data.
    logged and answered with a 500 that does not leak internals unless the
    kernel is in debug mode.
 
+## Host assembly
+
+`Application::forHost()` is the production composition root. It takes the
+host's `Config`, `Connection`, `HttpClient`, `RsaKeyPair`, `LocalActorDirectory`,
+durable `JobQueue` and `ActivityLog`, builds the PDO repositories and services,
+and returns the same `Kernel` the reference assembly uses. `Application::inMemory()`
+remains the test/demo path; both go through one private assembly, so the two
+cannot drift apart. The host still owns authentication, migrations, the HTTP
+controller and the worker process. See [using the core from a host](guides/host-integration.md).
+
 ## Writing a post (the implemented vertical slice)
 
 ```
@@ -189,7 +199,7 @@ genuinely owns the capability.
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements |
 | Vue UI | `@alohasocial/ui` with a `HostBridge` per host |
-| Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform` |
+| Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
 
 ## Testing strategy
 
@@ -203,4 +213,5 @@ genuinely owns the capability.
   unsigned digest and a foreign key.
 - **End to end** — `Application::inMemory()` is a real object graph; the test
   writes a post over HTTP, drains the queue, and verifies the signature on the
-  request that left.
+  request that left. `ApplicationHostTest` repeats the important paths through
+  `forHost()` with SQL repositories and a fake inbox.

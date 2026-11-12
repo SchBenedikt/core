@@ -22,6 +22,7 @@ that prints or skips is a failure.
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories and a fake inbox |
 
 ## Contract tests
 

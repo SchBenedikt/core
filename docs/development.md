@@ -57,7 +57,8 @@ The order matters: the contract first, then the core, then the hosts.
 4. **Route** — one entry in `src/Contract/Routes.php`.
 5. **Handler** — `src/Api`, map input → service → response. No logic.
 6. **Host adapters** — the standalone server and the Nextcloud app each add
-   their adapter and, for a page, a thin controller and template.
+   their adapter and, for a page, a thin controller and template. See
+   [using the core from a host](guides/host-integration.md).
 7. **Documentation** — `docs/architecture.md` for behaviour, an ADR for a
    decision, and the route export if the HTTP surface changed.
 

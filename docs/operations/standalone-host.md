@@ -27,7 +27,11 @@ This document is the checklist that host is built against.
 10. **Worker** — a process or cron entry calling `JobWorker::runOnce()`.
 
 Steps 1–8 are what `Application::inMemory()` does with in-memory adapters; the
-server repeats it with real ones.
+server repeats it with real ones. The reusable production assembly is
+`Application::forHost()`: it takes the host's ports, builds the PDO
+repositories and returns the kernel, worker and services. See
+[using the core from a host](../guides/host-integration.md) for the exact call
+and the port table.
 
 ## What the host owns
 

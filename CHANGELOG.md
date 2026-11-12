@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Host integration: `Application::forHost()` wires the SQL repositories and a
+  host's ports into the same kernel, worker and services as the reference
+  assembly. The host integration and Nextcloud guides cover Composer setup,
+  adapters, URL prefixes, HTTP mapping, migrations and rollout.
 - Discovery: `GET /@{handle}` serves the ActivityStreams actor document with
   `preferredUsername`, `name`, `inbox`, `outbox`, `followers` and a
   `publicKey` whose id is exactly the key id inbound verification resolves;

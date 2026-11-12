@@ -18,6 +18,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | --- | --- |
 | [Platform ports](guides/platform-ports.md) | Every interface a host implements, and the contract tests behind them |
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
+| [Using the core from a host](guides/host-integration.md) | Composer setup, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
+| [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and why it is idempotent |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |

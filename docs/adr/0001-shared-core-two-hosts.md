@@ -61,7 +61,7 @@ hosts around it.**
 - Federation, validation and protocol behaviour exist once. A fix is a fix for
   both products.
 - The core can be tested without a server, which is what makes the suite here
-  fast: 284 tests in well under a second.
+  fast: it runs in well under a second.
 - The Nextcloud app keeps its native integration: it still uses Nextcloud
   routing, users and appdata, through adapters.
 

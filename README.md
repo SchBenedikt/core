@@ -29,6 +29,7 @@ Implemented and tested here:
 | Services | write/read/delete a post, timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
+| Host integration | `Application::forHost()` with injected ports, SQL repositories and a documented Nextcloud adapter path |
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
@@ -48,7 +49,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, 420 tests
+composer check          # lint, host-neutrality guard, 422 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (18 routes)
 ```
@@ -114,6 +115,8 @@ Follow/Undo requests, signature verification, rollback and retry.
 
 - [Documentation index](docs/README.md)
 - [Architecture](docs/architecture.md)
+- [Using the core from a host](docs/guides/host-integration.md),
+  [Nextcloud host integration](docs/guides/nextcloud-host.md)
 - [Development](docs/development.md)
 - [Routes](docs/reference/routes.md), [error codes](docs/reference/error-codes.md),
   [configuration](docs/reference/configuration.md)
