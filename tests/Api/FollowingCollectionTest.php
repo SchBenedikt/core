@@ -21,6 +21,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,6 +33,8 @@ final class FollowingCollectionTest extends TestCase
 	private const ACTOR = 'https://localhost:8080/@alice';
 
 	private const BOB = 'https://remote.example/users/bob';
+
+	private const BOB_INBOX = 'https://remote.example/users/bob/inbox';
 
 	private static RsaKeyPair $localKey;
 
@@ -91,7 +94,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB);
+		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
 
 		$collection = $this->collection($app);
 		self::assertSame(1, $collection['totalItems']);
@@ -108,8 +111,8 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB);
-		$app->following->follow('alice', self::BOB);
+		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
 
 		self::assertSame(1, $this->collection($app)['totalItems']);
 	}
@@ -118,17 +121,18 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB);
+		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
 
 		$bob = $app->handle(new Request('GET', '/@bob/following'));
 		self::assertSame(404, $bob->status);
 
 		$app = Application::inMemory(
 			clock: $this->clock,
+			httpClient: new FakeHttpClient(),
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice', 'bob']),
 		);
-		$app->following->follow('alice', self::BOB);
+		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
 
 		self::assertSame(0, $this->collection($app, 'bob')['totalItems']);
 		self::assertSame(1, $this->collection($app, 'alice')['totalItems']);
@@ -141,6 +145,7 @@ final class FollowingCollectionTest extends TestCase
 			'f1',
 			'alice',
 			self::BOB,
+			self::BOB_INBOX,
 			Time::parse('2026-11-11T10:00:00Z'),
 		));
 
@@ -158,7 +163,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$this->expectException(ValidationException::class);
 
-		$this->app()->following->follow('alice', 'bob');
+		$this->app()->following->follow('alice', 'bob', self::BOB_INBOX);
 	}
 
 	public function testAnUnknownHandleIsAClean404(): void
@@ -200,6 +205,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		return Application::inMemory(
 			clock: $this->clock,
+			httpClient: new FakeHttpClient(),
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice']),
 			followingRepository: new InMemoryFollowingRepository(),

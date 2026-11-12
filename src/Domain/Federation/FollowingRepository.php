@@ -26,6 +26,13 @@ interface FollowingRepository
 
 	public function find(string $localUserId, string $actorId): ?FollowedActor;
 
+	public function findById(string $id): ?FollowedActor;
+
+	/**
+	 * Replaces the stored inbox of an existing edge, keeping its identity.
+	 */
+	public function updateInbox(FollowedActor $actor): void;
+
 	/**
 	 * Deletes only if the edge belongs to the given local user.
 	 *

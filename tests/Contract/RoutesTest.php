@@ -22,13 +22,15 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(16, $manifest->routes());
+		self::assertCount(18, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
 		self::assertNotNull($manifest->find('actors.get'));
 		self::assertNotNull($manifest->find('actors.followers'));
 		self::assertNotNull($manifest->find('actors.following'));
+		self::assertNotNull($manifest->find('following.follow'));
+		self::assertNotNull($manifest->find('following.unfollow'));
 		self::assertNotNull($manifest->find('actors.outbox'));
 		self::assertNotNull($manifest->find('webfinger'));
 	}
@@ -67,6 +69,22 @@ final class RoutesTest extends TestCase
 		self::assertNotNull($route);
 		self::assertTrue($route->requiresAuth);
 		self::assertSame('30/900', $route->rateLimit);
+	}
+
+	public function testTheFollowingWriteRoutesAreProtectedAndRateLimited(): void
+	{
+		$follow = Routes::manifest()->find('following.follow');
+		$unfollow = Routes::manifest()->find('following.unfollow');
+
+		self::assertNotNull($follow);
+		self::assertTrue($follow->requiresAuth);
+		self::assertSame('30/900', $follow->rateLimit);
+		self::assertSame('/api/v1/following', $follow->path);
+
+		self::assertNotNull($unfollow);
+		self::assertTrue($unfollow->requiresAuth);
+		self::assertSame('60/900', $unfollow->rateLimit);
+		self::assertSame('/api/v1/following/{id}', $unfollow->path);
 	}
 
 	public function testTheTimelineAndPostRoutesArePubliclyReadable(): void
@@ -121,7 +139,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(16, $decoded['routes']);
+		self::assertCount(18, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -131,6 +149,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(16, $app->routes->routes());
+		self::assertCount(18, $app->routes->routes());
 	}
 }

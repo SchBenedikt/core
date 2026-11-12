@@ -13,6 +13,7 @@ use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
@@ -24,6 +25,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
@@ -150,7 +152,16 @@ final readonly class Application
 		);
 		$timelines = new TimelineService($repository);
 		$followerService = new FollowerService($followers, $clock, $ids);
-		$followingService = new FollowingService($followingRepository, $clock, $ids);
+		$federationDelivery = ($httpClient !== null && $signingKey !== null)
+			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
+			: null;
+		$followingService = new FollowingService(
+			$followingRepository,
+			$clock,
+			$ids,
+			$activities,
+			$federationDelivery,
+		);
 		$instance = new InstanceInfo($config);
 
 		// Inbound federation needs a way to resolve a key id, a client to
@@ -191,6 +202,8 @@ final readonly class Application
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
+			->with(FollowRemoteActorHandler::class, static fn (): FollowRemoteActorHandler => new FollowRemoteActorHandler($followingService))
+			->with(UnfollowRemoteActorHandler::class, static fn (): UnfollowRemoteActorHandler => new UnfollowRemoteActorHandler($followingService))
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
@@ -199,11 +212,8 @@ final readonly class Application
 			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger));
 
 		$jobHandlers = new JobHandlerRegistry();
-		if ($httpClient !== null && $signingKey !== null) {
-			$jobHandlers = $jobHandlers->with(
-				JobType::FEDERATION_DELIVER,
-				new FederationDeliveryHandler($httpClient, $signingKey, $clock),
-			);
+		if ($federationDelivery !== null) {
+			$jobHandlers = $jobHandlers->with(JobType::FEDERATION_DELIVER, $federationDelivery);
 		}
 
 		$routes = Routes::manifest();

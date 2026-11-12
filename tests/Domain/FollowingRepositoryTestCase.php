@@ -60,6 +60,32 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->actorIds('dave'));
 	}
 
+	public function testFindByIdAndUpdateInboxKeepTheEdgeIdentity(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed(
+			'f1',
+			'alice',
+			'https://remote.example/users/bob',
+			'2026-11-11T10:00:00Z',
+			'https://old.example/users/bob/inbox',
+		));
+
+		$found = $repository->findById('f1');
+		self::assertNotNull($found);
+		self::assertSame('https://old.example/users/bob/inbox', $found->inboxUrl);
+
+		$repository->updateInbox($found->withInbox('https://new.example/users/bob/inbox'));
+
+		$updated = $repository->findById('f1');
+		self::assertNotNull($updated);
+		self::assertSame('https://new.example/users/bob/inbox', $updated->inboxUrl);
+		self::assertSame('alice', $updated->localUserId);
+		self::assertSame('https://remote.example/users/bob', $updated->actorId);
+		self::assertSame('2026-11-11T10:00:00+00:00', $updated->followedAt->format(DATE_ATOM));
+		self::assertNull($repository->findById('unknown'));
+	}
+
 	public function testRemoveIsScopedToTheLocalUser(): void
 	{
 		$repository = $this->repository();
@@ -90,11 +116,13 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		string $localUserId,
 		string $actorId,
 		string $followedAt = '2026-11-11T10:00:00Z',
+		?string $inboxUrl = null,
 	): FollowedActor {
 		return new FollowedActor(
 			$id,
 			$localUserId,
 			$actorId,
+			$inboxUrl ?? $actorId . '/inbox',
 			Time::parse($followedAt),
 		);
 	}

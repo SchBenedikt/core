@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Protocol\ActivityPub;
 
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -92,6 +93,46 @@ final class ActivityFactory
 	public function outboxId(string $userId): string
 	{
 		return $this->actorId($userId) . '/outbox';
+	}
+
+	public function followId(string $followedId): string
+	{
+		return $this->baseUrl() . '/api/v1/following/' . rawurlencode($followedId) . '/follow';
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function followActor(string $localUserId, FollowedActor $followed): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->followId($followed->id),
+			'type' => 'Follow',
+			'actor' => $this->actorId($localUserId),
+			'object' => $followed->actorId,
+			'to' => [$followed->actorId],
+		];
+	}
+
+	/**
+	 * An Undo of a Follow, embedding the original Follow so the peer can match
+	 * it without storing the activity id itself.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function undoFollow(string $localUserId, FollowedActor $followed): array
+	{
+		$follow = $this->followActor($localUserId, $followed);
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->followId($followed->id) . '/undo',
+			'type' => 'Undo',
+			'actor' => $follow['actor'],
+			'object' => $follow,
+			'to' => [$followed->actorId],
+		];
 	}
 
 	public function noteId(Post $post): string

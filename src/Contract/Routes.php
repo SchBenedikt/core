@@ -13,6 +13,7 @@ use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
@@ -24,6 +25,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Route;
@@ -126,6 +128,24 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/900',
 				summary: 'Forget a follower and stop delivering to it.',
+			),
+			new Route(
+				name: 'following.follow',
+				method: 'POST',
+				path: $base . '/following',
+				handler: FollowRemoteActorHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Follow a remote actor and deliver a signed Follow to its inbox.',
+			),
+			new Route(
+				name: 'following.unfollow',
+				method: 'DELETE',
+				path: $base . '/following/{id}',
+				handler: UnfollowRemoteActorHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove a followed actor and deliver a signed Undo to its inbox.',
 			),
 			new Route(
 				name: 'inbox',

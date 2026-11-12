@@ -89,6 +89,21 @@ call(
 
 call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/followers', userId: 'alice'));
 
+call(
+	$app,
+	'POST /api/v1/following (not configured)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/following',
+		headers: ['Content-Type' => 'application/json'],
+		body: json_encode([
+			'actor' => 'https://remote.example/users/bob',
+			'inbox' => 'https://remote.example/users/bob/inbox',
+		], JSON_THROW_ON_ERROR),
+		userId: 'alice',
+	),
+);
+
 // No signing key, no actor directory: the document routes say so instead of
 // publishing an actor whose key and inbox nobody could use.
 call($app, 'GET /@alice (not configured)', new Request('GET', '/@alice'));

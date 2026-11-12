@@ -20,7 +20,7 @@ use AlohaSocial\Core\Support\Time;
  */
 final class PdoFollowingRepository implements FollowingRepository
 {
-	private const COLUMNS = 'id, local_user_id, actor_id, followed_at';
+	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, followed_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -31,12 +31,13 @@ final class PdoFollowingRepository implements FollowingRepository
 	{
 		$this->db->execute(
 			'INSERT INTO ' . FollowingSchema::TABLE
-			. ' (id, local_user_id, actor_id, followed_at)'
-			. ' VALUES (:id, :local_user_id, :actor_id, :followed_at)',
+			. ' (id, local_user_id, actor_id, inbox_url, followed_at)'
+			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :followed_at)',
 			[
 				'id' => $actor->id,
 				'local_user_id' => $actor->localUserId,
 				'actor_id' => $actor->actorId,
+				'inbox_url' => $actor->inboxUrl,
 				'followed_at' => Time::format($actor->followedAt),
 			],
 		);
@@ -51,6 +52,24 @@ final class PdoFollowingRepository implements FollowingRepository
 		);
 
 		return $row === null ? null : $this->hydrate($row);
+	}
+
+	public function findById(string $id): ?FollowedActor
+	{
+		$row = $this->db->fetchOne(
+			'SELECT ' . self::COLUMNS . ' FROM ' . FollowingSchema::TABLE . ' WHERE id = :id',
+			['id' => $id],
+		);
+
+		return $row === null ? null : $this->hydrate($row);
+	}
+
+	public function updateInbox(FollowedActor $actor): void
+	{
+		$this->db->execute(
+			'UPDATE ' . FollowingSchema::TABLE . ' SET inbox_url = :inbox_url WHERE id = :id',
+			['id' => $actor->id, 'inbox_url' => $actor->inboxUrl],
+		);
 	}
 
 	public function remove(string $localUserId, string $actorId): bool
@@ -93,6 +112,7 @@ final class PdoFollowingRepository implements FollowingRepository
 			id: (string) $row['id'],
 			localUserId: (string) $row['local_user_id'],
 			actorId: (string) $row['actor_id'],
+			inboxUrl: (string) $row['inbox_url'],
 			followedAt: Time::parse((string) $row['followed_at']),
 		);
 	}

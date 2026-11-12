@@ -38,6 +38,18 @@ final class InMemoryFollowingRepository implements FollowingRepository
 		return null;
 	}
 
+	public function findById(string $id): ?FollowedActor
+	{
+		return $this->following[$id] ?? null;
+	}
+
+	public function updateInbox(FollowedActor $actor): void
+	{
+		if (isset($this->following[$actor->id])) {
+			$this->following[$actor->id] = $actor;
+		}
+	}
+
 	public function remove(string $localUserId, string $actorId): bool
 	{
 		foreach ($this->following as $id => $followed) {

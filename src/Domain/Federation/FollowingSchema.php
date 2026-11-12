@@ -14,9 +14,9 @@ use AlohaSocial\Core\Platform\Db\Connection;
 /**
  * The canonical schema of the outgoing follow table.
  *
- * Separate from `social_follower` on purpose: a follower is an inbound edge
- * with an inbox, a followed actor is an outbound edge without one. Sharing a
- * table would make the direction ambiguous and both collections wrong.
+ * Separate from `social_follower` on purpose: a follower is an inbound edge,
+ * a followed actor is an outbound edge. Both store an inbox, but for opposite
+ * directions: one receives posts, the other receives Follow and Undo.
  */
 final class FollowingSchema
 {
@@ -32,6 +32,7 @@ final class FollowingSchema
 			. ' id VARCHAR(64) NOT NULL PRIMARY KEY,'
 			. ' local_user_id VARCHAR(255) NOT NULL,'
 			. ' actor_id VARCHAR(255) NOT NULL,'
+			. ' inbox_url VARCHAR(512) NOT NULL,'
 			. ' followed_at VARCHAR(20) NOT NULL'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::TABLE . '_identity ON ' . self::TABLE
