@@ -68,7 +68,11 @@ local account are all `404 not_found`. `direct` visibility and
 codes: `400 invalid_multipart`, `413 payload_too_large`, `422
 validation_failed`, `503 media_not_configured` and `503
 media_storage_unavailable`; `write:media` is enforced like every other declared
-scope. See [Mastodon-compatible API](../guides/mastodon-api.md).
+scope. A notification cursor must belong to the signed-in recipient; an
+unknown or foreign cursor is `404 not_found`. An assembly without the needed
+repository answers `503 favourites_not_configured` or `503
+notifications_not_configured`, and an assembly without local relationships
+answers `503 follows_not_configured`. See [Mastodon-compatible API](../guides/mastodon-api.md).
 
 ## Remote thread failures
 

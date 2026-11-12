@@ -28,6 +28,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\SignatureException;
 use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Support\Time;
 use Throwable;
 
@@ -72,6 +73,7 @@ final class InboxService
 		private readonly ?BlockedActorPolicy $blockedActors = null,
 		private readonly ?FollowPolicy $followPolicy = null,
 		private readonly ?RemoteMediaService $remoteMedia = null,
+		private readonly ?NotificationService $notifications = null,
 	) {
 	}
 
@@ -324,6 +326,11 @@ final class InboxService
 			$actor->inboxUrl,
 			$actor->sharedInboxUrl,
 		));
+
+		// Record on every accepted Follow, not only the first edge: the
+		// deterministic id makes the write idempotent, and a retry after a
+		// notification-storage failure can heal the missing notification.
+		$this->notifications?->recordFollow($localUserId, $actor->actorId);
 
 		$accept = $this->activities->acceptFollow($localUserId, $result->follower->id, $activity);
 

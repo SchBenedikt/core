@@ -83,6 +83,12 @@ final class OpenApiTest extends TestCase
 		self::assertSame('30/900', $mediaDelete['x-rate-limit']);
 		self::assertSame(['write:media'], $mediaDelete['x-required-scopes']);
 
+		$notifications = $document['paths']['/api/mastodon/v1/notifications']['get'];
+		self::assertSame('mastodon_notifications_list', $notifications['operationId']);
+		self::assertSame([['bearerAuth' => []]], $notifications['security']);
+		self::assertSame('60/60', $notifications['x-rate-limit']);
+		self::assertSame(['read:notifications'], $notifications['x-required-scopes']);
+
 		$relationships = $document['paths']['/api/mastodon/v1/accounts/relationships']['get'];
 		self::assertSame('mastodon_accounts_relationships', $relationships['operationId']);
 		self::assertSame([['bearerAuth' => []]], $relationships['security']);

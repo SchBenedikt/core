@@ -10,12 +10,13 @@ This document is the checklist that host is built against.
 
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `FavouriteSchema`, `AttachmentSchema`,
-   `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
+   statements (`PostSchema`, `FavouriteSchema`, `NotificationSchema`,
+   `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
    `RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
-   the migration step. `social_favourite` is needed only when the optional
-   Mastodon compatibility surface exposes favourite/unfavourite; there is no
-   backfill. Existing `social_follower` tables also need the `is_local`
+   the migration step. `social_favourite` and `social_notification` are needed
+   only when the optional Mastodon compatibility surface exposes
+   favourite/unfavourite and notification listing; there is no backfill.
+   Existing `social_follower` tables also need the `is_local`
    column before local follow/unfollow is exposed; it defaults old rows to
    remote (`0`) and needs no backfill.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
@@ -24,8 +25,8 @@ This document is the checklist that host is built against.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
    `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`
-   when local favourites are exposed, and the combined
-   `PdoHomeTimelineRepository`.
+   and `PdoNotificationRepository` when local favourites and notifications
+   are exposed, and the combined `PdoHomeTimelineRepository`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery
    handler, `BlockService`, and `MediaService` with a `BlobStore` and an

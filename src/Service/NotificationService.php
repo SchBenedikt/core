@@ -1,0 +1,150 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Service;
+
+use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+/**
+ * Records and reads local account notifications.
+ *
+ * The notification id is derived from the event, not generated randomly:
+ * repeating a favourite or follow therefore hits the same primary key and
+ * cannot create a duplicate. A notification is a historical event; removing
+ * the favourite or follower does not delete it.
+ *
+ * Recording is best-effort: a missing notification table or a storage failure
+ * is logged and does not fail the primary favourite/follow write. The event
+ * source repeats the call on a retry, so the deterministic id lets a later
+ * attempt heal the missing notification.
+ */
+final class NotificationService
+{
+	private readonly LoggerInterface $logger;
+
+	public function __construct(
+		private readonly NotificationRepository $notifications,
+		private readonly Clock $clock,
+		?LoggerInterface $logger = null,
+	) {
+		$this->logger = $logger ?? new NullLogger();
+	}
+
+	public function recordFavourite(string $recipientId, string $actorId, string $postId): void
+	{
+		$this->record($recipientId, $actorId, NotificationType::Favourite, $postId);
+	}
+
+	public function recordFollow(string $recipientId, string $actorId): void
+	{
+		$this->record($recipientId, $actorId, NotificationType::Follow, null);
+	}
+
+	public function find(string $id): ?Notification
+	{
+		return $this->notifications->find($id);
+	}
+
+	/**
+	 * @param list<NotificationType> $types
+	 * @param list<NotificationType> $excludeTypes
+	 *
+	 * @return list<Notification>
+	 */
+	public function listFor(
+		string $recipientId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+		array $types = [],
+		array $excludeTypes = [],
+	): array {
+		return $this->notifications->listFor(
+			$recipientId,
+			$limit,
+			$before,
+			$beforeId,
+			$after,
+			$afterId,
+			$types,
+			$excludeTypes,
+		);
+	}
+
+	private function record(
+		string $recipientId,
+		string $actorId,
+		NotificationType $type,
+		?string $postId,
+	): void {
+		if ($recipientId === $actorId) {
+			// A self-favourite or self-follow is not an interaction worth a
+			// notification; the services that call this may still store the edge.
+			return;
+		}
+
+		$id = $this->idFor($recipientId, $actorId, $type, $postId);
+		$notification = new Notification(
+			id: $id,
+			recipientId: $recipientId,
+			actorId: $actorId,
+			type: $type,
+			postId: $postId,
+			createdAt: Time::toSecondPrecision($this->clock->now()),
+		);
+
+		try {
+			$this->notifications->insert($notification);
+
+			return;
+		} catch (DatabaseException $exception) {
+			// The deterministic id is the idempotency boundary. Re-read before
+			// deciding this was a real storage failure.
+			try {
+				if ($this->notifications->find($id) !== null) {
+					return;
+				}
+			} catch (DatabaseException) {
+				// A missing notification table is a host migration issue. Keep
+				// the primary favourite/follow write intact and log the loss.
+			}
+
+			$this->logger->error('Notification could not be recorded.', [
+				'recipient_id' => $recipientId,
+				'actor_id' => $actorId,
+				'type' => $type->value,
+				'post_id' => $postId,
+				'exception' => $exception,
+			]);
+		}
+	}
+
+	private function idFor(
+		string $recipientId,
+		string $actorId,
+		NotificationType $type,
+		?string $postId,
+	): string {
+		return 'notification-' . substr(
+			hash('sha256', $recipientId . "\0" . $actorId . "\0" . $type->value . "\0" . ($postId ?? '')),
+			0,
+			32,
+		);
+	}
+}

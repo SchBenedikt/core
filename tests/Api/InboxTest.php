@@ -10,13 +10,17 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use AlohaSocial\Core\Tests\Support\InMemoryActorResolver;
@@ -117,6 +121,26 @@ final class InboxTest extends TestCase
 
 		self::assertSame(401, $response->status);
 		self::assertSame('signature_expired', $response->decodedBody()['error']['code']);
+	}
+
+	public function testARemoteFollowCreatesOneNotificationForTheLocalAccount(): void
+	{
+		self::assertSame(202, $this->deliver($this->follow())->status);
+		self::assertSame(202, $this->deliver($this->follow('https://remote.example/activities/follow-2'))->status);
+
+		$response = $this->app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/notifications',
+			userId: 'alice',
+			scopes: ['read:notifications'],
+		));
+
+		self::assertSame(200, $response->status);
+		self::assertCount(1, $response->decodedBody());
+		self::assertSame('follow', $response->decodedBody()[0]['type']);
+		self::assertSame(self::ACTOR, $response->decodedBody()[0]['account']['id']);
+		self::assertSame('bob@remote.example', $response->decodedBody()[0]['account']['acct']);
+		self::assertArrayNotHasKey('status', $response->decodedBody()[0]);
 	}
 
 	public function testAFollowCreatesTheEdgeAndQueuesAnAccept(): void
@@ -335,6 +359,11 @@ final class InboxTest extends TestCase
 	{
 		return Application::inMemory(
 			clock: $this->clock,
+			config: new ArrayConfig([InstanceInfo::CONFIG_APP => [
+				'instance.url' => 'https://localhost:8080',
+				'mastodon.api' => 'true',
+			]]),
+			localActors: new InMemoryActorDirectory(['alice']),
 			httpClient: $this->http,
 			signingKey: self::$localKey,
 			actorResolver: new InMemoryActorResolver([

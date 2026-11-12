@@ -26,6 +26,7 @@ use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
+use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
@@ -80,7 +81,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(41, $app->routes->routes());
+		self::assertCount(42, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -247,6 +248,47 @@ final class ApplicationHostTest extends TestCase
 		));
 	}
 
+	public function testForHostStoresARemoteFollowNotificationOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host(
+			$database,
+			new FakeHttpClient(),
+			new InMemoryActorResolver([
+				'https://remote.example/users/bob#main-key' => new RemoteActor(
+					self::BOB,
+					'https://remote.example/users/bob#main-key',
+					self::BOB_INBOX,
+					self::$remoteKey->publicKeyPem(),
+				),
+			]),
+			mastodon: true,
+		);
+
+		$response = $app->handle($this->signedInbox([
+			'id' => 'https://remote.example/activities/follow-sql',
+			'type' => 'Follow',
+			'actor' => self::BOB,
+			'object' => 'https://localhost:8080/@alice',
+		]));
+		self::assertSame(202, $response->status);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . NotificationSchema::TABLE,
+		));
+
+		$notifications = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/notifications',
+			userId: 'alice',
+			scopes: ['read:notifications'],
+		));
+
+		self::assertSame(200, $notifications->status);
+		self::assertCount(1, $notifications->decodedBody());
+		self::assertSame('follow', $notifications->decodedBody()[0]['type']);
+		self::assertSame(self::BOB, $notifications->decodedBody()[0]['account']['id']);
+	}
+
 	public function testForHostDeletesTheRemoteAtprotoRecordAfterALocalDelete(): void
 	{
 		$database = $this->database();
@@ -312,6 +354,7 @@ final class ApplicationHostTest extends TestCase
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
 		FavouriteSchema::create($database);
+		NotificationSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);

@@ -42,6 +42,7 @@ final class LocalRelationshipService
 		private readonly LocalActorDirectory $actors,
 		private readonly ActivityFactory $activities,
 		private readonly ?BlockRepository $blocks = null,
+		private readonly ?NotificationService $notifications = null,
 	) {
 	}
 
@@ -65,6 +66,8 @@ final class LocalRelationshipService
 			),
 			local: true,
 		);
+
+		$this->notifications?->recordFollow($targetId, $followerId);
 	}
 
 	public function unfollow(string $followerId, string $targetId): bool

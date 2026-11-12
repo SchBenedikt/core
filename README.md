@@ -26,11 +26,11 @@ Implemented and tested here:
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, individual and shared inbox resolution, batched post delivery, signed `Follow`/`Undo` delivery |
 | Inbound federation | signed `POST /inbox` and `/inbox/shared`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up with historical media repair, bounded on-demand thread/context fetching and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
-| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
+| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, local favourite/follow notification recording and listing, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
 | AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route, an idempotent remote delete for core-published records and an OAuth session-refresh exchange with ES256 DPoP proofs; account linking, the credential store and the full AppView/repository stack are still external (see the [guide](docs/guides/atproto.md)) |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 41 routes and its JSON export |
-| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, local favourite/unfavourite, local follow/unfollow and relationship reads, media upload/update/delete, account statuses, verify credentials) over the same posts, media service and follower graph, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `read:accounts`, `read:follows`), id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 42 routes and its JSON export |
+| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, local favourite/unfavourite, local follow/unfollow and relationship reads, local notification listing, media upload/update/delete, account statuses, verify credentials) over the same posts, media service, follower graph and notification repository, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `read:accounts`, `read:follows`, `read:notifications`), id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
@@ -39,7 +39,9 @@ Implemented and tested here:
 Deliberately not here yet: the rest of the AT Protocol stack (account linking,
 the credential store, full repository/AppView, media and firehose), the full
 Mastodon server API (the local compatibility subset is in
-`docs/guides/mastodon-api.md`), an admin UI, a migration runner, the Vue UI
+`docs/guides/mastodon-api.md`; locally implementable follow-ups such as local
+search, poll creation and narrower local account endpoints are listed in the
+roadmap), an admin UI, a migration runner, the Vue UI
 package and the Nextcloud/standalone host applications. Local image upload, thumbnails, guarded remote-media
 ingestion for incoming federated posts and bounded thread/context fetches are
 implemented; an object-storage adapter remains a host choice. The
@@ -59,7 +61,7 @@ remaining seams.
 composer install
 composer check          # lint, boundary, attribution, links, tests
 php bin/core-demo       # drives the core through real HTTP requests
-php bin/export-routes   # the HTTP contract as JSON (41 routes)
+php bin/export-routes   # the HTTP contract as JSON (42 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
 ```
@@ -104,6 +106,7 @@ docs/              index, architecture, guides, reference, operations, ADRs
 3. **Data** — the schema of a table lives next to its repository or adapter
    ([`PostSchema`](src/Domain/Post/PostSchema.php),
    [`FavouriteSchema`](src/Domain/Post/FavouriteSchema.php),
+   [`NotificationSchema`](src/Domain/Notification/NotificationSchema.php),
    [`AttachmentSchema`](src/Domain/Media/AttachmentSchema.php),
    [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php),
    [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php),
@@ -163,11 +166,13 @@ and disabled feature), create (form and JSON), read, local
 favourite/unfavourite (counts, viewer flags, idempotency, auth, scope,
 deleted status and custom prefix), local follow/unfollow and relationship
 reads (flags, idempotency, self/unknown targets, scalar and array ids, limits
-and scopes), account statuses, verify, delete, cursor pagination and invalid
-media. The `FavouriteRepository`, `FollowerRepository` and `PostRepository`
-contracts cover the new storage, local-edge delivery exclusion and
-attachment-link queries. The `MastodonCompatibilityTest` covers prefix
-validation, scope matching and route metadata.
+and scopes), notifications (favourite/follow creation, repeat idempotency,
+historical survival, type filters and cursor pagination), account statuses,
+verify, delete, cursor pagination and invalid media. The `FavouriteRepository`,
+`NotificationRepository`, `FollowerRepository` and `PostRepository` contracts
+cover the new storage, local-edge delivery exclusion and attachment-link
+queries. The `MastodonCompatibilityTest` covers prefix validation, scope
+matching and route metadata.
 
 ## Documentation
 

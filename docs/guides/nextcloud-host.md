@@ -412,7 +412,11 @@ the host serves `POST /inbox/shared` with the same controller as `/inbox`.
 For the Mastodon-compatible local follow/unfollow and relationship routes,
 add `is_local SMALLINT NOT NULL DEFAULT 0` to `social_follower`; existing rows
 stay remote and only `POST {prefix}/accounts/{id}/follow` writes `1`. A host
-without the column cannot read followers or serve those routes.
+without the column cannot read followers or serve those routes. For the
+notification route, create `social_notification` from
+`NotificationSchema::statements()`; there is no legacy import. Repeating an
+interaction cannot duplicate a notification, and deleting a post/follow leaves
+the historical row for the host's retention policy.
 Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
 or reading the combined home timeline; it has no legacy rows to import. Create
 `social_block` before enabling `GET`/`POST /api/v1/blocks` or the combined home
@@ -477,12 +481,15 @@ one owner, or a peer will see two different answers for the same account.
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
 - The core now owns the optional Mastodon-compatible subset (instance,
   public timeline, status read/create/delete, local favourite/unfavourite,
-  media upload/update/delete, account statuses and verify credentials). The app can delegate
-  those routes instead of keeping a second implementation; OAuth/token
-  issuance, remote timelines, favourite federation, boosts, notifications and
-  the remaining account/admin surface stay host-specific. Remote-post
-  backfill, thread/context fetching and local/remote media are in the core;
-  the Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use the
+  local follow/unfollow and relationships, local notifications, media
+  upload/update/delete, account statuses and verify credentials). The app can
+  delegate those routes instead of keeping a second implementation;
+  OAuth/token issuance, remote timelines, favourite federation, boosts,
+  remote notifications, streaming and the remote account/admin surface stay
+  host-specific. Local search, poll creation and narrower local account
+  endpoints are core-side follow-ups, not host blockers. Remote-post backfill,
+  thread/context fetching and local/remote media are in the core; the
+  Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use the
   supplied `CurlHttpClient`) before remote attachment ingestion or thread
   fetching can be enabled.
 - Key storage and migrations are host adapters; the core supplies the

@@ -26,6 +26,7 @@ Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
+- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
@@ -84,6 +85,16 @@ makes a repeat favourite idempotent, the post index serves public counts and
 the `(user, created_at)` index supports a future favourites timeline. A post
 deletion is a soft delete and does not cascade here; the host may remove
 orphaned favourites on its own cleanup schedule.
+
+`social_notification` stores one local event per recipient, type, actor and
+optional post. Its primary key is a deterministic hash of that tuple, so a
+repeated favourite or Follow cannot create a second row; no random id or
+secondary idempotency table is involved. The `(recipient_id, created_at, id)`
+index serves the newest-first page and its id tie-break. A notification is
+historical: unfavouriting, unfollowing or deleting the post does not delete
+it. A deleted post is omitted from the projected notification. The host can
+prune rows by recipient or age; the core does not schedule that job. There is
+no read/dismiss flag.
 
 `social_atproto_publication` stores the idempotency mapping from a local post
 to the AT Protocol record written for one account. Its primary key is

@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -25,6 +27,7 @@ use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\LocalRelationshipService;
+use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Support\Time;
@@ -35,9 +38,11 @@ use DateTimeImmutable;
  *
  * It reuses the existing post service for writes and the existing repositories
  * for reads. There is no second status table: a Mastodon status is a core
- * post with an API-shaped projection. Remote posts, boosts, notifications and
- * streaming are intentionally outside this local slice; favourites are local
- * bookkeeping because the compatibility surface only exposes local posts.
+ * post with an API-shaped projection. Remote posts, boosts and streaming are
+ * intentionally outside this local slice. Favourites, follow edges and
+ * notifications are local bookkeeping; notifications are recorded from local
+ * favourites/follows and verified inbound Follows, and read from the
+ * notification repository without a second account or post model.
  */
 final class MastodonService
 {
@@ -55,6 +60,7 @@ final class MastodonService
 		private readonly ?FavouriteRepository $favourites = null,
 		private readonly ?Clock $clock = null,
 		private readonly ?LocalRelationshipService $relationships = null,
+		private readonly ?NotificationService $notifications = null,
 	) {
 	}
 
@@ -218,6 +224,10 @@ final class MastodonService
 			if (!$favourites->exists($userId, $post->id)) {
 				throw $exception;
 			}
+		}
+
+		if ($post->authorId !== $userId) {
+			$this->notifications?->recordFavourite($post->authorId, $userId, $post->id);
 		}
 
 		return $this->presenter->status($post, $userId);
@@ -392,6 +402,78 @@ final class MastodonService
 	}
 
 	/**
+	 * @param list<string> $types
+	 * @param list<string> $excludeTypes
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function notifications(
+		string $userId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+		array $types = [],
+		array $excludeTypes = [],
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$service = $this->requireNotifications();
+		try {
+			[$before, $beforeId, $after, $afterId] = $this->notificationCursor(
+				$service,
+				$userId,
+				$maxId,
+				$sinceId ?? $minId,
+			);
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+
+		$include = $this->notificationTypes($types);
+		if ($types !== [] && $include === []) {
+			return [];
+		}
+
+		try {
+			$notifications = $service->listFor(
+				$userId,
+				$this->clamp($limit),
+				$before,
+				$beforeId,
+				$after,
+				$afterId,
+				$include,
+				$this->notificationTypes($excludeTypes),
+			);
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+
+		$result = [];
+		foreach ($notifications as $notification) {
+			$status = $notification->postId === null
+				? null
+				: $this->posts->find($notification->postId);
+			if ($status?->isDeleted() === true) {
+				$status = null;
+			}
+
+			$result[] = $this->presenter->notification($notification, $status);
+		}
+
+		return $result;
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	public function verifyCredentials(string $userId): array
@@ -447,6 +529,73 @@ final class MastodonService
 		return $attachment;
 	}
 
+	/**
+	 * @param list<string> $values
+	 *
+	 * @return list<NotificationType>
+	 */
+	private function notificationTypes(array $values): array
+	{
+		$types = [];
+		foreach ($values as $value) {
+			$type = NotificationType::tryFrom(trim($value));
+			if ($type !== null) {
+				$types[$type->value] = $type;
+			}
+		}
+
+		return array_values($types);
+	}
+
+	/**
+	 * @return array{0: ?\DateTimeImmutable, 1: ?string, 2: ?\DateTimeImmutable, 3: ?string}
+	 */
+	private function notificationCursor(
+		NotificationService $service,
+		string $userId,
+		?string $maxId,
+		?string $sinceId,
+	): array {
+		if ($maxId !== null && $maxId !== '' && $sinceId !== null && $sinceId !== '') {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'max_id and since_id/min_id cannot be combined.',
+			);
+		}
+
+		$before = null;
+		$beforeId = null;
+		if ($maxId !== null && $maxId !== '') {
+			$notification = $this->notificationCursorNotification($service, $userId, $maxId);
+			$before = $notification->createdAt;
+			$beforeId = $notification->id;
+		}
+
+		$after = null;
+		$afterId = null;
+		if ($sinceId !== null && $sinceId !== '') {
+			$notification = $this->notificationCursorNotification($service, $userId, $sinceId);
+			$after = $notification->createdAt;
+			$afterId = $notification->id;
+		}
+
+		return [$before, $beforeId, $after, $afterId];
+	}
+
+	private function notificationCursorNotification(
+		NotificationService $service,
+		string $userId,
+		string $id,
+	): Notification {
+		$notification = $service->find($id);
+		if ($notification === null || $notification->recipientId !== $userId) {
+			throw new MastodonRequestException(404, 'not_found', 'Notification cursor not found.');
+		}
+
+		return $notification;
+	}
+
 	private function requireRelationships(): LocalRelationshipService
 	{
 		if ($this->relationships === null) {
@@ -458,6 +607,19 @@ final class MastodonService
 		}
 
 		return $this->relationships;
+	}
+
+	private function requireNotifications(): NotificationService
+	{
+		if ($this->notifications === null) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_not_configured',
+				'Notification storage is not configured.',
+			);
+		}
+
+		return $this->notifications;
 	}
 
 	private function requireMedia(): MediaService

@@ -22,7 +22,7 @@ that prints or skips is a failure.
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |
-| `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared` and the stored shared inbox |
+| `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared`, the stored shared inbox and the remote-follow notification read back through the Mastodon route |
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
 | `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |
@@ -34,16 +34,17 @@ that prints or skips is a failure.
 | `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
-| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), account statuses, verify, delete and cursor pagination |
-| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload/update/delete, favourites and local follow/relationship routes |
+| `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, media upload (success/description/media-in-status/auth/scope/disabled/invalid/corrupt/oversized/no-orphan/idempotency), media update (JSON/form/multipart, absent/empty description, ownership, attached refusal, binary refusal) and delete (empty object, blob cleanup, attached refusal, foreign/missing ids, scopes/disabled), create (form/JSON), read, favourite/unfavourite (counts, viewer flags, repeat idempotency, absent no-op, auth, scope, deleted status), local follow/unfollow and relationship reads (flags, repeat idempotency, self/unknown targets, home-timeline visibility, scalar and `id[]`, deduplication, missing/empty input, 100-id limit, auth/scope/disabled), notifications (favourite/follow creation, repeat idempotency, survival after unfavourite, self suppression, type filters, pagination, remote actor projection, auth/scope/disabled, cursor ownership and a missing-table failure that leaves the primary favourite/follow intact while listing answers 503), account statuses, verify, delete and cursor pagination |
+| `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/scope/rate-limit metadata, including media upload/update/delete, favourites, local follow/relationship routes and notifications |
 | `tests/Domain/InMemoryFavouriteRepositoryTest.php`, `tests/Domain/PdoFavouriteRepositoryTest.php` | the shared `FavouriteRepositoryTestCase`: pair uniqueness, per-user removal, batch public counts and viewer flags |
+| `tests/Domain/InMemoryNotificationRepositoryTest.php`, `tests/Domain/PdoNotificationRepositoryTest.php` | the shared `NotificationRepositoryTestCase`: insert/find projection, duplicate-id refusal, recipient scoping, newest-first ordering with the id tie-break, exclusive cursors and type filters before the limit |
 | `tests/Protocol/XrpcAtprotoPublisherTest.php` | exact `putRecord`/`deleteRecord` requests, bearer header, successful URI, 404-as-idempotent-delete, non-2xx status without leaking the body, transport failure and malformed success |
 | `tests/Protocol/TidTest.php`, `tests/Protocol/AtprotoPostRecordTest.php` | deterministic valid TIDs, record shape, content-warning labels and AT Protocol text limits |
 | `tests/Service/Federation/RemoteMediaFetcherTest.php` | guard reasons for private IPv4/IPv6, redirect revalidation, redirect budget, HTTP error, timeout, size limit and disabled switch |
 | `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination; the application-level backfill→media path is covered by `RemoteMediaTest` |
-| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL favourite row and an AT Protocol remote delete over SQL |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create, the SQL home timeline, an idempotent Mastodon status write, a SQL favourite row, a SQL notification row and an AT Protocol remote delete over SQL |
 
 ## Contract tests
 
@@ -65,6 +66,8 @@ final class InMemoryBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class PdoBlockRepositoryTest extends BlockRepositoryTestCase { … }
 final class InMemoryFavouriteRepositoryTest extends FavouriteRepositoryTestCase { … }
 final class PdoFavouriteRepositoryTest extends FavouriteRepositoryTestCase { … }
+final class InMemoryNotificationRepositoryTest extends NotificationRepositoryTestCase { … }
+final class PdoNotificationRepositoryTest extends NotificationRepositoryTestCase { … }
 final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class InMemoryAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }

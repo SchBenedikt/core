@@ -93,10 +93,10 @@ rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
 proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
 compatibility subset (instance, public timeline, status read/create/delete,
 local favourite/unfavourite, local follow/unfollow and relationship reads,
-media upload/update/delete, account statuses, verify credentials;
-`write:statuses`, `write:favourites`, `write:follows`, `write:media`,
-`read:accounts` and `read:follows` scopes, id-aware pagination and
-`Idempotency-Key`), the
+local notification listing, media upload/update/delete, account statuses,
+verify credentials; `write:statuses`, `write:favourites`, `write:follows`,
+`write:media`, `read:accounts`, `read:follows` and `read:notifications`
+scopes, id-aware pagination and `Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
 backfill with historical media catch-up, bounded thread/context fetching with
@@ -111,10 +111,13 @@ The migration, repository-owner and shared-UI contracts are accepted in ADR
 happen in their host workflows.
 Not implemented in the core: AT Protocol account linking, the
 authorization-code/PAR flow and token revocation, the full
-repository/AppView/media/firehose stack, the full Mastodon server API
-(OAuth/token issuance, remote timelines, favourite federation, boosts, notifications,
-streaming, polls, search, account/admin and remote relationship APIs)
-and an object-storage adapter. The local AT Protocol publishing slice is
+repository/AppView/media/firehose stack, the external Mastodon server
+remainder (OAuth/token issuance and app registration, remote timelines and
+delivery, favourite federation, boosts, remote notifications, streaming,
+remote search, account/admin and remote relationship APIs), and an
+object-storage adapter. Local Mastodon notification listing is done; local
+search, poll creation, instance/domain info and narrower local account
+endpoints are core-side roadmap follow-ups, not host blockers. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility
 subset is in `docs/guides/mastodon-api.md`; the rest is in
 `docs/roadmap.md`. Local

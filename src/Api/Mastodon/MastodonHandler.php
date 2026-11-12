@@ -126,10 +126,16 @@ abstract class MastodonHandler implements Handler
 		return $translated;
 	}
 
-	protected function nextLink(Request $request, string $lastId, int $limit): string
+	/**
+	 * @param array<string, mixed> $extraQuery
+	 */
+	protected function nextLink(Request $request, string $lastId, int $limit, array $extraQuery = []): string
 	{
 		$base = rtrim($this->mastodon->baseUrl(), '/');
 		$query = '?limit=' . $limit . '&max_id=' . rawurlencode($lastId);
+		if ($extraQuery !== []) {
+			$query .= '&' . http_build_query($extraQuery);
+		}
 
 		return '<' . $base . $request->path . $query . '>; rel="next"';
 	}

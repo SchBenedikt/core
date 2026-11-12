@@ -100,7 +100,18 @@ favourite/unfavourite writes the new `social_favourite` table through
 `FavouriteRepository`; create it with `FavouriteSchema::statements()` through
 the host migration path before exposing those routes. There is no backfill,
 and the table has a composite `(user_id, post_id)` primary key, so a repeat
-cannot duplicate a favourite. Local follow/unfollow writes the existing
+cannot duplicate a favourite. Local notifications use the new
+`social_notification` table through `NotificationRepository`; create it with
+`NotificationSchema::statements()` before enabling the notification route.
+Its primary key is a deterministic event id, so a repeated favourite, local
+follow or remote Follow cannot create a second row. Notification recording is
+best-effort: if the table is missing or the write fails, the primary
+favourite/follow write still succeeds, the failure is logged, and a repeat of
+the event can heal the missing row. The notification listing route itself still
+needs the table. There is no backfill from older favourites/followers, and
+deleting a post or follow deliberately does not delete the historical
+notification. Notification rows can be cleaned up by recipient or age in a
+host job; no dismiss/read state is stored. Local follow/unfollow writes the existing
 `social_follower` edge with `is_local = 1`; existing hosts must add the column:
 
 ```sql
@@ -117,10 +128,15 @@ unfollow, so there is no separate cleanup job. Media upload needs the same
 `503 media_not_configured`, and a storage failure after validation answers
 `503 media_storage_unavailable`. A manually assembled service without a
 `FavouriteRepository` answers `503 favourites_not_configured`; the standard
-`Application` assemblies always provide one. The host must
+`Application` assemblies always provide one. A manually assembled service
+without a `NotificationRepository` answers `503
+notifications_not_configured`; a missing or unreadable notification table
+answers `503 notifications_unavailable`. The standard assemblies always
+provide the repository. The host must
 map bearer tokens to `Request::$userId` and `Request::$scopes`; a parent scope
-such as `read` grants `read:accounts` and `read:follows`, `write` grants
-`write:favourites`, `write:follows` and `write:media`, a granular scope does
+such as `read` grants `read:accounts`, `read:follows` and
+`read:notifications`, `write` grants `write:favourites`, `write:follows` and
+`write:media`, a granular scope does
 not grant its parent, and a token without the route's scope gets `403
 insufficient_scope`.
 The declared rate limits are enforced by the host like every other route. The
@@ -143,8 +159,8 @@ documented in [remote threads](../guides/remote-threads.md).
 | Constant | Value | Meaning |
 | --- | --- | --- |
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming; also the compatibility status ceiling |
-| `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines |
-| `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines |
+| `MastodonService::DEFAULT_LIMIT` | 20 | Default page size of the compatibility timelines and notification list |
+| `MastodonService::MAX_LIMIT` | 40 | Hard page-size ceiling of the compatibility timelines and notification list |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
 | `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |

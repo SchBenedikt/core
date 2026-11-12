@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service\Mastodon;
 
+use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -35,6 +37,7 @@ final class MastodonPresenter
 		private readonly ?MediaService $media = null,
 		private readonly ?FavouriteRepository $favourites = null,
 		private readonly ?LocalRelationshipService $relationships = null,
+		private readonly ?LocalActorDirectory $localActors = null,
 	) {
 	}
 
@@ -45,30 +48,33 @@ final class MastodonPresenter
 	{
 		$url = $this->baseUrl() . '/@' . rawurlencode($userId);
 
-		return [
-			'id' => $userId,
-			'username' => $userId,
-			'acct' => $userId,
-			'display_name' => $userId,
-			'locked' => false,
-			'bot' => false,
-			'discoverable' => true,
-			'group' => false,
-			'created_at' => '1970-01-01T00:00:00.000Z',
-			'note' => '',
-			'url' => $url,
-			'avatar' => '',
-			'avatar_static' => '',
-			'header' => '',
-			'header_static' => '',
-			'followers_count' => $this->relationships?->followersCount($userId) ?? 0,
-			'following_count' => $this->relationships?->followingCount($userId) ?? 0,
-			'statuses_count' => 0,
-			'last_status_at' => null,
-			'noindex' => false,
-			'emojis' => [],
-			'fields' => [],
+		return $this->accountShape(
+			$userId,
+			$userId,
+			$userId,
+			$url,
+			$this->relationships?->followersCount($userId) ?? 0,
+			$this->relationships?->followingCount($userId) ?? 0,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function notification(Notification $notification, ?Post $status = null): array
+	{
+		$result = [
+			'id' => $notification->id,
+			'type' => $notification->type->value,
+			'created_at' => $notification->createdAt->format('Y-m-d\TH:i:s.000\Z'),
+			'account' => $this->notificationAccount($notification->actorId),
 		];
+
+		if ($status !== null) {
+			$result['status'] = $this->status($status, $notification->recipientId);
+		}
+
+		return $result;
 	}
 
 	/**
@@ -153,6 +159,68 @@ final class MastodonPresenter
 	/**
 	 * @return array<string, mixed>
 	 */
+	private function notificationAccount(string $actorId): array
+	{
+		if ($this->localActors?->has($actorId) === true) {
+			return $this->account($actorId);
+		}
+
+		$parts = parse_url($actorId);
+		$host = is_array($parts) && isset($parts['host']) ? (string) $parts['host'] : '';
+		$path = is_array($parts) && isset($parts['path']) ? (string) $parts['path'] : '';
+		$username = $path === '' ? $host : basename($path);
+		$username = ltrim(rawurldecode($username), '@');
+		if ($username === '') {
+			$username = $actorId;
+		}
+
+		return $this->accountShape(
+			$actorId,
+			$username,
+			$host === '' ? $username : $username . '@' . $host,
+			$actorId,
+			0,
+			0,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function accountShape(
+		string $id,
+		string $username,
+		string $acct,
+		string $url,
+		int $followersCount,
+		int $followingCount,
+	): array {
+		return [
+			'id' => $id,
+			'username' => $username,
+			'acct' => $acct,
+			'display_name' => $username,
+			'locked' => false,
+			'bot' => false,
+			'discoverable' => true,
+			'group' => false,
+			'created_at' => '1970-01-01T00:00:00.000Z',
+			'note' => '',
+			'url' => $url,
+			'avatar' => '',
+			'avatar_static' => '',
+			'header' => '',
+			'header_static' => '',
+			'followers_count' => $followersCount,
+			'following_count' => $followingCount,
+			'statuses_count' => 0,
+			'last_status_at' => null,
+			'noindex' => false,
+			'emojis' => [],
+			'fields' => [],
+		];
+	}
+
 	public function instance(): array
 	{
 		$description = $this->instance->describe();

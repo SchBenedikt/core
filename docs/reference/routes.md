@@ -51,6 +51,7 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
 | `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
+| `mastodon.notifications.list` | `GET` | `/api/mastodon/v1/notifications` | yes, `read:notifications` | 60 / 60 s |
 
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
@@ -462,7 +463,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The fifteen routes above are additive and disabled by default. Their paths use
+The sixteen routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -477,6 +478,7 @@ POST /api/mastodon/v1/statuses/{id}/unfavourite
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
 POST /api/mastodon/v1/accounts/bob/follow
 POST /api/mastodon/v1/accounts/bob/unfollow
+GET /api/mastodon/v1/notifications?limit=20&types[]=favourite
 POST /api/mastodon/v1/statuses
 Idempotency-Key: client-key-1
 Content-Type: application/json
@@ -545,13 +547,22 @@ still references the media. `DELETE` removes the row and both blobs. Both
 routes require `write:media` and declare a `30/900` rate limit; no new table or
 migration is involved.
 
-Pagination accepts `limit` (1–40), `max_id`, `since_id` and `min_id`; a
+`GET /api/mastodon/v1/notifications` returns the signed-in account's local
+favourite and follow events, newest first. The `account` is the local actor id
+or, for a remote follower, the actor URL projected with a minimal profile. A
+favourite notification carries the status; a follow notification and a
+favourite whose post no longer exists omit `status`. Repeat events use a
+deterministic id and cannot duplicate. `types[]`/`exclude_types[]` filter
+known local types before the page limit. Pagination accepts `limit` (1–40),
+`max_id`, `since_id` and `min_id`; a cursor must belong to the caller. A
 non-empty page carries a `Link` with `rel="next"`. `max_id` cannot be combined
 with `since_id`/`min_id`, and an unknown cursor is `404 not_found`. The routes
 declare scopes in the manifest and OpenAPI (`x-required-scopes`); the host maps
 tokens to `Request::$scopes` and enforces the declared rate limits. Errors:
 `404 mastodon_api_disabled`, `403 insufficient_scope`, `422 validation_failed`,
-`422 unsupported_parameter`, `404 not_found`, `503 favourites_not_configured`.
+`422 unsupported_parameter`, `404 not_found`, `503 favourites_not_configured`,
+`503 notifications_not_configured`, `503 notifications_unavailable` (missing
+or unreadable notification table).
 
 ## Route parameters
 

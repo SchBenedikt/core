@@ -32,6 +32,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
@@ -85,6 +86,9 @@ use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -145,6 +149,7 @@ use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalRelationshipService;
+use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
@@ -215,6 +220,7 @@ final readonly class Application
 		?AtprotoAccountResolver $atprotoAccounts = null,
 		?AtprotoPublisher $atprotoPublisher = null,
 		?AtprotoPublicationRepository $atprotoPublications = null,
+		?NotificationRepository $notificationRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -237,6 +243,7 @@ final readonly class Application
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository();
 		$favouriteRepository ??= new InMemoryFavouriteRepository();
+		$notificationRepository ??= new InMemoryNotificationRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -268,6 +275,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository,
 			favouriteRepository: $favouriteRepository,
+			notificationRepository: $notificationRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -323,6 +331,7 @@ final readonly class Application
 		?AtprotoAccountResolver $atprotoAccounts = null,
 		?AtprotoPublisher $atprotoPublisher = null,
 		?AtprotoPublicationRepository $atprotoPublications = null,
+		?NotificationRepository $notificationRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -347,6 +356,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
 			favouriteRepository: $favouriteRepository ?? new PdoFavouriteRepository($database),
+			notificationRepository: $notificationRepository ?? new PdoNotificationRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -385,6 +395,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy,
 		AttachmentRepository $attachmentRepository,
 		FavouriteRepository $favouriteRepository,
+		NotificationRepository $notificationRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -413,6 +424,7 @@ final readonly class Application
 
 		$logger ??= new NullLogger();
 		$activities = new ActivityFactory($config);
+		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
 		$remotePostFactory = new RemotePostFactory($clock);
 
 		$mediaService = $blobStore === null
@@ -470,6 +482,7 @@ final readonly class Application
 				$localActors,
 				$activities,
 				$blockRepository,
+				$notificationService,
 			);
 		if ($localRelationships !== null) {
 			$homeTimeline = new LocalFollowHomeTimelineRepository($homeTimeline, $posts, $localRelationships);
@@ -479,12 +492,13 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
 			$clock,
 			$localRelationships,
+			$notificationService,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -557,6 +571,7 @@ final readonly class Application
 				$blockedActors,
 				$followPolicy,
 				$remoteMedia,
+				$notificationService,
 			)
 			: null;
 
@@ -610,6 +625,7 @@ final readonly class Application
 			->with(MastodonMediaUploadHandler::class, static fn (): MastodonMediaUploadHandler => new MastodonMediaUploadHandler($mastodonService))
 			->with(MastodonPublicTimelineHandler::class, static fn (): MastodonPublicTimelineHandler => new MastodonPublicTimelineHandler($mastodonService))
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
+			->with(MastodonNotificationsHandler::class, static fn (): MastodonNotificationsHandler => new MastodonNotificationsHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
 			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))

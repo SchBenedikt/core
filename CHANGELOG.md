@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local notifications: `GET
+  {mastodon.prefix}/notifications` requires `read:notifications`, declares a
+  `60/60` rate limit and returns the signed-in local account's favourites and
+  follows, newest first. A local favourite, a local follow and a verified
+  inbound remote Follow each record one event; a deterministic id derived from
+  recipient, type, actor and post makes repeats idempotent. `types[]` and
+  `exclude_types[]` filter the known local types before the limit, and
+  `max_id`/`since_id`/`min_id` use the notification id with a time tie-break
+  and a `Link` header. A favourite carries the projected status; a follow and
+  a favourite whose post was deleted omit it. A local actor is projected as a
+  local account, while a remote follower is stored as its actor URL and
+  projected without fetching a profile. The new `social_notification` table
+  comes from `NotificationSchema` with in-memory and PDO repositories behind
+  one contract test; existing hosts must create it before enabling the route,
+  with no backfill. Recording is best-effort: a missing table or failed
+  notification write is logged without failing the primary favourite/follow
+  write, and repeating the event after the migration can heal the row.
+  Notifications are historical and survive unfavourite, unfollow and post
+  deletion; they are not marked read. The route manifest and
+  OpenAPI export now have 42 routes. The external Mastodon remainder (OAuth,
+  remote timelines/delivery, favourite federation, boosts, remote
+  notifications, streaming and remote admin) stays out of scope; local search,
+  polls and narrower local account endpoints remain core-side roadmap
+  follow-ups. See `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local follows and relationships: `POST
   {mastodon.prefix}/accounts/{id}/follow` and `.../unfollow` require
   `write:follows`, declare a `30/900` rate limit and return the normal

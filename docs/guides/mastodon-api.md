@@ -28,23 +28,26 @@ Locally implemented (core):
 - `DELETE /statuses/{id}`
 - `GET /accounts/{id}/statuses`
 - `GET /accounts/verify_credentials`
+- `GET /notifications`
 
 The local subset covers public/unlisted/followers-only text posts, local
 favourite/unfavourite bookkeeping, local follow/unfollow and relationship
-bookkeeping, media upload, metadata update/delete and local media attachments.
-It deliberately does **not** implement remote timelines, following a remote
-actor through this compatibility prefix, remote favourite federation
-(outbound `Like`/`Undo` or remote favourite counts), boosts, notifications,
-streaming, polls, scheduled posts, filters, followed tags, lists, OAuth
-authorization/token endpoints, search, admin APIs or the full account/profile
-surface. Those remain external work; see the section at the end.
+bookkeeping, local notifications, media upload, metadata update/delete and
+local media attachments. It deliberately does **not** implement remote
+timelines, following a remote actor through this compatibility prefix, remote
+favourite federation (outbound `Like`/`Undo` or remote favourite counts),
+boosts, remote notifications or notification dismissal, streaming, polls,
+scheduled posts, filters, followed tags, lists, OAuth authorization/token
+endpoints, search, admin APIs or the full account/profile surface. Some of
+those are locally implementable and remain on the roadmap; only the parts that
+need a host or remote data are external. See the section at the end.
 
 ## Configuration and prefix
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all fifteen routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all sixteen routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -86,18 +89,19 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `POST {prefix}/accounts/{id}/unfollow` | yes | `write:follows` | 30 / 900 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
+| `GET {prefix}/notifications` | yes | `read:notifications` | 60 / 60 s |
 
-A parent scope grants its children (`read` grants `read:accounts` and
-`read:follows`, `write` grants `write:favourites`, `write:follows` and
-`write:media`); a granular scope does not grant its parent. `*` grants
-everything. A token with too few scopes gets `403 insufficient_scope`. The host
-still owns bearer parsing, token expiry/revocation and the actual rate limiter;
-the route manifest only declares the budget, exactly like the rest of the core
-API.
+A parent scope grants its children (`read` grants `read:accounts`,
+`read:follows` and `read:notifications`, `write` grants `write:favourites`,
+`write:follows` and `write:media`); a granular scope does not grant its parent.
+`*` grants everything. A token with too few scopes gets `403
+insufficient_scope`. The host still owns bearer parsing, token
+expiry/revocation and the actual rate limiter; the route manifest only declares
+the budget, exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
 `verify_credentials`, status creation, favourite/unfavourite, follow/unfollow,
-relationships, media management and account statuses.
+relationships, notifications, media management and account statuses.
 Without a directory the core cannot distinguish local from remote account ids;
 a host that enables this API should always pass one.
 
@@ -247,6 +251,63 @@ directory. `Application::inMemory()`/`Application::forHost()` create the
 service when a directory is supplied; an assembly without one answers `503
 follows_not_configured` rather than returning an empty relationship.
 
+### Reading notifications
+
+`GET {prefix}/notifications` returns the signed-in local account's
+notifications, newest first. A local favourite by another account creates one
+`favourite` notification for the post author; a local or remote follow creates
+one `follow` notification for the local target. Repeating the same favourite,
+follow or Follow activity does not create a second row. The API does not
+notify an account about its own actions and does not create a notification for
+a post the caller cannot see.
+
+```json
+{
+  "id": "notification-8f14e45fceea167a5a36dedd4bea2543",
+  "type": "favourite",
+  "created_at": "2026-11-11T10:00:00.000Z",
+  "account": {
+    "id": "alice",
+    "username": "alice",
+    "acct": "alice",
+    "url": "https://social.example/@alice",
+    "…": "the usual account fields"
+  },
+  "status": {
+    "id": "…",
+    "…": "the usual status fields"
+  }
+}
+```
+
+`account` is the actor who caused the event: a local account id for a local
+favourite or follow, and the absolute actor URL for a remote follower. A
+remote account is projected with the URL path as `username`, `username@host`
+as `acct`, the actor URL as `url`, and zero counts; the core does not fetch a
+remote profile just to render a notification. `status` is present for a
+favourite and omitted for a follow. It is also omitted if the post was deleted
+or is no longer visible to the recipient, so a notification never exposes a
+tombstone. The id is derived from recipient, type, actor and post, which is the
+idempotency boundary; no random notification id is generated.
+
+The endpoint accepts `types[]` and `exclude_types[]`, each repeatable. Known
+local types are `favourite` and `follow`; unknown names are ignored for
+forward compatibility. If a non-empty `types[]` contains no known type, the
+result is an empty array. The filters apply before the page limit.
+
+`limit` defaults to 20 and is clamped to 1–40. `max_id` returns notifications
+older than the cursor, `since_id` (or `min_id`) returns newer ones, and a
+notification id belongs to exactly one recipient: a cursor that exists for a
+different account is `404 not_found`, not someone else's page. `max_id` cannot
+be combined with `since_id`/`min_id`. A non-empty page carries `Link: <…
+?limit=…&max_id=…>; rel="next"` and preserves active type filters.
+
+A manually assembled service without a `NotificationRepository` answers `503
+notifications_not_configured` instead of returning an empty list. The standard
+`Application::inMemory()`/`Application::forHost()` assemblies always supply
+one. Reading notifications does not mark them as read; the core has no unread
+or dismissal state in this slice.
+
 ### Uploading media
 
 `POST /media` accepts `multipart/form-data` with a `file` field and an optional
@@ -339,19 +400,20 @@ logical write, not per request body.
 first accepted as an integer and then clamped; a non-integer falls back to the
 default.
 
-- `max_id` returns statuses older than that status, using the post's publish
-  time and id as a tie-break so several posts in the same second cannot repeat
-  or disappear.
-- `since_id` returns statuses newer than that status.
+- `max_id` returns entries older than that cursor, using the stored time and
+  id as a tie-break so several posts in the same second cannot repeat or
+  disappear.
+- `since_id` returns entries newer than that cursor.
 - `min_id` is accepted as the same newer-than cursor when `since_id` is
   absent.
 - `max_id` cannot be combined with `since_id`/`min_id`; that is `422
   validation_failed`.
-- An unknown cursor id is `404 not_found`.
+- An unknown cursor id is `404 not_found`; a notification cursor must belong to
+  the signed-in recipient.
 
 A non-empty page carries `Link: <…?limit=…&max_id=…>; rel="next"`. Clients can
-follow it until the page is empty. This uses the existing post repository's
-id-aware cursor; the API does not keep a per-client timeline.
+follow it until the page is empty. This uses the existing post or notification
+repository's id-aware cursor; the API does not keep a per-client timeline.
 
 ## Errors
 
@@ -362,6 +424,8 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off |
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
+| `notifications_not_configured` | 503 | The assembly has no `NotificationRepository` |
+| `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
 | `instance_not_configured` | 503 | `social/instance.url` is missing; a local follow needs it to derive actor URLs |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
@@ -410,17 +474,43 @@ fresh host gets it from `FollowerSchema::create()`. A host that leaves the old
 schema in place will fail on follower reads and on follow/unfollow. There is
 no cleanup job for the marker: it is part of the edge and disappears with it.
 
+```sql
+CREATE TABLE social_notification (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  recipient_id VARCHAR(255) NOT NULL,
+  actor_id VARCHAR(255) NOT NULL,
+  type VARCHAR(32) NOT NULL,
+  post_id VARCHAR(64) NULL,
+  created_at VARCHAR(20) NOT NULL
+);
+CREATE INDEX social_notification_timeline
+  ON social_notification (recipient_id, created_at, id);
+```
+
 An existing host must create `social_favourite` through its migration path
 before exposing the two favourite routes; there is no data backfill. A fresh
-host can run `FavouriteSchema::create()`. Deleting a post follows the normal
-soft-delete path and deliberately leaves favourite rows for an explicit host
-cleanup; the post is not visible, so its count is not served. Attachment rows
-and blobs remain governed by the existing media cleanup policy, not duplicated
-here.
+host can run `FavouriteSchema::create()`. An existing host must likewise create
+`social_notification` with `NotificationSchema::statements()` or
+`NotificationSchema::create()` before enabling the notification route; the
+standard `forHost()` assembly constructs the SQL repository, but it does not
+alter an existing database. Recording is best-effort: while the table is
+missing, a favourite or follow still succeeds, the notification failure is
+logged, and repeating the event after the migration can heal the row. The
+notification listing route answers `503 notifications_unavailable` until the
+table exists.
+There is no backfill from old favourites or followers: only events recorded
+after the table exists appear. Deleting a post
+follows the normal soft-delete path and deliberately leaves favourite and
+notification rows for an explicit host cleanup; the post is not visible, so its
+count and status are not served. Deleting a follower or unfavouriting removes
+the interaction, not its historical notification. Notification rows can be
+removed by recipient or by age in a host cleanup job; no read/dismiss state is
+stored. Attachment rows and blobs remain governed by the existing media
+cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The fifteen routes are in the manifest with auth, scope and rate-limit metadata.
+The sixteen routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
 media upload (success, description, media-in-status, auth, scope, disabled,
@@ -434,13 +524,15 @@ deleted status and custom prefix), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
 disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
-unknown ids and the 100-id limit), account statuses, verify, delete and cursor
+unknown ids and the 100-id limit), notifications (favourite/follow creation,
+repeat idempotency, historical survival, type filters, pagination, cursor
+ownership, auth/scope/disabled), account statuses, verify, delete and cursor
 cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
 and PDO stores and now covers local edges, their exclusion from delivery
 inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
-three relationship routes. The post repository contract still covers the
+three relationship routes and the notification route. The post repository contract still covers the
 id-aware cursor used by the API.
 
 ## What remains external
@@ -450,12 +542,15 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - OAuth authorization, token issuance/refresh/revocation and app registration
   belong to the host or a dedicated identity service.
 - Remote statuses, public/remote timelines, favourite federation (outbound
-  `Like`/`Undo` and remote counts), boosts, bookmarks, notifications,
-  streaming and search need remote data the core does not fetch for this
-  surface.
-- Polls, scheduled posts, filters, lists and the full account profile APIs
-  are separate features. Remote relationship APIs remain external; the local
-  follow/unfollow and relationship views above are done.
+  `Like`/`Undo` and remote counts), boosts, bookmarks, remote notifications,
+  streaming and remote search need remote data the core does not fetch for
+  this surface. Local notification listing is done above.
+- Local search over local statuses/actors, poll creation on an own status,
+  domain/instance info beyond the current instance endpoint, and narrower
+  local account/profile endpoints are locally implementable and remain on the
+  roadmap; they are not host-side prerequisites. Remote relationship APIs and
+  remote search remain external; the local follow/unfollow, relationship and
+  notification views above are done.
 - Following a remote actor through the compatibility prefix and remote
   follower/following listings are not part of this slice; moderation/admin
   APIs are also external. The core `/api/v1/following` path remains the

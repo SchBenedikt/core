@@ -13,6 +13,7 @@ use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Http\Request;
@@ -23,6 +24,7 @@ use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\FailingNotificationRepository;
 use PHPUnit\Framework\TestCase;
 
 use function imagecolorallocate;
@@ -597,6 +599,148 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(0, $againUnfavourite->decodedBody()['favourites_count']);
 	}
 
+	public function testFavouriteCreatesOneNotificationForTheAuthorAndSurvivesUnfavourite(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, ['status' => 'notify bob'], userId: 'bob')->decodedBody();
+
+		$this->favourite($app, $status['id']);
+		$this->favourite($app, $status['id']);
+
+		$notifications = $this->notifications($app, userId: 'bob');
+		self::assertSame(200, $notifications->status);
+		self::assertCount(1, $notifications->decodedBody());
+		$notification = $notifications->decodedBody()[0];
+		self::assertSame('favourite', $notification['type']);
+		self::assertSame('alice', $notification['account']['id']);
+		self::assertSame('alice', $notification['account']['acct']);
+		self::assertSame($status['id'], $notification['status']['id']);
+		self::assertFalse($notification['status']['favourited']);
+		self::assertSame(1, $notification['status']['favourites_count']);
+		self::assertSame('2026-11-11T10:00:00.000Z', $notification['created_at']);
+		self::assertStringStartsWith('notification-', $notification['id']);
+
+		$this->favourite($app, $status['id'], 'unfavourite');
+		self::assertCount(1, $this->notifications($app, userId: 'bob')->decodedBody());
+		self::assertCount(0, $this->notifications($app, userId: 'alice')->decodedBody());
+
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(204, $deleted->status);
+		$afterDelete = $this->notifications($app, userId: 'bob');
+		self::assertCount(1, $afterDelete->decodedBody());
+		self::assertArrayNotHasKey('status', $afterDelete->decodedBody()[0]);
+
+		$own = $this->createStatus($app, ['status' => 'do not notify myself'])->decodedBody();
+		$this->favourite($app, $own['id']);
+		self::assertCount(0, $this->notifications($app, userId: 'alice')->decodedBody());
+	}
+
+	public function testFollowNotificationsAreFilteredAndPaginated(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol', 'dave']);
+		$status = $this->createStatus($app, ['status' => 'many notifications'], userId: 'bob')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$this->followAccount($app, 'bob');
+		$this->followAccount($app, 'alice', userId: 'bob');
+		$this->favourite($app, $status['id']);
+		$this->favourite($app, $status['id'], userId: 'carol');
+		$this->favourite($app, $status['id'], userId: 'dave');
+
+		$all = $this->notifications($app, userId: 'bob');
+		self::assertCount(4, $all->decodedBody());
+		self::assertNotNull($all->header('Link'));
+
+		$firstPage = $this->notifications($app, ['limit' => '2'], userId: 'bob');
+		self::assertCount(2, $firstPage->decodedBody());
+		self::assertStringContainsString('limit=2&max_id=', (string) $firstPage->header('Link'));
+
+		$secondPage = $this->notifications($app, [
+			'limit' => '2',
+			'max_id' => $firstPage->decodedBody()[1]['id'],
+		], userId: 'bob');
+		self::assertCount(2, $secondPage->decodedBody());
+		self::assertNotSame($firstPage->decodedBody()[0]['id'], $secondPage->decodedBody()[0]['id']);
+
+		$newer = $this->notifications($app, [
+			'since_id' => $secondPage->decodedBody()[1]['id'],
+		], userId: 'bob');
+		self::assertCount(3, $newer->decodedBody());
+		$newerWithMin = $this->notifications($app, [
+			'min_id' => $secondPage->decodedBody()[1]['id'],
+		], userId: 'bob');
+		self::assertCount(3, $newerWithMin->decodedBody());
+
+		$follows = $this->notifications($app, ['types' => ['follow']], userId: 'bob');
+		self::assertCount(1, $follows->decodedBody());
+		self::assertSame('follow', $follows->decodedBody()[0]['type']);
+		self::assertArrayNotHasKey('status', $follows->decodedBody()[0]);
+		self::assertStringContainsString('types%5B0%5D=follow', (string) $follows->header('Link'));
+
+		$withoutFavourites = $this->notifications($app, ['exclude_types' => ['favourite']], userId: 'bob');
+		self::assertCount(1, $withoutFavourites->decodedBody());
+		self::assertSame('follow', $withoutFavourites->decodedBody()[0]['type']);
+
+		$unknownType = $this->notifications($app, ['types' => ['mention']], userId: 'bob');
+		self::assertSame(200, $unknownType->status);
+		self::assertSame([], $unknownType->decodedBody());
+	}
+
+	public function testNotificationStorageFailureKeepsThePrimaryWriteAndAnswers503(): void
+	{
+		$app = $this->app(
+			actors: ['alice', 'bob'],
+			notificationRepository: new FailingNotificationRepository(),
+		);
+		$status = $this->createStatus($app, ['status' => 'still favourited'], userId: 'bob')->decodedBody();
+
+		$favourite = $this->favourite($app, $status['id']);
+		self::assertSame(200, $favourite->status);
+		self::assertTrue($favourite->decodedBody()['favourited']);
+
+		$follow = $this->followAccount($app, 'bob');
+		self::assertSame(200, $follow->status);
+		self::assertTrue($follow->decodedBody()['following']);
+
+		$notifications = $this->notifications($app, userId: 'bob');
+		self::assertSame(503, $notifications->status);
+		self::assertSame('notifications_unavailable', $notifications->decodedBody()['error']['code']);
+	}
+
+	public function testNotificationsRequireAuthScopeAndAValidCursor(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, ['status' => 'cursor'], userId: 'bob')->decodedBody();
+		$this->favourite($app, $status['id']);
+
+		$anonymous = $this->notifications($app, userId: null);
+		self::assertSame(401, $anonymous->status);
+		self::assertSame('authentication_required', $anonymous->decodedBody()['error']['code']);
+
+		$wrongScope = $this->notifications($app, scopes: ['read:statuses']);
+		self::assertSame(403, $wrongScope->status);
+		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
+
+		$disabled = $this->app(enabled: false);
+		$off = $this->notifications($disabled, userId: null);
+		self::assertSame(404, $off->status);
+		self::assertSame('mastodon_api_disabled', $off->decodedBody()['error']['code']);
+
+		$missingCursor = $this->notifications($app, ['max_id' => 'notification-missing'], userId: 'bob');
+		self::assertSame(404, $missingCursor->status);
+
+		$combined = $this->notifications($app, [
+			'max_id' => $this->notifications($app, userId: 'bob')->decodedBody()[0]['id'],
+			'since_id' => $this->notifications($app, userId: 'bob')->decodedBody()[0]['id'],
+		], userId: 'bob');
+		self::assertSame(422, $combined->status);
+	}
+
 	public function testFavouriteRequiresAuthAndWriteFavouritesScope(): void
 	{
 		$favourites = new InMemoryFavouriteRepository();
@@ -908,6 +1052,7 @@ final class MastodonApiTest extends TestCase
 		?InMemoryAttachmentRepository $attachments = null,
 		?InMemoryBlobStore $blobs = null,
 		?FavouriteRepository $favourites = null,
+		?NotificationRepository $notificationRepository = null,
 		?array $actors = ['alice'],
 		?string $instanceUrl = 'https://social.example',
 	): Application {
@@ -925,6 +1070,7 @@ final class MastodonApiTest extends TestCase
 			config: new ArrayConfig([InstanceInfo::CONFIG_APP => $config]),
 			attachmentRepository: $attachments,
 			favouriteRepository: $favourites,
+			notificationRepository: $notificationRepository,
 			blobStore: $blobs,
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
 		);
@@ -993,6 +1139,27 @@ final class MastodonApiTest extends TestCase
 		return $app->handle(new Request(
 			method: 'DELETE',
 			path: $prefix . '/media/' . rawurlencode($mediaId),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, mixed> $query
+	 * @param list<string>         $scopes
+	 * @param string               $prefix compatibility prefix to target
+	 */
+	private function notifications(
+		Application $app,
+		array $query = [],
+		array $scopes = ['read:notifications'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: $prefix . '/notifications',
+			query: $query,
 			userId: $userId,
 			scopes: $scopes,
 		));

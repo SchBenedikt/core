@@ -110,7 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media` and local follow/unfollow/relationship reads through `LocalRelationshipService`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService` and local notification listing through `NotificationService`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -177,6 +177,7 @@ The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
+- `NotificationSchema` → `social_notification` (local favourite/follow notifications; deterministic event id primary key)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox plus `is_local` for local-to-local follows)
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
@@ -210,7 +211,13 @@ For thread/context fetching, create `social_remote_thread_post` from
 the route. For local Mastodon favourites, create `social_favourite` from
 `FavouriteSchema::statements()` before exposing the favourite/unfavourite
 routes; existing posts need no backfill, and deleting a post leaves the row for
-the host's cleanup policy. For follow/unfollow and relationship reads, add
+the host's cleanup policy. For local notifications, create
+`social_notification` from `NotificationSchema::statements()` before exposing
+`GET {mastodon.prefix}/notifications`; there is no backfill from older
+favourites or followers. Repeating an event cannot duplicate a row. A post or
+follow deletion deliberately does not delete the historical notification;
+schedule any retention cleanup in the host. For follow/unfollow and
+relationship reads, add
 `is_local` as described above and pass a local account directory so
 `Application` assembles `LocalRelationshipService`; without it those routes
 answer `503 follows_not_configured`. For AT Protocol publishing, create

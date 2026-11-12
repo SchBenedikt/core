@@ -314,7 +314,42 @@ GET {mastodon.prefix}/timelines/public
 `favourites_count` is public; `favourited` is only true for the authenticated
 viewer and is false on the unauthenticated timeline. A repeat favourite is
 idempotent through the composite primary key, and unfavourite removes only the
-caller's row and is a successful no-op when absent. Local follow/unfollow is a
+caller's row and is a successful no-op when absent. Notifications are recorded
+next to the interaction, not derived at read time:
+
+```
+POST {mastodon.prefix}/statuses/{id}/favourite
+  └─ MastodonService::favouriteStatus
+      └─ NotificationService::recordFavourite(author, actor, post)
+          └─ NotificationRepository::insert   social_notification
+
+POST {mastodon.prefix}/accounts/{id}/follow
+  └─ LocalRelationshipService::follow
+      └─ NotificationService::recordFollow(target, follower)
+
+POST /inbox (Follow)
+  └─ InboxService::handleFollow
+      └─ NotificationService::recordFollow(local target, remote actor URL)
+
+GET {mastodon.prefix}/notifications
+  └─ MastodonNotificationsHandler
+      └─ MastodonService::notifications
+          ├─ NotificationRepository::find/listFor
+          └─ MastodonPresenter::notification + status lookup
+```
+
+The notification id is a hash of recipient, type, actor and optional post. It
+is the primary key, so repeating an event is a duplicate insert that the
+service resolves by re-reading the existing row; there is no random id and no
+second idempotency table. The stored row is historical: unfavourite, unfollow
+and post deletion do not delete it. A post that no longer exists is omitted
+from the projected notification rather than exposing a deleted status. A
+remote actor is stored as its URL and projected as a minimal remote account;
+the core does not fetch a profile just to render the notification. The local
+account directory distinguishes local actor ids from remote URLs. Read/unread
+and dismissal state do not exist in this slice.
+
+Local follow/unfollow is a
 projection of the same follower graph, not a second relationship table:
 
 ```
@@ -431,11 +466,11 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  and post-attachment tables once; `FavouriteSchema`, `AttachmentSchema`,
-  `RemotePostSchema`, `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema`
-  and `ActivityLogSchema` do the same for favourites, media metadata, remote
-  content, per-user blocks, AT Protocol publications, the durable queue and the
-  replay log. The standalone runs those statements; the Nextcloud host creates
+  and post-attachment tables once; `FavouriteSchema`, `NotificationSchema`,
+  `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
+  `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` do the same
+  for favourites, notifications, media metadata, remote content, per-user
+  blocks, AT Protocol publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
   the same columns through its schema API. A dump can therefore move between
   the two.
 - **Media metadata and bytes are separate.** A row points at one original and
@@ -497,7 +532,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local follow/unfollow and relationship reads; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications, local follow/unfollow and relationship reads; locally implementable search/poll/instance/account slices remain on the roadmap; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -512,8 +547,9 @@ genuinely owns the capability.
   `AttachmentRepositoryTestCase`, `FollowerRepositoryTestCase`,
   `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
   `RemoteThreadRepositoryTestCase`, `BlockRepositoryTestCase`,
-  `HomeTimelineRepositoryTestCase`, `AtprotoPublicationRepositoryTestCase`,
-  `AtprotoSessionStoreTestCase`, `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
+  `HomeTimelineRepositoryTestCase`, `NotificationRepositoryTestCase`,
+  `AtprotoPublicationRepositoryTestCase`, `AtprotoSessionStoreTestCase`,
+  `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
 - **Protocol vectors** — a signature is verified by the same code that produced

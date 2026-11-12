@@ -41,6 +41,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
@@ -423,6 +424,16 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '60/60',
 				summary: 'Public statuses of one local account in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.notifications.list',
+				method: 'GET',
+				path: $mastodon . '/notifications',
+				handler: MastodonNotificationsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:notifications'],
+				summary: 'Notifications for the signed-in local account, newest first.',
 			),
 			new Route(
 				name: 'mastodon.accounts.verify_credentials',
