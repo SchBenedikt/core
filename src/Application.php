@@ -32,14 +32,18 @@ use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
-use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
+use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\PdoPostRepository;
+use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
 use AlohaSocial\Core\Http\Middleware\RequireAuthentication;
@@ -56,6 +60,7 @@ use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Config\Config;
+use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
@@ -69,18 +74,23 @@ use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\TimelineService;
+use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * A complete core wired to in-memory adapters.
+ * A complete core wired to a set of ports.
  *
- * This is a reference assembly, not the production bootstrap: the Nextcloud
- * and standalone hosts wire the same services around their own platform
- * adapters through their own containers. It exists so the demo, the tools and
- * the end-to-end test exercise one real, connected object graph.
+ * `inMemory()` is the reference assembly for the demo, tools and tests.
+ * `forHost()` is the production composition root: it takes the host's real
+ * ports and uses the SQL repositories, so a host does not have to copy the
+ * service wiring. Both share one assembly path, which keeps them from drifting.
+ *
+ * This is still a library: the host owns authentication, its HTTP controller,
+ * rate limiting, migrations, the durable queue and the key at rest. The core
+ * owns the route contract and everything behind the handlers.
  */
 final readonly class Application
 {
@@ -119,38 +129,132 @@ final readonly class Application
 		]);
 		$logger ??= new NullLogger();
 		$activityLog ??= new InMemoryActivityLog();
-
 		$ids = new RandomIdGenerator();
-		$repository = new InMemoryPostRepository();
+
+		$posts = new InMemoryPostRepository();
 		$followers = new InMemoryFollowerRepository();
 		$followingRepository ??= new InMemoryFollowingRepository();
 
-		// With a client and a key the reference assembly federates to the real
-		// follow graph. Without them it reports no audience, so a post never
-		// queues a delivery that could not be signed.
 		if ($inboxResolver === null) {
 			$inboxResolver = ($httpClient !== null && $signingKey !== null)
 				? new FollowerInboxResolver($followers)
 				: new EmptyInboxResolver();
 		}
 
+		$queue = new InMemoryJobQueue($clock, $ids);
+
+		return self::assemble(
+			clock: $clock,
+			config: $config,
+			posts: $posts,
+			followers: $followers,
+			followingRepository: $followingRepository,
+			inboxResolver: $inboxResolver,
+			httpClient: $httpClient,
+			signingKey: $signingKey,
+			actorResolver: $actorResolver,
+			activityLog: $activityLog,
+			localActors: $localActors,
+			queue: $queue,
+			ids: $ids,
+			logger: $logger,
+			debug: $debug,
+		);
+	}
+
+	/**
+	 * The production assembly for a host.
+	 *
+	 * The host supplies its ports and a durable queue and activity log; the
+	 * repositories are the SQL adapters. A host that cannot provide the actor
+	 * resolver still gets the local API and outbound delivery, while the inbox
+	 * honestly answers 503.
+	 *
+	 * The queue and activity log are required rather than defaulted: an
+	 * in-memory retry queue or replay guard loses work when the process
+	 * restarts, and a production host should have to choose them explicitly.
+	 */
+	public static function forHost(
+		Config $config,
+		Connection $database,
+		HttpClient $httpClient,
+		RsaKeyPair $signingKey,
+		LocalActorDirectory $localActors,
+		JobQueue $queue,
+		ActivityLog $activityLog,
+		?ActorResolver $actorResolver = null,
+		?InboxResolver $inboxResolver = null,
+		?Clock $clock = null,
+		?LoggerInterface $logger = null,
+		bool $debug = false,
+	): self {
+		$clock ??= new SystemClock();
+		$logger ??= new NullLogger();
+		$ids = new RandomIdGenerator();
+
+		$followers = new PdoFollowerRepository($database);
+		$inboxResolver ??= new FollowerInboxResolver($followers);
+
+		return self::assemble(
+			clock: $clock,
+			config: $config,
+			posts: new PdoPostRepository($database),
+			followers: $followers,
+			followingRepository: new PdoFollowingRepository($database),
+			inboxResolver: $inboxResolver,
+			httpClient: $httpClient,
+			signingKey: $signingKey,
+			actorResolver: $actorResolver,
+			activityLog: $activityLog,
+			localActors: $localActors,
+			queue: $queue,
+			ids: $ids,
+			logger: $logger,
+			debug: $debug,
+		);
+	}
+
+	/**
+	 * @param PostRepository      $posts
+	 * @param FollowerRepository  $followers
+	 */
+	private static function assemble(
+		Clock $clock,
+		Config $config,
+		PostRepository $posts,
+		FollowerRepository $followers,
+		FollowingRepository $followingRepository,
+		InboxResolver $inboxResolver,
+		?HttpClient $httpClient,
+		?RsaKeyPair $signingKey,
+		?ActorResolver $actorResolver,
+		ActivityLog $activityLog,
+		?LocalActorDirectory $localActors,
+		JobQueue $queue,
+		IdGenerator $ids,
+		?LoggerInterface $logger,
+		bool $debug,
+	): self {
+		// A delivery target requires something that can sign and something
+		// that can reach the peer. Failing here beats queueing a job that can
+		// never be delivered.
 		if (!$inboxResolver instanceof EmptyInboxResolver && ($httpClient === null || $signingKey === null)) {
 			throw new InvalidArgumentException(
 				'A delivery target requires both an HTTP client and a signing key.',
 			);
 		}
-		$queue = new InMemoryJobQueue($clock, $ids);
+
 		$activities = new ActivityFactory($config);
 
 		$postService = new PostService(
-			$repository,
+			$posts,
 			$queue,
 			$inboxResolver,
 			$activities,
 			$clock,
 			$ids,
 		);
-		$timelines = new TimelineService($repository);
+		$timelines = new TimelineService($posts);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
@@ -181,7 +285,7 @@ final readonly class Application
 		// It is enabled with the rest of the actor surface, so an instance
 		// that cannot publish its document does not advertise half an actor.
 		$actorOutbox = ($signingKey !== null && $localActors !== null)
-			? new ActorOutboxService($activities, $localActors, $repository)
+			? new ActorOutboxService($activities, $localActors, $posts)
 			: null;
 
 		// WebFinger maps a handle to the document route. It is gated like the
