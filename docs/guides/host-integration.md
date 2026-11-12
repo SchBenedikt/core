@@ -17,7 +17,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
-| ATProto record/TID publishing and remote delete through the `AtprotoAccountResolver`, `AtprotoPublisher` and `AtprotoDeleter` ports | Account linking, OAuth/app-password sessions, token refresh and PDS credentials |
+| ATProto record/TID publishing, remote delete and OAuth session refresh through the `AtprotoAccountResolver`, `AtprotoPublisher`, `AtprotoDeleter` and `AtprotoSessionStore` ports | Account linking, the authorization-code/PAR flow, credential storage, refresh-token revocation and PDS discovery |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -141,9 +141,10 @@ production bootstrap.
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
 | `ImageProcessor` | Produce a bounded thumbnail; the default GD adapter is complete for local use | `GdImageProcessor` |
-| `AtprotoAccountResolver` | Resolve a local user to a linked DID, handle, PDS URL and access token; refresh the token before returning it | none; host-specific |
+| `AtprotoAccountResolver` | Resolve a local user to a linked DID, handle, PDS URL and access token; the host may use `AtprotoSessionService` to refresh an OAuth session before returning it | none; host-specific |
 | `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoDeleter` | Delete the record this core published; the default XRPC adapter implements both write and delete | `XrpcAtprotoPublisher`; fake in tests |
+| `AtprotoSessionStore` | Persist the host's OAuth session and replace it with the rotated tokens; keep tokens in the host's secret store | none; host secret store; `InMemoryAtprotoSessionStore` for tests |
 
 ### Config keys
 
@@ -430,8 +431,9 @@ The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It contains local image upload, validation and thumbnails, and remote
 image ingestion for incoming `Create`/`Announce` posts with SSRF, size,
 timeout and redirect guards. It does not contain an admin UI, the full Mastodon server API or an
-object-storage adapter. The local Mastodon subset and AT Protocol remote delete
-are implemented. It does provide a
+object-storage adapter. The local Mastodon subset, AT Protocol remote delete
+and the OAuth session-refresh exchange are implemented; account linking and
+the credential store remain host work. It does provide a
 bounded outbox backfill for missed `Create`/`Announce` activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the

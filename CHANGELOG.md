@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- AT Protocol OAuth session refresh: `AtprotoOAuthSession` validates the token
+  endpoint, client id, DID, rotating access/refresh tokens, mandatory `atproto`
+  scope and expiry. `AtprotoSessionService` refreshes inside a 60-second
+  leeway, saves the rotated pair through the host-owned
+  `AtprotoSessionStore`, and leaves the old session untouched on failure.
+  `XrpcAtprotoSessionRefresher` sends the form-encoded refresh grant to the
+  authorization server and retries exactly one `use_dpop_nonce` challenge;
+  `Es256DpopProofProvider` produces a fresh signed DPoP proof per request.
+  Tokens remain in the host's secret store, so there is no core session table
+  or migration. Account linking, the authorization-code/PAR flow, revocation
+  and the full repository/AppView stack remain external; see
+  `docs/guides/atproto.md`.
 - AT Protocol remote delete: a local post deletion now queues a durable
   `atproto.delete` job for a record this core published. The new
   `AtprotoDeleter` port is implemented by `XrpcAtprotoPublisher` through an
@@ -18,8 +30,9 @@ All notable changes to this project are documented here. The format follows
   for the normal retry backoff, while a deleted-before-publish post queues no
   delete. No table or migration is added; the existing
   `social_atproto_publication` row is the idempotency record. Account linking,
-  OAuth/session refresh, a full repository/AppView client, CAR/MST, media,
-  firehose and the Nextcloud extraction remain external; see
+  the authorization-code/PAR/revocation flow, a full repository/AppView
+  client, CAR/MST, media, firehose and the Nextcloud extraction remain
+  external; OAuth session refresh is covered by the newer entry above. See
   `docs/guides/atproto.md`.
 - Mastodon-compatible API (local subset): an additive, disabled-by-default
   compatibility surface under `social/mastodon.prefix` (default
@@ -51,10 +64,10 @@ All notable changes to this project are documented here. The format follows
   posts are refused with a stable reason; a PDS failure writes no publication
   row, and a retry uses the same rkey so `putRecord` is an upsert rather than a
   duplicate. The route manifest and OpenAPI export now have 26 routes.
-  Accounts/OAuth session refresh, linked-account storage, media,
-  AppView/CAR/MST/firehose and the extraction from the Nextcloud app remain
-  external; remote delete is documented in the newer entry above. See
-  `docs/guides/atproto.md`. The new table is created from
+  Accounts and the OAuth authorization-code flow, linked-account storage,
+  media, AppView/CAR/MST/firehose and the extraction from the Nextcloud app
+  remain external; OAuth session refresh and remote delete are documented in
+  the newer entries above. See `docs/guides/atproto.md`. The new table is created from
   `AtprotoPublicationSchema::statements()`; hosts that do not create it must
   not enable the feature.
 - Shared inboxes and delivery batching: every actor document advertises

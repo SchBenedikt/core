@@ -87,7 +87,10 @@ post deletion queues `atproto.delete`, calls `com.atproto.repo.deleteRecord`
 and removes this row only after the PDS accepted it; a failed delete leaves
 the row for the normal retry. `removeForPost()` remains the cleanup hook for a
 host that deliberately drops a mapping. No new table or migration is added for
-remote delete. See [AT Protocol publishing](atproto.md).
+remote delete. OAuth sessions are not stored here either: the access and
+refresh tokens are host credentials, and `AtprotoSessionStore` keeps them in
+the host's secret store. The core's only session adapter is the in-memory fake
+for tests. See [AT Protocol publishing](atproto.md).
 
 `social_attachment` stores only metadata; the original and thumbnail bytes live
 under the keys in the host's `BlobStore`. `source_url` is nullable for local

@@ -29,6 +29,11 @@ that prints or skips is a failure.
 | `tests/Api/RemoteMediaTest.php` | signed inbound Create → guarded fetch from a local HTTP server → local original/thumbnail → home timeline, plus SSRF, redirect, oversized, corrupt, false type, 404, timeout, duplicate URL and attachment-limit cases; outbox backfill of a historical post, repair of an existing post after disabled media, idempotent repeats, SSRF/corrupt backfill entries and preservation of existing links when one candidate disappears |
 | `tests/Api/RemoteThreadTest.php` | authenticated thread request → guarded target/parent/reply fetch from a local HTTP server → cache → JSON; ordered ancestors, direct replies, depth/reply limits, idempotent repeats, auth, missing/unfollowed/deleted/blocked targets, disabled fetching, invalid target, blocked ancestor, SSRF ancestor and oversized/slow targets |
 | `tests/Api/AtprotoPublishTest.php` | post creation → queued AT Protocol job → fake XRPC `putRecord` → publication row → JSON; explicit route, repeat idempotency, unsupported/disabled/auth/missing-account and PDS-failure paths; post delete → `deleteRecord` → row removal, retry after failure and no-publication/no-duplicate cases |
+| `tests/Domain/AtprotoOAuthSessionTest.php` | DID, token endpoint, client id, rotating tokens, mandatory `atproto` scope and the refresh leeway |
+| `tests/Domain/InMemoryAtprotoSessionStoreTest.php` | the `AtprotoSessionStoreTestCase` contract: round trip, replacement, per-user isolation and empty lookup |
+| `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
+| `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, RSA-key and invalid-method rejection |
+| `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
 | `tests/Api/MastodonApiTest.php` | optional compatibility routes through the real kernel: instance, public timeline, create (form/JSON), read, account statuses, verify, delete, scopes, disabled-before-auth, custom prefix, cursor pagination and idempotency |
 | `tests/Service/MastodonCompatibilityTest.php` | prefix validation and non-overlap, feature default, parent/granular scope matching and route auth/rate-limit metadata |
 | `tests/Protocol/XrpcAtprotoPublisherTest.php` | exact `putRecord`/`deleteRecord` requests, bearer header, successful URI, 404-as-idempotent-delete, non-2xx status without leaking the body, transport failure and malformed success |
@@ -61,6 +66,7 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 final class InMemoryAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }
 final class PdoAtprotoPublicationRepositoryTest extends AtprotoPublicationRepositoryTestCase { … }
+final class InMemoryAtprotoSessionStoreTest extends AtprotoSessionStoreTestCase { … }
 ```
 
 If a behaviour is not in the case, the two implementations may drift. Add the

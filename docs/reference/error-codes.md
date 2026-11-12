@@ -91,6 +91,17 @@ delete keeps the publication row so the retry can finish. A delete without a
 publication is a no-op and a second local delete creates no second job. See
 [AT Protocol publishing](../guides/atproto.md).
 
+## AT Protocol OAuth refresh failures
+
+OAuth refresh is a host-called protocol operation, not an HTTP route, so it has
+no wire error code. `AtprotoSessionRefreshException` exposes a safe
+`errorCode`, the authorization-server `status` (or `0` for transport) and a
+`retryable` flag: `transport_error` and `invalid_response` are retryable, a
+missing DPoP nonce is `dpop_nonce_missing` and is not, and an OAuth refusal
+keeps the server's code (for example `invalid_grant`); only `429` and `5xx`
+are retryable. Messages never contain a token, a refresh token or the response
+body. See [AT Protocol publishing](../guides/atproto.md#oauth-session-refresh).
+
 ## Remote media failures
 
 Remote attachment failures do not have an HTTP route of their own and do not

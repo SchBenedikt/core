@@ -151,13 +151,16 @@ Status of the core, not a promise about dates.
   refused. A local post deletion now queues an idempotent
   `com.atproto.repo.deleteRecord` for a record the core published and removes
   the local publication row only after the PDS accepted it; a 404 is success,
-  and a failed delete stays retryable. See
+  and a failed delete stays retryable. OAuth session refresh is also local:
+  `AtprotoSessionService`, `XrpcAtprotoSessionRefresher` and the ES256 DPoP
+  proof adapter rotate a host-owned session at the authorization server, with
+  one nonce retry and no core credential table. See
   [AT Protocol publishing](guides/atproto.md). The full stack is **not** done:
-  OAuth/account linking and token refresh, a full repository/AppView client,
-  CAR/MST, blob uploads, firehose and the extraction from the Nextcloud app
-  remain external. Remote delete for core-published records is done locally.
-  The remaining parts are tracked in the Next table below, not as a completed
-  item.
+  account linking, the authorization-code/PAR flow and token revocation, a full
+  repository/AppView client, CAR/MST, blob uploads, firehose and the extraction
+  from the Nextcloud app remain external. Remote delete for core-published
+  records and OAuth session refresh are done locally. The remaining parts are
+  tracked in the Next table below, not as a completed item.
 
 ## Next
 
@@ -169,7 +172,7 @@ publishing and Mastodon compatibility slices are recorded above.
 | Item | Seam |
 | --- | --- |
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, media upload, polls, search, account/admin and relationship APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset |
-| AT Protocol account linking, OAuth/session refresh and full client/AppView extraction | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
+| AT Protocol account linking, authorization-code/PAR/revocation and full client/AppView extraction (OAuth session refresh is local) | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |

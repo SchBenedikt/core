@@ -82,14 +82,17 @@ policy. Returning an empty list means the name did not resolve.
 
 ## Domain-level host ports
 
-AT Protocol adds three domain-level ports rather than new `Platform` methods:
+AT Protocol adds four domain-level ports rather than new `Platform` methods:
 `Domain\Atproto\AtprotoAccountResolver` returns the host's linked account for a
 local user (or `null`), `Domain\Atproto\AtprotoPublisher` writes one record to
-a PDS, and `Domain\Atproto\AtprotoDeleter` removes a record this core
-published. `XrpcAtprotoPublisher` is the production adapter over the existing
-`HttpClient` for both transports; tests use a fake. Account linking, token
-storage and refresh stay in the host. See
-[AT Protocol publishing](atproto.md).
+a PDS, `Domain\Atproto\AtprotoDeleter` removes a record this core published, and
+`Domain\Atproto\AtprotoSessionStore` persists the host-owned OAuth session.
+`XrpcAtprotoPublisher` is the production record adapter over the existing
+`HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
+OAuth refresh collaborators. Tests use fakes for the network and a fake proof
+provider where cryptography is not the subject. Account linking and the real
+credential store stay in the host; `InMemoryAtprotoSessionStore` is only the
+test/tool adapter. See [AT Protocol publishing](atproto.md).
 
 ## Contract tests
 
@@ -101,6 +104,7 @@ Several ports have a shared test case that every implementation must pass:
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
 - `tests/Domain/AtprotoPublicationRepositoryTestCase.php`
+- `tests/Domain/AtprotoSessionStoreTestCase.php`
 
 A new adapter is done when it passes the existing case, not when its own tests
 pass. That is the mechanism that keeps `InMemoryPostRepository` and

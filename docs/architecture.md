@@ -374,12 +374,34 @@ maximum is 40, and generated links carry a non-default limit.
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
-AT Protocol has three domain-level host ports instead of new platform methods:
+AT Protocol has four domain-level host ports instead of new platform methods:
 `AtprotoAccountResolver` returns a linked account, `AtprotoPublisher` writes
-one record and `AtprotoDeleter` removes it again. `XrpcAtprotoPublisher` is the
-default adapter for both transports over `HttpClient`; fakes cover the network
-in tests. Account linking, OAuth/token refresh and PDS credentials remain
-host-owned, so remote delete can only act on an account the host resolves.
+one record, `AtprotoDeleter` removes it again and `AtprotoSessionStore` holds
+the host-owned OAuth session. `XrpcAtprotoPublisher` is the default adapter for
+both record transports over `HttpClient`; fakes cover the network in tests.
+Account linking, authorization-code/PAR, refresh-token revocation and PDS
+credentials remain host-owned, so remote delete can only act on an account the
+host resolves.
+
+OAuth session refresh is a protocol operation, not a route:
+
+```
+AtprotoSessionService::current(localUserId)
+  └─ AtprotoSessionStore::find
+      └─ AtprotoSessionRefresher::refresh when inside the 60-second leeway
+          └─ XrpcAtprotoSessionRefresher
+              ├─ DpopProofProvider    fresh ES256 proof, optional nonce
+              ├─ HttpClient           form-encoded POST to tokenEndpoint
+              └─ AtprotoOAuthSession  validate rotated tokens and sub
+          └─ AtprotoSessionStore::save
+```
+
+The store is a host port because tokens are credentials; the core has no
+session table. `InMemoryAtprotoSessionStore` is the test/tool adapter. The
+refresher retries exactly one `use_dpop_nonce` challenge and never logs a token
+or response body. The existing `XrpcAtprotoPublisher` still uses its bearer
+account token; OAuth-bound resource requests remain part of the external
+account-linking/client work.
 
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
@@ -389,7 +411,7 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| AT Protocol account linking, OAuth/session refresh, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation in `Protocol\Atproto` and `Domain\Atproto` |
+| AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourites, boosts, notifications, streaming, media upload, polls, search, account/admin and relationship APIs) | host/integration work over the completed local compatibility subset; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
@@ -406,7 +428,7 @@ genuinely owns the capability.
   `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
   `RemoteThreadRepositoryTestCase`, `BlockRepositoryTestCase`,
   `HomeTimelineRepositoryTestCase`, `AtprotoPublicationRepositoryTestCase`,
-  `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
+  `AtprotoSessionStoreTestCase`, `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
 - **Protocol vectors** — a signature is verified by the same code that produced
@@ -417,7 +439,10 @@ genuinely owns the capability.
   request that left. AT Protocol publishing follows the same pattern: a real
   post and job, a fake XRPC adapter, and the resulting publication row. The
   delete path starts at the real post-delete route, queues `atproto.delete`,
-  sends `deleteRecord`, removes the row and retries after a PDS failure. `InboundTimelineTest` delivers a signed Create, Announce
+  sends `deleteRecord`, removes the row and retries after a PDS failure. OAuth
+  refresh is tested at the protocol boundary with a real ES256 DPoP proof and a
+  fake HTTP token endpoint, plus a service test that rotates only an expiring
+  session. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `ApplicationTest` proves that two followers on
   one server sharing an advertised inbox produce one signed job to the shared

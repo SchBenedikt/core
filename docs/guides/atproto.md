@@ -1,11 +1,12 @@
 # AT Protocol publishing
 
 The core owns a deliberately small, public, text-only AT Protocol publishing
-foundation. It owns deterministic record writes and the matching remote
-record delete for mirrored posts. It does not own account linking, OAuth
-sessions, the AppView or a full repository client; those remain in the host or
-in a future standalone client. This guide describes the implemented seam, its
-limits and what a host must provide.
+foundation. It owns deterministic record writes, the matching remote record
+delete for mirrored posts and the OAuth refresh exchange for a host-owned
+session. It does not own account linking, the credential store, the AppView or
+a full repository client; those remain in the host or in a future standalone
+client. This guide describes the implemented seam, its limits and what a host
+must provide.
 
 ## What is implemented
 
@@ -35,6 +36,15 @@ limits and what a host must provide.
   `AtprotoPublishService::scheduleDelete()` queues an `atproto.delete` job only
   when a publication row exists; `AtprotoDeleteHandler` performs it and removes
   the local row only after the PDS accepted the delete.
+- `Domain\Atproto\AtprotoOAuthSession` validates a token endpoint, client id,
+  DID, rotating access/refresh tokens, the mandatory `atproto` scope and the
+  expiry. `AtprotoSessionRefresher` is the refresh port;
+  `XrpcAtprotoSessionRefresher` implements the form-encoded token request with
+  a fresh DPoP proof and one `use_dpop_nonce` retry. `Es256DpopProofProvider`
+  is the default ES256 proof implementation. `AtprotoSessionService` refreshes
+  a session inside a 60-second expiry leeway and saves the rotated pair through
+  the host-owned `AtprotoSessionStore`. `InMemoryAtprotoSessionStore` is the
+  test/tool fake; the host keeps the real tokens in its secret store.
 
 ## What is deliberately not here
 
@@ -42,21 +52,21 @@ Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
 truncated. There is no partial record, blob upload, image embed, edit,
-thread/reply, facet/link detection, AppView read, firehose consumer, CAR/MST
-repository implementation or OAuth session refresh in this slice. Remote delete
-is implemented for records the core itself published; deleting arbitrary PDS
-records is not.
+thread/reply, facet/link detection, AppView read, firehose consumer or CAR/MST
+repository implementation in this slice. Remote delete is implemented for
+records the core itself published; deleting arbitrary PDS records is not.
 
-Account linking, the account/token store, token refresh and PDS selection stay
-in the host. The core's `AtprotoAccountResolver` is intentionally a port, not a
-credential table. A host that has no resolver still serves the route, but it
-answers `503 atproto_not_configured`.
+OAuth session refresh is implemented; the authorization-code/PAR flow,
+account linking, the account/token store, refresh-token revocation and PDS
+selection stay in the host. The core's `AtprotoAccountResolver` is intentionally
+a port, not a credential table. A host that has no resolver still serves the
+route, but it answers `503 atproto_not_configured`.
 
 ## Configuration
 
 | App | Key | Default | Meaning |
 | --- | --- | --- | --- |
-| `social` | `atproto.publish` | `false` | Enables automatic scheduling, the explicit publish route and the matching remote delete for published posts. `false`/`0`/`off`/`no` makes the route answer `503 atproto_publish_disabled` and prevents new publish/delete jobs. Existing publication rows are retained. |
+| `social` | `atproto.publish` | `false` | Enables automatic scheduling, the explicit publish route and the matching remote delete for published posts. `false`/`0`/`off`/`no` makes the route answer `503 atproto_publish_disabled` and prevents new publish/delete jobs. Existing publication rows are retained. This key does not gate OAuth session refresh; that is a host-called protocol operation. |
 
 The feature is off by default, so upgrading the package does not start
 outbound network writes. Turning it on requires both an account resolver and an
@@ -102,6 +112,64 @@ than pretending to publish.
 The host must create `AtprotoPublicationSchema` (see [database](database.md))
 and grant the PDS account permission to write `app.bsky.feed.post` records.
 The core never reads or writes the host's credential store.
+
+## OAuth session refresh
+
+A host that stores an OAuth session can let the core perform the refresh
+exchange without moving the session into a core table:
+
+```php
+use AlohaSocial\Core\Domain\Atproto\AtprotoSessionStore;
+use AlohaSocial\Core\Protocol\Atproto\Es256DpopProofProvider;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoSessionRefresher;
+use AlohaSocial\Core\Service\Atproto\AtprotoSessionService;
+
+$sessions = new AtprotoSessionService(
+    $hostSessionStore, // implements AtprotoSessionStore
+    new XrpcAtprotoSessionRefresher(
+        $httpClient,
+        new Es256DpopProofProvider($dpopPrivateKeyPem),
+        $clock,
+    ),
+    $clock,
+);
+
+$session = $sessions->current($localUserId);
+```
+
+`current()` returns `null` for an unlinked user, returns a valid session
+without a request, and otherwise refreshes inside the 60-second leeway before
+saving the rotated access/refresh pair. The host must serialize refreshes for
+one session: AT Protocol refresh tokens are single-use, so two concurrent
+refreshes can consume the same token. Save the rotated session before using the
+new access token. If persisting fails, discard the old session and require a
+new authorization rather than retrying with the consumed token.
+
+The refresh exchange sends `POST` to the session's `tokenEndpoint` with
+`grant_type=refresh_token`, the old refresh token and the client id, encoded as
+`application/x-www-form-urlencoded`. Every request has a fresh ES256 DPoP proof
+with a unique `jti`; the first `401 use_dpop_nonce` is retried once with the
+server's `DPoP-Nonce`. A successful response must contain a DPoP token type, a
+rotated refresh token, the `atproto` scope, the same `sub` DID and a positive
+`expires_in`. No token or authorization-server body appears in an exception.
+
+`AtprotoSessionRefreshException` classifies failures for the host:
+
+| `errorCode` | Retryable | Meaning |
+| --- | --- | --- |
+| `transport_error` | yes | The authorization server could not be reached |
+| `invalid_response` | yes | The response was malformed, changed the DID or omitted a required field |
+| `dpop_nonce_missing` | no | A DPoP challenge or success response had no usable nonce |
+| OAuth error code, e.g. `invalid_grant` | only `429`/`5xx` | The server refused the refresh; `invalid_grant` requires re-authorization |
+
+The refresh flow does not change `XrpcAtprotoPublisher`: that adapter still
+uses the host's bearer/app-password token for record writes. OAuth access
+tokens use the same token endpoint refresh but require a DPoP resource request,
+which remains part of the external account-linking/client work.
+
+No `social` config key and no route is added. The session store is a host port
+because tokens are credentials; the core deliberately ships no
+`social_atproto_session` table or migration.
 
 ## Flow
 
@@ -201,23 +269,29 @@ idempotent success and the no-publication/no-double-job cases.
 non-public posts and long text plus disabled/not-configured deletion;
 `XrpcAtprotoPublisherTest` checks the exact XRPC requests and malformed/refused
 responses; `TidTest` and the repository contract cover the protocol and
-persistence primitives.
+persistence primitives. `AtprotoOAuthSessionTest` covers session validation and
+the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
+rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
+`Es256DpopProofProviderTest` verifies the JWS signature and unique `jti`;
+`AtprotoSessionServiceTest` covers refresh-on-expiry, persistence and a failed
+refresh that leaves the old session untouched.
 
 ## Remaining external work
 
 The full AT Protocol stack is still host/app work:
 
-- account linking UI and callback, OAuth or app-password flow, token refresh,
-  revocation and per-account PDS discovery;
+- account linking UI and authorization-code/PAR callback, the credential store,
+  refresh-token revocation and per-account PDS discovery;
 - a full repository client (CAR/MST, arbitrary record listing/update),
   AppView reads, firehose consumption and blob upload;
 - media embeds and image processing for AT Protocol;
 - reply/thread mapping, facets, mentions and link cards;
--   migrating the existing AT Protocol implementation out of the Nextcloud app.
+- migrating the existing AT Protocol implementation out of the Nextcloud app.
 
-Remote delete for records published by this core is no longer in this list: it
-is implemented locally. Deleting records that were created outside this core,
-and full account/AppView extraction, remain external.
+Remote delete for records published by this core is implemented locally, and
+the OAuth token-refresh exchange is implemented locally. Deleting records that
+were created outside this core, account linking and full account/AppView
+extraction remain external.
 
 Those are tracked in the [roadmap](../roadmap.md) as the remaining part of the
 AT Protocol stack, not as part of this publishing foundation.

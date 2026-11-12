@@ -69,8 +69,16 @@ no resolver/publisher assembled, the route answers `503
 atproto_not_configured`; without an `AtprotoDeleter` a post deletion queues no
 job while publishing still works. The feature only mirrors public text posts
 without attachments; other posts are skipped automatically and refused with
-`422 atproto_post_unsupported` when published explicitly. See
-[AT Protocol publishing](../guides/atproto.md).
+`422 atproto_post_unsupported` when published explicitly.
+
+OAuth session refresh has no `social` key and no route. A host constructs
+`AtprotoSessionService` with its `AtprotoSessionStore` and
+`XrpcAtprotoSessionRefresher`; the service uses a 60-second expiry leeway.
+`AtprotoSessionRefreshException` classifies transport, response and OAuth
+errors, and a rotated refresh token is single-use. Tokens remain in the host's
+secret store: the core ships only `InMemoryAtprotoSessionStore` for tests and
+no session table or migration. See
+[AT Protocol publishing](../guides/atproto.md#oauth-session-refresh).
 
 Shared inboxes have no configuration key. Both inbox routes are controlled by
 the same prerequisites as the normal inbox: without an actor resolver, an
@@ -134,6 +142,11 @@ documented in [remote threads](../guides/remote-threads.md).
 | `Post::MAX_ATTACHMENTS` | 4 | Attachments per post |
 | `AtprotoPostRecord::MAX_TEXT_GRAPHEMES` | 300 | AT Protocol post text in graphemes |
 | `AtprotoPostRecord::MAX_TEXT_BYTES` | 3000 | AT Protocol post text in bytes |
+| `AtprotoOAuthSession::MAX_TOKEN_LENGTH` | 8192 | Longest stored access or refresh token |
+| `AtprotoOAuthSession::MAX_CLIENT_ID_LENGTH` | 512 | Longest OAuth client id URL |
+| `AtprotoOAuthSession::MAX_SCOPE_LENGTH` | 1024 | Longest granted scope string |
+| `AtprotoSessionService::REFRESH_LEEWAY_SECONDS` | 60 | Refresh a session this many seconds before expiry |
+| `XrpcAtprotoSessionRefresher::TIMEOUT_SECONDS` | 20 | Token-endpoint request timeout |
 | `MediaService::DEFAULT_THUMBNAIL_MAX_DIMENSION` | 640 | Default longest thumbnail side |
 | `TimelineService::DEFAULT_LIMIT` | 20 | Default page size |
 | `TimelineService::MAX_LIMIT` | 40 | Page size ceiling |
