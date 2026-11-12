@@ -27,12 +27,32 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 			throw new DatabaseException('The attachment id already exists.');
 		}
 
+		if ($attachment->sourceUrl !== null && $this->findBySourceUrl($attachment->sourceUrl) !== null) {
+			throw new DatabaseException('The attachment source URL already exists.');
+		}
+
 		$this->attachments[$attachment->id] = $attachment;
 	}
 
 	public function find(string $id): ?Attachment
 	{
 		return $this->attachments[$id] ?? null;
+	}
+
+	public function findBySourceUrl(string $sourceUrl): ?Attachment
+	{
+		foreach ($this->attachments as $attachment) {
+			if ($attachment->sourceUrl === $sourceUrl) {
+				return $attachment;
+			}
+		}
+
+		return null;
+	}
+
+	public function delete(string $id): void
+	{
+		unset($this->attachments[$id]);
 	}
 
 	public function count(): int

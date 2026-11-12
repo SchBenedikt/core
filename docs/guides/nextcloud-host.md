@@ -75,6 +75,8 @@ pin a tag or a commit rather than floating `dev-main`.
 | `Config` | `OCP\IConfig` | App id `social`; values are strings |
 | `Db\Connection` | `OCP\IDBConnection` | Doctrine DBAL; see the adapter below |
 | `Http\HttpClient` | `OCP\Http\Client\IClientService` | Keep Nextcloud's CA/proxy policy; or use `CurlHttpClient` |
+| `Http\BoundedHttpClient` | `IClientService` with a streamed body cap and address pinning | Needed for remote media; a plain `HttpClient` wrapper leaves the remote importer disabled |
+| `Network\HostResolver` | `OCP\IDNSResolver` or the app's resolver | The remote-media guard needs every A/AAAA answer before a request |
 | `Storage\BlobStore` | `OCP\Files\IAppData` | Pass it to `forHost()` to enable media; the core supplies the local filesystem adapter for the standalone host |
 | `LocalActorDirectory` | `OCP\IUserManager` / external user backend | The app already has external users; include them |
 | `Jobs\JobQueue` | core `PdoJobQueue` over `NextcloudConnection` | Nothing to implement; the core owns atomic reserve, retry and dead-letter rules |
@@ -200,6 +202,14 @@ final class NextcloudHttpClient implements HttpClient
 Check the exact option names against the Nextcloud/Guzzle version you build
 against. The contract is what matters: no exception for a 404/503, TLS
 verification on, and a stable exception type for DNS/TLS/timeout failures.
+
+For remote media, add a second adapter implementing `BoundedHttpClient`: read
+the response incrementally up to `maxBytes`, and honour the supplied
+`resolvedIps` when opening the connection. If the Nextcloud client cannot pin
+an address, use the core's `CurlHttpClient` for this one path and keep the
+host wrapper for delivery; alternatively leave remote media disabled. Do not
+route remote media through an unbounded wrapper just to make the feature
+appear enabled.
 
 ### Users and keys
 
@@ -377,11 +387,14 @@ limiter in the controller.
 
 Create the app's tables through Nextcloud migrations, with the same columns
 and indexes as the core's schema classes. The SQL strings in `PostSchema`,
-`FollowerSchema`, `FollowingSchema`, `RemotePostSchema`, `BlockSchema`,
-`JobSchema` and `ActivityLogSchema` are the canonical definition; translate them into the
-app's schema API rather than copying a second column list. The two tables in
-section 4 are the queue and replay-log tables; do not hand-write a different
-shape.
+`AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
+`BlockSchema`, `JobSchema` and `ActivityLogSchema` are the canonical
+definition; translate them into the app's schema API rather than copying a
+second column list. `RemotePostSchema` now creates both
+`social_remote_post` and the ordered `social_remote_post_attachment` link
+table; `AttachmentSchema` has the nullable `source_url` and its unique index.
+The two tables in section 4 are the queue and replay-log tables; do not
+hand-write a different shape.
 
 If the app already has a `social_following` table from the earlier core
 version, add:
@@ -452,9 +465,12 @@ one owner, or a peer will see two different answers for the same account.
 ## What is still host-specific
 
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
-- Media, the Mastodon-compatible API and remote-post backfill/thread fetching
-  are not in the core yet. Keep the app's existing implementation for those
-  until the corresponding core milestone.
+- The Mastodon-compatible API and remote-post backfill/thread fetching are
+  not in the core yet. Keep the app's existing implementation for those until
+  the corresponding core milestone. Local and remote media are now in the
+  core; the Nextcloud HTTP adapter must implement `BoundedHttpClient` (or use
+  the supplied `CurlHttpClient`) before remote attachment ingestion can be
+  enabled.
 - Key storage and migrations are host adapters; the core supplies the
   interfaces and the schema definitions. The durable queue and activity log
   are core adapters and only need the app's `Connection`.

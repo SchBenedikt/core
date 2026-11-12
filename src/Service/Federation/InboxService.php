@@ -71,6 +71,7 @@ final class InboxService
 		private readonly Clock $clock,
 		private readonly ?BlockedActorPolicy $blockedActors = null,
 		private readonly ?FollowPolicy $followPolicy = null,
+		private readonly ?RemoteMediaService $remoteMedia = null,
 	) {
 	}
 
@@ -198,7 +199,12 @@ final class InboxService
 	{
 		$this->requireFollowedContent($actor);
 
-		$this->insertRemotePost($this->remotePostFactory->fromCreate($actor->actorId, $activity));
+		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity);
+		$this->insertRemotePost($post);
+
+		// Import after the post is durable. The importer isolates every
+		// attachment, so a slow or broken image never discards the post.
+		$this->remoteMedia?->import($post, $activity['object'] ?? null);
 	}
 
 	/**
@@ -211,7 +217,10 @@ final class InboxService
 		$objectId = $this->remotePostFactory->targetId($activity['object'] ?? null, 'Announce');
 		$target = $this->remotePosts->findPostByObjectId($objectId);
 
-		$this->insertRemotePost($this->remotePostFactory->fromAnnounce($actor->actorId, $activity, $target));
+		$post = $this->remotePostFactory->fromAnnounce($actor->actorId, $activity, $target);
+		$this->insertRemotePost($post);
+
+		$this->remoteMedia?->import($post, $activity['object'] ?? null);
 	}
 
 	/**

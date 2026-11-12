@@ -38,9 +38,11 @@ final class AttachmentSchema
 			. ' height INTEGER NOT NULL,'
 			. ' byte_size INTEGER NOT NULL,'
 			. ' alt_text VARCHAR(1000) NULL,'
-			. ' created_at VARCHAR(20) NOT NULL'
+			. ' created_at VARCHAR(20) NOT NULL,'
+			. ' source_url VARCHAR(512) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_owner ON ' . self::TABLE . ' (owner_id, created_at)',
+			'CREATE UNIQUE INDEX ' . self::TABLE . '_source ON ' . self::TABLE . ' (source_url)',
 		];
 	}
 

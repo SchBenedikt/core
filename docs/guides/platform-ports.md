@@ -1,8 +1,11 @@
 # Platform ports
 
-A port is what the core needs from the world. There are six, all in
-`src/Platform/`, and both hosts implement them. Adding another is a breaking
-change for both hosts, so the list stays short on purpose.
+A port is what the core needs from the world. The small set lives in
+`src/Platform/`, and both hosts implement it. Adding another is a breaking
+change for both hosts, so the list stays short on purpose. `BoundedHttpClient`
+extends the HTTP port rather than adding a second outbound stack, and
+`HostResolver` exists so the remote-media guard can validate DNS before a
+request.
 
 | Port | Methods | In-memory | Production |
 | --- | --- | --- | --- |
@@ -11,6 +14,8 @@ change for both hosts, so the list stays short on purpose.
 | `Storage\BlobStore` | `put`/`read`/`exists`/`delete`/`size`/`list` | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
 | `Db\Connection` | `execute`/`fetchAll`/`fetchOne`/`fetchValue`/`transaction`/`driver` | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+| `Http\BoundedHttpClient` | `request()` + bounded `requestBounded()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+| `Network\HostResolver` | `resolve()` | `DnsHostResolver`, test map | `DnsHostResolver` |
 | `Image\ImageProcessor` | `thumbnail()` | test adapter | `GdImageProcessor` |
 
 ## What each one promises
@@ -25,10 +30,12 @@ makes the tests deterministic: `FrozenClock` moves only when a test moves it.
 
 A two-level store (`app`, `key`) with typed getters that take a default. The
 core reads `social/instance.url`, `social/instance.name` and the optional
-`social/media.max_bytes` and `social/media.thumbnail_max_dimension` limits; a
-host may store them in `config.php`, an `.env` file or the database. `Config`
-is not a secret store — private keys belong in the host's secret handling,
-sealed with `Security\SecretBox` when persisted.
+media limits (`media.max_bytes`, `media.thumbnail_max_dimension`,
+`media.remote_fetch`, `media.remote_max_bytes`, `media.remote_timeout_seconds`
+and `media.remote_max_redirects`); a host may store them in `config.php`, an
+`.env` file or the database. `Config` is not a secret store — private keys
+belong in the host's secret handling, sealed with `Security\SecretBox` when
+persisted.
 
 ### BlobStore
 
@@ -58,6 +65,20 @@ One request method with method, URL, headers, body and timeout, returning a
 status and body or throwing `HttpClientException` on a transport failure. A
 non-2xx answer is **not** an exception — the delivery handler decides whether a
 status is retryable.
+
+`BoundedHttpClient` adds a response-body cap and an optional list of previously
+validated addresses that a client must pin for the connection. Remote media
+uses this capability; actor-key resolution and delivery only need the base
+interface. A host that cannot provide the bounded guarantee simply leaves the
+remote-media importer unwired.
+
+### HostResolver
+
+Resolves every address for a hostname before a remote media request. The
+default `DnsHostResolver` asks for A and AAAA records and returns all answers;
+the media guard rejects the fetch if any answer is private, loopback or
+otherwise non-public. Tests use a small map, and a host may supply its own DNS
+policy. Returning an empty list means the name did not resolve.
 
 ## Contract tests
 

@@ -25,7 +25,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
 | [Shared UI and HostBridge](guides/shared-ui.md) | The Vue package boundary, bridge contract, package layout and extraction order |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, own and remote posts in the home timeline, boosts and deletes |
-| [Media](guides/media.md) | Image upload, local originals and thumbnails, post attachments, limits and orphan cleanup |
+| [Media](guides/media.md) | Image upload, local originals and thumbnails, guarded remote attachments from federated posts, limits, failure reasons and cleanup |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |

@@ -24,6 +24,8 @@ use Throwable;
  */
 final class PdoRemotePostRepository implements RemotePostRepository
 {
+	public const MAX_ATTACHMENTS = 4;
+
 	private const COLUMNS = 'activity_id, object_id, object_author_id, actor_id, kind,'
 		. ' content, content_warning, published_at, deleted_at';
 
@@ -153,6 +155,73 @@ final class PdoRemotePostRepository implements RemotePostRepository
 			fn (array $row): RemotePost => $this->hydrate($row),
 			$this->db->fetchAll($sql, $parameters),
 		);
+	}
+
+	public function linkAttachments(string $activityId, array $attachmentIds): void
+	{
+		$attachmentIds = array_values(array_unique($attachmentIds));
+		if (count($attachmentIds) > self::MAX_ATTACHMENTS) {
+			throw new DatabaseException('Too many attachments for one remote post.');
+		}
+
+		try {
+			$this->db->transaction(function (Connection $db) use ($activityId, $attachmentIds): void {
+				$db->execute(
+					'DELETE FROM ' . RemotePostSchema::ATTACHMENT_TABLE
+					. ' WHERE activity_id = :activity_id',
+					['activity_id' => $activityId],
+				);
+
+				foreach ($attachmentIds as $position => $attachmentId) {
+					$db->execute(
+						'INSERT INTO ' . RemotePostSchema::ATTACHMENT_TABLE
+						. ' (activity_id, attachment_id, position) VALUES'
+						. ' (:activity_id, :attachment_id, :position)',
+						[
+							'activity_id' => $activityId,
+							'attachment_id' => $attachmentId,
+							'position' => $position,
+						],
+					);
+				}
+			});
+		} catch (Throwable $exception) {
+			if ($exception instanceof DatabaseException) {
+				throw $exception;
+			}
+
+			throw new DatabaseException('The remote post attachments could not be linked.', 0, $exception);
+		}
+	}
+
+	public function attachmentIdsFor(array $activityIds): array
+	{
+		$activityIds = array_values(array_unique($activityIds));
+		if ($activityIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach ($activityIds as $index => $activityId) {
+			$name = 'activity_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $activityId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT activity_id, attachment_id FROM ' . RemotePostSchema::ATTACHMENT_TABLE
+			. ' WHERE activity_id IN (' . implode(', ', $placeholders) . ')'
+			. ' ORDER BY activity_id, position',
+			$parameters,
+		);
+
+		$result = [];
+		foreach ($rows as $row) {
+			$result[(string) $row['activity_id']][] = (string) $row['attachment_id'];
+		}
+
+		return $result;
 	}
 
 	/**

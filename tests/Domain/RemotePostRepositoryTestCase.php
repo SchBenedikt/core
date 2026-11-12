@@ -145,6 +145,34 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->timelineForActors(['nobody'], 10));
 	}
 
+	public function testAttachmentLinksAreOrderedReplacedAndLimited(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('post-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+
+		$repository->linkAttachments('post-1', ['attachment-b', 'attachment-a']);
+
+		self::assertSame(
+			['post-1' => ['attachment-b', 'attachment-a']],
+			$repository->attachmentIdsFor(['post-1', 'missing']),
+		);
+
+		$repository->linkAttachments('post-1', ['attachment-c']);
+
+		self::assertSame(
+			['post-1' => ['attachment-c']],
+			$repository->attachmentIdsFor(['post-1']),
+		);
+
+		$repository->linkAttachments('post-1', []);
+
+		self::assertSame([], $repository->attachmentIdsFor(['post-1']));
+
+		$this->expectException(DatabaseException::class);
+
+		$repository->linkAttachments('post-1', ['1', '2', '3', '4', '5']);
+	}
+
 	public function testTimelineForActorsSupportsBeforeAndLimit(): void
 	{
 		$repository = $this->repository();

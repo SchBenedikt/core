@@ -44,6 +44,16 @@ change. `fields` appears only when an error belongs to specific input.
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
 
+## Remote media failures
+
+Remote attachment failures do not have an HTTP route of their own and do not
+change the response to the delivering peer's inbox. They are logged with a
+stable `reason` and are documented in
+[media](../guides/media.md#failure-reasons) (`remote_media_ssrf_blocked`,
+`remote_media_too_large`, `remote_media_timeout`, `remote_media_invalid_image`,
+and so on). The post remains available without the affected attachment. Do
+not invent a new HTTP error code for these events.
+
 ## Rules
 
 - Never add a code without adding it to this table.

@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Remote media ingestion: a signed inbound `Create` or `Announce` can now
+  import up to four image attachments from its embedded object after the post
+  is stored. The new `RemoteMediaFetcher` enforces http(s)-only URLs, public
+  DNS/IP checks on every hop (SSRF), manual redirect revalidation, a per-hop
+  timeout and a hard body limit; `CurlHttpClient` implements the bounded and
+  pinned connection path. The existing `MediaService` validates the declared
+  and sniffed MIME type, dimensions and thumbnail and stores original plus
+  thumbnail locally. A nullable unique `source_url` on `social_attachment`
+  makes repeated URLs idempotent, and `social_remote_post_attachment` links
+  the local rows to the remote post. Failed attachments log documented stable
+  reasons and are skipped without discarding the post or leaving half rows or
+  blobs. Remote timeline entries now carry alt text and local media URLs.
+  `social/media.remote_fetch`, `media.remote_max_bytes`,
+  `media.remote_timeout_seconds` and `media.remote_max_redirects` are
+  documented; disabling the fetch keeps existing copies readable. The route
+  manifest and OpenAPI export are unchanged (remote media adds no route).
 - Media pipeline: authenticated `POST /api/v1/media` accepts a multipart image
   with optional alt text, sniffs JPEG/PNG/WebP, enforces size, dimension and
   pixel limits, stores the untouched original and a GD-generated thumbnail in

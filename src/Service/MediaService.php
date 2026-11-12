@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -56,6 +57,7 @@ final class MediaService
 		private readonly Config $config,
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
+		private readonly ?RemotePostRepository $remotePosts = null,
 	) {
 	}
 
@@ -64,7 +66,13 @@ final class MediaService
 	 * @throws \AlohaSocial\Core\Platform\Storage\StorageException when a blob cannot be written or cleaned up
 	 * @throws \AlohaSocial\Core\Platform\Db\DatabaseException when the metadata row cannot be stored
 	 */
-	public function upload(string $ownerId, string $bytes, ?string $altText = null): Attachment
+	public function upload(
+		string $ownerId,
+		string $bytes,
+		?string $altText = null,
+		?string $declaredMimeType = null,
+		?string $sourceUrl = null,
+	): Attachment
 	{
 		$ownerId = trim($ownerId);
 		if ($ownerId === '') {
@@ -74,6 +82,24 @@ final class MediaService
 		$altText = $altText === null ? null : trim($altText);
 		if ($altText === '') {
 			$altText = null;
+		}
+
+		$sourceUrl = $sourceUrl === null ? null : trim($sourceUrl);
+		if ($sourceUrl === '') {
+			$sourceUrl = null;
+		}
+
+		if ($sourceUrl !== null && mb_strlen($sourceUrl) > Attachment::MAX_SOURCE_URL_LENGTH) {
+			throw new ValidationException(['file' => 'The attachment source URL is too long.']);
+		}
+
+		$declaredMimeType = $this->normalizeDeclaredMimeType($declaredMimeType);
+
+		if ($sourceUrl !== null) {
+			$existing = $this->attachments->findBySourceUrl($sourceUrl);
+			if ($existing !== null) {
+				return $existing;
+			}
 		}
 
 		if ($altText !== null && mb_strlen($altText) > Attachment::MAX_ALT_TEXT_LENGTH) {
@@ -99,6 +125,10 @@ final class MediaService
 		$mimeType = (string) $info['mime'];
 		if (!in_array($mimeType, Attachment::ALLOWED_MIME_TYPES, true)) {
 			throw new ValidationException(['file' => 'Only JPEG, PNG and WebP images are supported.']);
+		}
+
+		if ($declaredMimeType !== null && $declaredMimeType !== $mimeType) {
+			throw new ValidationException(['file' => 'The declared media type does not match the uploaded file.']);
 		}
 
 		$width = (int) $info[0];
@@ -141,15 +171,31 @@ final class MediaService
 			byteSize: strlen($bytes),
 			altText: $altText,
 			createdAt: Time::toSecondPrecision($this->clock->now()),
+			sourceUrl: $sourceUrl,
 		);
 
 		try {
 			$this->blobs->put($storageKey, $bytes);
 			$this->blobs->put($thumbnailKey, $thumbnail->bytes);
+		} catch (\Throwable $exception) {
+			$this->cleanup($storageKey);
+			$this->cleanup($thumbnailKey);
+
+			throw $exception;
+		}
+
+		try {
 			$this->attachments->insert($attachment);
 		} catch (\Throwable $exception) {
 			$this->cleanup($storageKey);
 			$this->cleanup($thumbnailKey);
+
+			if ($sourceUrl !== null) {
+				$existing = $this->attachments->findBySourceUrl($sourceUrl);
+				if ($existing !== null) {
+					return $existing;
+				}
+			}
 
 			throw $exception;
 		}
@@ -160,6 +206,22 @@ final class MediaService
 	public function find(string $id): ?Attachment
 	{
 		return $this->attachments->find($id);
+	}
+
+	public function findBySourceUrl(string $sourceUrl): ?Attachment
+	{
+		return $this->attachments->findBySourceUrl($sourceUrl);
+	}
+
+	/**
+	 * Removes an attachment row and both local blobs. Used when a remote post
+	 * cannot be linked after its media was imported.
+	 */
+	public function discard(Attachment $attachment): void
+	{
+		$this->attachments->delete($attachment->id);
+		$this->cleanup($attachment->storageKey);
+		$this->cleanup($attachment->thumbnailKey);
 	}
 
 	/**
@@ -214,17 +276,23 @@ final class MediaService
 	public function presentTimelineEntries(array $entries): array
 	{
 		$postIds = [];
+		$remoteIds = [];
 		foreach ($entries as $entry) {
 			// A local entry has a visibility; a remote entry deliberately has
-			// none and has no local attachment relation.
+			// none and resolves its attachments through the federation link.
 			if ($entry->visibility !== null) {
 				$postIds[] = $entry->id;
+			} else {
+				$remoteIds[] = $entry->id;
 			}
 		}
 
 		$idsByPost = $this->posts->attachmentIdsFor(array_values(array_unique($postIds)));
+		$idsByRemotePost = $this->remotePosts === null
+			? []
+			: $this->remotePosts->attachmentIdsFor(array_values(array_unique($remoteIds)));
 		$allIds = [];
-		foreach ($idsByPost as $ids) {
+		foreach (array_merge($idsByPost, $idsByRemotePost) as $ids) {
 			foreach ($ids as $id) {
 				$allIds[$id] = true;
 			}
@@ -235,7 +303,9 @@ final class MediaService
 		$result = [];
 		foreach ($entries as $entry) {
 			$data = $entry->toArray();
-			$ids = $entry->visibility === null ? [] : ($idsByPost[$entry->id] ?? []);
+			$ids = $entry->visibility === null
+				? ($idsByRemotePost[$entry->id] ?? [])
+				: ($idsByPost[$entry->id] ?? []);
 			$presented = [];
 			foreach ($ids as $id) {
 				if (isset($attachments[$id])) {
@@ -267,6 +337,20 @@ final class MediaService
 		}
 
 		return $ordered;
+	}
+
+	private function normalizeDeclaredMimeType(?string $declared): ?string
+	{
+		if ($declared === null) {
+			return null;
+		}
+
+		$declared = strtolower(trim(explode(';', $declared, 2)[0]));
+		if (!in_array($declared, Attachment::ALLOWED_MIME_TYPES, true)) {
+			throw new ValidationException(['file' => 'Only JPEG, PNG and WebP images are supported.']);
+		}
+
+		return $declared;
 	}
 
 	private function maxBytes(): int

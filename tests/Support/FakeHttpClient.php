@@ -9,9 +9,10 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Support;
 
-use AlohaSocial\Core\Platform\Http\HttpClient;
+use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Platform\Http\ResponseLimitExceededException;
 
 /**
  * An HTTP client that records what was sent and answers from a queue.
@@ -19,7 +20,7 @@ use AlohaSocial\Core\Platform\Http\HttpResponse;
  * The default answer is 202, so a delivery test only states the interesting
  * case (a peer that refuses).
  */
-final class FakeHttpClient implements HttpClient
+final class FakeHttpClient implements BoundedHttpClient
 {
 	/**
 	 * @var list<array{method: string, url: string, headers: array<string, string>, body: string, timeout: int}>
@@ -48,6 +49,29 @@ final class FakeHttpClient implements HttpClient
 		string $body = '',
 		int $timeoutSeconds = 10,
 	): HttpResponse {
+		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, PHP_INT_MAX);
+	}
+
+	public function requestBounded(
+		string $method,
+		string $url,
+		array $headers = [],
+		string $body = '',
+		int $timeoutSeconds = 10,
+		int $maxBytes = 1_048_576,
+		array $resolvedIps = [],
+	): HttpResponse {
+		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, $maxBytes);
+	}
+
+	private function answer(
+		string $method,
+		string $url,
+		array $headers,
+		string $body,
+		int $timeoutSeconds,
+		int $maxBytes,
+	): HttpResponse {
 		$this->requests[] = [
 			'method' => $method,
 			'url' => $url,
@@ -61,6 +85,11 @@ final class FakeHttpClient implements HttpClient
 			throw $answer;
 		}
 
-		return $answer ?? new HttpResponse(202);
+		$answer ??= new HttpResponse(202);
+		if (strlen($answer->body) > $maxBytes) {
+			throw new ResponseLimitExceededException('The response exceeded the allowed size.');
+		}
+
+		return $answer;
 	}
 }

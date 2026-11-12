@@ -48,6 +48,8 @@ final readonly class Attachment
 
 	public const MAX_PIXELS = 40_000_000;
 
+	public const MAX_SOURCE_URL_LENGTH = 512;
+
 	public function __construct(
 		public string $id,
 		public string $ownerId,
@@ -59,6 +61,7 @@ final readonly class Attachment
 		public int $byteSize,
 		public ?string $altText,
 		public DateTimeImmutable $createdAt,
+		public ?string $sourceUrl = null,
 	) {
 		if ($id === '' || mb_strlen($id) > 64) {
 			throw new InvalidArgumentException('An attachment needs an id of at most 64 characters.');
@@ -88,6 +91,10 @@ final readonly class Attachment
 
 		if ($altText !== null && mb_strlen($altText) > self::MAX_ALT_TEXT_LENGTH) {
 			throw new InvalidArgumentException('An attachment alt text is too long.');
+		}
+
+		if ($sourceUrl !== null && ($sourceUrl === '' || mb_strlen($sourceUrl) > self::MAX_SOURCE_URL_LENGTH)) {
+			throw new InvalidArgumentException('An attachment source URL is invalid.');
 		}
 	}
 

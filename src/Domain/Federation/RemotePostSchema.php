@@ -22,6 +22,8 @@ final class RemotePostSchema
 {
 	public const TABLE = 'social_remote_post';
 
+	public const ATTACHMENT_TABLE = 'social_remote_post_attachment';
+
 	/**
 	 * @return list<string>
 	 */
@@ -43,6 +45,14 @@ final class RemotePostSchema
 			. ' (actor_id, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_object ON ' . self::TABLE
 			. ' (object_id, kind)',
+			'CREATE TABLE ' . self::ATTACHMENT_TABLE . ' ('
+			. ' activity_id VARCHAR(512) NOT NULL,'
+			. ' attachment_id VARCHAR(64) NOT NULL,'
+			. ' position INTEGER NOT NULL,'
+			. ' PRIMARY KEY (activity_id, attachment_id)'
+			. ')',
+			'CREATE INDEX ' . self::ATTACHMENT_TABLE . '_activity ON ' . self::ATTACHMENT_TABLE
+			. ' (activity_id, position)',
 		];
 	}
 

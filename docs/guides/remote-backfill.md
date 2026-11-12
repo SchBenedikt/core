@@ -69,8 +69,11 @@ fetched, an invalid document or a cross-origin pagination link raises
 
 This is not a complete mirror. It does not fetch replies, threads, context or
 media, and it does not apply `Delete` activities; those need separate fetching
-and retention rules. It also does not schedule itself — the host decides when
-to backfill, for example after a local follow or from a maintenance command.
+and retention rules. Media ingestion is implemented on the live inbox path
+(see [media](media.md#remote-attachments-from-incoming-posts)); a host that
+backfills historic posts needs its own media catch-up policy. The backfill also
+does not schedule itself — the host decides when to run it, for example after a
+local follow or from a maintenance command.
 
 The inbox and the backfill share `RemotePostFactory`, so the same object gets
 the same content, content warning, author and timestamp fallback whichever path

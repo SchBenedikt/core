@@ -78,7 +78,7 @@ $activityLog = new PdoActivityLog($connection);
 $app = Application::forHost(
     config: $config,             // Core\Platform\Config\Config
     database: $connection,       // Core\Platform\Db\Connection
-    httpClient: $http,           // Core\Platform\Http\HttpClient
+    httpClient: $http,           // Core\Platform\Http\HttpClient; BoundedHttpClient enables remote media
     signingKey: $keys,           // Core\Protocol\ActivityPub\RsaKeyPair
     localActors: $actors,        // Core\Domain\Federation\LocalActorDirectory
     queue: $queue,               // Core\Jobs\JobQueue, durable
@@ -87,6 +87,7 @@ $app = Application::forHost(
     blockedActors: $policy,      // optional; instance-wide block policy
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
+    hostResolver: $dns,          // optional; default is DnsHostResolver
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
 );
@@ -103,7 +104,7 @@ The object exposes the parts a host needs:
 | `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
-| `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied |
+| `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -122,6 +123,8 @@ production bootstrap.
 | `Config` | Store `social/instance.url`, `social/instance.name` and the host's settings | `ArrayConfig` only for tests |
 | `Db\Connection` | Execute parameterised SQL, fetch rows, join transactions and report the driver | `PdoConnection` if PDO is available |
 | `Http\HttpClient` | Return non-2xx answers as `HttpResponse`; throw `HttpClientException` only on transport failure | `CurlHttpClient` |
+| `Http\BoundedHttpClient` | Also cap the response body while reading and pin a validated address; required for remote media | `CurlHttpClient`; test `FakeHttpClient` / `LocalHttpClient` |
+| `Network\HostResolver` | Resolve every A/AAAA answer so the remote-media guard can reject private addresses | `DnsHostResolver`; hosts may supply their DNS policy |
 | `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
@@ -135,12 +138,18 @@ production bootstrap.
 
 ### Config keys
 
-The core reads only:
+The required keys are:
 
 ```
 social/instance.url    absolute base URL, no trailing slash required
 social/instance.name   display name
 ```
+
+The media keys are optional and documented in
+[media](media.md#configuration). In particular, remote attachment ingestion
+is controlled by `social/media.remote_fetch` (default on), with
+`media.remote_max_bytes`, `media.remote_timeout_seconds` and
+`media.remote_max_redirects` as limits.
 
 `instance.url` is what every actor, post and activity id is built from. It must
 be the public URL under which the core's routes are actually served. If that
@@ -152,10 +161,10 @@ host must strip it before passing the request to the kernel.
 The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
-- `AttachmentSchema` → `social_attachment` (metadata; bytes are in `BlobStore`)
+- `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
-- `RemotePostSchema` → `social_remote_post` (remote posts and boosts)
+- `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
@@ -167,7 +176,10 @@ port is small; see [database](database.md).
 
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.
-There is no migration runner in this repository.
+If `social_attachment` predates remote media, add nullable `source_url
+VARCHAR(512)` and its unique index, and create
+`social_remote_post_attachment` from `RemotePostSchema::statements()`. There is
+no migration runner in this repository.
 
 ### Durable queue and activity log
 
@@ -234,7 +246,12 @@ on. `CurlHttpClient` is a complete implementation if the host does not already
 have a suitable client.
 
 A host that already has an HTTP client should wrap it; that keeps the host's
-CA bundle, proxy and SSRF policy in force instead of adding a second stack.
+CA bundle, proxy and SSRF policy in force instead of adding a second stack. For
+remote media, the wrapper must also implement `BoundedHttpClient`: enforce the
+body cap while reading and pin the caller-supplied validated addresses. Do not
+substitute an unbounded wrapper and then disable the guard; `Application`
+checks the interface and leaves remote media disabled when it is absent. A
+host can supply `hostResolver` to use its own DNS policy as well.
 
 ## Serve HTTP
 
@@ -378,13 +395,15 @@ host's own tests as well.
 ## What it does not give you yet
 
 The core is a foundation, not a drop-in replacement for the current Nextcloud
-app. It contains local image upload, validation and thumbnails, but not remote
-media fetching, an admin UI or the Mastodon-compatible API. It does provide a
+app. It contains local image upload, validation and thumbnails, and remote
+image ingestion for incoming `Create`/`Announce` posts with SSRF, size,
+timeout and redirect guards. It does not contain an admin UI, the
+Mastodon-compatible API or an object-storage adapter. It does provide a
 bounded outbox backfill for missed `Create`/`Announce` activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the
-local storage and cleanup contract; an object-storage adapter is still a host
-decision.
+storage, remote-fetch and cleanup contract; an object-storage adapter is still
+a host decision.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two
@@ -394,8 +413,8 @@ owners for the same handle.
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
 2. Create the core tables through the host's migration system (including
-   `social_remote_post`, `social_block`, `social_attachment` and
-   `social_post_attachment`).
+   `social_remote_post`, `social_remote_post_attachment`, `social_block`,
+   `social_attachment` and `social_post_attachment`).
 3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
    `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).

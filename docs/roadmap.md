@@ -42,8 +42,8 @@ Status of the core, not a promise about dates.
 - Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
   `Announce` activities from a followed actor's public outbox. It is bounded by
   pages and items, stays on the outbox origin, skips unsupported or malformed
-  entries and deduplicates by activity id. Thread, context and remote media
-  fetching remain separate.
+  entries and deduplicates by activity id. Thread and context fetching remain
+  separate.
 - Media: `Attachment` metadata with JPEG/PNG/WebP validation, an
   `AttachmentRepository` with in-memory and PDO adapters behind one contract
   test, `BlobStore` storage of an untouched original and a GD-generated
@@ -52,6 +52,19 @@ Status of the core, not a promise about dates.
   post and both timeline shapes without changing posts that have no
   attachments. Invalid, corrupt and oversized uploads leave no blob and no
   row.
+- Remote media: images advertised by an incoming `Create` or `Announce` are
+  fetched after the post is stored, but only through the bounded HTTP client
+  and a host resolver that rejects private, loopback, link-local, CGNAT,
+  documentation and mapped addresses (SSRF), with manual redirect rechecks,
+  a per-hop timeout and a hard body limit. Up to four image attachments are
+  parsed from `url`/`mediaType`/`name`, validated by the existing
+  `MediaService` (declared vs. sniffed type, dimensions, thumbnail) and stored
+  locally. The unique `source_url` makes repeated URLs reuse the existing
+  copy. Failed attachments are logged with stable reasons and skipped; the
+  post remains available. Remote timeline entries resolve their links and
+  present local original/thumbnail URLs plus alt text. The switch
+  `social/media.remote_fetch` disables all outbound fetching without deleting
+  existing copies.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
@@ -85,7 +98,6 @@ Status of the core, not a promise about dates.
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
-| Remote media fetching and attachment ingestion | `HttpClient` + `BlobStore`; local upload is complete |
 | Migration runner for the standalone | host concern, schemas already exist |
 
 ## Later
@@ -94,7 +106,7 @@ Status of the core, not a promise about dates.
   the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
-- Thread/context fetching and media fetching for remote posts.
+- Thread/context fetching for remote posts.
 - Shared inboxes and delivery batching.
 
 ## Explicitly not planned

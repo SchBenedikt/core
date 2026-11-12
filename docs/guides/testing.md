@@ -25,6 +25,9 @@ that prints or skips is a failure.
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
 | `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |
+| `tests/Api/RemoteMediaTest.php` | signed inbound Create → guarded fetch from a local HTTP server → local original/thumbnail → home timeline, plus SSRF, redirect, oversized, corrupt, false type, 404, timeout, duplicate URL and attachment-limit cases |
+| `tests/Service/Federation/RemoteMediaFetcherTest.php` | guard reasons for private IPv4/IPv6, redirect revalidation, redirect budget, HTTP error, timeout, size limit and disabled switch |
+| `tests/Platform/Http/CurlHttpClientTest.php` | production curl body cap and validated-address pinning against the local fixture server |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination |
 | `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create and the SQL home timeline |
@@ -59,7 +62,10 @@ that.
 
 - `FrozenClock` — time moves only when the test says so; never `sleep()`.
 - `RandomIdGenerator` — ids are random; assert shape, not value.
-- `FakeHttpClient` — records requests and answers from a queue (default 202).
+- `FakeHttpClient` — records requests and answers from a queue (default 202);
+  also implements the bounded path.
+- `LocalHttpClient` — maps the guarded test hostname to a real local HTTP
+  fixture server for end-to-end tests; `RemoteMediaServer` starts that server.
 - `FixedInboxResolver` — pretends the follow graph has entries.
 - `RecordingJobHandler` / `FailingJobHandler` — worker tests without work.
 - `SequenceIdGenerator` — deterministic ids when a test needs them.

@@ -20,10 +20,17 @@ use DateTimeImmutable;
  */
 final class InMemoryRemotePostRepository implements RemotePostRepository
 {
+	public const MAX_ATTACHMENTS = 4;
+
 	/**
 	 * @var array<string, RemotePost>
 	 */
 	private array $posts = [];
+
+	/**
+	 * @var array<string, list<string>>
+	 */
+	private array $attachments = [];
 
 	public function insert(RemotePost $post): void
 	{
@@ -108,6 +115,34 @@ final class InMemoryRemotePostRepository implements RemotePostRepository
 		});
 
 		return array_slice($posts, 0, max(1, $limit));
+	}
+
+	public function linkAttachments(string $activityId, array $attachmentIds): void
+	{
+		$attachmentIds = array_values(array_unique($attachmentIds));
+		if (count($attachmentIds) > self::MAX_ATTACHMENTS) {
+			throw new DatabaseException('Too many attachments for one remote post.');
+		}
+
+		if ($attachmentIds === []) {
+			unset($this->attachments[$activityId]);
+
+			return;
+		}
+
+		$this->attachments[$activityId] = $attachmentIds;
+	}
+
+	public function attachmentIdsFor(array $activityIds): array
+	{
+		$result = [];
+		foreach (array_unique($activityIds) as $activityId) {
+			if (isset($this->attachments[$activityId])) {
+				$result[$activityId] = $this->attachments[$activityId];
+			}
+		}
+
+		return $result;
 	}
 
 	private function deleted(RemotePost $post, DateTimeImmutable $deletedAt): RemotePost

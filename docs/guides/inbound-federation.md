@@ -110,6 +110,14 @@ The embedded `published` wins over the activity's `published`; if neither is
 present the server clock is used. Timestamps must be RFC 3339; an invalid one
 is `invalid_activity`, not a silently invented date.
 
+After the row is stored, up to four image entries in the object's
+`attachments` array are imported best-effort. The remote fetch is guarded
+(http(s), public DNS/IP checks, redirect rechecks, timeout and body limit),
+reuses the existing image validation and stores a local original plus
+thumbnail. The remote post is linked to the successful local attachments; a
+bad or missing image is logged and skipped while the post remains available.
+See [media](media.md#remote-attachments-from-incoming-posts).
+
 Remote rows are shared by all local followers. The home timeline joins the
 row against the reader's `social_following` edge, so the same row is visible to
 every local account that follows the actor and disappears for a reader who
@@ -132,9 +140,11 @@ id claimed and a later duplicate delivery cannot resurrect it.
 An `Announce` is stored with `kind = boost` and its own activity id. The target
 may be an embedded object or a URI. When the target object was already stored,
 its content and content warning are used as a fallback for a sparse Announce.
-The home timeline returns one entry with `kind: "boost"` and `boosted_by` set;
-it never invents a standalone post for the same activity. Deleting the
-`Announce` activity id removes the boost.
+An embedded object's image attachments are imported through the same guarded
+path as a `Create`; a URI-only Announce carries no attachment metadata and
+therefore does not fetch media. The home timeline returns one entry with
+`kind: "boost"` and `boosted_by` set; it never invents a standalone post for
+the same activity. Deleting the `Announce` activity id removes the boost.
 
 ## Replay and clocks
 
@@ -149,9 +159,11 @@ The clock window for the signed `Date` is 300 seconds; see
 
 ## What is missing
 
-- thread/context fetching and media fetching for remote posts;
+- thread/context fetching;
 - shared-inbox handling and delivery batching.
 
 A bounded outbox catch-up for missed `Create`/`Announce` activities exists as
 an explicit host operation; see [remote outbox backfill](remote-backfill.md).
-It is not a full mirror and does not fetch threads or media.
+It is not a full mirror: it does not fetch threads or media, and it does not
+apply `Delete` activities. Media is imported by the live inbox path; a host
+that backfills historic posts still needs a separate media catch-up policy.

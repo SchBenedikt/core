@@ -23,7 +23,7 @@ use PDOException;
  */
 final class PdoAttachmentRepository implements AttachmentRepository
 {
-	private const COLUMNS = 'id, owner_id, storage_key, thumbnail_key, mime_type, width, height, byte_size, alt_text, created_at';
+	private const COLUMNS = 'id, owner_id, storage_key, thumbnail_key, mime_type, width, height, byte_size, alt_text, created_at, source_url';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -45,7 +45,7 @@ final class PdoAttachmentRepository implements AttachmentRepository
 			'INSERT INTO ' . AttachmentSchema::TABLE
 			. ' (' . self::COLUMNS . ')'
 			. ' VALUES (:id, :owner_id, :storage_key, :thumbnail_key, :mime_type,'
-			. ' :width, :height, :byte_size, :alt_text, :created_at)',
+			. ' :width, :height, :byte_size, :alt_text, :created_at, :source_url)',
 			[
 				'id' => $attachment->id,
 				'owner_id' => $attachment->ownerId,
@@ -57,6 +57,7 @@ final class PdoAttachmentRepository implements AttachmentRepository
 				'byte_size' => $attachment->byteSize,
 				'alt_text' => $attachment->altText,
 				'created_at' => Time::format($attachment->createdAt),
+				'source_url' => $attachment->sourceUrl,
 			],
 		);
 	}
@@ -69,6 +70,24 @@ final class PdoAttachmentRepository implements AttachmentRepository
 		);
 
 		return $row === null ? null : $this->hydrate($row);
+	}
+
+	public function findBySourceUrl(string $sourceUrl): ?Attachment
+	{
+		$row = $this->db->fetchOne(
+			'SELECT ' . self::COLUMNS . ' FROM ' . AttachmentSchema::TABLE . ' WHERE source_url = :source_url',
+			['source_url' => $sourceUrl],
+		);
+
+		return $row === null ? null : $this->hydrate($row);
+	}
+
+	public function delete(string $id): void
+	{
+		$this->db->execute(
+			'DELETE FROM ' . AttachmentSchema::TABLE . ' WHERE id = :id',
+			['id' => $id],
+		);
 	}
 
 	public function count(): int
@@ -121,6 +140,7 @@ final class PdoAttachmentRepository implements AttachmentRepository
 			byteSize: (int) $row['byte_size'],
 			altText: $row['alt_text'] === null ? null : (string) $row['alt_text'],
 			createdAt: Time::parse((string) $row['created_at']),
+			sourceUrl: $row['source_url'] === null ? null : (string) $row['source_url'],
 		);
 	}
 }

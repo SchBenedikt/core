@@ -25,10 +25,10 @@ timestamp, and anything else is refused.
 Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
-- `src/Domain/Media/AttachmentSchema.php` → `social_attachment`
+- `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
-- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post`
+- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
@@ -55,16 +55,21 @@ keeps the object id, object author, signing actor, kind (`post`/`boost`),
 content, optional content warning, published time and `deleted_at`. The home
 timeline joins the table to `social_following`; remote rows are shared by all
 local followers and the join, rather than a per-user copy, scopes visibility.
+`social_remote_post_attachment` is the ordered link between a remote activity
+and imported local attachment rows; the attachment source URL is unique, so
+one remote image is stored once and reused.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md).
 
 `social_attachment` stores only metadata; the original and thumbnail bytes live
-under the keys in the host's `BlobStore`. `social_post_attachment` is the
-ordered join between a post and its attachments. Both are written by the post
-insert transaction. `PdoAttachmentRepository::findMany` deliberately does not
-promise SQL row order; callers such as the presenter order the attachments by
-the post's position list. See [media](media.md).
+under the keys in the host's `BlobStore`. `source_url` is nullable for local
+uploads and unique for imported remote media. `social_post_attachment` is the
+ordered join between a local post and its attachments; both are written by the
+post insert transaction. A remote post uses
+`social_remote_post_attachment` instead. `PdoAttachmentRepository::findMany`
+deliberately does not promise SQL row order; callers such as the presenter
+order the attachments by the position list. See [media](media.md).
 
 ## Transactions and uniqueness
 

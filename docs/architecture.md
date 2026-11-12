@@ -37,9 +37,10 @@ about the host, and everything a host must provide is an interface in
 | `Platform` | ports a host implements | import a host |
 
 `Domain\Federation` holds the follow graph, the remote-post store, the
-per-user block store and the `InboxResolver` seam. `Domain\Timeline` owns the
-combined home-timeline read model. `Domain\Media` owns attachment metadata and
-its post link; the bytes go through the `BlobStore` port and image processing
+per-user block store, the remote-attachment candidate and the `InboxResolver`
+seam. `Domain\Timeline` owns the combined home-timeline read model.
+`Domain\Media` owns attachment metadata, its local post link and its remote
+post link; the bytes go through the `BlobStore` port and image processing
 through the `ImageProcessor` port. These are domain ports, not platform ports:
 the question "where does this audience live?" belongs to the application, only
 the inbox URLs are data.
@@ -59,9 +60,11 @@ the inbox URLs are data.
 ## Host assembly
 
 `Application::forHost()` is the production composition root. It takes the
-host's `Config`, `Connection`, `HttpClient`, `RsaKeyPair`, `LocalActorDirectory`,
-durable `JobQueue` and `ActivityLog`, builds the PDO repositories and services,
-and returns the same `Kernel` the reference assembly uses. The core supplies
+host's `Config`, `Connection`, `HttpClient` (optionally `BoundedHttpClient` and
+a `HostResolver`), `RsaKeyPair`, `LocalActorDirectory`, durable `JobQueue` and
+`ActivityLog`, builds the PDO repositories and services, and returns the same
+`Kernel` the reference assembly uses. Remote media is wired only when both the
+bounded HTTP capability and a blob store are present. The core supplies
 `PdoJobQueue` and `PdoActivityLog` for the last two over that same connection.
 `Application::inMemory()` remains the test/demo path; both go through one
 private assembly, so the two cannot drift apart. The host still owns
@@ -134,6 +137,10 @@ POST /inbox
           ├─ ActivityLog::claim              replay guard
           ├─ FollowingService::localUserIds  content authorization
           ├─ RemotePostRepository::insert    Create/Announce
+          ├─ RemoteMediaService::import       best-effort images after insert
+          │   ├─ RemoteMediaFetcher          HTTP, redirects, SSRF and size guard
+          │   ├─ MediaService::upload         existing validation + storage
+          │   └─ RemotePostRepository::linkAttachments
           ├─ RemotePostRepository::softDelete Delete
           ├─ FollowerService::follow         Follow → edge
           └─ JobQueue::push                  Accept → follower inbox
@@ -171,6 +178,13 @@ same rows: it hides the actor's own content and boosts of that actor's content
 from that reader's timeline without deleting the row or affecting another
 follower. Deleting a remote post sets `deleted_at`,
 so the next home query excludes it while the activity id stays claimed.
+
+An imported image is a normal local `Attachment` with a nullable `source_url`.
+`MediaService::presentTimelineEntries` resolves local entries through
+`social_post_attachment` and remote entries through
+`social_remote_post_attachment`, then presents the same local `url`,
+`thumbnail_url` and `alt_text` shape for both. The remote URL is the unique
+idempotence key and is never required by a reader.
 
 ## Following an actor
 
@@ -242,7 +256,13 @@ maximum is 40, and generated links carry a non-default limit.
   Remote posts use the same rule.
 - **Remote idempotence.** `social_remote_post.activity_id` is the primary key,
   so one signed activity can create at most one row. `object_id` is not unique:
-  two actors may boost the same object.
+  two actors may boost the same object. `social_attachment.source_url` is
+  unique for imported media, so replaying a URL reuses the local row; the
+  nullable column keeps local uploads unaffected.
+- **Untrusted remote bytes.** Remote media only reaches `MediaService::upload`
+  after the guard checked every hop, every resolved address and the bounded
+  body. The declared ActivityPub type is checked against the same sniffed type
+  as a local upload; a mismatch writes nothing.
 - **Private blocks.** `social_block` is unique by (local user, actor) and is
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
@@ -269,6 +289,8 @@ maximum is 40, and generated links carry a non-default limit.
 | `ImageProcessor` | `thumbnail()` | `GdImageProcessor` (local) | host replacement such as ImageMagick |
 | `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+| `Http\BoundedHttpClient` | `requestBounded()` body cap and address pinning | `FakeHttpClient`, `LocalHttpClient` | `CurlHttpClient` |
+| `Network\HostResolver` | `resolve()` | test host map | `DnsHostResolver` |
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
@@ -281,7 +303,6 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | thread/context fetching | `HttpClient` + the remote-post repository; outbox backfill already catches up missed `Create`/`Announce`, but does not walk replies |
-| remote media fetching | `HttpClient` + `BlobStore`; the local upload pipeline is implemented, federated attachment ingestion is not |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
 | admin settings | host pages; the core keeps the settings *rules* |
@@ -315,4 +336,8 @@ genuinely owns the capability.
   real route into a temporary `LocalBlobStore`, fetches the original and
   thumbnail, attaches it to a post and reads it back through a post and both
   timelines; it also proves wrong, corrupt and oversized uploads write no blob
-  and no post.
+  and no post. `RemoteMediaTest` delivers a signed Create containing attachments
+  through the real inbox while a local HTTP server answers the guarded fetch;
+  it covers redirects, SSRF targets, size, corrupt bytes, a false type, a
+  timeout and duplicate URLs. `CurlHttpClientTest` covers the production
+  client's body cap and address pinning against the same fixture server.

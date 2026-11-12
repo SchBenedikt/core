@@ -25,6 +25,17 @@ interface AttachmentRepository
 	public function find(string $id): ?Attachment;
 
 	/**
+	 * Finds an attachment imported from a remote URL, so the same media is
+	 * fetched and stored at most once.
+	 */
+	public function findBySourceUrl(string $sourceUrl): ?Attachment;
+
+	/**
+	 * Removes metadata for an attachment whose blobs are cleaned separately.
+	 */
+	public function delete(string $id): void;
+
+	/**
 	 * The number of stored rows, used by operational cleanup checks.
 	 */
 	public function count(): int;

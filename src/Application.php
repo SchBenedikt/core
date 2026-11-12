@@ -82,8 +82,11 @@ use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\Connection;
+use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Image\GdImageProcessor;
+use AlohaSocial\Core\Platform\Network\DnsHostResolver;
+use AlohaSocial\Core\Platform\Network\HostResolver;
 use AlohaSocial\Core\Platform\Image\ImageProcessor;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
@@ -93,6 +96,8 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
+use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
+use AlohaSocial\Core\Service\Federation\RemoteMediaService;
 use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Service\BlockService;
@@ -158,6 +163,7 @@ final readonly class Application
 		?AttachmentRepository $attachmentRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
+		?HostResolver $hostResolver = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -207,6 +213,7 @@ final readonly class Application
 			attachmentRepository: $attachmentRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
+			hostResolver: $hostResolver,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -251,6 +258,7 @@ final readonly class Application
 		?AttachmentRepository $attachmentRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
+		?HostResolver $hostResolver = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -275,6 +283,7 @@ final readonly class Application
 			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
+			hostResolver: $hostResolver,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -307,6 +316,7 @@ final readonly class Application
 		AttachmentRepository $attachmentRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
+		?HostResolver $hostResolver,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
@@ -327,6 +337,7 @@ final readonly class Application
 			);
 		}
 
+		$logger ??= new NullLogger();
 		$activities = new ActivityFactory($config);
 		$remotePostFactory = new RemotePostFactory($clock);
 		$backfill = $httpClient === null
@@ -342,13 +353,14 @@ final readonly class Application
 		$mediaService = $blobStore === null
 			? null
 			: new MediaService(
-				$attachmentRepository,
-				$posts,
-				$blobStore,
-				$imageProcessor,
-				$config,
-				$clock,
-				$ids,
+				attachments: $attachmentRepository,
+				posts: $posts,
+				blobs: $blobStore,
+				images: $imageProcessor,
+				config: $config,
+				clock: $clock,
+				ids: $ids,
+				remotePosts: $remotePosts,
 			);
 
 		$postService = new PostService(
@@ -377,6 +389,22 @@ final readonly class Application
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
 
+		// Remote media is wired only when the host provided the bounded HTTP
+		// capability. A plain HttpClient is enough for delivery and actor
+		// resolution, but not for fetching untrusted image bytes.
+		$remoteMedia = ($mediaService !== null && $httpClient instanceof BoundedHttpClient)
+			? new RemoteMediaService(
+				new RemoteMediaFetcher(
+					$httpClient,
+					$hostResolver ?? new DnsHostResolver(),
+					$config,
+				),
+				$mediaService,
+				$remotePosts,
+				$logger,
+			)
+			: null;
+
 		// Inbound federation needs a way to resolve a key id, a client to
 		// reach the peer and a key to sign the Accept. Missing any of them
 		// leaves the endpoint honestly at 503 rather than half-working.
@@ -393,6 +421,7 @@ final readonly class Application
 				$clock,
 				$blockedActors,
 				$followPolicy,
+				$remoteMedia,
 			)
 			: null;
 

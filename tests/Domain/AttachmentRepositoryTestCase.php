@@ -59,6 +59,34 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 		self::assertNull($repository->find('a1')?->altText);
 	}
 
+	public function testSourceUrlsRoundTripAndAreUnique(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->attachment('a1', 'alice', 'alt', 'https://remote.example/media/a.png'));
+
+		self::assertSame(
+			'a1',
+			$repository->findBySourceUrl('https://remote.example/media/a.png')?->id,
+		);
+		self::assertNull($repository->findBySourceUrl('https://remote.example/media/missing.png'));
+
+		$this->expectException(DatabaseException::class);
+
+		$repository->insert($this->attachment('a2', 'alice', null, 'https://remote.example/media/a.png'));
+	}
+
+	public function testDeleteRemovesTheRowAndIsIdempotent(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->attachment('a1', 'alice'));
+
+		$repository->delete('a1');
+
+		self::assertNull($repository->find('a1'));
+		self::assertSame(0, $repository->count());
+		$repository->delete('a1');
+	}
+
 	public function testADuplicateIdIsRefused(): void
 	{
 		$repository = $this->repository();
@@ -69,7 +97,12 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 		$repository->insert($this->attachment('a1', 'bob'));
 	}
 
-	protected function attachment(string $id, string $ownerId, ?string $altText = 'a description'): Attachment
+	protected function attachment(
+		string $id,
+		string $ownerId,
+		?string $altText = 'a description',
+		?string $sourceUrl = null,
+	): Attachment
 	{
 		return new Attachment(
 			id: $id,
@@ -82,6 +115,7 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 			byteSize: 1234,
 			altText: $altText,
 			createdAt: Time::parse('2026-11-11T10:00:00Z'),
+			sourceUrl: $sourceUrl,
 		);
 	}
 }

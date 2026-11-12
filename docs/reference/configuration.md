@@ -10,8 +10,12 @@ the database — the core does not care.
 | --- | --- | --- | --- |
 | `social` | `instance.url` | for federation | Absolute http(s) base URL, no trailing slash required |
 | `social` | `instance.name` | no | Display name; defaults to the product name |
-| `social` | `media.max_bytes` | no | Upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
+| `social` | `media.max_bytes` | no | Local upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
 | `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
+| `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
+| `social` | `media.remote_max_bytes` | no | Hard per-response body limit for a remote image; defaults to 5 MiB, clamped to 1 byte–`Attachment::MAX_BYTES` |
+| `social` | `media.remote_timeout_seconds` | no | Per-hop remote fetch timeout; defaults to 10, clamped to 1–30 |
+| `social` | `media.remote_max_redirects` | no | Redirects followed per remote fetch; defaults to 3, clamped to 0–5 |
 
 `instance.url` is read when an activity is built and when a media URL is
 presented. A post with an audience on an instance without it fails with `503
@@ -19,8 +23,20 @@ instance_not_configured` instead of sending documents with a broken id. Media
 URLs stay relative when it is unset, which is useful for a local-only host but
 not for federation.
 
+With `media.remote_fetch` disabled, an incoming `Create` or `Announce` is
+still stored and appears in the home timeline, but no remote request is made
+and the post has no `attachments` key. Existing imported attachments remain
+readable; disabling the switch does not delete rows or blobs. A host that only
+supplies `HttpClient` and not `BoundedHttpClient` also gets no remote fetch:
+`Application` wires the importer only when the bounded capability is present.
+
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.
+
+Remote media limits and failure reasons are documented operationally in
+[media](../guides/media.md#remote-attachments-from-incoming-posts). The fetch
+requires a `BoundedHttpClient` plus a `HostResolver`; the local `CurlHttpClient`
+and `DnsHostResolver` provide both.
 
 ## Limits
 
@@ -28,8 +44,14 @@ host persists them it seals them with `Security\SecretBox`.
 | --- | --- | --- |
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
-| `Attachment::MAX_BYTES` | 5 MiB | Hard upload ceiling; `media.max_bytes` may only lower it |
+| `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |
+| `Attachment::MAX_SOURCE_URL_LENGTH` | 512 | Longest stored remote media URL |
+| `RemoteMediaFetcher::DEFAULT_TIMEOUT_SECONDS` | 10 | Default per-hop remote fetch timeout |
+| `RemoteMediaFetcher::MAX_TIMEOUT_SECONDS` | 30 | Hard timeout ceiling |
+| `RemoteMediaFetcher::DEFAULT_MAX_REDIRECTS` | 3 | Default redirect budget |
+| `RemoteMediaFetcher::MAX_REDIRECTS` | 5 | Hard redirect ceiling |
+| `RemoteMediaService::MAX_ATTACHMENTS` | 4 | Imported images per incoming post |
 | `Attachment::MAX_DIMENSION` | 10000 | Longest stored image side |
 | `Attachment::MAX_PIXELS` | 40,000,000 | Decode guard against decompression bombs |
 | `Post::MAX_ATTACHMENTS` | 4 | Attachments per post |

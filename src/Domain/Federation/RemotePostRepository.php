@@ -70,4 +70,26 @@ interface RemotePostRepository
 		int $limit,
 		?DateTimeImmutable $before = null,
 	): array;
+
+	/**
+	 * Replaces the imported-attachment links for one activity.
+	 *
+	 * Linking is deliberately separate from insert so a post stays available
+	 * when one or all of its media imports fail. Passing an empty list removes
+	 * existing links. The caller must keep the list within the post attachment
+	 * limit.
+	 *
+	 * @param list<string> $attachmentIds
+	 *
+	 * @throws \AlohaSocial\Core\Platform\Db\DatabaseException
+	 */
+	public function linkAttachments(string $activityId, array $attachmentIds): void;
+
+	/**
+	 * @param list<string> $activityIds
+	 *
+	 * @return array<string, list<string>> attachment ids keyed by activity id,
+	 *                                       in stored order
+	 */
+	public function attachmentIdsFor(array $activityIds): array;
 }

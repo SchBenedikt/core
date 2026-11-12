@@ -166,9 +166,11 @@ that is not a canonical timestamp is `400 invalid_cursor`. The public timeline
 contains local posts; the home timeline contains the caller's own local posts
 plus remote posts and boosts from followed actors, with `kind`, `object_id`,
 `object_author_id` and `boosted_by` on each entry. Local posts carry the same
-`attachments` array as the single-post response; remote entries do not carry a
-local attachment relation. See
-[posts and timelines](../guides/posts-and-timelines.md).
+`attachments` array as the single-post response. A remote entry carries the
+same local-original/thumbnail shape for successfully imported federated
+images, and omits the key when it has none. See
+[posts and timelines](../guides/posts-and-timelines.md) and
+[media](../guides/media.md#remote-attachments-from-incoming-posts).
 
 ## Followers
 
