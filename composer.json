@@ -35,9 +35,12 @@
 		"test": "@php vendor/bin/phpunit",
 		"lint": "bash tools/lint.sh",
 		"check:boundary": "@php tools/check-core-boundary.php",
+		"check:links": "@php tools/check-links.php",
+		"migration:validate": "@php bin/validate-cutover",
 		"check": [
 			"@lint",
 			"@check:boundary",
+			"@check:links",
 			"@test"
 		]
 	},

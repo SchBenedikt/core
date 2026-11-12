@@ -8,10 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Cutover validator: `CutoverValidator`, `bin/validate-cutover` and
+  `composer migration:validate` read the documented neutral JSON export,
+  derive the core's actor, key, note, Create/Delete/Follow/Undo and outgoing
+  follow identities, and return a record/field parity report with exit codes
+  0/1/2. The validator is read-only and never reads a host database; tests
+  cover a passing export and every identity break, including a changed
+  `social_following.id` and orphaned references.
 - Migration and ownership decisions: ADR 0004 defines a feature-by-feature
   strangler migration, immutable actor/key/post/follow identities, host-owned
   imports and one owner per feature. The Nextcloud migration guide records the
-  data mapping, shadow-run checks, cutover gates and rollback.
+  data mapping, export format, shadow-run checks, cutover gates and rollback.
 - Shared UI contract: ADR 0005 defines `@alohasocial/ui` and a narrow
   `HostBridge` for authentication, transport, navigation and capabilities, so
   both hosts can share Vue components without sharing their runtimes.

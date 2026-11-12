@@ -9,12 +9,13 @@ composer install
 composer check
 ```
 
-`composer check` runs three gates in order:
+`composer check` runs four gates in order:
 
 | Script | What it does |
 | --- | --- |
 | `composer lint` | `php -l` on every file in `src`, `tests`, `bin` |
 | `composer check:boundary` | fails if the core references a host (`OCP\`, `OCA\`, a `nextcloud/*` dependency) |
+| `composer check:links` | fails if a relative Markdown link points at a missing file |
 | `composer test` | PHPUnit |
 
 Individual commands:
@@ -25,6 +26,8 @@ php vendor/bin/phpunit tests/Http
 php vendor/bin/phpunit --filter HttpSignatureTest
 php bin/core-demo
 php bin/export-routes
+php bin/validate-cutover var/migration-export.json
+composer migration:validate -- var/migration-export.json
 ```
 
 ### Without root

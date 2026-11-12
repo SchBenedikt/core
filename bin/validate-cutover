@@ -1,0 +1,83 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+use AlohaSocial\Core\Migration\CutoverValidator;
+use AlohaSocial\Core\Migration\InvalidMigrationDatasetException;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+/**
+ * @param list<string> $argv
+ */
+function usage(array $argv): void
+{
+	$name = $argv[0] ?? 'bin/validate-cutover';
+
+	fwrite(
+		STDERR,
+		"Usage: {$name} [--json] <migration-export.json>\n"
+		. "\n"
+		. "Read-only cutover validation. Exit codes:\n"
+		. "  0  parity passed\n"
+		. "  1  parity violations found\n"
+		. "  2  unreadable file or invalid export format\n",
+	);
+}
+
+$args = array_slice($argv, 1);
+$json = false;
+$paths = [];
+
+foreach ($args as $arg) {
+	if ($arg === '--json') {
+		$json = true;
+		continue;
+	}
+
+	if ($arg === '--help' || $arg === '-h') {
+		usage($argv);
+		exit(0);
+	}
+
+	if (str_starts_with($arg, '-')) {
+		fwrite(STDERR, "Unknown option: {$arg}\n");
+		usage($argv);
+		exit(2);
+	}
+
+	$paths[] = $arg;
+}
+
+if (count($paths) !== 1) {
+	usage($argv);
+	exit(2);
+}
+
+$validator = new CutoverValidator();
+
+try {
+	$report = $validator($paths[0]);
+} catch (InvalidMigrationDatasetException $exception) {
+	fwrite(STDERR, 'Invalid migration export: ' . $exception->getMessage() . "\n");
+	exit(2);
+}
+
+if ($json) {
+	try {
+		echo $report->toJson(), "\n";
+	} catch (JsonException) {
+		fwrite(STDERR, "Could not encode the parity report.\n");
+		exit(2);
+	}
+} else {
+	echo $report->toText();
+}
+
+exit($report->exitCode());

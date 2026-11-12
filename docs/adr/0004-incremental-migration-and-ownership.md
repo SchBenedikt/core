@@ -130,8 +130,9 @@ runtime. See [ADR 0005](0005-shared-ui.md).
 A slice may switch traffic only when all of these are true:
 
 1. the host's import dry run reports the same counts as the source;
-2. a list of actor URLs, key ids, note URLs and follow activity ids is
-   identical before and after the import;
+2. the read-only `CutoverValidator` reports no violations for actor URLs, key
+   ids, note URLs, Create/Delete/Follow/Undo activity ids and the preserved
+   outgoing follow row ids;
 3. the core's route manifest and the host's registered routes agree;
 4. the core contract tests, the host adapter tests and the relevant
    `ApplicationHostTest` pass;
@@ -185,7 +186,7 @@ The migration order is:
 
 - Run the concrete Nextcloud import from
   [the migration guide](../guides/migration-from-nextcloud.md) in a staging
-  database and record the parity report.
+  database and record the `bin/validate-cutover` parity report.
 - Extract the Vue front end under `@alohasocial/ui` with the bridge contract in
   [the shared UI guide](../guides/shared-ui.md).
 - Add a host parity test that compares registered routes with

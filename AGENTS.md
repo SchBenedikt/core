@@ -37,12 +37,14 @@ change.
 ## Commands
 
 ```sh
-composer check                     # lint + boundary + tests (the gate)
+composer check                     # lint + boundary + links + tests (the gate)
+composer check:links
 composer test
 php vendor/bin/phpunit tests/Http
 php vendor/bin/phpunit --filter HttpSignatureTest
 php bin/core-demo
 php bin/export-routes
+php bin/validate-cutover <migration-export.json>
 ```
 
 PHP 8.3+ is required; see `docs/development.md` for a rootless setup. The
@@ -81,9 +83,10 @@ Implemented: posts and timelines, the follow graph, inbound and outbound
 ActivityPub (signed `POST /inbox`, signed `Follow`/`Undo` delivery, `Accept`),
 the actor document, followers and following collections, outbox and WebFinger,
 the HTTP contract, the platform ports, durable `PdoJobQueue`/`PdoActivityLog`
-and `Application::forHost()` for a real host. The migration, repository-owner
-and shared-UI contracts are accepted in ADR 0004/0005; the actual Nextcloud
-data import and `@alohasocial/ui` extraction happen in their host workflows.
+and `Application::forHost()` for a real host, plus the read-only cutover validator
+for the neutral migration export. The migration, repository-owner and shared-UI
+contracts are accepted in ADR 0004/0005; the actual Nextcloud data import and
+`@alohasocial/ui` extraction happen in their host workflows.
 Not implemented in the core: inbound `Create`/`Delete`, a follow-based home
 timeline, media, AT Protocol. See `docs/roadmap.md` before starting a large
 feature, and `docs/guides/host-integration.md` before wiring a host.

@@ -22,7 +22,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
 | [Using the core from a host](guides/host-integration.md) | Composer setup, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
-| [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, identity invariants, shadow runs, cutover gates and rollback for the existing app |
+| [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
 | [Shared UI and HostBridge](guides/shared-ui.md) | The Vue package boundary, bridge contract, package layout and extraction order |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and why it is idempotent |

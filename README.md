@@ -30,7 +30,7 @@ Implemented and tested here:
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
-| Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary |
+| Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
@@ -51,9 +51,10 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, 436 tests
+composer check          # lint, host-neutrality guard, links, 458 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (18 routes)
+php bin/validate-cutover var/migration-export.json  # read-only cutover parity
 ```
 
 The demo builds the in-memory assembly, writes a post, reads the timeline,
@@ -71,14 +72,15 @@ src/
   Service/         application behaviour and its validation
   Protocol/        ActivityPub documents, RSA keys, HTTP signatures
   Jobs/            durable queue contract, PDO and in-memory queues, worker
+  Migration/       read-only validator for neutral cutover exports
   Http/            request, response, router, middleware, kernel
   Api/             one handler per route
   Contract/        Routes::manifest() — the single HTTP contract
   Security/        encryption at rest
   Support/         time and id helpers
 tests/             unit, contract and end-to-end tests
-bin/               demo and route export
-tools/             lint and the host-neutrality guard
+bin/               demo, route export and cutover validation
+tools/             lint, link check and the host-neutrality guard
 docs/              index, architecture, guides, reference, operations, ADRs
 ```
 

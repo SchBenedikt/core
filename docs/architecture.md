@@ -75,12 +75,13 @@ full decision and data-ownership rules are in
 [ADR 0004](adr/0004-incremental-migration-and-ownership.md).
 
 Existing installations move with a strangler migration. The host imports its
-old data into the core schemas, verifies that actor URLs, key ids, post URLs
-and outgoing follow activity ids did not change, and cuts over one slice at a
-time. The core has no Nextcloud importer and no universal migration runner;
-those would make one host's schema part of the shared architecture. The
-concrete procedure is in
-[migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
+old data into the core schemas, exports the neutral validation dataset and
+runs `bin/validate-cutover` to verify that actor URLs, key ids, post URLs,
+Create/Delete/Follow/Undo activity ids and outgoing follow row ids did not
+change before it cuts over one slice at a time. The core has no Nextcloud
+importer and no universal migration runner; those would make one host's schema
+part of the shared architecture. The concrete procedure and export format are
+in [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
 
 The shared Vue front end is `@alohasocial/ui`, with a `HostBridge` per host.
 It is a separate npm artifact under `ui/` when extraction starts, not a fourth
