@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
@@ -68,41 +69,63 @@ final class ActorDocumentService
 	}
 
 	/**
+	 * The root document when `$page` is null, otherwise one page of it.
+	 *
 	 * @return array<string, mixed>
 	 *
 	 * @throws UnknownLocalActorException when the handle is not an account here
 	 */
-	public function followers(string $handle): array
-	{
+	public function followers(
+		string $handle,
+		?int $page = null,
+		int $limit = OrderedCollection::DEFAULT_LIMIT,
+	): array {
 		$userId = $this->knownUser($handle);
-		$actors = $this->followers->actorIds($userId);
+		$limit = OrderedCollection::clampLimit($limit);
+		$id = $this->activities->followersId($userId);
+		$total = $this->followers->count($userId);
 
-		return [
-			'@context' => ActivityFactory::CONTEXT,
-			'id' => $this->activities->followersId($userId),
-			'type' => 'OrderedCollection',
-			'totalItems' => count($actors),
-			'orderedItems' => $actors,
-		];
+		if ($page === null) {
+			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		$actors = $this->followers->actorIdsPage(
+			$userId,
+			$limit,
+			OrderedCollection::offset($page, $limit),
+		);
+
+		return OrderedCollection::page($id, $page, $limit, $total, $actors);
 	}
 
 	/**
+	 * The root document when `$page` is null, otherwise one page of it.
+	 *
 	 * @return array<string, mixed>
 	 *
 	 * @throws UnknownLocalActorException when the handle is not an account here
 	 */
-	public function following(string $handle): array
-	{
+	public function following(
+		string $handle,
+		?int $page = null,
+		int $limit = OrderedCollection::DEFAULT_LIMIT,
+	): array {
 		$userId = $this->knownUser($handle);
-		$actors = $this->following->actorIds($userId);
+		$limit = OrderedCollection::clampLimit($limit);
+		$id = $this->activities->followingId($userId);
+		$total = $this->following->count($userId);
 
-		return [
-			'@context' => ActivityFactory::CONTEXT,
-			'id' => $this->activities->followingId($userId),
-			'type' => 'OrderedCollection',
-			'totalItems' => count($actors),
-			'orderedItems' => $actors,
-		];
+		if ($page === null) {
+			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		$actors = $this->following->actorIdsPage(
+			$userId,
+			$limit,
+			OrderedCollection::offset($page, $limit),
+		);
+
+		return OrderedCollection::page($id, $page, $limit, $total, $actors);
 	}
 
 	/**

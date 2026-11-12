@@ -45,12 +45,23 @@ interface PostRepository
 	 *
 	 * Only public and unlisted posts are returned: the outbox is a public
 	 * endpoint, and listing a followers-only post there would leak it to
-	 * anyone who can guess the actor URL. Paging is not implemented yet, so
-	 * this returns the complete list.
+	 * anyone who can guess the actor URL.
 	 *
 	 * @return list<Post>
 	 */
 	public function authorPosts(string $userId): array;
+
+	/**
+	 * One page of the same public-author collection, newest first.
+	 *
+	 * @return list<Post>
+	 */
+	public function authorPostsPage(string $userId, int $limit, int $offset): array;
+
+	/**
+	 * The number of rows {@see authorPostsPage()} pages over.
+	 */
+	public function authorPostCount(string $userId): int;
 
 	/**
 	 * The signed-in user's home timeline.

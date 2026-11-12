@@ -82,6 +82,16 @@ final class InMemoryPostRepository implements PostRepository
 		return $posts;
 	}
 
+	public function authorPostsPage(string $userId, int $limit, int $offset): array
+	{
+		return array_slice($this->authorPosts($userId), max(0, $offset), max(0, $limit));
+	}
+
+	public function authorPostCount(string $userId): int
+	{
+		return count($this->authorPosts($userId));
+	}
+
 	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		return $this->slice(

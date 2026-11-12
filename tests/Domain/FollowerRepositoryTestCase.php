@@ -145,6 +145,26 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->actorIds('dave'));
 	}
 
+	public function testActorIdsPageIsOrderedScopedAndPaginated(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower('f1', 'alice', 'https://a.example/users/one', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->follower('f2', 'alice', 'https://b.example/users/two', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->follower('f3', 'alice', 'https://c.example/users/three', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->follower('other', 'carol', 'https://d.example/users/four', '2026-11-11T10:03:00Z'));
+
+		self::assertSame(
+			['https://c.example/users/three', 'https://b.example/users/two'],
+			$repository->actorIdsPage('alice', 2, 0),
+		);
+		self::assertSame(
+			['https://a.example/users/one'],
+			$repository->actorIdsPage('alice', 2, 2),
+		);
+		self::assertSame([], $repository->actorIdsPage('alice', 2, 9));
+		self::assertSame([], $repository->actorIdsPage('dave', 10, 0));
+	}
+
 	public function testInboxesAreDistinctAndSorted(): void
 	{
 		$repository = $this->repository();

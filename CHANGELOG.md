@@ -42,6 +42,11 @@ All notable changes to this project are documented here. The format follows
   `GET /@{handle}/followers` serves the `OrderedCollection` of real follower
   actor ids. Both are disabled (503) without a signing key and a local actor
   directory.
+- Paged actor collections: followers, following and outbox now serve a root
+  `OrderedCollection` with `first` and `OrderedCollectionPage` documents with
+  `partOf`, `next`, `prev` and a bounded page size. Repository page queries
+  (`actorIdsPage`, `authorPostsPage`, `authorPostCount`) back the pages, so a
+  peer can walk large collections without receiving every item at once.
 - Outbox: `GET /@{handle}/outbox` serves the `OrderedCollection` of the
   account's public posts as `Create` activities, newest first. Its id is
   exactly the `outbox` URL the actor document advertises, and every item is

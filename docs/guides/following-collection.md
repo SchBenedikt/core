@@ -8,13 +8,27 @@ Accept: application/activity+json
 An `OrderedCollection` of the actors a local account follows. It is public and
 reads the outgoing follow graph — not the followers table.
 
-## Example
+## Root document and pages
 
 ```json
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "id": "https://social.example/@alice/following",
   "type": "OrderedCollection",
+  "totalItems": 2,
+  "first": "https://social.example/@alice/following?page=1"
+}
+```
+
+The root advertises the first page. `GET /@alice/following?page=1` returns an
+`OrderedCollectionPage`:
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://social.example/@alice/following?page=1",
+  "type": "OrderedCollectionPage",
+  "partOf": "https://social.example/@alice/following",
   "totalItems": 2,
   "orderedItems": [
     "https://remote.example/users/carol",
@@ -24,9 +38,10 @@ reads the outgoing follow graph — not the followers table.
 ```
 
 `Content-Type` is `application/activity+json; charset=utf-8`. `orderedItems`
-contains absolute ActivityPub actor URLs, newest follow first. `totalItems`
-is the length of the same list. There is no paging yet; a `first`/`next` split
-is listed in the [roadmap](../roadmap.md).
+contains absolute ActivityPub actor URLs, newest follow first. `totalItems` is
+the full count. Pages are 1-based, default to 20 items, and cap at 40; `next`
+and `prev` carry the page and any non-default limit. Repository page queries
+back the collection, so a peer can walk it without downloading every edge.
 
 ## Source of truth
 
@@ -51,6 +66,8 @@ The collection id comes from `ActivityFactory::followingId()`, the same
 function the [actor document](../reference/actor-document.md) uses for its
 `following` field. A test fetches `/@alice/following` and compares the
 collection id with the document value, so the two cannot drift apart.
+`FollowingRepository::actorIdsPage()` supplies one page; `count()` supplies the
+root count.
 
 ## Writing a follow
 

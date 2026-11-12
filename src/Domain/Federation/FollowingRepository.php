@@ -49,5 +49,12 @@ interface FollowingRepository
 	 */
 	public function actorIds(string $localUserId): array;
 
+	/**
+	 * One page of the public following collection, newest first.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
+
 	public function count(string $localUserId): int;
 }

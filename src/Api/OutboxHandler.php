@@ -15,14 +15,16 @@ use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 
 /**
  * `GET /@{handle}/outbox`
  *
- * The public `OrderedCollection` of an account's posts, newest first. It
- * serves the same repository the local post route writes, so a post appears
- * here as soon as it is created.
+ * The public `OrderedCollection` of an account's posts, newest first, or an
+ * `OrderedCollectionPage` when `?page=` is present. It serves the same
+ * repository the local post route writes, so a post appears here as soon as
+ * it is created.
  */
 final class OutboxHandler implements Handler
 {
@@ -43,8 +45,18 @@ final class OutboxHandler implements Handler
 
 		$handle = (string) $request->attribute('handle', '');
 
+		$page = $request->queryParam('page') === null
+			? null
+			: $request->queryInt('page', 1, 1, OrderedCollection::MAX_PAGE);
+		$limit = $request->queryInt(
+			'limit',
+			OrderedCollection::DEFAULT_LIMIT,
+			1,
+			OrderedCollection::MAX_LIMIT,
+		);
+
 		try {
-			$collection = $this->outbox->collection($handle);
+			$collection = $this->outbox->collection($handle, $page, $limit);
 		} catch (UnknownLocalActorException) {
 			throw new HttpException(404, 'actor_not_found', 'Actor not found.');
 		} catch (ConfigurationException) {

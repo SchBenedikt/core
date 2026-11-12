@@ -55,10 +55,11 @@ signed with the local actor's key. The peer matches it by the Follow id.
 ## 5. Read the outbox
 
 The document's `outbox` is a real route, not a placeholder. A peer fetches it
-for the account's public posts:
+for the account's public posts, then follows `first` and each page's `next`:
 
 ```http
 GET https://social.example/@alice/outbox
+GET https://social.example/@alice/outbox?page=1
 ```
 
 Every item is a `Create` whose `object` is the Note. The activity id is the
@@ -83,8 +84,6 @@ Follow signed with the published key id is accepted, proving the values agree.
 
 ## What a peer cannot do yet
 
-- page through followers or the outbox (both collections are complete but not
-  paged);
 - fetch a single post over ActivityPub (objects are embedded in the `Create`;
   the JSON API is for local clients);
 - deliver posts to this instance (`POST /inbox` applies only `Follow` and

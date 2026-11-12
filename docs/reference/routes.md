@@ -204,10 +204,13 @@ application/activity+json; charset=utf-8`. Every field is described in
 
 ```http
 GET /@alice/followers
+GET /@alice/followers?page=1&limit=20
 ```
 
-`200` with an `OrderedCollection` (`totalItems`, `orderedItems`). It reflects
-accepted Follows and Undos immediately; see the
+The root is an `OrderedCollection` with `totalItems` and `first`; `page=1`
+returns an `OrderedCollectionPage` with `partOf`, `orderedItems` and
+`next`/`prev` where applicable. It reflects accepted Follows and Undos
+immediately; see the
 [followers collection guide](../guides/followers-collection.md).
 
 ## Following collection
@@ -216,13 +219,13 @@ accepted Follows and Undos immediately; see the
 GET /@alice/following
 ```
 
-`200` with an `OrderedCollection` whose `id` is exactly the `following` URL
-of the actor document. It reads the outgoing follow repository; `POST` and
-`DELETE /api/v1/following` write it, while `POST /api/v1/followers` and
-inbound Follows do not change it. See the
-[following collection guide](../guides/following-collection.md). An unknown
-handle is `404 actor_not_found`; an instance without a key or directory is
-`503 actor_not_configured`.
+`200` with a paged `OrderedCollection` whose `id` is exactly the `following`
+URL of the actor document. Add `?page=1` for an `OrderedCollectionPage`. It
+reads the outgoing follow repository; `POST` and `DELETE /api/v1/following`
+write it, while `POST /api/v1/followers` and inbound Follows do not change it.
+See the [following collection guide](../guides/following-collection.md). An
+unknown handle is `404 actor_not_found`; an instance without a key or
+directory is `503 actor_not_configured`.
 
 ## Outbox
 
@@ -230,12 +233,13 @@ handle is `404 actor_not_found`; an instance without a key or directory is
 GET /@alice/outbox
 ```
 
-`200` with an `OrderedCollection` whose `id` is exactly the `outbox` URL of
-the [actor document](actor-document.md). Items are the same `Create`
-activities outbound delivery sends, newest first; only public and unlisted
-posts appear. See the [outbox guide](../guides/outbox.md). An unknown handle
-is `404 actor_not_found`; an instance without a key or a local directory is
-`503 actor_not_configured`.
+`200` with a paged `OrderedCollection` whose `id` is exactly the `outbox` URL
+of the [actor document](actor-document.md). Add `?page=1` for an
+`OrderedCollectionPage`; items are the same `Create` activities outbound
+delivery sends, newest first, and only public and unlisted posts appear. See
+the [outbox guide](../guides/outbox.md). An unknown handle is `404
+actor_not_found`; an instance without a key or a local directory is `503
+actor_not_configured`.
 
 ## WebFinger
 

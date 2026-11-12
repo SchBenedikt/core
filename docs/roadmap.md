@@ -24,6 +24,9 @@ Status of the core, not a promise about dates.
   `Create` activities, read from the same post repository the local API uses.
 - Following: the public `OrderedCollection` of the actors a local account
   follows, read from a separate outgoing follow repository.
+- Paged actor collections: followers, following and outbox advertise a
+  `first` page and serve `OrderedCollectionPage` documents with `partOf`,
+  `next`, `prev` and a bounded page size, backed by repository page queries.
 - Local following: `POST`/`DELETE /api/v1/following` writes the edge, delivers
   a signed `Follow`/`Undo`, rolls back a refused Follow and keeps a refused
   Undo retryable.
@@ -45,7 +48,6 @@ Status of the core, not a promise about dates.
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
-| Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
 | A follow-based home timeline | `FollowingService` + `TimelineService` |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Migration runner for the standalone | host concern, schemas already exist |

@@ -15,14 +15,16 @@ use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 
 /**
  * `GET /@{handle}/following`
  *
- * An `OrderedCollection` of the actors this account follows, newest first.
- * It reads the outgoing follow repository, which is a different relation
- * from the followers collection.
+ * The root `OrderedCollection` of the actors this account follows, or an
+ * `OrderedCollectionPage` when `?page=` is present. It reads the outgoing
+ * follow repository, which is a different relation from the followers
+ * collection.
  */
 final class FollowingCollectionHandler implements Handler
 {
@@ -43,8 +45,18 @@ final class FollowingCollectionHandler implements Handler
 
 		$handle = (string) $request->attribute('handle', '');
 
+		$page = $request->queryParam('page') === null
+			? null
+			: $request->queryInt('page', 1, 1, OrderedCollection::MAX_PAGE);
+		$limit = $request->queryInt(
+			'limit',
+			OrderedCollection::DEFAULT_LIMIT,
+			1,
+			OrderedCollection::MAX_LIMIT,
+		);
+
 		try {
-			$collection = $this->documents->following($handle);
+			$collection = $this->documents->following($handle, $page, $limit);
 		} catch (UnknownLocalActorException) {
 			throw new HttpException(404, 'actor_not_found', 'Actor not found.');
 		} catch (ConfigurationException) {

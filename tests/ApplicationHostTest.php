@@ -88,7 +88,7 @@ final class ApplicationHostTest extends TestCase
 		self::assertCount(1, $http->requests);
 		self::assertSame(self::BOB_INBOX, $http->requests[0]['url']);
 
-		$collection = $app->handle(new Request('GET', '/@alice/following'))->decodedBody();
+		$collection = $app->handle(new Request('GET', '/@alice/following', ['page' => '1']))->decodedBody();
 		self::assertSame(1, $collection['totalItems']);
 		self::assertSame([self::BOB], $collection['orderedItems']);
 

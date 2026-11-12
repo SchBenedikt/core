@@ -55,7 +55,8 @@ final class OutboxTest extends TestCase
 		self::assertSame(self::ACTOR . '/outbox', $collection['id']);
 		self::assertSame('OrderedCollection', $collection['type']);
 		self::assertSame(0, $collection['totalItems']);
-		self::assertSame([], $collection['orderedItems']);
+		self::assertSame(self::ACTOR . '/outbox?page=1', $collection['first']);
+		self::assertArrayNotHasKey('orderedItems', $collection);
 	}
 
 	public function testTheCollectionIdIsExactlyTheOutboxTheActorDocumentAdvertises(): void
@@ -84,7 +85,7 @@ final class OutboxTest extends TestCase
 		self::assertSame(201, $created->status);
 
 		$post = $created->decodedBody()['post'];
-		$collection = $app->handle(new Request('GET', '/@alice/outbox'))->decodedBody();
+		$collection = $this->collection($app);
 
 		self::assertSame(1, $collection['totalItems']);
 		self::assertCount(1, $collection['orderedItems']);
@@ -107,7 +108,7 @@ final class OutboxTest extends TestCase
 
 		self::assertSame(201, $this->publish($app, 'for followers', 'followers')->status);
 
-		$collection = $app->handle(new Request('GET', '/@alice/outbox'))->decodedBody();
+		$collection = $this->collection($app);
 
 		self::assertSame(0, $collection['totalItems']);
 		self::assertSame([], $collection['orderedItems']);
@@ -155,6 +156,14 @@ final class OutboxTest extends TestCase
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice']),
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function collection(Application $app): array
+	{
+		return $app->handle(new Request('GET', '/@alice/outbox', ['page' => '1']))->decodedBody();
 	}
 
 	private function publish(Application $app, string $content, string $visibility): Response

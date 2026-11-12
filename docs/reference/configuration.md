@@ -26,6 +26,8 @@ host persists them it seals them with `Security\SecretBox`.
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
 | `TimelineService::DEFAULT_LIMIT` | 20 | Default page size |
 | `TimelineService::MAX_LIMIT` | 40 | Page size ceiling |
+| `OrderedCollection::DEFAULT_LIMIT` | 20 | Default page size of an actor collection |
+| `OrderedCollection::MAX_LIMIT` | 40 | Page size ceiling of an actor collection |
 | `FollowerService::DEFAULT_LIMIT` | 20 | Default follower page |
 | `FollowerService::MAX_LIMIT` | 100 | Follower page ceiling |
 | `FollowerService::MAX_ACTOR_LENGTH` | 255 | Indexed actor URL length |

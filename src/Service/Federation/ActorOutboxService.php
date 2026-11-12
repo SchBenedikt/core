@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 
 /**
  * The public outbox of a local account.
@@ -33,30 +34,46 @@ final class ActorOutboxService
 	}
 
 	/**
+	 * The root document when `$page` is null, otherwise one page of it.
+	 *
 	 * @return array<string, mixed>
 	 *
 	 * @throws UnknownLocalActorException when the handle is not an account here
 	 */
-	public function collection(string $handle): array
-	{
+	public function collection(
+		string $handle,
+		?int $page = null,
+		int $limit = OrderedCollection::DEFAULT_LIMIT,
+	): array {
 		$handle = trim($handle);
 
 		if ($handle === '' || !$this->actors->has($handle)) {
 			throw new UnknownLocalActorException($handle);
 		}
 
-		$posts = $this->posts->authorPosts($handle);
+		$limit = OrderedCollection::clampLimit($limit);
+		$id = $this->activities->outboxId($handle);
+		$total = $this->posts->authorPostCount($handle);
 
-		return [
-			'@context' => ActivityFactory::CONTEXT,
-			'id' => $this->activities->outboxId($handle),
-			'type' => 'OrderedCollection',
-			// No paging yet, so totalItems is the length of the same list.
-			'totalItems' => count($posts),
-			'orderedItems' => array_map(
+		if ($page === null) {
+			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		$posts = $this->posts->authorPostsPage(
+			$handle,
+			$limit,
+			OrderedCollection::offset($page, $limit),
+		);
+
+		return OrderedCollection::page(
+			$id,
+			$page,
+			$limit,
+			$total,
+			array_map(
 				fn (Post $post): array => $this->activities->createNote($post),
 				$posts,
 			),
-		];
+		);
 	}
 }

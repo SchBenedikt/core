@@ -140,7 +140,8 @@ final class ActorDocumentTest extends TestCase
 		self::assertSame('https://localhost:8080/@alice/followers', $collection['id']);
 		self::assertSame('OrderedCollection', $collection['type']);
 		self::assertSame(0, $collection['totalItems']);
-		self::assertSame([], $collection['orderedItems']);
+		self::assertSame(self::ACTOR . '/followers?page=1', $collection['first']);
+		self::assertArrayNotHasKey('orderedItems', $collection);
 	}
 
 	public function testAnAcceptedFollowAppearsInTheCollection(): void
@@ -149,7 +150,7 @@ final class ActorDocumentTest extends TestCase
 
 		self::assertSame(202, $this->deliver($app, $this->follow())->status);
 
-		$collection = $app->handle(new Request('GET', '/@alice/followers'))->decodedBody();
+		$collection = $this->collection($app);
 
 		self::assertSame(1, $collection['totalItems']);
 		self::assertSame([self::BOB], $collection['orderedItems']);
@@ -162,7 +163,7 @@ final class ActorDocumentTest extends TestCase
 		self::assertSame(202, $this->deliver($app, $this->follow())->status);
 		self::assertSame(202, $this->deliver($app, $this->undo())->status);
 
-		$collection = $app->handle(new Request('GET', '/@alice/followers'))->decodedBody();
+		$collection = $this->collection($app);
 
 		self::assertSame(0, $collection['totalItems']);
 		self::assertSame([], $collection['orderedItems']);
@@ -233,6 +234,14 @@ final class ActorDocumentTest extends TestCase
 			]),
 			localActors: new InMemoryActorDirectory(['alice']),
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function collection(Application $app): array
+	{
+		return $app->handle(new Request('GET', '/@alice/followers', ['page' => '1']))->decodedBody();
 	}
 
 	/**

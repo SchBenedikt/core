@@ -287,7 +287,7 @@ final class FollowingWriteTest extends TestCase
 	 */
 	private function collection(Application $app, string $handle = 'alice'): array
 	{
-		return $app->handle(new Request('GET', '/@' . $handle . '/following'))->decodedBody();
+		return $app->handle(new Request('GET', '/@' . $handle . '/following', ['page' => '1']))->decodedBody();
 	}
 
 	/**

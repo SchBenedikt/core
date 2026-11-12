@@ -99,6 +99,38 @@ final class PdoPostRepository implements PostRepository
 		]));
 	}
 
+	public function authorPostsPage(string $userId, int $limit, int $offset): array
+	{
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' AND visibility IN (:public, :unlisted)'
+			. ' ORDER BY published_at DESC, id DESC'
+			. ' LIMIT ' . $this->limit($limit)
+			. ' OFFSET ' . $this->offset($offset);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, [
+			'author' => $userId,
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+		]));
+	}
+
+	public function authorPostCount(string $userId): int
+	{
+		$value = $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' AND visibility IN (:public, :unlisted)',
+			[
+				'author' => $userId,
+				'public' => Visibility::Public->value,
+				'unlisted' => Visibility::Unlisted->value,
+			],
+		);
+
+		return (int) $value;
+	}
+
 	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
@@ -127,6 +159,15 @@ final class PdoPostRepository implements PostRepository
 	private function limit(int $limit): string
 	{
 		return (string) max(1, $limit);
+	}
+
+	/**
+	 * Offsets are non-negative integers already clamped by the caller; inlining
+	 * one keeps the statement portable across the supported drivers.
+	 */
+	private function offset(int $offset): string
+	{
+		return (string) max(0, $offset);
 	}
 
 	/**

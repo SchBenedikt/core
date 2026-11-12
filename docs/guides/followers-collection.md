@@ -13,13 +13,35 @@ This is the incoming direction. The actors this account follows are served at
 /api/v1/followers` does not affect it. See the
 [following collection](following-collection.md).
 
-## Example
+## Root document
 
 ```json
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "id": "https://social.example/@alice/followers",
   "type": "OrderedCollection",
+  "totalItems": 2,
+  "first": "https://social.example/@alice/followers?page=1"
+}
+```
+
+The root carries the count and the first-page link. It deliberately does not
+embed the items; a peer follows `first` and then the page `next` links. The
+collection `id` is exactly the `followers` URL the actor document advertises.
+
+## A page
+
+```http
+GET /@alice/followers?page=1
+Accept: application/activity+json
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://social.example/@alice/followers?page=1",
+  "type": "OrderedCollectionPage",
+  "partOf": "https://social.example/@alice/followers",
   "totalItems": 2,
   "orderedItems": [
     "https://remote.example/users/carol",
@@ -29,16 +51,21 @@ This is the incoming direction. The actors this account follows are served at
 ```
 
 `Content-Type` is `application/activity+json; charset=utf-8`. `orderedItems`
-contains actor ids, newest follower first; `totalItems` is the count of the
-same rows. There is no paging yet: the collection is complete, and an instance
-with a very large follower list needs a `first`/`next` split in a later
-milestone (listed in the [roadmap](../roadmap.md)).
+contains actor ids, newest follower first. `totalItems` is the full count, not
+the length of this page.
+
+Pages are 1-based. The default page size is 20 and the maximum is 40; a client
+may pass `limit` and the generated `first`/`next`/`prev` links keep a
+non-default limit. `next` exists only while another page follows, and `prev`
+exists for every page after the first. Page queries are repository-backed with
+`LIMIT`/`OFFSET`; the HTTP layer never builds one large collection and slices
+it.
 
 ## What changes it
 
 | Event | Effect |
 | --- | --- |
-| `POST /inbox` with a valid `Follow` | The actor appears at the front of `orderedItems` |
+| `POST /inbox` with a valid `Follow` | The actor appears at the front of the first page |
 | `POST /inbox` with `Undo(Follow)` | The actor disappears |
 | `POST /api/v1/followers` (local API) | Same table, so the actor appears as well |
 | `DELETE /api/v1/followers/{id}` | The actor disappears |

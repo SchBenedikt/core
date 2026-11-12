@@ -122,6 +122,20 @@ final class PdoFollowerRepository implements FollowerRepository
 		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
 	}
 
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT actor_id FROM ' . FollowerSchema::TABLE
+			. ' WHERE local_user_id = :local_user_id'
+			. ' ORDER BY followed_at DESC, id DESC'
+			. ' LIMIT ' . max(1, $limit)
+			. ' OFFSET ' . max(0, $offset),
+			['local_user_id' => $localUserId],
+		);
+
+		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
+	}
+
 	public function inboxesFor(string $localUserId): array
 	{
 		$rows = $this->db->fetchAll(

@@ -65,6 +65,13 @@ interface FollowerRepository
 	public function actorIds(string $localUserId): array;
 
 	/**
+	 * One page of the public followers collection, newest first.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
+
+	/**
 	 * The distinct inboxes to deliver one local user's posts to.
 	 *
 	 * @return list<string>

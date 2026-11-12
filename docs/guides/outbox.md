@@ -9,13 +9,34 @@ The public `OrderedCollection` of an account's posts. It is the URL the
 [actor document](../reference/actor-document.md) advertises as `outbox`, so a
 peer that fetched the document never has to guess it.
 
-## Example
+## Root document
 
 ```json
 {
   "@context": "https://www.w3.org/ns/activitystreams",
   "id": "https://social.example/@alice/outbox",
   "type": "OrderedCollection",
+  "totalItems": 1,
+  "first": "https://social.example/@alice/outbox?page=1"
+}
+```
+
+The root carries the count and the first-page link. It does not embed all
+posts; a peer follows `first` and then the page `next` links.
+
+## A page
+
+```http
+GET /@alice/outbox?page=1
+Accept: application/activity+json
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://social.example/@alice/outbox?page=1",
+  "type": "OrderedCollectionPage",
+  "partOf": "https://social.example/@alice/outbox",
   "totalItems": 1,
   "orderedItems": [
     {
@@ -42,19 +63,23 @@ peer that fetched the document never has to guess it.
 }
 ```
 
-`Content-Type` is `application/activity+json; charset=utf-8`.
+`Content-Type` is `application/activity+json; charset=utf-8`. Pages are 1-based,
+default to 20 items, and cap at 40. The generated `first`/`next`/`prev` links
+carry a non-default `limit`; `next` is absent on the last page and `prev` is
+absent on the first. The page query is a repository `LIMIT`/`OFFSET`; a peer
+does not have to download every post to reach the older ones.
 
 ## What is in it
 
 - `id` — exactly the URL from `ActivityFactory::outboxId()`, the same function
   the actor document uses. A test compares the document's `outbox` with this
   collection's `id`.
-- `orderedItems` — the `Create` documents from
+- `first` — the first page URL; its `partOf` points back at this collection.
+- `orderedItems` — on a page, the `Create` documents from
   `ActivityFactory::createNote()`, newest first. Each `actor` is the canonical
   actor URL and each `object.id` is the canonical post URL; the activity id is
   the note id plus `/activity`.
-- `totalItems` — the length of `orderedItems`. The collection is complete and
-  not paged yet, so the two always agree.
+- `totalItems` — the full number of visible posts, not just the current page.
 
 Only publicly visible posts (`public`, `unlisted`) appear. The route is
 unauthenticated; listing a `followers`-only or `direct` post here would hand
@@ -75,13 +100,10 @@ posts are a later milestone.
 ## How a peer consumes it
 
 1. Fetch the actor document and keep its `outbox` URL.
-2. Fetch that URL.
-3. For each item, read `object`; `object.attributedTo` must equal the actor.
-4. Match by activity id, not by content, when reconciling with a delivery.
-
-There is no paging yet: a peer that wants older posts gets them all in one
-response. Pagination for the outbox and the followers collection is on the
-[roadmap](../roadmap.md).
+2. Fetch that URL, then follow its `first` link.
+3. Read each page's `orderedItems`; follow `next` until it is absent.
+4. For each item, read `object`; `object.attributedTo` must equal the actor.
+5. Match by activity id, not by content, when reconciling with a delivery.
 
 ## Errors
 

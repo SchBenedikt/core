@@ -167,6 +167,16 @@ final class FollowingService
 	}
 
 	/**
+	 * One page of the public following collection, newest first.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array
+	{
+		return $this->following->actorIdsPage($localUserId, $limit, $offset);
+	}
+
+	/**
 	 * @param array<string, mixed> $activity
 	 */
 	private function deliver(string $localUserId, FollowedActor $followed, array $activity): void

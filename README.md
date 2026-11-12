@@ -25,7 +25,7 @@ Implemented and tested here:
 | Domain | posts, visibility, post repositories (in-memory and SQL, same contract test) |
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
 | Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay guard |
-| Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, the followers/following `OrderedCollection`s and the public outbox |
+| Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
 | Services | write/read/delete a post, timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
@@ -35,9 +35,9 @@ Implemented and tested here:
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
-timeline, paged collections, media processing, the AT Protocol stack, the
-Mastodon-compatible API, an admin UI, a migration runner, the Vue UI package
-and the Nextcloud/standalone host applications. The
+timeline, media processing, the AT Protocol stack, the Mastodon-compatible
+API, an admin UI, a migration runner, the Vue UI package and the
+Nextcloud/standalone host applications. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists them
 with the seam they will attach to.
 

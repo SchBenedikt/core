@@ -123,14 +123,14 @@ removes the edge only after the peer accepted it. A refused `Follow` is rolled
 back, a refused `Undo` leaves the edge retryable. See the
 [following collection](following-collection.md).
 
-`FollowingRepository::actorIds()` feeds the public collection. A follow-based
-home timeline that reads the same graph is still missing.
+`FollowingRepository::actorIdsPage()` feeds the public collection; the root
+count comes from `count()`. A follow-based home timeline that reads the same
+graph is still missing.
 
 ## What is missing
 
 - a follow-based home timeline that reads the outgoing graph;
-- a policy for approving Follows instead of accepting every valid one;
-- paging for very large follower and following collections.
+- a policy for approving Follows instead of accepting every valid one.
 
 The follower list is published at `/@{handle}/followers`; see the
 [followers collection](followers-collection.md).

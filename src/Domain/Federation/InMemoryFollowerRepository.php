@@ -110,6 +110,11 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return array_map(static fn (Follower $follower): string => $follower->actorId, $matching);
 	}
 
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array
+	{
+		return array_slice($this->actorIds($localUserId), max(0, $offset), max(0, $limit));
+	}
+
 	public function inboxesFor(string $localUserId): array
 	{
 		$inboxes = [];

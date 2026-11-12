@@ -131,6 +131,16 @@ final class FollowerService
 	}
 
 	/**
+	 * One page of the public followers collection, newest first.
+	 *
+	 * @return list<string>
+	 */
+	public function actorIdsPage(string $localUserId, int $limit, int $offset): array
+	{
+		return $this->followers->actorIdsPage($localUserId, $limit, $offset);
+	}
+
+	/**
 	 * Every follower actor id, newest first, for the public collection.
 	 *
 	 * @return list<string>

@@ -163,15 +163,15 @@ its handler has to know whether the peer accepted it before it answers.
 GET /@{handle}
   └─ ActorHandler
       └─ ActorDocumentService   ids from ActivityFactory, key from RsaKeyPair
-GET /@{handle}/followers
+GET /@{handle}/followers[?page=&limit=]
   └─ FollowersCollectionHandler
-      └─ ActorDocumentService::followers → FollowerRepository::actorIds
-GET /@{handle}/following
+      └─ ActorDocumentService::followers → FollowerRepository::actorIdsPage
+GET /@{handle}/following[?page=&limit=]
   └─ FollowingCollectionHandler
-      └─ ActorDocumentService::following → FollowingRepository::actorIds
-GET /@{handle}/outbox
+      └─ ActorDocumentService::following → FollowingRepository::actorIdsPage
+GET /@{handle}/outbox[?page=&limit=]
   └─ OutboxHandler
-      └─ ActorOutboxService → PostRepository::authorPosts
+      └─ ActorOutboxService → PostRepository::authorPostsPage
 GET /.well-known/webfinger
   └─ WebFingerHandler
       └─ WebFingerService → ActivityFactory::actorId
@@ -183,6 +183,12 @@ without echoing it. The document's key id is exactly the id the inbox
 resolves, its `outbox` URL is exactly the collection id, its `following` URL
 is exactly the following collection id, and the WebFinger `self` href is
 exactly the document URL, which tests walk end to end.
+
+The three collections use one paging shape. Without `page` the root is an
+`OrderedCollection` with `totalItems` and `first`; with `page=1..n` it is an
+`OrderedCollectionPage` with `partOf`, its `orderedItems`, and `next`/`prev`
+where they exist. Page numbers are 1-based, the default page size is 20, the
+maximum is 40, and generated links carry a non-default limit.
 
 ## Data invariants
 
@@ -221,7 +227,6 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
-| Paged collections | the existing `actors.*` handlers and repositories |
 | a follow-based home timeline | `FollowingService` + `TimelineService` |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |

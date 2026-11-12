@@ -106,6 +106,30 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->authorPosts('nobody'));
 	}
 
+	public function testAuthorPostsPageIsPublicOnlyAndPaginated(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('a1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('a2', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('a3', 'alice', Visibility::Unlisted, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('a4', 'alice', Visibility::Public, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post('a5', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
+		$repository->insert($this->post('b1', 'bob', Visibility::Public, '2026-11-11T10:05:00Z'));
+
+		self::assertSame(
+			['a5', 'a4'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorPostsPage('alice', 2, 0)),
+		);
+		self::assertSame(
+			['a3', 'a1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorPostsPage('alice', 2, 2)),
+		);
+		self::assertSame([], $repository->authorPostsPage('alice', 2, 9));
+		self::assertSame(4, $repository->authorPostCount('alice'));
+		self::assertSame(1, $repository->authorPostCount('bob'));
+		self::assertSame(0, $repository->authorPostCount('nobody'));
+	}
+
 	public function testHomeTimelineIncludesOwnNonPublicPostsButNotThoseOfOthers(): void
 	{
 		$repository = $this->repository();

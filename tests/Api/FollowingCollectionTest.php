@@ -77,7 +77,8 @@ final class FollowingCollectionTest extends TestCase
 		self::assertSame(self::ACTOR . '/following', $collection['id']);
 		self::assertSame('OrderedCollection', $collection['type']);
 		self::assertSame(0, $collection['totalItems']);
-		self::assertSame([], $collection['orderedItems']);
+		self::assertSame(self::ACTOR . '/following?page=1', $collection['first']);
+		self::assertArrayNotHasKey('orderedItems', $collection);
 	}
 
 	public function testTheCollectionIdIsExactlyTheFollowingTheActorDocumentAdvertises(): void
@@ -217,6 +218,6 @@ final class FollowingCollectionTest extends TestCase
 	 */
 	private function collection(Application $app, string $handle = 'alice'): array
 	{
-		return $app->handle(new Request('GET', '/@' . $handle . '/following'))->decodedBody();
+		return $app->handle(new Request('GET', '/@' . $handle . '/following', ['page' => '1']))->decodedBody();
 	}
 }
