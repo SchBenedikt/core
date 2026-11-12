@@ -228,6 +228,7 @@ actor URL. Do not replace UIDs with generated values.
 | `social_follower.local_user_id` | Legacy account id | Must match the actor owner |
 | `social_follower.actor_id` | Remote actor URL | Copy exactly; never normalize the remote host; must fit 255 characters |
 | `social_follower.inbox_url` | Stored inbox | Prefer the latest stored inbox; validate scheme/host and the 512-character limit |
+| `social_follower.shared_inbox_url` | Actor's `endpoints.sharedInbox`, if known | Nullable; validate scheme/host and the 512-character limit. `NULL` falls back to `inbox_url`, so this needs no backfill |
 | `social_follower.followed_at` | Original follow time | Canonical UTC second format |
 | `social_following.id` | **Legacy outgoing follow row id** | **Preserve it**; a future `Undo` embeds an id derived from it |
 | `social_following.local_user_id` | Legacy account id | Must match the actor owner |
@@ -302,7 +303,7 @@ stacks must not both own writes for the same handle.
 3. **Outgoing follows.** Enable `POST`/`DELETE /api/v1/following`. Because the
    follow row id was preserved, a later Undo still refers to the Follow the
    peer accepted. Drain the old queue before this step.
-4. **Inbound inbox.** Enable `POST /inbox` only with the durable activity log,
+4. **Inbound inbox.** Enable `POST /inbox` and `POST /inbox/shared` only with the durable activity log,
    actor resolver and preserved key. Start with a test domain. A replay and a
    wrong signature must be refused, not logged and ignored. Once the
    `social_remote_post` table exists, signed `Create`/`Delete`/`Announce` from

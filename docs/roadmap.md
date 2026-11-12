@@ -15,6 +15,13 @@ Status of the core, not a promise about dates.
   provide the durable SQL implementations.
 - Follow graph: follower storage (in-memory and SQL), inbox resolution, three
   endpoints, isolated per account.
+- Shared inboxes and delivery batching: every actor document advertises
+  `endpoints.sharedInbox`, and `POST /inbox/shared` accepts the same signed
+  activities as `POST /inbox`. A peer's advertised shared inbox is stored on
+  the follower edge in nullable `shared_inbox_url`; delivery de-duplicates by
+  that URL, so two followers on one server receive one post job. Follow, Undo
+  and Accept keep using the individual inbox, and rows without a shared inbox
+  fall back unchanged. See [shared inboxes](guides/shared-inboxes.md).
 - Inbound federation: `POST /inbox` with signature verification, actor-key
   resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay
   guard, and signed `Create`/`Delete`/`Announce` from followed remote actors.
@@ -136,7 +143,6 @@ thread/context gaps are closed in Done above.
   the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
-- Shared inboxes and delivery batching.
 
 ## Explicitly not planned
 

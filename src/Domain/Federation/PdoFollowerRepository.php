@@ -21,7 +21,7 @@ use DateTimeImmutable;
  */
 final class PdoFollowerRepository implements FollowerRepository
 {
-	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, followed_at';
+	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -32,13 +32,14 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$this->db->execute(
 			'INSERT INTO ' . FollowerSchema::TABLE
-			. ' (id, local_user_id, actor_id, inbox_url, followed_at)'
-			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :followed_at)',
+			. ' (id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at)'
+			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :shared_inbox_url, :followed_at)',
 			[
 				'id' => $follower->id,
 				'local_user_id' => $follower->localUserId,
 				'actor_id' => $follower->actorId,
 				'inbox_url' => $follower->inboxUrl,
+				'shared_inbox_url' => $follower->sharedInboxUrl,
 				'followed_at' => Time::format($follower->followedAt),
 			],
 		);
@@ -47,8 +48,13 @@ final class PdoFollowerRepository implements FollowerRepository
 	public function updateInbox(Follower $follower): void
 	{
 		$this->db->execute(
-			'UPDATE ' . FollowerSchema::TABLE . ' SET inbox_url = :inbox_url WHERE id = :id',
-			['id' => $follower->id, 'inbox_url' => $follower->inboxUrl],
+			'UPDATE ' . FollowerSchema::TABLE
+			. ' SET inbox_url = :inbox_url, shared_inbox_url = :shared_inbox_url WHERE id = :id',
+			[
+				'id' => $follower->id,
+				'inbox_url' => $follower->inboxUrl,
+				'shared_inbox_url' => $follower->sharedInboxUrl,
+			],
 		);
 	}
 
@@ -139,7 +145,8 @@ final class PdoFollowerRepository implements FollowerRepository
 	public function inboxesFor(string $localUserId): array
 	{
 		$rows = $this->db->fetchAll(
-			'SELECT DISTINCT inbox_url FROM ' . FollowerSchema::TABLE
+			'SELECT DISTINCT COALESCE(shared_inbox_url, inbox_url) AS inbox_url'
+			. ' FROM ' . FollowerSchema::TABLE
 			. ' WHERE local_user_id = :local_user_id ORDER BY inbox_url',
 			['local_user_id' => $localUserId],
 		);
@@ -168,6 +175,7 @@ final class PdoFollowerRepository implements FollowerRepository
 			actorId: (string) $row['actor_id'],
 			inboxUrl: (string) $row['inbox_url'],
 			followedAt: Time::parse((string) $row['followed_at']),
+			sharedInboxUrl: $row['shared_inbox_url'] === null ? null : (string) $row['shared_inbox_url'],
 		);
 	}
 }

@@ -21,7 +21,8 @@ that prints or skips is a failure.
 | `tests/Jobs` | queue contract, PDO persistence/retry, dead letters and the worker |
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest |
-| `tests/ApplicationTest.php` | end to end through the in-memory assembly |
+| `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |
+| `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared` and the stored shared inbox |
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
 | `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |

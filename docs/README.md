@@ -29,7 +29,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
-| [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
+| [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
+| [Shared inboxes](guides/shared-inboxes.md) | Actor-document discovery, the shared route, stored peer shared inboxes, delivery batching, fallback and migration |
 | [Remote outbox backfill](guides/remote-backfill.md) | Bounded catch-up of a followed actor's public `Create`/`Announce` outbox, including historical media |
 | [Remote threads](guides/remote-threads.md) | On-demand ancestors and direct replies, the thread cache, limits and cleanup |
 | [Peer discovery](guides/peer-discovery.md) | How a peer finds the actor, its key and the inbox |

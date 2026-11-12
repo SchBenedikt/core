@@ -16,8 +16,9 @@ use AlohaSocial\Core\Platform\Db\Connection;
  *
  * Column lengths are index-friendly on purpose: the unique index over
  * (local_user_id, actor_id) has to fit MySQL's key limit with utf8mb4, which
- * is why a URL is capped at 255 characters here and rejected by the service
- * before it reaches the database.
+ * is why the actor URL is capped at 255 characters here and rejected by the
+ * service before it reaches the database. `shared_inbox_url` is nullable so existing
+ * follower rows keep working and fall back to their individual inbox.
  */
 final class FollowerSchema
 {
@@ -34,6 +35,7 @@ final class FollowerSchema
 			. ' local_user_id VARCHAR(255) NOT NULL,'
 			. ' actor_id VARCHAR(255) NOT NULL,'
 			. ' inbox_url VARCHAR(512) NOT NULL,'
+			. ' shared_inbox_url VARCHAR(512) NULL,'
 			. ' followed_at VARCHAR(20) NOT NULL'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::TABLE . '_identity ON ' . self::TABLE

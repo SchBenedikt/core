@@ -54,8 +54,13 @@ final class FollowHandler implements Handler
 			throw HttpException::validationFailed(['inbox' => 'inbox must be a string.']);
 		}
 
+		$sharedInbox = $body['shared_inbox'] ?? null;
+		if ($sharedInbox !== null && !is_string($sharedInbox)) {
+			throw HttpException::validationFailed(['shared_inbox' => 'shared_inbox must be a string.']);
+		}
+
 		try {
-			$result = $this->followers->follow(new FollowActor($userId, $actor, $inbox));
+			$result = $this->followers->follow(new FollowActor($userId, $actor, $inbox, $sharedInbox));
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
 		}

@@ -24,6 +24,9 @@ normally finds it from `@handle@host` through
   "preferredUsername": "alice",
   "name": "alice",
   "inbox": "https://social.example/inbox",
+  "endpoints": {
+    "sharedInbox": "https://social.example/inbox/shared"
+  },
   "outbox": "https://social.example/@alice/outbox",
   "followers": "https://social.example/@alice/followers",
   "following": "https://social.example/@alice/following",
@@ -46,7 +49,8 @@ normally finds it from `@handle@host` through
 | `type` | `Person` | The core has one kind of local actor |
 | `preferredUsername` | the handle, without `@` | What a peer shows and matches |
 | `name` | the handle | Display names are a host concern; the core has no profile store |
-| `inbox` | `{instance}/inbox` | The endpoint that actually accepts signed activities |
+| `inbox` | `{instance}/inbox` | The endpoint that actually accepts signed activities for this actor |
+| `endpoints.sharedInbox` | `{instance}/inbox/shared` | The server-wide signed inbox a peer may use to batch delivery for all local accounts |
 | `outbox` | `{actor}/outbox` | The public outbox collection; the same id the route serves |
 | `followers` | `{actor}/followers` | The incoming collection route |
 | `following` | `{actor}/following` | The outgoing collection route |
@@ -63,6 +67,9 @@ normally finds it from `@handle@host` through
   resolves.
 - `inbox` is the path of the `inbox` route in the manifest, not a second
   endpoint that only looks similar.
+- `endpoints.sharedInbox` is built by `ActivityFactory::sharedInboxId()` and is
+  the path of the `inbox.shared` route; a peer may deliver content there, but
+  Follow/Undo still target `inbox`.
 - `followers` is the path of the `actors.followers` route.
 - `following` is the path of the `actors.following` route; its collection id
   is built by `ActivityFactory::followingId()`.

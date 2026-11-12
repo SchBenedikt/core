@@ -322,6 +322,7 @@ final class InboxService
 			$localUserId,
 			$actor->actorId,
 			$actor->inboxUrl,
+			$actor->sharedInboxUrl,
 		));
 
 		$accept = $this->activities->acceptFollow($localUserId, $result->follower->id, $activity);

@@ -23,7 +23,10 @@ From the document a peer takes three things:
 
 - `publicKey.id` — the key id it must put in a signature;
 - `publicKey.publicKeyPem` — the key it verifies the instance's signatures with;
-- `inbox` — where it delivers activities.
+- `inbox` — where it delivers actor-specific activities such as Follow and
+  Undo;
+- `endpoints.sharedInbox` — where it may deliver content once for all local
+  actors.
 
 The same document advertises the `followers`, `following` and `outbox`
 collections.
@@ -76,6 +79,7 @@ signature claimed:
 document.publicKey.id  ==  signature keyId  ==  ActorFactory::keyId(handle)
 document.id            ==  activity.actor ==  ActorFactory::actorId(handle)
 document.inbox         ==  the route POST /inbox
+document.endpoints.sharedInbox == the route POST /inbox/shared
 ```
 
 The test `ActorDocumentTest::testAPeerCanFetchTheDocumentAndSignAnAcceptedFollow`

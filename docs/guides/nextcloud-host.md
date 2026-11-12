@@ -31,7 +31,7 @@ make the app's WebFinger handler return the prefixed actor URL as `self`.
 ActivityPub permits paths in actor ids.
 
 **B. Root paths through a rewrite.** A webserver rule maps `/api/v1`, `/inbox`,
-`/@{handle}` and `/.well-known/webfinger` to the app's core controller. Set
+`/inbox/shared`, `/@{handle}` and `/.well-known/webfinger` to the app's core controller. Set
 `social/instance.url` to the root. This is the shape the current app uses for
 its Mastodon-compatible API, so the rewrite mechanism may already exist.
 
@@ -405,6 +405,10 @@ inbox_url VARCHAR(512) NOT NULL
 ```
 
 before enabling `POST /api/v1/following`; the repository writes that column.
+If `social_follower` already exists, add the nullable
+`shared_inbox_url VARCHAR(512) NULL` column before enabling follower reads or
+writes. Existing rows need no backfill and keep using their individual inbox;
+the host serves `POST /inbox/shared` with the same controller as `/inbox`.
 Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
 or reading the combined home timeline; it has no legacy rows to import. Create
 `social_block` before enabling `GET`/`POST /api/v1/blocks` or the combined home
@@ -439,8 +443,9 @@ in-memory implementation.
 4. **Outbound follow:** enable `POST`/`DELETE /api/v1/following`; check that
    the peer receives the signed `Follow` and `Undo`.
 5. **Inbound inbox:** only after a durable activity log and actor resolver are
-   in place. Start with a test domain; a replay or a wrong key must be refused,
-   not logged and ignored.
+   in place. Serve both `/inbox` and `/inbox/shared`; the shared route uses the
+   same controller and checks. Start with a test domain; a replay or a wrong
+   key must be refused, not logged and ignored.
 6. **UI:** point one page at the core routes through the
    [`HostBridge`](shared-ui.md), not a host global. Keep the old path until the
    page has no feature the core lacks.

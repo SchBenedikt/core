@@ -26,7 +26,7 @@ Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
-- `src/Domain/Federation/FollowerSchema.php` → `social_follower`
+- `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
@@ -41,7 +41,10 @@ therefore move between the two databases.
 Adding a column means changing the schema class **and** both hosts' migration
 paths in the same release. There is no automatic migration runner in the core:
 it would need to know the host's migration mechanism, which is exactly the kind
-of host concern ports exist to keep out.
+of host concern ports exist to keep out. Existing follower tables need the
+nullable `social_follower.shared_inbox_url VARCHAR(512)` column; rows with
+`NULL` keep delivering to `inbox_url`, so no backfill is required. See
+[shared inboxes](shared-inboxes.md).
 
 `social_job` is the durable queue used by `PdoJobQueue`; `social_activity_log`
 is the replay guard used by `PdoActivityLog`. The queue reserves a row with a

@@ -43,7 +43,8 @@ seam. `Domain\Timeline` owns the combined home-timeline read model.
 post link; the bytes go through the `BlobStore` port and image processing
 through the `ImageProcessor` port. These are domain ports, not platform ports:
 the question "where does this audience live?" belongs to the application, only
-the inbox URLs are data.
+the inbox URLs are data. A follower edge stores both the individual inbox and,
+when advertised, the server's shared inbox.
 
 ## Request lifecycle
 
@@ -105,7 +106,7 @@ POST /api/v1/posts
           ├─ AttachmentRepository::find   one lookup per referenced id
           ├─ PostRepository::insert       one row + their links in one transaction
           ├─ InboxResolver::inboxesFor    the author's stored followers
-          └─ JobQueue::push (per inbox)   {"inbox", "activity", "key_id"}
+          └─ JobQueue::push (per effective inbox) {"inbox", "activity", "key_id"}
                                               │
 JobWorker::runOnce ──────────────────────────┘
   └─ FederationDeliveryHandler
@@ -116,8 +117,11 @@ JobWorker::runOnce ────────────────────�
 
 The inbox list comes from the follow graph: `FollowerInboxResolver` asks
 `FollowerRepository::inboxesFor()` for the author's stored followers. Each row
-carries the inbox URL, so delivery needs no network lookup at post time, and
-inbox URLs are de-duplicated before a job is queued.
+carries its individual inbox and optional shared inbox, so delivery needs no
+network lookup at post time. The shared inbox wins when present, and effective
+inbox URLs are de-duplicated before a job is queued; two followers on one
+server therefore produce one job. Follow, Undo and Accept keep using the
+individual inbox.
 
 The activity is built at write time and stored in the job, not rebuilt at
 delivery time: an edit between queueing and sending must not change what a
@@ -127,7 +131,7 @@ retry is idempotent for the receiving server.
 ## Receiving an activity
 
 ```
-POST /inbox
+POST /inbox  or  POST /inbox/shared
   └─ InboxHandler          JSON, then delegate
       └─ InboxService      signature → actor → policy → replay → apply
           ├─ ActorResolver::resolveByKeyId   (HTTP or fixture)
@@ -142,14 +146,15 @@ POST /inbox
           │   ├─ MediaService::upload         existing validation + storage
           │   └─ RemotePostRepository::linkAttachments
           ├─ RemotePostRepository::softDelete Delete
-          ├─ FollowerService::follow         Follow → edge
-          └─ JobQueue::push                  Accept → follower inbox
+          ├─ FollowerService::follow         Follow → edge + shared inbox
+          └─ JobQueue::push                  Accept → individual inbox
 ```
 
 Every refusal is an `InboxRejectedException` with a stable reason; the handler
 is the only place that maps a reason to an HTTP status. The inbox is enabled
 only when an actor resolver, an HTTP client and a signing key are all present —
-otherwise it answers 503 instead of pretending.
+otherwise both routes answer 503 instead of pretending. The shared route is
+the same handler with the same checks, not a separate trust boundary.
 
 ## Backfilling an outbox
 
@@ -381,7 +386,10 @@ genuinely owns the capability.
   writes a post over HTTP, drains the queue, and verifies the signature on the
   request that left. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
-  authenticated home timeline. `RemoteOutboxBackfillTest` exercises paging,
+  authenticated home timeline. `ApplicationTest` proves that two followers on
+  one server sharing an advertised inbox produce one signed job to the shared
+  route, and `InboxTest` delivers a signed Follow to `/inbox/shared` and reads
+  the stored edge back. `RemoteOutboxBackfillTest` exercises paging,
   deduplication and scope limits without a network; `RemoteMediaTest` also
   stores a historical post through the backfill, repairs its media after a
   disabled period, repeats the URL without duplicates and proves that a bad or

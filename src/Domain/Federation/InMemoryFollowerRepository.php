@@ -120,7 +120,7 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		$inboxes = [];
 		foreach ($this->followers as $follower) {
 			if ($follower->localUserId === $localUserId) {
-				$inboxes[$follower->inboxUrl] = true;
+				$inboxes[$follower->deliveryInboxUrl()] = true;
 			}
 		}
 

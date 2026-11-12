@@ -115,7 +115,7 @@ final class OpenApi
 
 		return match (true) {
 			$path === '/healthz' => 'health',
-			$path === '/inbox' => 'inbox',
+			$path === '/inbox', $path === '/inbox/shared' => 'inbox',
 			default => 'federation',
 		};
 	}

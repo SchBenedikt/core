@@ -66,6 +66,9 @@ final class OpenApiTest extends TestCase
 		self::assertSame('3.1.0', $decoded['openapi']);
 		self::assertArrayHasKey('/inbox', $decoded['paths']);
 		self::assertArrayHasKey('post', $decoded['paths']['/inbox']);
+		self::assertArrayHasKey('/inbox/shared', $decoded['paths']);
+		self::assertArrayHasKey('post', $decoded['paths']['/inbox/shared']);
+		self::assertSame('inbox', $decoded['paths']['/inbox/shared']['post']['tags'][0]);
 		self::assertArrayHasKey('/api/v1/media', $decoded['paths']);
 		self::assertArrayHasKey('post', $decoded['paths']['/api/v1/media']);
 		self::assertArrayHasKey('/api/v1/media/{id}', $decoded['paths']);

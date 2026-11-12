@@ -47,6 +47,10 @@ final class FollowerService
 		$localUserId = trim($command->localUserId);
 		$actorId = trim($command->actorId);
 		$inboxUrl = trim($command->inboxUrl);
+		$sharedInboxUrl = $command->sharedInboxUrl === null ? null : trim($command->sharedInboxUrl);
+		if ($sharedInboxUrl === '') {
+			$sharedInboxUrl = null;
+		}
 
 		$errors = [];
 
@@ -66,17 +70,28 @@ final class FollowerService
 			$errors['inbox'] = 'inbox may be at most ' . self::MAX_INBOX_LENGTH . ' characters long.';
 		}
 
+		if ($sharedInboxUrl !== null) {
+			if (!$this->isAbsoluteHttpUrl($sharedInboxUrl)) {
+				$errors['shared_inbox'] = 'shared_inbox must be an absolute http(s) URL.';
+			} elseif (mb_strlen($sharedInboxUrl) > self::MAX_INBOX_LENGTH) {
+				$errors['shared_inbox'] = 'shared_inbox may be at most '
+					. self::MAX_INBOX_LENGTH . ' characters long.';
+			}
+		}
+
 		if ($errors !== []) {
 			throw new ValidationException($errors);
 		}
 
 		$existing = $this->followers->findByActor($localUserId, $actorId);
 		if ($existing !== null) {
-			if ($existing->inboxUrl === $inboxUrl) {
+			if ($existing->inboxUrl === $inboxUrl
+				&& ($sharedInboxUrl === null || $existing->sharedInboxUrl === $sharedInboxUrl)
+			) {
 				return new FollowResult($existing, false);
 			}
 
-			$updated = $existing->withInbox($inboxUrl);
+			$updated = $existing->withInbox($inboxUrl, $sharedInboxUrl);
 			$this->followers->updateInbox($updated);
 
 			return new FollowResult($updated, false);
@@ -88,6 +103,7 @@ final class FollowerService
 			actorId: $actorId,
 			inboxUrl: $inboxUrl,
 			followedAt: Time::toSecondPrecision($this->clock->now()),
+			sharedInboxUrl: $sharedInboxUrl,
 		);
 
 		$this->followers->insert($follower);

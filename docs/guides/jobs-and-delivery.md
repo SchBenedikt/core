@@ -71,6 +71,16 @@ policy, not the handler. `FederationDeliveryHandler` distinguishes:
   help, but the queue still counts attempts and eventually dead-letters it
   rather than dropping it silently.
 
+## Shared-inbox batching
+
+`FollowerInboxResolver` asks the repository for one effective inbox per
+follower: `shared_inbox_url` when present, otherwise `inbox_url`. Duplicate
+effective URLs collapse before jobs are written, so one post to two followers
+on the same server is one job to that server's shared inbox. The payload and
+handler stay one-inbox/one-activity; batching happens at the inbox selection,
+not by inventing a multi-recipient request. Follow, Undo and Accept always use
+the individual inbox. See [shared inboxes](shared-inboxes.md).
+
 ## Idempotency
 
 A retry must be safe for the receiver. Two things make it so:

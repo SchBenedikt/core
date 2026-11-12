@@ -90,7 +90,7 @@ activities** from an actor for the whole instance. It is not the per-user block
 list:
 
 - a per-user block affects only that user's home timeline;
-- the policy affects whether `POST /inbox` accepts a `Create`, `Delete` or
+- the policy affects whether `POST /inbox` or `/inbox/shared` accepts a `Create`, `Delete` or
   `Announce` at all;
 - the core has no per-user policy that rejects shared inbound content, because
   one reader's block must not erase content another reader follows.

@@ -55,8 +55,12 @@ final class ActorDocumentService
 			'preferredUsername' => $userId,
 			'name' => $userId,
 			// One inbox endpoint serves all local actors; the activity's
-			// `object` names the account it is addressed to.
+			// `object` names the account it is addressed to. The shared inbox
+			// is advertised separately so peers can batch server-wide delivery.
 			'inbox' => $this->activities->baseUrl() . '/inbox',
+			'endpoints' => [
+				'sharedInbox' => $this->activities->sharedInboxId(),
+			],
 			'outbox' => $this->activities->outboxId($userId),
 			'followers' => $this->activities->followersId($userId),
 			'following' => $this->activities->followingId($userId),

@@ -72,6 +72,19 @@ final class InboxTest extends TestCase
 		self::assertSame('signature_required', $response->decodedBody()['error']['code']);
 	}
 
+	public function testTheSharedInboxAlsoRequiresASignature(): void
+	{
+		$response = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/inbox/shared',
+			body: json_encode($this->follow(), JSON_THROW_ON_ERROR),
+		));
+
+		self::assertSame(401, $response->status);
+		self::assertSame('signature_required', $response->decodedBody()['error']['code']);
+		self::assertSame(0, $this->app->followers->count('alice'));
+	}
+
 	public function testAnUnknownKeyIsRefusedWithoutRevealingWhy(): void
 	{
 		$response = $this->deliver($this->follow(), keyId: 'https://unknown.example/users/x#main-key');
@@ -141,6 +154,51 @@ final class InboxTest extends TestCase
 		);
 
 		self::assertTrue(true);
+	}
+
+	public function testTheSharedInboxStoresTheSharedInboxAndAcceptsOnTheIndividualOne(): void
+	{
+		$app = Application::inMemory(
+			clock: $this->clock,
+			httpClient: $this->http,
+			signingKey: self::$localKey,
+			actorResolver: new InMemoryActorResolver([
+				self::KEY_ID => new RemoteActor(
+					self::ACTOR,
+					self::KEY_ID,
+					self::INBOX,
+					self::$remoteKey->publicKeyPem(),
+					'https://remote.example/inbox/shared',
+				),
+			]),
+			activityLog: new InMemoryActivityLog(),
+		);
+
+		$follow = $this->follow();
+		$body = json_encode($follow, JSON_THROW_ON_ERROR);
+		$headers = HttpSignature::sign(
+			self::$remoteKey,
+			self::KEY_ID,
+			'POST',
+			'/inbox/shared',
+			'localhost',
+			$body,
+			$this->clock->now(),
+		);
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/inbox/shared',
+			headers: $headers,
+			body: $body,
+		));
+
+		self::assertSame(202, $response->status);
+		$follower = $app->followers->followers('alice')[0];
+		self::assertSame('https://remote.example/inbox/shared', $follower->sharedInboxUrl);
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(self::INBOX, $this->http->requests[0]['url']);
 	}
 
 	public function testAReplayedActivityIsRefusedAndChangesNothing(): void

@@ -83,7 +83,7 @@ $app = Application::forHost(
     localActors: $actors,        // Core\Domain\Federation\LocalActorDirectory
     queue: $queue,               // Core\Jobs\JobQueue, durable
     activityLog: $activityLog,   // Core\Domain\Federation\ActivityLog, durable
-    actorResolver: $resolver,    // optional; without it POST /inbox is 503
+    actorResolver: $resolver,    // optional; without it both inbox routes are 503
     blockedActors: $policy,      // optional; instance-wide block policy
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
@@ -162,7 +162,7 @@ The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
-- `FollowerSchema` → `social_follower`
+- `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox)
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
@@ -177,6 +177,10 @@ port is small; see [database](database.md).
 
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.
+If `social_follower` exists from an earlier core version, add the nullable
+`shared_inbox_url VARCHAR(512) NULL` column. Existing rows need no backfill and
+fall back to their individual inbox; see
+[shared inboxes](shared-inboxes.md#migration).
 If `social_attachment` predates remote media, add nullable `source_url
 VARCHAR(512)` and its unique index, and create
 `social_remote_post_attachment` from `RemotePostSchema::statements()`.
@@ -425,8 +429,8 @@ owners for the same handle.
    `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).
 5. Add actor documents, WebFinger and the follow collection.
-6. Add `POST /inbox` only when the host has a durable activity log and actor
-   resolver.
+6. Add `POST /inbox` and `POST /inbox/shared` only when the host has a durable
+   activity log and actor resolver; without one, both are honestly 503.
 7. Move the UI calls to the core routes once the slice is complete.
 
 For the concrete Nextcloud mapping, see

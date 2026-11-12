@@ -65,8 +65,8 @@ it.
 
 | Event | Effect |
 | --- | --- |
-| `POST /inbox` with a valid `Follow` | The actor appears at the front of the first page |
-| `POST /inbox` with `Undo(Follow)` | The actor disappears |
+| `POST /inbox` or `/inbox/shared` with a valid `Follow` | The actor appears at the front of the first page |
+| `POST /inbox` or `/inbox/shared` with `Undo(Follow)` | The actor disappears |
 | `POST /api/v1/followers` (local API) | Same table, so the actor appears as well |
 | `DELETE /api/v1/followers/{id}` | The actor disappears |
 

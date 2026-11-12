@@ -24,6 +24,8 @@ final class HttpActorResolverTest extends TestCase
 
 	private const INBOX = 'https://remote.example/users/bob/inbox';
 
+	private const SHARED_INBOX = 'https://remote.example/inbox/shared';
+
 	private static RsaKeyPair $key;
 
 	private FakeHttpClient $http;
@@ -50,6 +52,7 @@ final class HttpActorResolverTest extends TestCase
 		self::assertSame(self::ACTOR, $actor->actorId);
 		self::assertSame(self::KEY_ID, $actor->keyId);
 		self::assertSame(self::INBOX, $actor->inboxUrl);
+		self::assertSame(self::SHARED_INBOX, $actor->sharedInboxUrl);
 		self::assertSame(self::$key->publicKeyPem(), $actor->publicKeyPem);
 
 		self::assertCount(1, $this->http->requests);
@@ -109,6 +112,18 @@ final class HttpActorResolverTest extends TestCase
 		$this->resolver->resolveByKeyId(self::KEY_ID);
 	}
 
+	public function testAMalformedSharedInboxFallsBackToTheIndividualInbox(): void
+	{
+		$this->http->queueResponse($this->document([
+			'endpoints' => ['sharedInbox' => 'javascript:alert(1)'],
+		]));
+
+		$actor = $this->resolver->resolveByKeyId(self::KEY_ID);
+
+		self::assertNull($actor->sharedInboxUrl);
+		self::assertSame(self::INBOX, $actor->inboxUrl);
+	}
+
 	public function testANonHttpKeyIdIsRefusedWithoutARequest(): void
 	{
 		$this->expectException(UnknownActorException::class);
@@ -135,6 +150,7 @@ final class HttpActorResolverTest extends TestCase
 			'id' => self::ACTOR,
 			'type' => 'Person',
 			'inbox' => self::INBOX,
+			'endpoints' => ['sharedInbox' => self::SHARED_INBOX],
 			'publicKey' => [
 				'id' => self::KEY_ID,
 				'owner' => self::ACTOR,

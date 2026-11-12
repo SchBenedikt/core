@@ -87,6 +87,10 @@ final class ActorDocumentTest extends TestCase
 		self::assertNotNull($inboxRoute);
 		self::assertSame('https://localhost:8080' . $inboxRoute->path, $document['inbox']);
 		self::assertSame($document['id'] . '#main-key', $document['publicKey']['id']);
+
+		$sharedInboxRoute = Routes::manifest()->find('inbox.shared');
+		self::assertNotNull($sharedInboxRoute);
+		self::assertSame('https://localhost:8080' . $sharedInboxRoute->path, $document['endpoints']['sharedInbox']);
 	}
 
 	public function testAPeerCanFetchTheDocumentAndSignAnAcceptedFollow(): void

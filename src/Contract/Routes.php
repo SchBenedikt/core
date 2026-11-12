@@ -217,6 +217,15 @@ final class Routes
 				summary: 'Receive a signed ActivityPub activity from a remote server.',
 			),
 			new Route(
+				name: 'inbox.shared',
+				method: 'POST',
+				path: '/inbox/shared',
+				handler: InboxHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Receive a signed activity for any local actor through the shared inbox.',
+			),
+			new Route(
 				name: 'actors.get',
 				method: 'GET',
 				path: '/@{handle}',

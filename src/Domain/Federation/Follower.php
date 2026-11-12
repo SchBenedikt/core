@@ -28,6 +28,7 @@ final readonly class Follower
 		public string $actorId,
 		public string $inboxUrl,
 		public DateTimeImmutable $followedAt,
+		public ?string $sharedInboxUrl = null,
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A follower needs an id.');
@@ -44,6 +45,10 @@ final readonly class Follower
 		if ($inboxUrl === '') {
 			throw new InvalidArgumentException('A follower needs an inbox.');
 		}
+
+		if ($sharedInboxUrl !== null && $sharedInboxUrl === '') {
+			throw new InvalidArgumentException('A follower shared inbox must be an absolute URL when present.');
+		}
 	}
 
 	/**
@@ -52,9 +57,29 @@ final readonly class Follower
 	 * An already accepted follower may move its inbox; its id and the time it
 	 * followed must not change, because clients and logs refer to them.
 	 */
-	public function withInbox(string $inboxUrl): self
+	public function withInbox(string $inboxUrl, ?string $sharedInboxUrl = null): self
 	{
-		return new self($this->id, $this->localUserId, $this->actorId, $inboxUrl, $this->followedAt);
+		return new self(
+			$this->id,
+			$this->localUserId,
+			$this->actorId,
+			$inboxUrl,
+			$this->followedAt,
+			$sharedInboxUrl ?? $this->sharedInboxUrl,
+		);
+	}
+
+	/**
+	 * The inbox to use for content delivery.
+	 *
+	 * A server's shared inbox covers every follower on that server, so it is
+	 * preferred over the per-actor inbox for content. Activity-specific
+	 * delivery such as Accept still uses the individual inbox because the
+	 * peer matches it to one actor.
+	 */
+	public function deliveryInboxUrl(): string
+	{
+		return $this->sharedInboxUrl ?? $this->inboxUrl;
 	}
 
 	/**

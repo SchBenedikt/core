@@ -77,6 +77,7 @@ final class HttpActorResolver implements ActorResolver
 		$documentKeyId = $publicKey['id'] ?? null;
 		$publicKeyPem = $publicKey['publicKeyPem'] ?? null;
 		$inbox = $document['inbox'] ?? null;
+		$sharedInbox = $this->sharedInbox($document);
 
 		if (!is_string($documentKeyId) || $documentKeyId !== $keyId) {
 			throw new UnknownActorException($keyId);
@@ -90,7 +91,31 @@ final class HttpActorResolver implements ActorResolver
 			throw new UnknownActorException($keyId);
 		}
 
-		return new RemoteActor($actorId, $keyId, $inbox, $publicKeyPem);
+		return new RemoteActor($actorId, $keyId, $inbox, $publicKeyPem, $sharedInbox);
+	}
+
+	/**
+	 * The optional server-wide inbox from `endpoints.sharedInbox`.
+	 *
+	 * A malformed optional value is ignored; the actor's individual inbox is
+	 * still valid and delivery can fall back to it. A missing endpoints object
+	 * is normal for peers that do not support shared inboxes.
+	 *
+	 * @param array<string, mixed> $document
+	 */
+	private function sharedInbox(array $document): ?string
+	{
+		$endpoints = $document['endpoints'] ?? null;
+		if (!is_array($endpoints)) {
+			return null;
+		}
+
+		$sharedInbox = $endpoints['sharedInbox'] ?? null;
+		if (!is_string($sharedInbox) || !self::isHttpUrl($sharedInbox)) {
+			return null;
+		}
+
+		return mb_strlen($sharedInbox) <= RemoteActor::MAX_URL_LENGTH ? $sharedInbox : null;
 	}
 
 	private function actorIdFromKeyId(string $keyId): string

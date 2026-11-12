@@ -14,14 +14,16 @@ final readonly class Follower
     public string $id;             // local id, used by the API
     public string $localUserId;    // whose follower this is
     public string $actorId;        // absolute ActivityPub actor URL
-    public string $inboxUrl;       // absolute inbox URL
+    public string $inboxUrl;       // absolute individual inbox URL
+    public ?string $sharedInboxUrl; // server-wide inbox, when advertised
     public DateTimeImmutable $followedAt;
 }
 ```
 
 `(localUserId, actorId)` is unique. A repeated Follow therefore updates the
 inbox instead of creating a second row — a peer that retries cannot cause
-duplicate deliveries.
+duplicate deliveries. `deliveryInboxUrl()` returns the shared inbox when it
+is present and the individual inbox otherwise.
 
 The outgoing edge has the same identity and inbox, but points the other way:
 
@@ -43,13 +45,16 @@ shared by both hosts:
 id            VARCHAR(64)  primary key
 local_user_id VARCHAR(255)
 actor_id      VARCHAR(255) unique with local_user_id
-inbox_url     VARCHAR(512)
-followed_at   VARCHAR(20)  canonical UTC timestamp
+inbox_url        VARCHAR(512)
+shared_inbox_url VARCHAR(512)  nullable
+followed_at      VARCHAR(20)  canonical UTC timestamp
 ```
 
 The 255-character cap on `actor_id` is deliberate: with utf8mb4 it keeps the
 unique index inside MySQL's key limit. The service rejects a longer URL with
-422 before the database has to.
+422 before the database has to. `shared_inbox_url` is nullable so existing
+rows need no backfill; see [shared inboxes](shared-inboxes.md) for the
+migration and fallback rules.
 
 ## Endpoints
 
@@ -62,9 +67,14 @@ unique index inside MySQL's key limit. The service rejects a longer URL with
 | `DELETE` | `/api/v1/following/{id}` | Deliver an `Undo`; `204`, or `404` when it is not the caller's |
 
 The `POST` body is `{"actor": "https://remote.example/users/bob", "inbox":
-"https://remote.example/users/bob/inbox"}`. Both must be absolute http(s) URLs;
-anything else is a 422 naming the field. The following `POST` uses the same
-body shape, but stores the outgoing edge and delivers a `Follow` instead of
+"https://remote.example/users/bob/inbox", "shared_inbox":
+"https://remote.example/inbox/shared"}`. `shared_inbox` is optional and may be
+omitted or `null`; when present it must be an absolute http(s) URL of at most
+512 characters. `actor` and `inbox` are required and follow the same rules.
+Anything invalid is a 422 naming the field. The response keeps its established
+`id`/`actor`/`inbox`/`followed_at` shape; the stored shared inbox is used for
+delivery, not echoed. The following `POST` uses the same body shape without a
+shared inbox, stores the outgoing edge and delivers a `Follow` instead of
 recording a follower.
 
 Deleting is scoped to the caller: the id alone must not let one account remove
@@ -83,8 +93,13 @@ follow (bob)  ──► social_follower
 post (alice)  ──► inboxesFor("alice") ──► one delivery job per inbox
 ```
 
-Inbox URLs are de-duplicated: two actors that share an inbox receive one
-request per post, not two identical ones.
+Inbox URLs are de-duplicated after choosing `shared_inbox_url` when it is set:
+two actors on the same server with the same advertised shared inbox receive
+one request per post, not two identical ones. A follower without a shared
+inbox still receives at its individual inbox. Follow, Undo and Accept always
+target the individual inbox. The target is chosen when the job is written; a
+failed shared delivery is retried as it is rather than silently switched to
+the individual inbox. See [shared inboxes](shared-inboxes.md).
 
 ## How edges arrive
 
@@ -96,8 +111,10 @@ Two paths write the graph:
    queues the `Accept`; a signed `Undo(Follow)` removes it. See
    [inbound federation](inbound-federation.md).
 
-Either way the actor and its inbox come from the actor document, never from an
-unauthenticated request body.
+Either way the actor and its inboxes come from the actor document, never from
+an unauthenticated request body. The shared inbox is read from
+`endpoints.sharedInbox` and stored only when it is a valid http(s) URL; a
+missing or malformed value leaves the individual inbox in place.
 
 The outgoing graph is written separately by `POST /api/v1/following`, which
 records whom a local account follows and delivers the matching `Follow`; no

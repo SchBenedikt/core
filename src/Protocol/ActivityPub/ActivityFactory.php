@@ -67,6 +67,17 @@ final class ActivityFactory
 		return $this->baseUrl() . '/@' . rawurlencode($userId);
 	}
 
+	/**
+	 * The server-wide inbox advertised by every local actor.
+	 *
+	 * One endpoint accepts content for all local accounts; the individual
+	 * inbox stays the target for Follow and Undo, which are actor-specific.
+	 */
+	public function sharedInboxId(): string
+	{
+		return $this->baseUrl() . '/inbox/shared';
+	}
+
 	public function keyId(string $userId): string
 	{
 		return $this->actorId($userId) . '#main-key';

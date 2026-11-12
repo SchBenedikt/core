@@ -26,9 +26,10 @@ This document is the checklist that host is built against.
    `ImageProcessor`.
 8. **Inbound** — `HttpActorResolver` over the HTTP client, `PdoActivityLog`,
    `InboxService` and, when `social_remote_post` exists, a `RemotePostRepository`
-   for signed Create/Delete/Announce. The home timeline additionally needs
-   `social_block` for the per-user filter. Without the resolver, client and
-   key, the inbox answers 503.
+   for signed Create/Delete/Announce. Both `/inbox` and `/inbox/shared` use
+   that service. The home timeline additionally needs `social_block` for the
+   per-user filter. Without the resolver, client and key, both inbox routes
+   answer 503.
 9. **Handlers and kernel** — register every handler from the route manifest and
    fail at boot if one is missing.
 10. **Worker** — `PdoJobQueue` plus a process or cron entry calling

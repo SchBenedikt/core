@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Shared inboxes and delivery batching: every actor document advertises
+  `endpoints.sharedInbox`, pointing at the new signed `POST /inbox/shared`
+  route. Both inbox routes use the same handler, signature-over-path checks,
+  actor ownership, policy and replay guard. Resolved remote actors carry an
+  optional shared inbox; a signed Follow stores it in the new nullable
+  `social_follower.shared_inbox_url` column. `FollowerRepository::inboxesFor()`
+  prefers that URL, falls back to the individual inbox when it is `NULL`, and
+  de-duplicates, so two followers on one server produce one delivery job.
+  Follow, Undo and Accept keep using the individual inbox. The route manifest
+  and OpenAPI export now have 25 routes. Existing follower tables need the
+  nullable column (`ALTER TABLE social_follower ADD COLUMN shared_inbox_url
+  VARCHAR(512) NULL`); existing rows need no backfill. The actor document, route
+  reference, follow graph, inbound federation, database, host integration and
+  configuration guides, plus the new shared-inbox guide, document the behaviour,
+  fallback and migration. The core schedules no cleanup for this column: it is
+  removed with the follower row.
 - Thread/context fetching: the authenticated
   `GET /api/v1/remote-posts/{id}/thread` returns the freshly fetched target, its
   ancestors from root to parent and its direct replies for a stored remote

@@ -51,11 +51,13 @@ log the signing string and look at the peer first.
 
 ## Delivery
 
-Writing a post queues one job per inbox:
+Writing a post queues one job per **effective** inbox. When a follower
+advertised a shared inbox, that URL replaces the individual one; followers on
+the same server are de-duplicated:
 
 ```json
 {
-  "inbox": "https://remote.example/users/bob/inbox",
+  "inbox": "https://remote.example/inbox/shared",
   "activity": { "type": "Create", "...": "..." },
   "key_id": "https://local.example/@alice#main-key"
 }
@@ -74,9 +76,11 @@ request can be retried. See the [following collection](following-collection.md).
 
 ## Inbound
 
-The other direction is implemented too: `POST /inbox` verifies the signature
-of a remote actor, applies `Follow`/`Undo(Follow)`, and stores `Create`,
-`Delete` and `Announce` from actors followed by at least one local account.
+The other direction is implemented too: `POST /inbox` and `POST /inbox/shared`
+verify the signature of a remote actor, apply `Follow`/`Undo(Follow)`, and store
+`Create`, `Delete` and `Announce` from actors followed by at least one local
+account. The actor document advertises the shared route under
+`endpoints.sharedInbox`; see [shared inboxes](shared-inboxes.md).
 The home timeline reads those remote rows through the outgoing follow graph
 and applies each reader's private block list; see [blocks](blocks.md).
 See [inbound federation](inbound-federation.md) for the order of checks and
@@ -94,8 +98,10 @@ are served next to it; the outbox lists the account's public posts as the same
 
 ## Not implemented yet
 
-- fetching/backfilling remote posts, threads or media that were not delivered;
-- delivery to shared inboxes;
-
-The seams are named in [the architecture](../architecture.md#what-is-not-here-yet),
-so each of these is an addition, not a rewrite.
+The local federation path is complete for the features in the roadmap: outbox
+backfill, thread/context fetching, remote media and shared-inbox batching are
+implemented. Scheduling the backfill, thread retention and host-specific
+policy remain host operations. AT Protocol and a Mastodon-compatible API are
+still separate roadmap items; the seams are named in
+[the architecture](../architecture.md#what-is-not-here-yet), so each is an
+addition, not a rewrite.

@@ -1,8 +1,9 @@
 # Inbox activities and refusals
 
-The contract of `POST /inbox`. The flow is described in
+The contract of `POST /inbox` and `POST /inbox/shared`. The flow is described in
 [inbound federation](../guides/inbound-federation.md); this page is the table
-you check while debugging a peer.
+you check while debugging a peer. Both routes apply the same checks; only the
+path covered by the signature differs.
 
 ## Request
 
@@ -23,7 +24,8 @@ Content-Type: application/activity+json
 ```
 
 The signature covers `(request-target) host date digest`. A body without a
-signed `Digest` is refused.
+signed `Digest` is refused. For the shared inbox, use
+`(request-target): post /inbox/shared` and send the request to that path.
 
 ## Activity types
 

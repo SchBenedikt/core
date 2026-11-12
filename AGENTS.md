@@ -82,8 +82,9 @@ Do not log request bodies, private keys or sealed payloads.
 
 ## Current scope
 
-Implemented: posts and timelines, the follow graph, inbound and outbound
-ActivityPub (signed `POST /inbox`, signed `Follow`/`Undo` delivery, `Accept`,
+Implemented: posts and timelines, the follow graph (including stored peer
+shared inboxes and batched delivery), inbound and outbound ActivityPub (signed
+`POST /inbox` and `/inbox/shared`, signed `Follow`/`Undo` delivery, `Accept`,
 signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 actor document, followers and following collections, outbox and WebFinger, a
@@ -98,7 +99,8 @@ plus the read-only cutover validator for the neutral migration export.
 The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.
-Not implemented in the core: AT Protocol and an object-storage adapter. Local
+Not implemented in the core: AT Protocol, a Mastodon-compatible API and an
+object-storage adapter. Local
 and remote media, including the SSRF/size limits, failure reasons, switch and
 cleanup contract, are documented in `docs/guides/media.md`; thread/context
 fetching is documented in `docs/guides/remote-threads.md`. See `docs/roadmap.md` before starting a large feature,

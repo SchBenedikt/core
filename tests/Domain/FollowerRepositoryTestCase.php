@@ -62,6 +62,24 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertSame('2026-11-11T10:00:00Z', $stored?->toArray()['followed_at']);
 	}
 
+	public function testUpdateInboxAlsoUpdatesTheSharedInbox(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower('f1', 'alice', 'https://remote.example/users/bob'));
+
+		$repository->updateInbox(
+			$this->follower('f1', 'alice', 'https://remote.example/users/bob')
+				->withInbox(
+					'https://remote.example/users/bob/inbox-v2',
+					'https://remote.example/inbox/shared',
+				),
+		);
+
+		$stored = $repository->find('f1');
+		self::assertSame('https://remote.example/users/bob/inbox-v2', $stored?->inboxUrl);
+		self::assertSame('https://remote.example/inbox/shared', $stored?->sharedInboxUrl);
+	}
+
 	public function testRemoveOnlyDeletesTheOwnersFollower(): void
 	{
 		$repository = $this->repository();
@@ -179,6 +197,36 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testSharedInboxesBatchFollowersOnTheSameServer(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower(
+			'f1',
+			'alice',
+			'https://a.example/users/one',
+			inboxUrl: 'https://a.example/users/one/inbox',
+			sharedInboxUrl: 'https://a.example/inbox/shared',
+		));
+		$repository->insert($this->follower(
+			'f2',
+			'alice',
+			'https://a.example/users/two',
+			inboxUrl: 'https://a.example/users/two/inbox',
+			sharedInboxUrl: 'https://a.example/inbox/shared',
+		));
+		$repository->insert($this->follower(
+			'f3',
+			'alice',
+			'https://b.example/users/three',
+			inboxUrl: 'https://b.example/users/three/inbox',
+		));
+
+		self::assertSame(
+			['https://a.example/inbox/shared', 'https://b.example/users/three/inbox'],
+			$repository->inboxesFor('alice'),
+		);
+	}
+
 	public function testCountIsScopedToTheLocalUser(): void
 	{
 		$repository = $this->repository();
@@ -197,6 +245,7 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		string $actorId,
 		string $followedAt = '2026-11-11T10:00:00Z',
 		?string $inboxUrl = null,
+		?string $sharedInboxUrl = null,
 	): Follower {
 		return new Follower(
 			$id,
@@ -204,6 +253,7 @@ abstract class FollowerRepositoryTestCase extends TestCase
 			$actorId,
 			$inboxUrl ?? $this->inboxFor($actorId),
 			Time::parse($followedAt),
+			$sharedInboxUrl,
 		);
 	}
 

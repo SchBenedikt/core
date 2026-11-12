@@ -22,6 +22,7 @@ final readonly class FollowActor
 		public string $localUserId,
 		public string $actorId,
 		public string $inboxUrl,
+		public ?string $sharedInboxUrl = null,
 	) {
 	}
 }

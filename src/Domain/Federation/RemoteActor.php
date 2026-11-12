@@ -20,14 +20,22 @@ use InvalidArgumentException;
  */
 final readonly class RemoteActor
 {
+	public const MAX_URL_LENGTH = 512;
+
 	public function __construct(
 		public string $actorId,
 		public string $keyId,
 		public string $inboxUrl,
 		public string $publicKeyPem,
+		public ?string $sharedInboxUrl = null,
 	) {
 		if ($actorId === '' || $keyId === '' || $inboxUrl === '' || $publicKeyPem === '') {
 			throw new InvalidArgumentException('A remote actor needs an id, a key id, an inbox and a public key.');
 		}
+
+		if ($sharedInboxUrl !== null && $sharedInboxUrl === '') {
+			throw new InvalidArgumentException('A remote shared inbox must be an absolute URL when present.');
+		}
 	}
+
 }

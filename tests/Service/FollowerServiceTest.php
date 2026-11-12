@@ -72,6 +72,30 @@ final class FollowerServiceTest extends TestCase
 		self::assertSame(1, $this->service->count('alice'));
 	}
 
+	public function testASharedInboxIsStoredAndRefreshed(): void
+	{
+		$first = $this->service->follow(new FollowActor(
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			'https://remote.example/inbox/shared',
+		));
+
+		self::assertSame('https://remote.example/inbox/shared', $first->follower->sharedInboxUrl);
+		self::assertSame('https://remote.example/inbox/shared', $first->follower->deliveryInboxUrl());
+
+		$second = $this->service->follow(new FollowActor(
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			'https://remote.example/inbox/shared-v2',
+		));
+
+		self::assertFalse($second->created);
+		self::assertSame($first->follower->id, $second->follower->id);
+		self::assertSame('https://remote.example/inbox/shared-v2', $second->follower->sharedInboxUrl);
+	}
+
 	public function testTheSameActorCanFollowDifferentAccounts(): void
 	{
 		$this->service->follow(new FollowActor('alice', 'https://remote.example/users/bob', 'https://remote.example/bob'));
@@ -90,6 +114,21 @@ final class FollowerServiceTest extends TestCase
 		yield 'actor without scheme' => ['remote.example/users/bob', 'https://remote.example/inbox', 'actor'];
 		yield 'actor with a foreign scheme' => ['ftp://remote.example/users/bob', 'https://remote.example/inbox', 'actor'];
 		yield 'inbox that is not a URL' => ['https://remote.example/users/bob', 'not a url', 'inbox'];
+	}
+
+	public function testAnInvalidSharedInboxIsRefusedPerField(): void
+	{
+		try {
+			$this->service->follow(new FollowActor(
+				'alice',
+				'https://remote.example/users/bob',
+				'https://remote.example/inbox',
+				'not a url',
+			));
+			self::fail('Expected a validation error.');
+		} catch (ValidationException $exception) {
+			self::assertArrayHasKey('shared_inbox', $exception->fields());
+		}
 	}
 
 	#[DataProvider('invalidFollows')]
@@ -181,6 +220,32 @@ final class FollowerServiceTest extends TestCase
 
 		self::assertSame(
 			['https://a.example/inbox', 'https://b.example/inbox'],
+			$this->repository->inboxesFor('alice'),
+		);
+	}
+
+	public function testSharedInboxesBatchDeliveryForOneServer(): void
+	{
+		$this->service->follow(new FollowActor(
+			'alice',
+			'https://a.example/users/one',
+			'https://a.example/users/one/inbox',
+			'https://a.example/inbox/shared',
+		));
+		$this->service->follow(new FollowActor(
+			'alice',
+			'https://a.example/users/two',
+			'https://a.example/users/two/inbox',
+			'https://a.example/inbox/shared',
+		));
+		$this->service->follow(new FollowActor(
+			'alice',
+			'https://b.example/users/three',
+			'https://b.example/users/three/inbox',
+		));
+
+		self::assertSame(
+			['https://a.example/inbox/shared', 'https://b.example/users/three/inbox'],
 			$this->repository->inboxesFor('alice'),
 		);
 	}

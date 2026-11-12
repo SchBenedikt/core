@@ -42,6 +42,30 @@ final class FollowerTest extends TestCase
 		self::assertSame('2026-11-11T10:00:00Z', $updated->toArray()['followed_at']);
 	}
 
+	public function testASharedInboxIsPreferredForDelivery(): void
+	{
+		$follower = $this->follower()->withInbox(
+			'https://remote.example/users/bob/inbox',
+			'https://remote.example/inbox/shared',
+		);
+
+		self::assertSame('https://remote.example/inbox/shared', $follower->sharedInboxUrl);
+		self::assertSame('https://remote.example/inbox/shared', $follower->deliveryInboxUrl());
+	}
+
+	public function testARepatedInboxUpdateKeepsTheKnownSharedInbox(): void
+	{
+		$follower = $this->follower()->withInbox(
+			'https://remote.example/users/bob/inbox',
+			'https://remote.example/inbox/shared',
+		);
+
+		$updated = $follower->withInbox('https://remote.example/users/bob/inbox-v2');
+
+		self::assertSame('https://remote.example/inbox/shared', $updated->sharedInboxUrl);
+		self::assertSame('https://remote.example/inbox/shared', $updated->deliveryInboxUrl());
+	}
+
 	/**
 	 * @return iterable<string, array{string, string, string}>
 	 */
@@ -51,6 +75,20 @@ final class FollowerTest extends TestCase
 		yield 'empty local user' => ['f1', '', 'https://remote.example/users/bob', 'https://remote.example/inbox'];
 		yield 'empty actor' => ['f1', 'alice', '', 'https://remote.example/inbox'];
 		yield 'empty inbox' => ['f1', 'alice', 'https://remote.example/users/bob', ''];
+	}
+
+	public function testAnEmptySharedInboxIsRefused(): void
+	{
+		$this->expectException(InvalidArgumentException::class);
+
+		new Follower(
+			'f1',
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			Time::parse('2026-11-11T10:00:00Z'),
+			'',
+		);
 	}
 
 	#[DataProvider('incompleteFollowers')]

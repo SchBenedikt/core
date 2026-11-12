@@ -22,7 +22,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(24, $manifest->routes());
+		self::assertCount(25, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
@@ -60,7 +60,7 @@ final class RoutesTest extends TestCase
 		foreach (Routes::manifest()->routes() as $route) {
 			// The liveness probe and the ActivityPub inbox are protocol
 			// endpoints, not part of the versioned client API.
-			if (in_array($route->name, ['health', 'inbox', 'actors.get', 'actors.followers', 'actors.following', 'actors.outbox', 'webfinger'], true)) {
+			if (in_array($route->name, ['health', 'inbox', 'inbox.shared', 'actors.get', 'actors.followers', 'actors.following', 'actors.outbox', 'webfinger'], true)) {
 				continue;
 			}
 
@@ -159,6 +159,13 @@ final class RoutesTest extends TestCase
 		self::assertFalse($route->requiresAuth, 'The inbox authenticates by signature, not by session.');
 		self::assertSame('120/60', $route->rateLimit);
 		self::assertSame('/inbox', $route->path);
+
+		$shared = Routes::manifest()->find('inbox.shared');
+
+		self::assertNotNull($shared);
+		self::assertFalse($shared->requiresAuth, 'The shared inbox also authenticates by signature.');
+		self::assertSame('120/60', $shared->rateLimit);
+		self::assertSame('/inbox/shared', $shared->path);
 	}
 
 	public function testTheActorRoutesArePublic(): void
@@ -193,7 +200,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(24, $decoded['routes']);
+		self::assertCount(25, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -203,6 +210,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(24, $app->routes->routes());
+		self::assertCount(25, $app->routes->routes());
 	}
 }

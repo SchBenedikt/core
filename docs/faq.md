@@ -96,13 +96,22 @@ ids are remembered for a day.
 
 ### Why does a repeated Follow return 200 instead of 201?
 
-The actor was already a follower; only the inbox may have changed. 200 says
-"nothing new was created", which is exactly what happened.
+The actor was already a follower; only the individual inbox or its advertised
+shared inbox may have changed. 200 says "nothing new was created", which is
+exactly what happened.
 
 ### Can two accounts have the same follower?
 
 Yes. `(local_user_id, actor_id)` is unique, not `actor_id`. The same remote
 actor can follow several local accounts, each with its own inbox record.
+
+### How does delivery avoid sending one copy per follower on a server?
+
+A follower edge stores the peer's advertised `endpoints.sharedInbox` when it
+has one. `inboxesFor()` chooses that URL, falls back to the individual inbox
+when it is `NULL`, and de-duplicates, so one post produces one job for that
+server. Follow, Undo and Accept still use the individual inbox. See
+[shared inboxes](guides/shared-inboxes.md).
 
 ### How do I add a feature that needs something from the host?
 

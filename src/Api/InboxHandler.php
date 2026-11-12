@@ -18,11 +18,13 @@ use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\Federation\InboxService;
 
 /**
- * `POST /inbox`
+ * `POST /inbox` and `POST /inbox/shared`
  *
- * The endpoint is unauthenticated in the session sense: the HTTP signature is
- * the authentication. When the host did not configure an actor resolver and a
- * signing key, the handler answers 503 instead of pretending to accept.
+ * The endpoints are unauthenticated in the session sense: the HTTP signature
+ * is the authentication, over the actual request path. The shared inbox is not
+ * a weaker route; it applies the same actor, policy and replay checks. When the
+ * host did not configure an actor resolver and a signing key, both answer 503
+ * instead of pretending to accept.
  */
 final class InboxHandler implements Handler
 {

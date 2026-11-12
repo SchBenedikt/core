@@ -283,6 +283,21 @@ final class ApplicationTest extends TestCase
 
 		self::assertSame(422, $response->status);
 		self::assertArrayHasKey('actor', $response->decodedBody()['error']['fields']);
+
+		$response = $this->app()->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/followers',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode([
+				'actor' => 'https://remote.example/users/bob',
+				'inbox' => 'https://remote.example/users/bob/inbox',
+				'shared_inbox' => 'not a url',
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(422, $response->status);
+		self::assertArrayHasKey('shared_inbox', $response->decodedBody()['error']['fields']);
 	}
 
 	public function testDeliveryReachesTheRealFollowGraph(): void
@@ -304,6 +319,47 @@ final class ApplicationTest extends TestCase
 		$activity = json_decode($http->requests[0]['body'], true, 512, JSON_THROW_ON_ERROR);
 		self::assertSame('Create', $activity['type']);
 		self::assertSame('to my followers', $activity['object']['content']);
+	}
+
+	public function testSharedInboxesBatchDeliveryForFollowersOnOneServer(): void
+	{
+		$http = new FakeHttpClient();
+		$key = RsaKeyPair::generate();
+		$app = $this->app($http, $key);
+
+		$this->follow(
+			$app,
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			'https://remote.example/inbox/shared',
+		);
+		$this->follow(
+			$app,
+			'alice',
+			'https://remote.example/users/carol',
+			'https://remote.example/users/carol/inbox',
+			'https://remote.example/inbox/shared',
+		);
+
+		$this->post($app, 'alice', 'batched');
+
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertCount(1, $http->requests);
+		self::assertSame('https://remote.example/inbox/shared', $http->requests[0]['url']);
+
+		HttpSignature::verify(
+			$key->publicKeyPem(),
+			'POST',
+			'/inbox/shared',
+			array_change_key_case($http->requests[0]['headers'], CASE_LOWER),
+			$http->requests[0]['body'],
+			300,
+			$this->clock->now(),
+		);
+
+		self::assertTrue(true);
 	}
 
 	public function testUnfollowingStopsDelivery(): void
@@ -345,13 +401,23 @@ final class ApplicationTest extends TestCase
 		);
 	}
 
-	private function follow(Application $app, string $user, string $actor, string $inbox): Response
-	{
+	private function follow(
+		Application $app,
+		string $user,
+		string $actor,
+		string $inbox,
+		?string $sharedInbox = null,
+	): Response {
+		$body = ['actor' => $actor, 'inbox' => $inbox];
+		if ($sharedInbox !== null) {
+			$body['shared_inbox'] = $sharedInbox;
+		}
+
 		return $app->handle(new Request(
 			method: 'POST',
 			path: '/api/v1/followers',
 			headers: ['Content-Type' => 'application/json'],
-			body: json_encode(['actor' => $actor, 'inbox' => $inbox], JSON_THROW_ON_ERROR),
+			body: json_encode($body, JSON_THROW_ON_ERROR),
 			userId: $user,
 		));
 	}

@@ -54,6 +54,14 @@ to the whole response. Depth and reply limits are applied after fetching, so a
 collection can be read up to the body limit and then truncated to
 `thread.max_replies`; the cache never receives the truncated-away nodes.
 
+Shared inboxes have no configuration key. Both inbox routes are controlled by
+the same prerequisites as the normal inbox: without an actor resolver, an
+HTTP client and a signing key they answer `503 inbox_not_configured`. Outbound
+batching uses the peer's advertised `endpoints.sharedInbox`; a follower row
+with `shared_inbox_url = NULL` uses its individual inbox. The protocol always
+advertises the local shared route in the actor document. See
+[shared inboxes](../guides/shared-inboxes.md).
+
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.
 

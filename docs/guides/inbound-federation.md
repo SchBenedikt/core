@@ -1,8 +1,9 @@
 # Inbound federation
 
-`POST /inbox` is the only write endpoint that does not use a session. Its
-credential is the HTTP signature: the request proves that the sender controls
-the key of the actor it claims to be.
+`POST /inbox` and `POST /inbox/shared` are the write endpoints that do not use
+a session. Their credential is the HTTP signature over the actual path: the
+request proves that the sender controls the key of the actor it claims to be.
+The shared route is not a weaker check; see [shared inboxes](shared-inboxes.md).
 
 ## Prerequisites
 
@@ -14,8 +15,8 @@ The endpoint is enabled only when the host provides **all three**:
 | an HTTP client | to deliver the `Accept` for a Follow |
 | a signing key | to sign that `Accept` as the local actor |
 
-Missing any of them, the handler answers `503 inbox_not_configured`. It does
-not accept activities it could neither verify nor answer. The reference
+Missing any of them, both handlers answer `503 inbox_not_configured`. They do
+not accept activities they could neither verify nor answer. The reference
 assembly (`Application::inMemory()`) is therefore disabled by default.
 
 A host may additionally pass a `BlockedActorPolicy`. It is optional and
@@ -79,14 +80,17 @@ its delivery succeeded when nothing happened.
 POST /inbox (Follow, signed by bob)
   ├─ resolve https://remote.example/users/bob#main-key → RemoteActor
   ├─ verify signature
-  ├─ followers.follow("alice", bob, bob-inbox)     (idempotent per actor)
+  ├─ followers.follow("alice", bob, bob-inbox,
+  │                   bob-shared-inbox)             (idempotent per actor)
   ├─ build Accept(local actor, embedded Follow)
   └─ queue federation.deliver → Accept → bob's inbox
 ```
 
 The `Accept` is delivered by the same worker and the same signed-POST code as
-a post. The reference assembly runs it synchronously in tests; a host runs it
-from its cron or worker loop.
+a post, to the follower's **individual** inbox. The reference assembly runs it
+synchronously in tests; a host runs it from its cron or worker loop. The
+actor's advertised shared inbox is stored on the edge for later post delivery,
+not used for this Accept.
 
 ## What an Undo does
 
@@ -159,7 +163,10 @@ The clock window for the signed `Date` is 300 seconds; see
 
 ## What is missing
 
-- shared-inbox handling and delivery batching.
+There is no open core gap in this path in this release. Shared-inbox handling
+and delivery batching are implemented and documented in
+[shared inboxes](shared-inboxes.md). Scheduling the outbox backfill, retention
+of thread-cache rows and host-level moderation policy remain host operations.
 
 Thread/context is an explicit, authenticated read path rather than part of the
 inbox; see [remote threads](remote-threads.md). A bounded outbox catch-up for

@@ -4,7 +4,7 @@ The manifest in [`src/Contract/Routes.php`](../../src/Contract/Routes.php) is th
 source of truth; `php bin/export-routes` prints it as JSON and
 `php bin/export-openapi` renders the same routes as OpenAPI 3.1. Paths are absolute
 and versioned under `/api/v1` except the liveness probe and the protocol
-endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
+endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`).
 
 | Name | Method | Path | Auth | Rate limit |
 | --- | --- | --- | --- | --- |
@@ -27,6 +27,7 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | `blocks.block` | `POST` | `/api/v1/blocks` | yes | 30 / 900 s |
 | `blocks.unblock` | `DELETE` | `/api/v1/blocks/{id}` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
+| `inbox.shared` | `POST` | `/inbox/shared` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
 | `actors.following` | `GET` | `/@{handle}/following` | no | 120 / 60 s |
@@ -218,11 +219,15 @@ POST /api/v1/followers
 Content-Type: application/json
 
 {"actor": "https://remote.example/users/bob",
- "inbox": "https://remote.example/users/bob/inbox"}
+ "inbox": "https://remote.example/users/bob/inbox",
+ "shared_inbox": "https://remote.example/inbox/shared"}
 ```
 
-`201` with `Location: /api/v1/followers/{id}` when the follower is new, `200`
-when the actor was already a follower and only the inbox changed:
+`shared_inbox` is optional and may be omitted or `null`; when present it must
+be an absolute http(s) URL of at most 512 characters. It is stored for batched
+delivery but is not echoed in the response. `201` with
+`Location: /api/v1/followers/{id}` when the follower is new, `200` when the
+actor was already a follower and only the individual or shared inbox changed:
 
 ```json
 {"follower": {"id": "…", "actor": "https://remote.example/users/bob",
@@ -324,6 +329,23 @@ Signature: keyId="…",algorithm="rsa-sha256",headers="(request-target) host dat
 activities and every refusal are listed in
 [inbox activities](inbox-activities.md). `503 inbox_not_configured` means the
 host did not provide an actor resolver, an HTTP client and a signing key.
+
+## Shared inbox
+
+```http
+POST /inbox/shared
+Signature: keyId="…",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="…"
+
+{"id":"https://remote.example/activities/create-1","type":"Create",
+ "actor":"https://remote.example/users/bob","object":{"id":"…","content":"…"}}
+```
+
+`202 {"status": "accepted"}`. The route applies exactly the same signature,
+actor, policy, replay and ownership checks as `POST /inbox`; it exists so a
+peer can address one endpoint for every local actor. The signature must cover
+`/inbox/shared` as its `(request-target)`. A signed `Follow` delivered here
+still stores the remote actor's advertised shared inbox and answers on its
+individual inbox. See [shared inboxes](../guides/shared-inboxes.md).
 
 ## Actor document
 
