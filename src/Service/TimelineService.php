@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -30,17 +32,18 @@ final class TimelineService
 
 	public function __construct(
 		private readonly PostRepository $posts,
+		private readonly HomeTimelineRepository $homeTimeline,
 	) {
 	}
 
 	/**
-	 * @return list<Post>
+	 * @return list<TimelineEntry>
 	 *
 	 * @throws InvalidCursorException
 	 */
 	public function home(string $userId, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
 	{
-		return $this->posts->homeTimeline($userId, $this->clamp($limit), $this->cursor($before));
+		return $this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before));
 	}
 
 	/**

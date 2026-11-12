@@ -124,12 +124,17 @@ back, a refused `Undo` leaves the edge retryable. See the
 [following collection](following-collection.md).
 
 `FollowingRepository::actorIdsPage()` feeds the public collection; the root
-count comes from `count()`. A follow-based home timeline that reads the same
-graph is still missing.
+count comes from `count()`. `HomeTimelineRepository` also reads `actorIds()` to
+include remote posts and boosts from the actors the reader follows. The
+inbound inbox uses `localUserIdsForActor()` as the reverse check: a remote
+`Create`/`Delete`/`Announce` is accepted only when at least one local account
+follows its actor.
 
 ## What is missing
 
-- a follow-based home timeline that reads the outgoing graph;
+- a per-user block model; inbound blocking is the optional instance-wide
+  `BlockedActorPolicy` seam;
+- local-to-local follow edges and a local-follow home timeline;
 - a policy for approving Follows instead of accepting every valid one.
 
 The follower list is published at `/@{handle}/followers`; see the

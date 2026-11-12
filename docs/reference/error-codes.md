@@ -19,7 +19,9 @@ change. `fields` appears only when an error belongs to specific input.
 | `not_found` | 404 | Missing — or private and therefore indistinguishable from missing |
 | `unknown_actor` | 404 | An inbox request signed with a key id that does not resolve to an actor |
 | `unknown_object` | 404 | An inbox activity does not address an actor on this instance |
-| `actor_mismatch` | 403 | A valid inbox signature whose activity claims another actor |
+| `actor_mismatch` | 403 | A valid inbox signature whose activity claims another actor, a created object belongs to another actor, or a Delete targets another actor's row |
+| `blocked_actor` | 403 | The host's blocked-actor policy refuses the signing actor |
+| `not_followed` | 403 | Inbound `Create`/`Delete`/`Announce` from an actor no local account follows |
 | `signature_required` | 401 | An inbox request without a `Signature` header |
 | `invalid_signature` | 401 | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
 | `signature_expired` | 401 | The signed `Date` is outside the 300-second window |

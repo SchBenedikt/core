@@ -35,6 +35,9 @@ host persists them it seals them with `Security\SecretBox`.
 | `FollowingService::MAX_ACTOR_LENGTH` | 255 | Indexed actor URL length of an outgoing follow |
 | `FollowingService::MAX_INBOX_LENGTH` | 512 | Inbox URL length of an outgoing follow |
 | `InboxService::MAX_SKEW_SECONDS` | 300 | Allowed clock skew of a signed inbox request |
+| `RemotePost::MAX_ID_LENGTH` | 512 | Stored activity/object id length |
+| `RemotePost::MAX_ACTOR_LENGTH` | 255 | Stored remote actor id length |
+| `RemotePost::MAX_WARNING_LENGTH` | 255 | Stored remote content-warning length |
 | `InMemoryActivityLog::RETENTION_SECONDS` / `PdoActivityLog::RETENTION_SECONDS` | 86400 | How long an accepted activity id blocks a replay |
 | `InMemoryJobQueue::MAX_ATTEMPTS` / `PdoJobQueue::MAX_ATTEMPTS` | 5 | Attempts before a dead letter |
 | `InMemoryJobQueue::BASE_BACKOFF_SECONDS` / `PdoJobQueue::BASE_BACKOFF_SECONDS` | 30 | First retry delay |

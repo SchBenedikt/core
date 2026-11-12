@@ -57,4 +57,14 @@ interface FollowingRepository
 	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
 
 	public function count(string $localUserId): int;
+
+	/**
+	 * The local users that follow one remote actor, in stable order.
+	 *
+	 * Inbound content is accepted only for an actor that at least one local
+	 * account follows; this is the authorization lookup for that decision.
+	 *
+	 * @return list<string>
+	 */
+	public function localUserIdsForActor(string $actorId): array;
 }

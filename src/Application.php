@@ -30,6 +30,7 @@ use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
+use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
@@ -37,13 +38,20 @@ use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
 use AlohaSocial\Core\Http\Middleware\RequireAuthentication;
@@ -119,6 +127,8 @@ final readonly class Application
 		?FollowingRepository $followingRepository = null,
 		?LoggerInterface $logger = null,
 		bool $debug = false,
+		?RemotePostRepository $remotePostRepository = null,
+		?BlockedActorPolicy $blockedActors = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -134,6 +144,12 @@ final readonly class Application
 		$posts = new InMemoryPostRepository();
 		$followers = new InMemoryFollowerRepository();
 		$followingRepository ??= new InMemoryFollowingRepository();
+		$remotePostRepository ??= new InMemoryRemotePostRepository();
+		$homeTimeline = new InMemoryHomeTimelineRepository(
+			$posts,
+			$remotePostRepository,
+			$followingRepository,
+		);
 
 		if ($inboxResolver === null) {
 			$inboxResolver = ($httpClient !== null && $signingKey !== null)
@@ -149,6 +165,9 @@ final readonly class Application
 			posts: $posts,
 			followers: $followers,
 			followingRepository: $followingRepository,
+			remotePosts: $remotePostRepository,
+			homeTimeline: $homeTimeline,
+			blockedActors: $blockedActors,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -187,6 +206,7 @@ final readonly class Application
 		?Clock $clock = null,
 		?LoggerInterface $logger = null,
 		bool $debug = false,
+		?BlockedActorPolicy $blockedActors = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -194,6 +214,7 @@ final readonly class Application
 
 		$followers = new PdoFollowerRepository($database);
 		$inboxResolver ??= new FollowerInboxResolver($followers);
+		$remotePosts = new PdoRemotePostRepository($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -201,6 +222,9 @@ final readonly class Application
 			posts: new PdoPostRepository($database),
 			followers: $followers,
 			followingRepository: new PdoFollowingRepository($database),
+			remotePosts: $remotePosts,
+			homeTimeline: new PdoHomeTimelineRepository($database),
+			blockedActors: $blockedActors,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -215,8 +239,9 @@ final readonly class Application
 	}
 
 	/**
-	 * @param PostRepository      $posts
-	 * @param FollowerRepository  $followers
+	 * @param PostRepository       $posts
+	 * @param FollowerRepository   $followers
+	 * @param RemotePostRepository $remotePosts
 	 */
 	private static function assemble(
 		Clock $clock,
@@ -224,6 +249,9 @@ final readonly class Application
 		PostRepository $posts,
 		FollowerRepository $followers,
 		FollowingRepository $followingRepository,
+		RemotePostRepository $remotePosts,
+		HomeTimelineRepository $homeTimeline,
+		?BlockedActorPolicy $blockedActors,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
@@ -254,7 +282,7 @@ final readonly class Application
 			$clock,
 			$ids,
 		);
-		$timelines = new TimelineService($posts);
+		$timelines = new TimelineService($posts, $homeTimeline);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
@@ -267,12 +295,23 @@ final readonly class Application
 			$federationDelivery,
 		);
 		$instance = new InstanceInfo($config);
+		$blockedActors ??= new NoBlockedActors();
 
 		// Inbound federation needs a way to resolve a key id, a client to
 		// reach the peer and a key to sign the Accept. Missing any of them
 		// leaves the endpoint honestly at 503 rather than half-working.
 		$inboxService = ($actorResolver !== null && $httpClient !== null && $signingKey !== null)
-			? new InboxService($actorResolver, $followerService, $activityLog, $activities, $queue, $clock)
+			? new InboxService(
+				$actorResolver,
+				$followerService,
+				$followingService,
+				$remotePosts,
+				$activityLog,
+				$activities,
+				$queue,
+				$clock,
+				$blockedActors,
+			)
 			: null;
 
 		// An actor document needs a key to publish and a directory to answer

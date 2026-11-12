@@ -27,6 +27,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PostSchema.php` → `social_post`
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
+- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post`
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 
@@ -44,6 +45,14 @@ is the replay guard used by `PdoActivityLog`. The queue reserves a row with a
 conditional update in a transaction, and the activity log's primary key is the
 claim. Both rely on the database, not on a process-local cache, so a restart or
 a second worker does not lose a delivery or accept a replayed activity.
+
+`social_remote_post` stores signed `Create` and `Announce` content from
+followed remote actors. Its primary key is the activity id, which makes a
+duplicate delivery impossible even after the 24-hour activity-log window. It
+keeps the object id, object author, signing actor, kind (`post`/`boost`),
+content, optional content warning, published time and `deleted_at`. The home
+timeline joins the table to `social_following`; remote rows are shared by all
+local followers and the join, rather than a per-user copy, scopes visibility.
 
 ## Transactions and uniqueness
 
@@ -84,7 +93,9 @@ caller catches it. Partial commits are never what a caller meant.
 
 - Index key length: MySQL with utf8mb4 allows 3072 bytes; `(local_user_id,
   actor_id)` at 255 + 255 characters fits, `(visibility, published_at)` and
-  `(author_id, published_at)` are smaller still.
+  `(author_id, published_at)` are smaller still. The remote-post primary key
+  is 512 characters (2048 bytes at utf8mb4) and its object index is
+  512 + 16 characters, both below the limit.
 - `LIMIT` is inlined as an integer, never bound: some drivers refuse a bound
   `LIMIT`, and the value is a clamped integer from the service.
 - `INSERT`/`UPDATE` avoid `RETURNING` and upsert syntax; both differ across the

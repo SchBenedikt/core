@@ -119,6 +119,20 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		self::assertFalse($repository->remove('alice', 'https://remote.example/users/bob'));
 	}
 
+	public function testLocalUserIdsForActorAreDeduplicatedAndStable(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed('f1', 'carol', 'https://remote.example/users/bob'));
+		$repository->insert($this->followed('f2', 'alice', 'https://remote.example/users/bob'));
+		$repository->insert($this->followed('f3', 'alice', 'https://other.example/users/eve'));
+
+		self::assertSame(
+			['alice', 'carol'],
+			$repository->localUserIdsForActor('https://remote.example/users/bob'),
+		);
+		self::assertSame([], $repository->localUserIdsForActor('https://remote.example/users/nobody'));
+	}
+
 	public function testCountIsScopedToTheLocalUser(): void
 	{
 		$repository = $this->repository();

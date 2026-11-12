@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Api;
 
-use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
@@ -45,7 +45,7 @@ final class HomeTimelineHandler implements Handler
 		}
 
 		return Response::json([
-			'posts' => array_map(static fn (Post $post): array => $post->toArray(), $posts),
+			'posts' => array_map(static fn (TimelineEntry $entry): array => $entry->toArray(), $posts),
 		]);
 	}
 }

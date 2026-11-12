@@ -1,0 +1,80 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Tests\Domain;
+
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
+use AlohaSocial\Core\Support\Time;
+
+final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
+{
+	private InMemoryPostRepository $posts;
+
+	private InMemoryRemotePostRepository $remotePosts;
+
+	private InMemoryFollowingRepository $following;
+
+	private HomeTimelineRepository $repository;
+
+	private int $followCounter = 0;
+
+	protected function setUp(): void
+	{
+		$this->posts = new InMemoryPostRepository();
+		$this->remotePosts = new InMemoryRemotePostRepository();
+		$this->following = new InMemoryFollowingRepository();
+		$this->repository = new InMemoryHomeTimelineRepository(
+			$this->posts,
+			$this->remotePosts,
+			$this->following,
+		);
+	}
+
+	protected function repository(): HomeTimelineRepository
+	{
+		return $this->repository;
+	}
+
+	protected function addPost(Post $post): void
+	{
+		$this->posts->insert($post);
+	}
+
+	protected function addRemote(RemotePost $remote): void
+	{
+		$this->remotePosts->insert($remote);
+	}
+
+	protected function follow(string $localUserId, string $actorId): void
+	{
+		$this->following->insert(new FollowedActor(
+			'f' . ++$this->followCounter,
+			$localUserId,
+			$actorId,
+			$actorId . '/inbox',
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+	}
+
+	protected function deleteRemote(string $activityId, string $actorId): void
+	{
+		$this->remotePosts->softDeleteByActivityId(
+			$activityId,
+			$actorId,
+			Time::parse('2026-11-11T11:00:00Z'),
+		);
+	}
+}

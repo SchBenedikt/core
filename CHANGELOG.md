@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Inbound content: signed `Create`, `Delete` and `Announce` are now processed
+  for actors followed by at least one local account. A new
+  `RemotePostRepository` (in-memory and PDO, one contract test) stores the
+  activity id as the deduplication key, object/actor references, kind,
+  content, content warning, published time and soft-delete marker in
+  `social_remote_post`. `Delete` removes exactly the matching activity or
+  post, and `Announce` is stored and returned as a boost rather than a second
+  standalone post.
+- Follow-based home timeline: `HomeTimelineRepository` combines the reader's
+  own local posts with remote posts/boosts from the outgoing follow graph in
+  one ordered page. The SQL adapter performs the union before applying the
+  cursor and limit, so pagination stays coherent.
+- Inbound content authorization: an actor must be followed by at least one
+  local account (`not_followed`), and an optional `BlockedActorPolicy` lets a
+  host refuse an actor (`blocked_actor`) without changing the remote-post
+  store. Object attribution and Delete ownership are checked against the
+  signing actor.
 - Attribution guard: `tools/check-attribution.php` scans every commit reachable
   from any ref, including author/committer identities and full message bodies,
   for AI/tool attribution markers. It fails on a match, refuses shallow clones,
@@ -91,6 +108,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The home timeline no longer includes every public local post. It now means
+  the reader's own posts (all visibilities) plus remote posts and boosts from
+  actors the reader follows; local public posts from accounts outside that
+  graph are absent. `GET /api/v1/timelines/home` entries gain `object_id`,
+  `object_author_id`, `kind` and `boosted_by`.
 - The reference assembly federates to the stored follow graph when an HTTP
   client and a signing key are provided; without them it reports no audience,
   so no delivery is queued that could not be signed.

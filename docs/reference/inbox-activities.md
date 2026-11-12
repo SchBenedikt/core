@@ -31,30 +31,45 @@ signed `Digest` is refused.
 | --- | --- | --- |
 | `Follow` | `id`, `actor`, `object` = local actor URL | Creates the follower edge; queues `Accept` |
 | `Undo` | `id`, `actor`, `object` = embedded `Follow` | Removes the follower edge |
+| `Create` | `id`, `actor`, embedded `object` with `id` and `content` | Stores a remote post |
+| `Delete` | `id`, `actor`, `object` = URI or embedded object with an `id` | Soft-deletes the matching remote post/activity |
+| `Announce` | `id`, `actor`, `object` = URI or embedded object with an `id` | Stores a remote boost |
 
 For `Undo`, the embedded Follow must satisfy the same rules as a Follow and
 its `actor` must equal the signing actor.
+
+For `Create`, `Delete` and `Announce`, at least one local account must follow
+the signing actor. The object's `attributedTo` (when present) must also be the
+signing actor for a `Create`; an embedded Announce author is recorded when
+present. `Delete` only accepts a target owned by the signing actor. A remote
+object is never fetched from the network.
+
+`Create` and `Announce` timestamps must be RFC 3339. A missing timestamp uses
+the activity timestamp and then the server clock. An invalid timestamp is
+`invalid_activity`.
 
 ## Refusals
 
 | Status | Code | When |
 | --- | --- | --- |
 | 400 | `invalid_json` | Body is not valid JSON or not an object |
-| 400 | `invalid_activity` | `id`, `type` or `actor` missing; `object` missing or of the wrong shape |
-| 400 | `unsupported_activity` | Type other than Follow/Undo(Follow), or an Undo without an embedded Follow |
+| 400 | `invalid_activity` | `id`, `type` or `actor` missing; the object, content, timestamp or content warning has the wrong shape |
+| 400 | `unsupported_activity` | A type other than Follow/Undo(Follow)/Create/Delete/Announce |
 | 400 | `replayed_activity` | This activity id was already accepted |
 | 401 | `signature_required` | No `Signature` header |
 | 401 | `invalid_signature` | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
 | 401 | `signature_expired` | `Date` outside the 300-second window |
-| 403 | `actor_mismatch` | Valid signature, but the activity claims another actor (or an Undo of another actor's Follow) |
+| 403 | `actor_mismatch` | Valid signature, but the activity claims another actor, a created object belongs to another actor, or a Delete targets another actor's row |
+| 403 | `blocked_actor` | The host's blocked-actor policy refuses this actor |
+| 403 | `not_followed` | `Create`/`Delete`/`Announce` from an actor no local account follows |
 | 404 | `unknown_actor` | The `keyid` does not resolve to a usable actor |
-| 404 | `unknown_object` | The Follow does not address an actor on this instance |
+| 404 | `unknown_object` | A Follow does not address an actor on this instance |
 | 503 | `inbox_not_configured` | No actor resolver, HTTP client or signing key configured |
 | 503 | `instance_not_configured` | `social/instance.url` is missing while answering |
 
 `403` is used only when the signature is valid and the request is a clear
-protocol violation by an authenticated actor. Unknown keys are `404`, not
-`403`, so probing cannot distinguish "no such actor" from "cannot fetch".
+protocol or policy violation by an authenticated actor. Unknown keys are `404`,
+not `403`, so probing cannot distinguish "no such actor" from "cannot fetch".
 
 ## Success
 
@@ -65,8 +80,32 @@ Content-Type: application/json
 {"status": "accepted"}
 ```
 
-`202` means the activity was applied, not merely queued: the follower edge is
-already in the repository. The `Accept` delivery is asynchronous.
+`202` means the activity was applied, not merely queued: a Follow's edge or a
+Create/Announce's remote-post row is already in the repository. A `Delete` for
+an unknown object is also accepted, because the peer's intended state is
+already true. `Accept` and other outbound delivery remain asynchronous.
+
+## Example: Create
+
+```json
+{"@context": "https://www.w3.org/ns/activitystreams",
+ "id": "https://remote.example/activities/create-1",
+ "type": "Create",
+ "actor": "https://remote.example/users/bob",
+ "published": "2026-11-11T10:01:00Z",
+ "object": {
+   "id": "https://remote.example/notes/1",
+   "type": "Note",
+   "attributedTo": "https://remote.example/users/bob",
+   "content": "hello from the peer",
+   "summary": "optional content warning",
+   "published": "2026-11-11T10:01:00Z"
+ }}
+```
+
+The activity id is the deduplication key. The object id is stored separately
+so a later `Delete` of the Note can find exactly that row; an `Announce` with
+its own activity id is stored as a boost of the same object.
 
 ## Answering a Follow
 

@@ -103,7 +103,11 @@ GET /api/v1/timelines/home
 ```
 
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. A cursor
-that is not a canonical timestamp is `400 invalid_cursor`.
+that is not a canonical timestamp is `400 invalid_cursor`. The public timeline
+contains local posts; the home timeline contains the caller's own local posts
+plus remote posts and boosts from followed actors, with `kind`, `object_id`,
+`object_author_id` and `boosted_by` on each entry. See
+[posts and timelines](../guides/posts-and-timelines.md).
 
 ## Followers
 

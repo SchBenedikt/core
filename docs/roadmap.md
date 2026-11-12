@@ -17,7 +17,17 @@ Status of the core, not a promise about dates.
   endpoints, isolated per account.
 - Inbound federation: `POST /inbox` with signature verification, actor-key
   resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay
-  guard.
+  guard, and signed `Create`/`Delete`/`Announce` from followed remote actors.
+- Remote posts and boosts: `RemotePost`/`RemotePostKind`, a canonical
+  `RemotePostSchema` (`social_remote_post`), in-memory and PDO repositories,
+  activity-id deduplication and soft deletion. Announce rows are boosts, not
+  standalone posts.
+- Follow-based home timeline: `HomeTimelineRepository` combines the reader's
+  own local posts with remote posts/boosts from the outgoing follow graph and
+  applies one cursor and limit after sorting.
+- Inbound content authorization: an actor must be followed by at least one
+  local account, an optional host `BlockedActorPolicy` can refuse an actor,
+  and an object/Delete ownership mismatch is refused without changing state.
 - Discovery: the ActivityStreams actor document with its published key, and
   the followers `OrderedCollection` read from the follower repository.
 - Outbox: the public `OrderedCollection` of an account's public posts as
@@ -47,8 +57,6 @@ Status of the core, not a promise about dates.
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
-| Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
-| A follow-based home timeline | `FollowingService` + `TimelineService` |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Migration runner for the standalone | host concern, schemas already exist |
 
@@ -58,7 +66,11 @@ Status of the core, not a promise about dates.
   the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
 - Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
+- Remote-post backfill, thread/context fetching and media fetching (the
+  current implementation only stores embedded objects delivered to the inbox).
 - Shared inboxes and delivery batching.
+- Per-user block management; the current core only exposes an optional
+  instance-wide `BlockedActorPolicy` seam.
 - OpenAPI generation from the route manifest.
 
 ## Explicitly not planned

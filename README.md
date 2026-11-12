@@ -22,11 +22,11 @@ Implemented and tested here:
 | Area | What |
 | --- | --- |
 | Platform ports | config, clock, blob storage (local and in-memory), database (PDO), outbound HTTP (curl) |
-| Domain | posts, visibility, post repositories (in-memory and SQL, same contract test) |
+| Domain | posts, visibility, remote posts/boosts, post and remote-post repositories (in-memory and SQL, same contract tests), combined home-timeline repository |
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
-| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay guard |
+| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard and remote-post persistence |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
-| Services | write/read/delete a post, timelines, followers, following, instance description |
+| Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
@@ -34,10 +34,10 @@ Implemented and tested here:
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
-Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
-timeline, media processing, the AT Protocol stack, the Mastodon-compatible
-API, an admin UI, a migration runner, the Vue UI package and the
-Nextcloud/standalone host applications. The
+Deliberately not here yet: remote-post backfill/thread fetching, per-user
+block management, media processing, the AT Protocol stack, the
+Mastodon-compatible API, an admin UI, a migration runner, the Vue UI package
+and the Nextcloud/standalone host applications. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists them
 with the seam they will attach to.
 
@@ -51,7 +51,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, 458 tests
+composer check          # lint, boundary, attribution, links, 497 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (18 routes)
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
@@ -68,7 +68,7 @@ network.
 ```
 src/
   Platform/        ports the hosts implement — no host code ever enters here
-  Domain/          posts, followers, visibility, repositories, inbox resolution, activity log
+  Domain/          posts, remote posts, followers, timelines, repositories, inbox resolution, activity log
   Service/         application behaviour and its validation
   Protocol/        ActivityPub documents, RSA keys, HTTP signatures
   Jobs/            durable queue contract, PDO and in-memory queues, worker
@@ -98,6 +98,7 @@ docs/              index, architecture, guides, reference, operations, ADRs
    ([`PostSchema`](src/Domain/Post/PostSchema.php),
    [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php),
    [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php),
+   [`RemotePostSchema`](src/Domain/Federation/RemotePostSchema.php),
    [`JobSchema`](src/Jobs/JobSchema.php),
    [`ActivityLogSchema`](src/Domain/Federation/ActivityLogSchema.php)), so
    both databases have the same columns and a dump can move between them.
@@ -118,7 +119,11 @@ delivery to a real follower. The PDO queue and activity log are also tested
 against a SQLite file with a fresh connection, proving that a pending job, a
 retry and a replay decision survive a restart. The outgoing follow path is
 tested end to end: Follow/Undo requests, signature verification, rollback and
-retry.
+retry. The inbound content path is tested through a signed `POST /inbox`, the
+remote-post repository and the authenticated home timeline, including a
+duplicate create, a targeted delete, a boost, an unfollowed actor and a
+blocked actor. `ApplicationHostTest` repeats the Create-to-home path against
+SQL repositories.
 
 ## Documentation
 

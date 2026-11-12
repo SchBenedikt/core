@@ -1,0 +1,127 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Domain\Federation;
+
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+use DateTimeImmutable;
+
+/**
+ * Remote-post storage in memory, for tests and the reference assembly.
+ *
+ * It mirrors the SQL adapter's ordering, unique activity id and soft-delete
+ * rules; the shared contract test is what keeps the two interchangeable.
+ */
+final class InMemoryRemotePostRepository implements RemotePostRepository
+{
+	/**
+	 * @var array<string, RemotePost>
+	 */
+	private array $posts = [];
+
+	public function insert(RemotePost $post): void
+	{
+		if (isset($this->posts[$post->activityId])) {
+			throw new DatabaseException('The remote activity id already exists.');
+		}
+
+		$this->posts[$post->activityId] = $post;
+	}
+
+	public function findByActivityId(string $activityId): ?RemotePost
+	{
+		return $this->posts[$activityId] ?? null;
+	}
+
+	public function findPostByObjectId(string $objectId): ?RemotePost
+	{
+		foreach ($this->posts as $post) {
+			if ($post->kind === RemotePostKind::Post
+				&& $post->objectId === $objectId
+				&& $post->deletedAt === null
+			) {
+				return $post;
+			}
+		}
+
+		return null;
+	}
+
+	public function softDeleteByActivityId(
+		string $activityId,
+		string $actorId,
+		DateTimeImmutable $deletedAt,
+	): bool {
+		$post = $this->posts[$activityId] ?? null;
+		if ($post === null || $post->actorId !== $actorId || $post->deletedAt !== null) {
+			return false;
+		}
+
+		$this->posts[$activityId] = $this->deleted($post, $deletedAt);
+
+		return true;
+	}
+
+	public function softDeletePostByObjectId(
+		string $objectId,
+		string $actorId,
+		DateTimeImmutable $deletedAt,
+	): bool {
+		foreach ($this->posts as $activityId => $post) {
+			if ($post->kind === RemotePostKind::Post
+				&& $post->objectId === $objectId
+				&& $post->actorId === $actorId
+				&& $post->deletedAt === null
+			) {
+				$this->posts[$activityId] = $this->deleted($post, $deletedAt);
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	public function timelineForActors(
+		array $actorIds,
+		int $limit,
+		?DateTimeImmutable $before = null,
+	): array {
+		$wanted = array_fill_keys($actorIds, true);
+		$posts = array_values(array_filter(
+			$this->posts,
+			static fn (RemotePost $post): bool => $post->deletedAt === null
+				&& isset($wanted[$post->actorId])
+				&& ($before === null || $post->publishedAt < $before),
+		));
+
+		usort($posts, static function (RemotePost $a, RemotePost $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->activityId, $a->activityId);
+		});
+
+		return array_slice($posts, 0, max(1, $limit));
+	}
+
+	private function deleted(RemotePost $post, DateTimeImmutable $deletedAt): RemotePost
+	{
+		return new RemotePost(
+			$post->activityId,
+			$post->objectId,
+			$post->actorId,
+			$post->kind,
+			$post->content,
+			$post->contentWarning,
+			$post->publishedAt,
+			$post->objectAuthorId,
+			$deletedAt,
+		);
+	}
+}

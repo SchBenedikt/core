@@ -65,7 +65,11 @@ pass. That is the mechanism that keeps `InMemoryPostRepository` and
 The application-level `Jobs\JobQueue` and `ActivityLog` ports have their own
 shared cases in `tests/Jobs/JobQueueTestCase.php` and
 `tests/Domain/ActivityLogTestCase.php`; `PdoJobQueue` and `PdoActivityLog` run
-those cases against SQLite as well.
+those cases against SQLite as well. The remote-post and combined home-timeline
+repositories have their own contracts in
+`tests/Domain/RemotePostRepositoryTestCase.php` and
+`tests/Domain/HomeTimelineRepositoryTestCase.php`, each run against the
+in-memory and PDO adapters.
 
 ```php
 final class S3BlobStoreTest extends BlobStoreTestCase

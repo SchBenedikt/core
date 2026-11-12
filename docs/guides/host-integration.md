@@ -15,7 +15,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Posts, timelines, follows, actors, WebFinger, outbox and inbox behaviour | Login, sessions, user directory and authorization |
 | The route manifest and one handler per route | Mapping its HTTP framework to `Core\Http\Request`/`Response` |
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
-| ActivityPub documents, signatures, replay guard and delivery | Key storage, TLS, proxy configuration and DNS |
+| ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
@@ -84,6 +84,7 @@ $app = Application::forHost(
     queue: $queue,               // Core\Jobs\JobQueue, durable
     activityLog: $activityLog,   // Core\Domain\Federation\ActivityLog, durable
     actorResolver: $resolver,    // optional; without it POST /inbox is 503
+    blockedActors: $policy,      // optional; instance-wide block policy
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
 );
@@ -97,7 +98,7 @@ The object exposes the parts a host needs:
 | `$app->routes` | The manifest to serve and to test against |
 | `$app->worker` | `runOnce()` from cron or a worker loop |
 | `$app->queue` | The same queue the services write to |
-| `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands |
+| `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
 | `$app->inbox` | `null` when inbound federation is not configured |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
@@ -122,6 +123,7 @@ production bootstrap.
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver` |
+| `BlockedActorPolicy` | Optional instance-wide decision whether inbound content from an actor is refused | `NoBlockedActors` by default; host policy otherwise |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
 
@@ -146,6 +148,7 @@ The core owns the schema classes, not the migration mechanism:
 - `PostSchema` → `social_post`
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
+- `RemotePostSchema` → `social_remote_post` (remote posts and boosts)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
 
@@ -333,6 +336,8 @@ done when it passes the existing case, not when its own smoke test passes:
 - `tests/Domain/PostRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
+- `tests/Domain/RemotePostRepositoryTestCase.php`
+- `tests/Domain/HomeTimelineRepositoryTestCase.php`
 - `tests/Jobs/JobQueueTestCase.php`
 - `tests/Domain/ActivityLogTestCase.php`
 
@@ -365,8 +370,8 @@ host's own tests as well.
 
 The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It does not contain media processing, an admin UI, the Mastodon-compatible
-API, inbound `Create`/`Delete`, or a follow-based home timeline. A host that
-needs those features either keeps its existing implementation for them or
+API, remote-post backfill/thread fetching, or per-user block management. A host
+that needs those features either keeps its existing implementation for them or
 waits for the corresponding core milestone.
 
 The integration is therefore incremental: move one slice (for example posts
@@ -376,7 +381,8 @@ owners for the same handle.
 ## Adoption order
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
-2. Create the five tables through the host's migration system.
+2. Create the six tables through the host's migration system (including
+   `social_remote_post`).
 3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
    `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).

@@ -147,11 +147,13 @@ The migration order is:
 1. posts and timelines (import, read-only parity, then writes);
 2. actor document, WebFinger, followers and following collections;
 3. outbound `Follow`/`Undo` and the old queue drain;
-4. `POST /inbox` with the durable activity log;
+4. `POST /inbox` with the durable activity log; once `social_remote_post`
+   exists, inbound `Create`/`Delete`/`Announce` and the follow-based home
+   timeline can follow;
 5. the UI slice using `@alohasocial/ui`;
-6. AT Protocol, media processing and inbound `Create`/`Delete` only after the
-   core implements those features; the old implementation remains in place
-   until then.
+6. AT Protocol, media processing and remote-post backfill/thread fetching only
+   after the core implements those features; the old implementation remains
+   in place until then.
 
 ## Consequences
 

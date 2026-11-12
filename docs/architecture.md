@@ -36,9 +36,10 @@ about the host, and everything a host must provide is an interface in
 | `Jobs` | queue contract, worker loop, retry rules | know what a job means |
 | `Platform` | ports a host implements | import a host |
 
-`Domain\Federation` holds the follow graph and the `InboxResolver` seam. It is
-a domain port, not a platform port: the question "where does this audience
-live?" belongs to the application, only the inbox URLs are data.
+`Domain\Federation` holds the follow graph, the remote-post store and the
+`InboxResolver` seam. `Domain\Timeline` owns the combined home-timeline read
+model. These are domain ports, not platform ports: the question "where does
+this audience live?" belongs to the application, only the inbox URLs are data.
 
 ## Request lifecycle
 
@@ -95,7 +96,7 @@ POST /api/v1/posts
   └─ CreatePostHandler        parse and validate the shape
       └─ PostService::create  trim, length, content warning, visibility
           ├─ PostRepository::insert        one row, second-precision UTC
-          ├─ InboxResolver::inboxesFor     empty until the follow graph exists
+          ├─ InboxResolver::inboxesFor     the author's stored followers
           └─ JobQueue::push (per inbox)    {"inbox", "activity", "key_id"}
                                               │
 JobWorker::runOnce ──────────────────────────┘
@@ -120,10 +121,14 @@ retry is idempotent for the receiving server.
 ```
 POST /inbox
   └─ InboxHandler          JSON, then delegate
-      └─ InboxService      signature → actor → replay → apply
+      └─ InboxService      signature → actor → policy → replay → apply
           ├─ ActorResolver::resolveByKeyId   (HTTP or fixture)
           ├─ HttpSignature::verify           raw body, signed headers
+          ├─ BlockedActorPolicy::isBlocked   optional host policy
           ├─ ActivityLog::claim              replay guard
+          ├─ FollowingService::localUserIds  content authorization
+          ├─ RemotePostRepository::insert    Create/Announce
+          ├─ RemotePostRepository::softDelete Delete
           ├─ FollowerService::follow         Follow → edge
           └─ JobQueue::push                  Accept → follower inbox
 ```
@@ -132,6 +137,30 @@ Every refusal is an `InboxRejectedException` with a stable reason; the handler
 is the only place that maps a reason to an HTTP status. The inbox is enabled
 only when an actor resolver, an HTTP client and a signing key are all present —
 otherwise it answers 503 instead of pretending.
+
+## Home timeline
+
+```
+GET /api/v1/timelines/home
+  └─ HomeTimelineHandler
+      └─ TimelineService::home
+          └─ HomeTimelineRepository::forUser
+              ├─ PostRepository::ownTimeline        reader's own posts
+              └─ RemotePostRepository::timelineForActors
+                    └─ FollowingRepository::actorIds reader's outgoing graph
+```
+
+`PdoHomeTimelineRepository` performs the same combination in one SQL union:
+the local branch is scoped to the reader, the remote branch joins
+`social_following` on `actor_id`, and only then are the rows sorted and
+limited. Filtering each half separately and merging in PHP would make the
+cursor ambiguous at a page boundary. A boost is a remote row with
+`kind = 'boost'`; it is returned with `boosted_by` set, never duplicated as a
+standalone post.
+
+Remote rows are shared by all local followers; the join, not a per-user copy,
+is what scopes visibility. Deleting a remote post sets `deleted_at`, so the
+next home query excludes it while the activity id stays claimed.
 
 ## Following an actor
 
@@ -200,11 +229,15 @@ maximum is 40, and generated links carry a non-default limit.
   object id are derived from it.
 - **Soft deletion.** Deleting sets `deleted_at`; every read filters it. The row
   survives so a `Delete` can still be delivered and a later import can see it.
+  Remote posts use the same rule.
+- **Remote idempotence.** `social_remote_post.activity_id` is the primary key,
+  so one signed activity can create at most one row. `object_id` is not unique:
+  two actors may boost the same object.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  table once; `JobSchema` and `ActivityLogSchema` do the same for the durable
-  queue and replay log. The standalone runs those statements; the Nextcloud
-  host creates the same columns through its schema API. A dump can therefore
-  move between the two.
+  table once; `RemotePostSchema`, `JobSchema` and `ActivityLogSchema` do the
+  same for remote content, the durable queue and the replay log. The
+  standalone runs those statements; the Nextcloud host creates the same
+  columns through its schema API. A dump can therefore move between the two.
 
 ## Ports
 
@@ -226,8 +259,8 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
-| a follow-based home timeline | `FollowingService` + `TimelineService` |
+| remote-post backfill, thread/context fetching and media fetching | `HttpClient` + the remote-post repository; inbound delivery only stores embedded objects |
+| per-user block management | a future `BlockedActorRepository`; the current `BlockedActorPolicy` is instance-wide |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
@@ -243,6 +276,7 @@ genuinely owns the capability.
 - **Contract tests** — one abstract case run against every implementation of a
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
   `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
+  `RemotePostRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
@@ -251,6 +285,8 @@ genuinely owns the capability.
   unsigned digest and a foreign key.
 - **End to end** — `Application::inMemory()` is a real object graph; the test
   writes a post over HTTP, drains the queue, and verifies the signature on the
-  request that left. `ApplicationHostTest` repeats the important paths through
-  `forHost()` with SQL repositories, `PdoJobQueue`, `PdoActivityLog` and a fake
-  inbox.
+  request that left. `InboundTimelineTest` delivers a signed Create, Announce
+  and Delete through the real inbox and reads the result through the
+  authenticated home timeline. `ApplicationHostTest` repeats the
+  Create-to-home path through `forHost()` with SQL repositories,
+  `PdoJobQueue` and `PdoActivityLog`.

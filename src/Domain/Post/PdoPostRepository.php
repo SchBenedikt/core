@@ -131,16 +131,11 @@ final class PdoPostRepository implements PostRepository
 		return (int) $value;
 	}
 
-	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
+	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL'
-			. ' AND (author_id = :author OR visibility IN (:public, :unlisted))';
-		$parameters = [
-			'author' => $userId,
-			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
-		];
+			. ' WHERE deleted_at IS NULL AND author_id = :author';
+		$parameters = ['author' => $userId];
 
 		if ($before !== null) {
 			$sql .= ' AND published_at < :before';

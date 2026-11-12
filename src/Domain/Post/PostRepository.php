@@ -64,13 +64,12 @@ interface PostRepository
 	public function authorPostCount(string $userId): int;
 
 	/**
-	 * The signed-in user's home timeline.
+	 * Every live post of one local user, including non-public ones.
 	 *
-	 * For now: the user's own posts plus everything publicly visible. When
-	 * the follow graph lands, this becomes "followed authors plus own posts"
-	 * without changing the interface.
+	 * The combined home timeline uses this for the reader's own posts; the
+	 * remote half comes from {@see \AlohaSocial\Core\Domain\Federation\RemotePostRepository}.
 	 *
 	 * @return list<Post>
 	 */
-	public function homeTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array;
+	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array;
 }

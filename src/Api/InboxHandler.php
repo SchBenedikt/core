@@ -29,7 +29,7 @@ final class InboxHandler implements Handler
 	/**
 	 * Reason to status. 404 for unknown actors and objects keeps the two
 	 * indistinguishable from "not found"; 403 is reserved for a valid
-	 * signature whose activity lies about its actor.
+	 * signature whose activity violates actor ownership or a host policy.
 	 */
 	private const STATUS = [
 		'signature_required' => 401,
@@ -38,6 +38,8 @@ final class InboxHandler implements Handler
 		'unknown_actor' => 404,
 		'unknown_object' => 404,
 		'actor_mismatch' => 403,
+		'blocked_actor' => 403,
+		'not_followed' => 403,
 		'invalid_activity' => 400,
 		'unsupported_activity' => 400,
 		'replayed_activity' => 400,

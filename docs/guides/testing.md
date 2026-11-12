@@ -14,7 +14,7 @@ that prints or skips is a failure.
 | Directory | What lives there |
 | --- | --- |
 | `tests/Platform` | clock, config, PDO connection, blob stores |
-| `tests/Domain` | post, follower and followed-actor entities, repository contracts and the activity-log contract |
+| `tests/Domain` | post, follower, followed-actor and remote-post entities, local/remote/timeline repository contracts and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
@@ -22,7 +22,8 @@ that prints or skips is a failure.
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly |
-| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories and a fake inbox |
+| `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed and blocked actors |
+| `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create and the SQL home timeline |
 
 ## Contract tests
 
@@ -34,6 +35,10 @@ final class InMemoryPostRepositoryTest extends PostRepositoryTestCase { … }
 final class PdoPostRepositoryTest extends PostRepositoryTestCase { … }
 final class PdoJobQueueTest extends JobQueueTestCase { … }
 final class PdoActivityLogTest extends ActivityLogTestCase { … }
+final class InMemoryRemotePostRepositoryTest extends RemotePostRepositoryTestCase { … }
+final class PdoRemotePostRepositoryTest extends RemotePostRepositoryTestCase { … }
+final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
+final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase { … }
 ```
 
 If a behaviour is not in the case, the two implementations may drift. Add the
@@ -57,7 +62,8 @@ need a fake; everything else has an in-memory implementation.
 ## What to test
 
 - Every new branch and every refusal: validation, 401/403/404, expired
-  signature, changed body, replayed activity, actor mismatch.
+  signature, changed body, replayed activity, actor mismatch, blocked actor
+  and inbound content from an unfollowed actor.
 - Every new port implementation against the existing contract case.
 - A new endpoint end to end: request in, response out, side effect visible.
 

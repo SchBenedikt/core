@@ -95,4 +95,19 @@ final class InMemoryFollowingRepository implements FollowingRepository
 
 		return $count;
 	}
+
+	public function localUserIdsForActor(string $actorId): array
+	{
+		$users = [];
+		foreach ($this->following as $followed) {
+			if ($followed->actorId === $actorId) {
+				$users[$followed->localUserId] = true;
+			}
+		}
+
+		$result = array_keys($users);
+		sort($result, SORT_STRING);
+
+		return $result;
+	}
 }

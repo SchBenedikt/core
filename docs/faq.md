@@ -38,8 +38,8 @@ author still sees it because the visibility check includes the viewer.
 
 The mechanism differs per host: Nextcloud has its own schema API, the standalone
 server will use Doctrine Migrations. The core shares the *schema*
-(`PostSchema`, `FollowerSchema`, `JobSchema`, `ActivityLogSchema`), not the
-runner.
+(`PostSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
+`JobSchema`, `ActivityLogSchema`), not the runner.
 
 ### Why is the activity built when the post is written, not when it is sent?
 

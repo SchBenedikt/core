@@ -377,10 +377,11 @@ limiter in the controller.
 
 Create the app's tables through Nextcloud migrations, with the same columns
 and indexes as the core's schema classes. The SQL strings in `PostSchema`,
-`FollowerSchema`, `FollowingSchema`, `JobSchema` and `ActivityLogSchema` are
-the canonical definition; translate them into the app's schema API rather than
-copying a second column list. The two tables in section 4 are the queue and
-replay-log tables; do not hand-write a different shape.
+`FollowerSchema`, `FollowingSchema`, `RemotePostSchema`, `JobSchema` and
+`ActivityLogSchema` are the canonical definition; translate them into the
+app's schema API rather than copying a second column list. The two tables in
+section 4 are the queue and replay-log tables; do not hand-write a different
+shape.
 
 If the app already has a `social_following` table from the earlier core
 version, add:
@@ -390,6 +391,8 @@ inbox_url VARCHAR(512) NOT NULL
 ```
 
 before enabling `POST /api/v1/following`; the repository writes that column.
+Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
+or reading the combined home timeline; it has no legacy rows to import.
 
 ## 7. Test the integration in the app
 
@@ -434,8 +437,9 @@ one owner, or a peer will see two different answers for the same account.
 - The app keeps its users, permissions, navigation, Vue UI and deployment; it
   stops maintaining a second federation core. Existing actor and key URLs are
   preserved by the [migration procedure](migration-from-nextcloud.md).
-- Signatures, actor documents, inbox verification, Follow/Undo and delivery
-  are shared with the standalone product and tested without Nextcloud.
+- Signatures, actor documents, inbox verification, Follow/Undo,
+  Create/Delete/Announce storage and delivery are shared with the standalone
+  product and tested without Nextcloud.
 - The core's `PdoJobQueue` and `PdoActivityLog` provide durable delivery and
   replay protection over the app's database; the app no longer has to build
   its own reserve/retry/prune implementation.
@@ -446,9 +450,9 @@ one owner, or a peer will see two different answers for the same account.
 ## What is still host-specific
 
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
-- Media, the Mastodon-compatible API, inbound `Create`/`Delete` and the
-  follow-based home timeline are not in the core yet. Keep the app's existing
-  implementation for those until the corresponding core milestone.
+- Media, the Mastodon-compatible API, remote-post backfill/thread fetching
+  and per-user block management are not in the core yet. Keep the app's
+  existing implementation for those until the corresponding core milestone.
 - Key storage and migrations are host adapters; the core supplies the
   interfaces and the schema definitions. The durable queue and activity log
   are core adapters and only need the app's `Connection`.

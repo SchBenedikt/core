@@ -174,9 +174,10 @@ scoped per account: two local accounts can follow the same actor independently.
 collection: they record who follows the account, the opposite direction. See
 the [followers collection](followers-collection.md).
 
-A follow-based home timeline that reads this graph is still open (see the
-[roadmap](../roadmap.md)); the collection itself is now writable through the
-endpoint above.
+The follow-based home timeline reads this same graph: `HomeTimelineRepository`
+asks `FollowingRepository::actorIds()` for the reader and joins remote
+posts/boosts to those actors. Unfollowing removes the actor's remote content
+from the reader's next page without deleting the shared remote rows.
 
 ## Errors
 

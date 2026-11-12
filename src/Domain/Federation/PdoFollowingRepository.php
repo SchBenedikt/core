@@ -117,6 +117,17 @@ final class PdoFollowingRepository implements FollowingRepository
 		return (int) $value;
 	}
 
+	public function localUserIdsForActor(string $actorId): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT DISTINCT local_user_id FROM ' . FollowingSchema::TABLE
+			. ' WHERE actor_id = :actor_id ORDER BY local_user_id',
+			['actor_id' => $actorId],
+		);
+
+		return array_map(static fn (array $row): string => (string) $row['local_user_id'], $rows);
+	}
+
 	/**
 	 * @param array<string, mixed> $row
 	 */

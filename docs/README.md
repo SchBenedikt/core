@@ -24,10 +24,10 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
 | [Shared UI and HostBridge](guides/shared-ui.md) | The Vue package boundary, bridge contract, package layout and extraction order |
-| [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
-| [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and why it is idempotent |
+| [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, own and remote posts in the home timeline, boosts and deletes |
+| [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
-| [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow and Undo |
+| [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
 | [Peer discovery](guides/peer-discovery.md) | How a peer finds the actor, its key and the inbox |
 | [WebFinger](guides/webfinger.md) | The JRD that resolves an `acct:` handle to the actor document |
 | [Followers collection](guides/followers-collection.md) | The incoming `OrderedCollection` and what changes it |

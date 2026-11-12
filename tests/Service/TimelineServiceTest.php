@@ -9,9 +9,12 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Service;
 
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
 use AlohaSocial\Core\Service\InvalidCursorException;
 use AlohaSocial\Core\Service\TimelineService;
 use AlohaSocial\Core\Support\Time;
@@ -22,12 +25,22 @@ final class TimelineServiceTest extends TestCase
 {
 	private InMemoryPostRepository $repository;
 
+	private InMemoryFollowingRepository $following;
+
 	private TimelineService $timelines;
 
 	protected function setUp(): void
 	{
 		$this->repository = new InMemoryPostRepository();
-		$this->timelines = new TimelineService($this->repository);
+		$this->following = new InMemoryFollowingRepository();
+		$this->timelines = new TimelineService(
+			$this->repository,
+			new InMemoryHomeTimelineRepository(
+				$this->repository,
+				new InMemoryRemotePostRepository(),
+				$this->following,
+			),
+		);
 	}
 
 	#[DataProvider('limits')]
@@ -72,16 +85,15 @@ final class TimelineServiceTest extends TestCase
 		self::assertCount(1, $this->timelines->public(20, '   '));
 	}
 
-	public function testHomeTimelineShowsOwnPostsAndPublicOnes(): void
+	public function testHomeTimelineShowsOwnPostsAndNotUnfollowedPublicOnes(): void
 	{
 		$this->repository->insert($this->post('own-private', '2026-11-11T10:00:00Z', 'alice', Visibility::Followers));
 		$this->repository->insert($this->post('other-private', '2026-11-11T10:01:00Z', 'bob', Visibility::Followers));
 		$this->repository->insert($this->post('other-public', '2026-11-11T10:02:00Z', 'bob', Visibility::Public));
 
-		$ids = array_map(static fn (Post $post): string => $post->id, $this->timelines->home('alice'));
-		sort($ids);
+		$ids = array_map(static fn (object $entry): string => $entry->id, $this->timelines->home('alice'));
 
-		self::assertSame(['other-public', 'own-private'], $ids);
+		self::assertSame(['own-private'], $ids);
 	}
 
 	private function post(

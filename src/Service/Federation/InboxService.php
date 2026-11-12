@@ -11,18 +11,26 @@ namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
+use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\SignatureException;
 use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\FollowerService;
-use JsonException;
+use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
+use Exception;
 use Throwable;
 
 use function is_array;
@@ -37,13 +45,17 @@ use function is_string;
  * 2. the key id must resolve to an actor;
  * 3. the signature must verify over the raw body and the signed headers;
  * 4. the activity actor must be the actor that owns the key;
- * 5. the activity id must not have been accepted before;
- * 6. only then does anything change.
+ * 5. the host's optional policy must allow the actor;
+ * 6. the activity id must not have been accepted before;
+ * 7. content types require a local follower; only then does anything change.
  *
  * A Follow creates the follower edge and queues an Accept for the follower's
- * inbox. An Undo(Follow) removes the edge. Every refusal is an
- * {@see InboxRejectedException} with a stable reason; this class knows nothing
- * about HTTP status codes.
+ * inbox. An Undo(Follow) removes the edge. Create, Delete and Announce are
+ * accepted only from an actor followed by at least one local account; they
+ * change the remote-post store, which the home timeline reads.
+ *
+ * Every refusal is an {@see InboxRejectedException} with a stable reason; this
+ * class knows nothing about HTTP status codes.
  */
 final class InboxService
 {
@@ -53,10 +65,13 @@ final class InboxService
 	public function __construct(
 		private readonly ActorResolver $actors,
 		private readonly FollowerService $followers,
+		private readonly FollowingService $following,
+		private readonly RemotePostRepository $remotePosts,
 		private readonly ActivityLog $replay,
 		private readonly ActivityFactory $activities,
 		private readonly JobQueue $queue,
 		private readonly Clock $clock,
+		private readonly ?BlockedActorPolicy $blockedActors = null,
 	) {
 	}
 
@@ -82,10 +97,24 @@ final class InboxService
 			);
 		}
 
+		$activityId = trim($activityId);
+		if (mb_strlen($activityId) > RemotePost::MAX_ID_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The activity id is too long.');
+		}
+
+		$activity['id'] = $activityId;
+
 		if ($actorId !== $actor->actorId) {
 			throw new InboxRejectedException(
 				'actor_mismatch',
 				'The activity actor does not own the signing key.',
+			);
+		}
+
+		if ($this->blockedActors?->isBlocked($actor->actorId) === true) {
+			throw new InboxRejectedException(
+				'blocked_actor',
+				'This actor is blocked on this instance.',
 			);
 		}
 
@@ -100,6 +129,9 @@ final class InboxService
 			match ($type) {
 				'Follow' => $this->handleFollow($actor, $activity),
 				'Undo' => $this->handleUndo($actor, $activity),
+				'Create' => $this->handleCreate($actor, $activity),
+				'Delete' => $this->handleDelete($actor, $activity),
+				'Announce' => $this->handleAnnounce($actor, $activity),
 				default => throw new InboxRejectedException(
 					'unsupported_activity',
 					'Unsupported activity type "' . $type . '".',
@@ -158,6 +190,296 @@ final class InboxService
 		}
 
 		return $actor;
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleCreate(RemoteActor $actor, array $activity): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$object = $activity['object'] ?? null;
+		if (!is_array($object)) {
+			throw new InboxRejectedException('invalid_activity', 'A Create needs an embedded object.');
+		}
+
+		$objectId = $this->objectId($object, 'Create');
+		$objectActor = $object['attributedTo'] ?? $actor->actorId;
+		if (!is_string($objectActor) || $objectActor !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'The created object belongs to another actor.',
+			);
+		}
+
+		$content = $object['content'] ?? null;
+		if (!is_string($content) || trim($content) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A created Note needs string content.');
+		}
+
+		$this->insertRemotePost(new RemotePost(
+			activityId: (string) $activity['id'],
+			objectId: $objectId,
+			actorId: $actor->actorId,
+			kind: RemotePostKind::Post,
+			content: $content,
+			contentWarning: $this->contentWarning($object),
+			publishedAt: $this->publishedAt($object['published'] ?? null, $activity['published'] ?? null),
+			objectAuthorId: $this->objectAuthor($object, $actor->actorId),
+		));
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleAnnounce(RemoteActor $actor, array $activity): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$object = $activity['object'] ?? null;
+		$objectId = $this->targetId($object, 'Announce');
+		$target = $this->remotePosts->findPostByObjectId($objectId);
+
+		$embedded = is_array($object) ? $object : [];
+		$content = $this->optionalContent($embedded);
+		$contentWarning = $this->contentWarning($embedded);
+
+		$this->insertRemotePost(new RemotePost(
+			activityId: (string) $activity['id'],
+			objectId: $objectId,
+			actorId: $actor->actorId,
+			kind: RemotePostKind::Boost,
+			content: $content ?? $target?->content ?? '',
+			contentWarning: $contentWarning ?? $target?->contentWarning,
+			publishedAt: $this->publishedAt(
+				$activity['published'] ?? null,
+				$embedded['published'] ?? null,
+				$target === null ? null : Time::format($target->publishedAt),
+			),
+			objectAuthorId: $this->announcedObjectAuthor($embedded) ?? $target?->objectAuthorId,
+		));
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleDelete(RemoteActor $actor, array $activity): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$targetId = $this->targetId($activity['object'] ?? null, 'Delete');
+
+		// A peer can delete either a Create/Announce by activity id or the
+		// Note itself. The actor must own whichever row matches.
+		$byActivity = $this->remotePosts->findByActivityId($targetId);
+		if ($byActivity !== null) {
+			if ($byActivity->actorId !== $actor->actorId) {
+				throw new InboxRejectedException(
+					'actor_mismatch',
+					'An actor may only delete its own activity.',
+				);
+			}
+
+			$this->remotePosts->softDeleteByActivityId(
+				$targetId,
+				$actor->actorId,
+				Time::toSecondPrecision($this->clock->now()),
+			);
+
+			return;
+		}
+
+		$post = $this->remotePosts->findPostByObjectId($targetId);
+		if ($post === null) {
+			// A Delete for something not stored is already satisfied; peers
+			// retry deliveries, and treating that as an error would loop.
+			return;
+		}
+
+		if ($post->actorId !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'An actor may only delete its own post.',
+			);
+		}
+
+		$this->remotePosts->softDeletePostByObjectId(
+			$targetId,
+			$actor->actorId,
+			Time::toSecondPrecision($this->clock->now()),
+		);
+	}
+
+	private function requireFollowedContent(RemoteActor $actor): void
+	{
+		if ($this->following->localUserIdsForActor($actor->actorId) === []) {
+			throw new InboxRejectedException(
+				'not_followed',
+				'This actor is not followed by a local account.',
+			);
+		}
+	}
+
+	private function insertRemotePost(RemotePost $post): void
+	{
+		try {
+			$this->remotePosts->insert($post);
+		} catch (DatabaseException $exception) {
+			if ($this->remotePosts->findByActivityId($post->activityId) !== null) {
+				throw new InboxRejectedException(
+					'replayed_activity',
+					'This activity has already been accepted.',
+				);
+			}
+
+			throw $exception;
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function objectId(array $object, string $context): string
+	{
+		$id = $object['id'] ?? null;
+		if (!is_string($id) || trim($id) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A ' . $context . ' object needs an id.');
+		}
+
+		$id = trim($id);
+		if (mb_strlen($id) > RemotePost::MAX_ID_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The object id is too long.');
+		}
+
+		return $id;
+	}
+
+	private function targetId(mixed $object, string $context): string
+	{
+		if (is_string($object) && trim($object) !== '') {
+			$id = trim($object);
+		} elseif (is_array($object)) {
+			$id = $this->objectId($object, $context);
+		} else {
+			throw new InboxRejectedException(
+				'invalid_activity',
+				'A ' . $context . ' needs an object id.',
+			);
+		}
+
+		if (mb_strlen($id) > RemotePost::MAX_ID_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The object id is too long.');
+		}
+
+		return $id;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function contentWarning(array $object): ?string
+	{
+		$summary = $object['summary'] ?? null;
+		if ($summary === null) {
+			return null;
+		}
+
+		if (!is_string($summary)) {
+			throw new InboxRejectedException('invalid_activity', 'A content warning must be a string.');
+		}
+
+		$summary = trim($summary);
+		if ($summary === '') {
+			return null;
+		}
+
+		if (mb_strlen($summary) > RemotePost::MAX_WARNING_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The content warning is too long.');
+		}
+
+		return $summary;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function optionalContent(array $object): ?string
+	{
+		$content = $object['content'] ?? null;
+		if ($content === null) {
+			return null;
+		}
+
+		if (!is_string($content)) {
+			throw new InboxRejectedException('invalid_activity', 'Announced content must be a string.');
+		}
+
+		return $content;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function objectAuthor(array $object, string $fallback): string
+	{
+		$author = $object['attributedTo'] ?? $fallback;
+		if (!is_string($author) || $author === '') {
+			throw new InboxRejectedException('invalid_activity', 'The object author must be an actor id.');
+		}
+
+		if (mb_strlen($author) > RemotePost::MAX_ACTOR_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The object author id is too long.');
+		}
+
+		return $author;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function announcedObjectAuthor(array $object): ?string
+	{
+		$author = $object['attributedTo'] ?? null;
+		if ($author === null) {
+			return null;
+		}
+
+		if (!is_string($author) || $author === '') {
+			throw new InboxRejectedException('invalid_activity', 'The announced author must be an actor id.');
+		}
+
+		if (mb_strlen($author) > RemotePost::MAX_ACTOR_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The announced author id is too long.');
+		}
+
+		return $author;
+	}
+
+	private function publishedAt(mixed ...$values): DateTimeImmutable
+	{
+		foreach ($values as $value) {
+			if ($value === null) {
+				continue;
+			}
+
+			if (!is_string($value) || trim($value) === '') {
+				throw new InboxRejectedException('invalid_activity', 'A published timestamp must be a string.');
+			}
+
+			$value = trim($value);
+			if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1) {
+				throw new InboxRejectedException('invalid_activity', 'A published timestamp is not RFC 3339.');
+			}
+
+			try {
+				return Time::toSecondPrecision(new DateTimeImmutable($value));
+			} catch (Exception) {
+				throw new InboxRejectedException('invalid_activity', 'A published timestamp is invalid.');
+			}
+		}
+
+		return Time::toSecondPrecision($this->clock->now());
 	}
 
 	/**

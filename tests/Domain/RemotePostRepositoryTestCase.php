@@ -1,0 +1,189 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Tests\Domain;
+
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Support\Time;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * The contract both remote-post repositories must satisfy.
+ */
+abstract class RemotePostRepositoryTestCase extends TestCase
+{
+	abstract protected function repository(): RemotePostRepository;
+
+	public function testInsertAndFindByActivityId(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+
+		$found = $repository->findByActivityId('activity-1');
+
+		self::assertNotNull($found);
+		self::assertSame('activity-1', $found->activityId);
+		self::assertSame('note-1', $found->objectId);
+		self::assertSame('bob', $found->actorId);
+		self::assertSame(RemotePostKind::Post, $found->kind);
+		self::assertSame('content of activity-1', $found->content);
+		self::assertSame('2026-11-11T10:00:00Z', Time::format($found->publishedAt));
+		self::assertNull($found->deletedAt);
+		self::assertNull($repository->findByActivityId('missing'));
+	}
+
+	public function testActivityIdIsUnique(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+
+		$this->expectException(DatabaseException::class);
+
+		$repository->insert($this->remote('activity-1', 'note-2', 'bob', '2026-11-11T10:01:00Z'));
+	}
+
+	public function testFindPostByObjectIdIgnoresBoostsAndDeletedPosts(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('post-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote(
+			'boost-1',
+			'note-1',
+			'carol',
+			'2026-11-11T10:01:00Z',
+			RemotePostKind::Boost,
+		));
+
+		self::assertSame('post-1', $repository->findPostByObjectId('note-1')?->activityId);
+
+		$repository->softDeleteByActivityId('post-1', 'bob', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertNull($repository->findPostByObjectId('note-1'));
+		self::assertNotNull($repository->findByActivityId('post-1'));
+	}
+
+	public function testSoftDeleteByActivityIsActorScopedAndIdempotent(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+
+		self::assertFalse($repository->softDeleteByActivityId(
+			'activity-1',
+			'carol',
+			Time::parse('2026-11-11T11:00:00Z'),
+		));
+		self::assertNull($repository->findByActivityId('activity-1')?->deletedAt);
+
+		self::assertTrue($repository->softDeleteByActivityId(
+			'activity-1',
+			'bob',
+			Time::parse('2026-11-11T11:00:00Z'),
+		));
+		self::assertSame(
+			'2026-11-11T11:00:00Z',
+			Time::format($repository->findByActivityId('activity-1')->deletedAt),
+		);
+		self::assertFalse($repository->softDeleteByActivityId(
+			'activity-1',
+			'bob',
+			Time::parse('2026-11-11T12:00:00Z'),
+		));
+	}
+
+	public function testSoftDeleteByObjectIsActorScopedAndOnlyDeletesAPost(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('post-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote(
+			'boost-1',
+			'note-1',
+			'carol',
+			'2026-11-11T10:01:00Z',
+			RemotePostKind::Boost,
+		));
+
+		self::assertFalse($repository->softDeletePostByObjectId(
+			'note-1',
+			'carol',
+			Time::parse('2026-11-11T11:00:00Z'),
+		));
+		self::assertNull($repository->findByActivityId('boost-1')?->deletedAt);
+
+		self::assertTrue($repository->softDeletePostByObjectId(
+			'note-1',
+			'bob',
+			Time::parse('2026-11-11T11:00:00Z'),
+		));
+		self::assertNotNull($repository->findByActivityId('post-1')?->deletedAt);
+	}
+
+	public function testTimelineForActorsIsOrderedScopedAndExcludesDeletedRows(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('a-old', 'note-old', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote('a-new', 'note-new', 'bob', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->remote('carol-post', 'note-carol', 'carol', '2026-11-11T10:03:00Z'));
+		$repository->insert($this->remote('gone', 'note-gone', 'bob', '2026-11-11T10:04:00Z'));
+		$repository->softDeleteByActivityId('gone', 'bob', Time::parse('2026-11-11T11:00:00Z'));
+
+		$posts = $repository->timelineForActors(['bob', 'bob'], 10);
+
+		self::assertSame(
+			['a-new', 'a-old'],
+			array_map(static fn (RemotePost $post): string => $post->activityId, $posts),
+		);
+		self::assertSame([], $repository->timelineForActors([], 10));
+		self::assertSame([], $repository->timelineForActors(['nobody'], 10));
+	}
+
+	public function testTimelineForActorsSupportsBeforeAndLimit(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('one', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote('two', 'note-2', 'bob', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->remote('three', 'note-3', 'bob', '2026-11-11T10:02:00Z'));
+
+		self::assertSame(
+			['three', 'two'],
+			array_map(
+				static fn (RemotePost $post): string => $post->activityId,
+				$repository->timelineForActors(['bob'], 2),
+			),
+		);
+		self::assertSame(
+			['two', 'one'],
+			array_map(
+				static fn (RemotePost $post): string => $post->activityId,
+				$repository->timelineForActors(['bob'], 10, Time::parse('2026-11-11T10:02:00Z')),
+			),
+		);
+	}
+
+	protected function remote(
+		string $activityId,
+		string $objectId,
+		string $actorId,
+		string $publishedAt,
+		RemotePostKind $kind = RemotePostKind::Post,
+	): RemotePost {
+		return new RemotePost(
+			$activityId,
+			$objectId,
+			$actorId,
+			$kind,
+			'content of ' . $activityId,
+			null,
+			Time::parse($publishedAt),
+			$actorId,
+		);
+	}
+}

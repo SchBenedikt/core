@@ -130,28 +130,22 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame(0, $repository->authorPostCount('nobody'));
 	}
 
-	public function testHomeTimelineIncludesOwnNonPublicPostsButNotThoseOfOthers(): void
+	public function testOwnTimelineIncludesNonPublicPostsButNothingFromOthers(): void
 	{
 		$repository = $this->repository();
-		$repository->insert($this->post('own-private', 'alice', Visibility::Followers, '2026-11-11T10:00:00Z'));
-		$repository->insert($this->post('other-private', 'bob', Visibility::Followers, '2026-11-11T10:01:00Z'));
-		$repository->insert($this->post('other-public', 'bob', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('own-public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('own-private', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('other-private', 'bob', Visibility::Followers, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('other-public', 'bob', Visibility::Public, '2026-11-11T10:03:00Z'));
 
-		$alice = array_map(
-			static fn (Post $post): string => $post->id,
-			$repository->homeTimeline('alice', 10),
+		self::assertSame(
+			['own-private', 'own-public'],
+			array_map(
+				static fn (Post $post): string => $post->id,
+				$repository->ownTimeline('alice', 10),
+			),
 		);
-
-		sort($alice);
-		self::assertSame(['other-public', 'own-private'], $alice);
-
-		$bob = array_map(
-			static fn (Post $post): string => $post->id,
-			$repository->homeTimeline('bob', 10),
-		);
-
-		sort($bob);
-		self::assertSame(['other-private', 'other-public'], $bob);
+		self::assertSame([], $repository->ownTimeline('nobody', 10));
 	}
 
 	public function testSoftDeleteHidesThePostButKeepsTheRow(): void

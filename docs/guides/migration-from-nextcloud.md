@@ -200,6 +200,7 @@ Create the core tables with the schema classes from the host's migration:
 - `social_post` — `PostSchema`
 - `social_follower` — `FollowerSchema`
 - `social_following` — `FollowingSchema`
+- `social_remote_post` — `RemotePostSchema` (new remote content; no legacy import)
 - `social_job` — `JobSchema`
 - `social_activity_log` — `ActivityLogSchema`
 
@@ -301,15 +302,18 @@ stacks must not both own writes for the same handle.
    peer accepted. Drain the old queue before this step.
 4. **Inbound inbox.** Enable `POST /inbox` only with the durable activity log,
    actor resolver and preserved key. Start with a test domain. A replay and a
-   wrong signature must be refused, not logged and ignored.
+   wrong signature must be refused, not logged and ignored. Once the
+   `social_remote_post` table exists, signed `Create`/`Delete`/`Announce` from
+   followed actors can be enabled; remote content is stored once per activity
+   and read through the follow graph.
 5. **UI.** Move one screen at a time through the shared UI bridge described in
    [the shared UI guide](shared-ui.md); do not move the backend and the screen
    in one flag flip.
 
-Do not migrate AT Protocol, media processing or inbound `Create`/`Delete`
-until those features exist in the core. Keep the old implementation for them.
-A core feature that does not exist cannot be replaced by a host-specific
-branch in `src/`.
+Do not migrate AT Protocol, media processing or remote-post backfill/thread
+fetching until those features exist in the core. Keep the old implementation
+for them. A core feature that does not exist cannot be replaced by a
+host-specific branch in `src/`.
 
 ## Phase 4 — Close the old path
 

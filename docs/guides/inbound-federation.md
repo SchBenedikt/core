@@ -18,6 +18,10 @@ Missing any of them, the handler answers `503 inbox_not_configured`. It does
 not accept activities it could neither verify nor answer. The reference
 assembly (`Application::inMemory()`) is therefore disabled by default.
 
+A host may additionally pass a `BlockedActorPolicy`. It is optional and
+instance-wide; the core has no block table yet. Without one, `NoBlockedActors`
+allows every verified actor.
+
 ## Order of checks
 
 Every step refuses before anything changes:
@@ -33,11 +37,16 @@ Every step refuses before anything changes:
    `signature_expired` for a stale `Date`.
 7. **Activity has string `id`, `type`, `actor`?** — 400 `invalid_activity`.
 8. **Activity actor owns the key?** — 403 `actor_mismatch`.
-9. **Activity id not seen before?** — 400 `replayed_activity`.
-10. **Type supported?** — 400 `unsupported_activity`.
+9. **Actor blocked by the host policy?** — 403 `blocked_actor`.
+10. **Activity id not seen before?** — 400 `replayed_activity`.
+11. **Type supported?** — 400 `unsupported_activity`.
+12. **For `Create`, `Delete` and `Announce`: does at least one local account
+    follow the actor?** — 403 `not_followed`.
+13. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
 
-A refusal releases the replay claim, so a peer that fixes its document can
-deliver the same activity again.
+A refusal releases the replay claim when the claim was already taken, so a peer
+that fixes its document can deliver the same activity again. A blocked actor is
+refused before a claim, and a replay is refused without changing anything.
 
 ## Supported activities
 
@@ -45,11 +54,13 @@ deliver the same activity again.
 | --- | --- |
 | `Follow` | stores the follower edge (idempotently) and queues an `Accept` to the follower's inbox |
 | `Undo` with an embedded `Follow` | removes the follower edge; an Undo for a follow that is already gone is still accepted |
+| `Create` | stores the embedded `Note` in the remote-post store as a post |
+| `Delete` | soft-deletes the matching remote activity/post, if this actor owns it; an unknown target is a successful no-op |
+| `Announce` | stores the announced object as a boost, not as a standalone post |
 
-Anything else — `Create`, `Delete`, `Announce`, an Undo of something that is
-not a Follow, an Undo that only references an activity by id — is refused with
-400 `unsupported_activity`. Accepting an activity we cannot apply would tell a
-peer its delivery succeeded when nothing happened.
+Anything else — for example `Like` or `Update` — is refused with 400
+`unsupported_activity`. Accepting an activity we cannot apply would tell a peer
+its delivery succeeded when nothing happened.
 
 ## What a Follow does
 
@@ -73,16 +84,62 @@ cannot be matched without storing every Follow activity we ever answered. The
 actor inside the embedded Follow must be the signing actor, so nobody can undo
 somebody else's follow.
 
+## What a Create does
+
+A `Create` must embed the object; a bare object id is not fetched. The actor
+must be followed by at least one local account, and the object's
+`attributedTo` (when present) must be the signing actor. The service stores:
+
+- the activity id (the unique idempotence key),
+- the object id and its author,
+- the actor that signed the `Create`,
+- the content, optional `summary` as content warning, and the published time.
+
+The embedded `published` wins over the activity's `published`; if neither is
+present the server clock is used. Timestamps must be RFC 3339; an invalid one
+is `invalid_activity`, not a silently invented date.
+
+Remote rows are shared by all local followers. The home timeline joins the
+row against the reader's `social_following` edge, so the same row is visible to
+every local account that follows the actor and disappears for a reader who
+unfollows.
+
+## What a Delete does
+
+The target may be a URI or an embedded object with an `id`. The service first
+looks for a stored activity with that id (a `Create` or `Announce`), then for a
+live post with that object id. If the row belongs to another actor, the request
+is 403 `actor_mismatch` and nothing changes. If the target is not stored, the
+`Delete` is still accepted: the peer's intent is already satisfied.
+
+Deletion is soft (`deleted_at`), like local posts. The row keeps the activity
+id claimed and a later duplicate delivery cannot resurrect it.
+
+## What an Announce does
+
+An `Announce` is stored with `kind = boost` and its own activity id. The target
+may be an embedded object or a URI. When the target object was already stored,
+its content and content warning are used as a fallback for a sparse Announce.
+The home timeline returns one entry with `kind: "boost"` and `boosted_by` set;
+it never invents a standalone post for the same activity. Deleting the
+`Announce` activity id removes the boost.
+
 ## Replay and clocks
 
 The activity id is claimed in an `ActivityLog` for 24 hours. A second delivery
 of the same activity — even with a fresh, valid signature — is refused and
-changes nothing. The clock window for the signed `Date` is 300 seconds; see
+changes nothing. The remote-post table's primary key is also the activity id,
+so a replay after the log window is still refused instead of creating a second
+row.
+
+The clock window for the signed `Date` is 300 seconds; see
 [keys and clocks](../operations/keys-and-clocks.md).
 
 ## What is missing
 
-- inbound `Create`/`Delete`/`Announce` and fetching remote posts;
+- fetching/backfilling remote posts or threads that were not delivered;
 - a key cache (the core fetches on every request when using
   `HttpActorResolver`);
-- a policy layer for approving Follows instead of accepting every valid one.
+- a policy layer for approving Follows instead of accepting every valid one;
+- per-user block management (the current optional policy is instance-wide);
+- shared-inbox handling and delivery batching.

@@ -177,6 +177,16 @@ final class FollowingService
 	}
 
 	/**
+	 * The local accounts that follow an actor; inbound content authorization.
+	 *
+	 * @return list<string>
+	 */
+	public function localUserIdsForActor(string $actorId): array
+	{
+		return $this->following->localUserIdsForActor($actorId);
+	}
+
+	/**
 	 * @param array<string, mixed> $activity
 	 */
 	private function deliver(string $localUserId, FollowedActor $followed, array $activity): void
