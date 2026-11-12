@@ -21,7 +21,7 @@ use DateTimeImmutable;
  */
 final class PdoFollowerRepository implements FollowerRepository
 {
-	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at';
+	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -32,8 +32,8 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$this->db->execute(
 			'INSERT INTO ' . FollowerSchema::TABLE
-			. ' (id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at)'
-			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :shared_inbox_url, :followed_at)',
+			. ' (id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local)'
+			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :shared_inbox_url, :followed_at, :is_local)',
 			[
 				'id' => $follower->id,
 				'local_user_id' => $follower->localUserId,
@@ -41,6 +41,7 @@ final class PdoFollowerRepository implements FollowerRepository
 				'inbox_url' => $follower->inboxUrl,
 				'shared_inbox_url' => $follower->sharedInboxUrl,
 				'followed_at' => Time::format($follower->followedAt),
+				'is_local' => $follower->local ? 1 : 0,
 			],
 		);
 	}
@@ -142,12 +143,32 @@ final class PdoFollowerRepository implements FollowerRepository
 		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
 	}
 
+	public function localUserIdsFollowedBy(string $actorId): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT DISTINCT local_user_id FROM ' . FollowerSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND is_local = 1 ORDER BY local_user_id',
+			['actor_id' => $actorId],
+		);
+
+		return array_map(static fn (array $row): string => (string) $row['local_user_id'], $rows);
+	}
+
+	public function localFollowingCount(string $actorId): int
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . FollowerSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND is_local = 1',
+			['actor_id' => $actorId],
+		);
+	}
+
 	public function inboxesFor(string $localUserId): array
 	{
 		$rows = $this->db->fetchAll(
 			'SELECT DISTINCT COALESCE(shared_inbox_url, inbox_url) AS inbox_url'
 			. ' FROM ' . FollowerSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id ORDER BY inbox_url',
+			. ' WHERE local_user_id = :local_user_id AND is_local = 0 ORDER BY inbox_url',
 			['local_user_id' => $localUserId],
 		);
 
@@ -176,6 +197,7 @@ final class PdoFollowerRepository implements FollowerRepository
 			inboxUrl: (string) $row['inbox_url'],
 			followedAt: Time::parse((string) $row['followed_at']),
 			sharedInboxUrl: $row['shared_inbox_url'] === null ? null : (string) $row['shared_inbox_url'],
+			local: (int) ($row['is_local'] ?? 0) === 1,
 		);
 	}
 }

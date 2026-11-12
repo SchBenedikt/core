@@ -16,6 +16,11 @@ use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Service\LocalRelationshipService;
+
+use function array_merge;
+use function array_slice;
+use function count;
 
 /**
  * The public description of a local account, its followers and following.
@@ -35,6 +40,7 @@ final class ActorDocumentService
 		private readonly LocalActorDirectory $actors,
 		private readonly FollowerService $followers,
 		private readonly FollowingService $following,
+		private readonly ?LocalRelationshipService $relationships = null,
 	) {
 	}
 
@@ -117,17 +123,29 @@ final class ActorDocumentService
 		$userId = $this->knownUser($handle);
 		$limit = OrderedCollection::clampLimit($limit);
 		$id = $this->activities->followingId($userId);
-		$total = $this->following->count($userId);
+		$local = $this->relationships?->localFollowingActorIds($userId) ?? [];
+		$total = $this->following->count($userId) + count($local);
 
 		if ($page === null) {
 			return OrderedCollection::root($id, $total, $limit);
 		}
 
-		$actors = $this->following->actorIdsPage(
-			$userId,
-			$limit,
-			OrderedCollection::offset($page, $limit),
-		);
+		if ($local === []) {
+			$actors = $this->following->actorIdsPage(
+				$userId,
+				$limit,
+				OrderedCollection::offset($page, $limit),
+			);
+		} else {
+			// Local relationships and remote follows live in different
+			// directions of the graph. Combining the stable lists by offset
+			// keeps every item reachable without adding a second table.
+			$actors = array_slice(
+				array_merge($this->following->actorIds($userId), $local),
+				OrderedCollection::offset($page, $limit),
+				$limit,
+			);
+		}
 
 		return OrderedCollection::page($id, $page, $limit, $total, $actors);
 	}

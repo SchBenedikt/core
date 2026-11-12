@@ -656,6 +656,155 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(404, $this->favourite($app, $status['id'])->status);
 	}
 
+	public function testLocalFollowUnfollowAndRelationshipsAreIdempotent(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+
+		$followed = $this->followAccount($app, 'bob');
+		self::assertSame(200, $followed->status);
+		self::assertSame('bob', $followed->decodedBody()['id']);
+		self::assertTrue($followed->decodedBody()['following']);
+		self::assertFalse($followed->decodedBody()['followed_by']);
+		self::assertTrue($followed->decodedBody()['showing_reblogs']);
+		self::assertFalse($followed->decodedBody()['blocking']);
+		self::assertFalse($followed->decodedBody()['requested']);
+		self::assertSame(1, $app->followers->count('bob'));
+
+		$repeated = $this->followAccount($app, 'bob');
+		self::assertSame(200, $repeated->status);
+		self::assertTrue($repeated->decodedBody()['following']);
+		self::assertSame(1, $app->followers->count('bob'));
+
+		$bobView = $this->relationships($app, ['alice'], userId: 'bob');
+		self::assertSame(200, $bobView->status);
+		self::assertCount(1, $bobView->decodedBody());
+		self::assertFalse($bobView->decodedBody()[0]['following']);
+		self::assertTrue($bobView->decodedBody()[0]['followed_by']);
+
+		$alice = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/verify_credentials',
+			userId: 'alice',
+			scopes: ['read:accounts'],
+		))->decodedBody();
+		self::assertSame(0, $alice['followers_count']);
+		self::assertSame(1, $alice['following_count']);
+
+		$bob = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/accounts/verify_credentials',
+			userId: 'bob',
+			scopes: ['read:accounts'],
+		))->decodedBody();
+		self::assertSame(1, $bob['followers_count']);
+		self::assertSame(0, $bob['following_count']);
+
+		$unfollowed = $this->followAccount($app, 'bob', 'unfollow');
+		self::assertSame(200, $unfollowed->status);
+		self::assertFalse($unfollowed->decodedBody()['following']);
+		self::assertSame(0, $app->followers->count('bob'));
+
+		$repeatedUnfollow = $this->followAccount($app, 'bob', 'unfollow');
+		self::assertSame(200, $repeatedUnfollow->status);
+		self::assertFalse($repeatedUnfollow->decodedBody()['following']);
+		$bobViewAfter = $this->relationships($app, ['alice'], userId: 'bob')->decodedBody();
+		self::assertFalse($bobViewAfter[0]['followed_by']);
+	}
+
+	public function testLocalFollowAddsTheAuthorsPostsToTheHomeTimeline(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, ['status' => 'from bob'], userId: 'bob')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+
+		$home = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		));
+		self::assertSame(200, $home->status);
+		self::assertSame([$status['id']], array_column($home->decodedBody()['posts'], 'id'));
+
+		$this->followAccount($app, 'bob', 'unfollow');
+		self::assertSame([], $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts']);
+	}
+
+	public function testLocalFollowRejectsSelfUnknownAndMissingAuthOrScope(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+
+		$self = $this->followAccount($app, 'alice');
+		self::assertSame(422, $self->status);
+		self::assertSame('validation_failed', $self->decodedBody()['error']['code']);
+		self::assertArrayHasKey('id', $self->decodedBody()['error']['fields']);
+		self::assertSame(0, $app->followers->count('alice'));
+
+		self::assertSame(404, $this->followAccount($app, 'nobody')->status);
+		self::assertSame(401, $this->followAccount($app, 'bob', userId: null)->status);
+		self::assertSame(403, $this->followAccount($app, 'bob', scopes: ['write:statuses'])->status);
+		self::assertSame(0, $app->followers->count('bob'));
+
+		$parent = $this->followAccount($app, 'bob', scopes: ['write']);
+		self::assertSame(200, $parent->status);
+		self::assertTrue($parent->decodedBody()['following']);
+
+		$disabled = $this->app(enabled: false, actors: ['alice', 'bob']);
+		$hidden = $this->followAccount($disabled, 'bob');
+		self::assertSame(404, $hidden->status);
+		self::assertSame('mastodon_api_disabled', $hidden->decodedBody()['error']['code']);
+
+		$unconfigured = $this->app(actors: null);
+		$missing = $this->followAccount($unconfigured, 'bob');
+		self::assertSame(503, $missing->status);
+		self::assertSame('follows_not_configured', $missing->decodedBody()['error']['code']);
+
+		$noInstanceUrl = $this->app(instanceUrl: null, actors: ['alice', 'bob']);
+		$badConfig = $this->followAccount($noInstanceUrl, 'bob');
+		self::assertSame(503, $badConfig->status);
+		self::assertSame('instance_not_configured', $badConfig->decodedBody()['error']['code']);
+	}
+
+	public function testRelationshipsAcceptScalarAndArrayIdsAndValidateThem(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$this->followAccount($app, 'bob');
+
+		$scalar = $this->relationships($app, 'bob');
+		self::assertSame(200, $scalar->status);
+		self::assertCount(1, $scalar->decodedBody());
+		self::assertTrue($scalar->decodedBody()[0]['following']);
+
+		$duplicates = $this->relationships($app, ['bob', 'bob', 'carol']);
+		self::assertSame(200, $duplicates->status);
+		self::assertSame(['bob', 'carol'], array_column($duplicates->decodedBody(), 'id'));
+
+		$missing = $this->relationships($app, []);
+		self::assertSame(422, $missing->status);
+		self::assertSame('validation_failed', $missing->decodedBody()['error']['code']);
+
+		$unknown = $this->relationships($app, ['nobody']);
+		self::assertSame(404, $unknown->status);
+
+		$anonymous = $this->relationships($app, ['bob'], userId: null);
+		self::assertSame(401, $anonymous->status);
+		$wrongScope = $this->relationships($app, ['bob'], scopes: ['read:accounts']);
+		self::assertSame(403, $wrongScope->status);
+		$parentScope = $this->relationships($app, ['bob'], scopes: ['read']);
+		self::assertSame(200, $parentScope->status);
+
+		$disabled = $this->relationships($this->app(enabled: false, actors: ['alice', 'bob']), ['bob']);
+		self::assertSame(404, $disabled->status);
+		self::assertSame('mastodon_api_disabled', $disabled->decodedBody()['error']['code']);
+
+		$tooMany = array_map(static fn (int $index): string => 'id-' . $index, range(1, 101));
+		self::assertSame(422, $this->relationships($app, $tooMany)->status);
+	}
+
 	public function testAnExistingAttachmentIsProjectedOnTheStatus(): void
 	{
 		$app = $this->app();
@@ -759,23 +908,61 @@ final class MastodonApiTest extends TestCase
 		?InMemoryAttachmentRepository $attachments = null,
 		?InMemoryBlobStore $blobs = null,
 		?FavouriteRepository $favourites = null,
-		array $actors = ['alice'],
+		?array $actors = ['alice'],
+		?string $instanceUrl = 'https://social.example',
 	): Application {
+		$config = [
+			'instance.name' => 'Aloha Social',
+			'mastodon.api' => $enabled ? 'true' : 'false',
+			'mastodon.prefix' => $prefix,
+		];
+		if ($instanceUrl !== null) {
+			$config['instance.url'] = $instanceUrl;
+		}
+
 		return Application::inMemory(
 			clock: $this->clock,
-			config: new ArrayConfig([
-				InstanceInfo::CONFIG_APP => [
-					'instance.url' => 'https://social.example',
-					'instance.name' => 'Aloha Social',
-					'mastodon.api' => $enabled ? 'true' : 'false',
-					'mastodon.prefix' => $prefix,
-				],
-			]),
+			config: new ArrayConfig([InstanceInfo::CONFIG_APP => $config]),
 			attachmentRepository: $attachments,
 			favouriteRepository: $favourites,
 			blobStore: $blobs,
-			localActors: new InMemoryActorDirectory($actors),
+			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
 		);
+	}
+
+	private function followAccount(
+		Application $app,
+		string $targetId,
+		string $action = 'follow',
+		array $scopes = ['write:follows'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: $prefix . '/accounts/' . rawurlencode($targetId) . '/' . $action,
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param string|list<string> $ids
+	 */
+	private function relationships(
+		Application $app,
+		string|array $ids,
+		array $scopes = ['read:follows'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: $prefix . '/accounts/relationships',
+			query: ['id' => $ids],
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	private function updateMedia(
@@ -900,13 +1087,14 @@ final class MastodonApiTest extends TestCase
 		array $fields,
 		array $headers = [],
 		array $scopes = ['write:statuses'],
+		?string $userId = 'alice',
 	): Response {
 		return $app->handle(new Request(
 			method: 'POST',
 			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses',
 			headers: array_merge(['Content-Type' => 'application/x-www-form-urlencoded'], $headers),
 			body: http_build_query($fields),
-			userId: 'alice',
+			userId: $userId,
 			scopes: $scopes,
 		));
 	}

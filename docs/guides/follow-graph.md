@@ -16,6 +16,7 @@ final readonly class Follower
     public string $actorId;        // absolute ActivityPub actor URL
     public string $inboxUrl;       // absolute individual inbox URL
     public ?string $sharedInboxUrl; // server-wide inbox, when advertised
+    public bool $local;             // local-to-local edge, never delivered
     public DateTimeImmutable $followedAt;
 }
 ```
@@ -48,6 +49,7 @@ actor_id      VARCHAR(255) unique with local_user_id
 inbox_url        VARCHAR(512)
 shared_inbox_url VARCHAR(512)  nullable
 followed_at      VARCHAR(20)  canonical UTC timestamp
+is_local         SMALLINT NOT NULL DEFAULT 0
 ```
 
 The 255-character cap on `actor_id` is deliberate: with utf8mb4 it keeps the
@@ -55,6 +57,13 @@ unique index inside MySQL's key limit. The service rejects a longer URL with
 422 before the database has to. `shared_inbox_url` is nullable so existing
 rows need no backfill; see [shared inboxes](shared-inboxes.md) for the
 migration and fallback rules.
+
+`is_local` marks a local-to-local follow written by the Mastodon-compatible
+`POST /accounts/{id}/follow` route. The row stays in this graph so follower
+counts and the public followers collection have one source of truth, but
+`inboxesFor()` skips `is_local = 1`: a local follow never produces a remote
+delivery job or a signed `Follow`. Existing rows default to `0` (remote), and
+an unfollow removes the edge, so the marker has no separate cleanup lifecycle.
 
 ## Endpoints
 
@@ -108,7 +117,9 @@ Two paths write the graph:
 1. the local API (`POST /api/v1/followers`), for a host that has already
    resolved and trusted an actor document;
 2. inbound federation: a signed `Follow` on `POST /inbox` creates the edge and
-   queues the `Accept`; a signed `Undo(Follow)` removes it. See
+   queues the `Accept`; a signed `Undo(Follow)` removes it;
+3. the optional Mastodon-compatible local follow route, which reads the local
+   directory and writes only `is_local = 1` edges with no remote delivery. See
    [inbound federation](inbound-federation.md).
 
 Either way the actor and its inboxes come from the actor document, never from

@@ -29,10 +29,13 @@ use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
@@ -90,6 +93,7 @@ use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\LocalFollowHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
@@ -140,6 +144,7 @@ use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
@@ -443,7 +448,6 @@ final readonly class Application
 			$ids,
 			$atprotoService,
 		);
-		$timelines = new TimelineService($posts, $homeTimeline);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$blockService = new BlockService($blockRepository, $clock, $ids);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
@@ -457,15 +461,30 @@ final readonly class Application
 			$federationDelivery,
 		);
 		$instance = new InstanceInfo($config);
+		$localRelationships = $localActors === null
+			? null
+			: new LocalRelationshipService(
+				$followers,
+				$followingService,
+				$followerService,
+				$localActors,
+				$activities,
+				$blockRepository,
+			);
+		if ($localRelationships !== null) {
+			$homeTimeline = new LocalFollowHomeTimelineRepository($homeTimeline, $posts, $localRelationships);
+		}
+		$timelines = new TimelineService($posts, $homeTimeline);
 		$mastodonService = new MastodonService(
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
 			$clock,
+			$localRelationships,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -544,7 +563,7 @@ final readonly class Application
 		// An actor document needs a key to publish and a directory to answer
 		// whether a handle exists. Missing either keeps the routes at 503.
 		$actorDocuments = ($signingKey !== null && $localActors !== null)
-			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService, $followingService)
+			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService, $followingService, $localRelationships)
 			: null;
 
 		// The outbox reads the same post repository the local API writes.
@@ -593,6 +612,9 @@ final readonly class Application
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
+			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))
+			->with(MastodonFollowAccountHandler::class, static fn (): MastodonFollowAccountHandler => new MastodonFollowAccountHandler($mastodonService))
+			->with(MastodonUnfollowAccountHandler::class, static fn (): MastodonUnfollowAccountHandler => new MastodonUnfollowAccountHandler($mastodonService))
 			->with(MastodonUpdateMediaHandler::class, static fn (): MastodonUpdateMediaHandler => new MastodonUpdateMediaHandler($mastodonService))
 			->with(MastodonDeleteMediaHandler::class, static fn (): MastodonDeleteMediaHandler => new MastodonDeleteMediaHandler($mastodonService))
 			->with(MastodonFavouriteStatusHandler::class, static fn (): MastodonFavouriteStatusHandler => new MastodonFavouriteStatusHandler($mastodonService))

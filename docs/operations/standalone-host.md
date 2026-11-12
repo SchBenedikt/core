@@ -15,7 +15,9 @@ This document is the checklist that host is built against.
    `RemoteThreadSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
    the migration step. `social_favourite` is needed only when the optional
    Mastodon compatibility surface exposes favourite/unfavourite; there is no
-   backfill.
+   backfill. Existing `social_follower` tables also need the `is_local`
+   column before local follow/unfollow is exposed; it defaults old rows to
+   remote (`0`) and needs no backfill.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.

@@ -14,7 +14,6 @@ use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
-use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use DateTimeImmutable;
 
@@ -44,7 +43,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		$entries = [];
 
 		foreach ($this->posts->ownTimeline($localUserId, self::UNBOUNDED, $before) as $post) {
-			$entries[] = $this->fromPost($post);
+			$entries[] = TimelineEntry::fromPost($post);
 		}
 
 		$blocked = array_fill_keys($this->blocks->actorIds($localUserId), true);
@@ -74,20 +73,6 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		});
 
 		return array_slice($entries, 0, max(1, $limit));
-	}
-
-	private function fromPost(Post $post): TimelineEntry
-	{
-		return new TimelineEntry(
-			id: $post->id,
-			authorId: $post->authorId,
-			objectId: $post->id,
-			objectAuthorId: $post->authorId,
-			content: $post->content,
-			contentWarning: $post->contentWarning,
-			publishedAt: $post->publishedAt,
-			visibility: $post->visibility,
-		);
 	}
 
 	private function fromRemotePost(RemotePost $post): TimelineEntry

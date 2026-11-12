@@ -6,7 +6,8 @@ Accept: application/activity+json
 ```
 
 An `OrderedCollection` of the actors a local account follows. It is public and
-reads the outgoing follow graph — not the followers table.
+reads the outgoing follow graph for remote follows, plus local-to-local edges
+from the incoming graph that the Mastodon-compatible follow route writes.
 
 ## Root document and pages
 
@@ -49,6 +50,13 @@ back the collection, so a peer can walk it without downloading every edge.
 separate from `social_follower` on purpose: a follower is an inbound edge, a
 followed actor is an outbound edge. Reusing the follower table would make peers
 read "who follows alice" as "whom alice follows".
+
+A local-to-local Mastodon follow is the one deliberate exception: it is stored
+in `social_follower` as a local edge (`is_local = 1`) so the target's followers
+collection and counts stay exact. `ActorDocumentService::following` combines
+those local actor ids with the outgoing repository's page, and the root
+`totalItems` adds both counts. The incoming graph still never answers the
+following URL on its own, and local edges are skipped by remote delivery.
 
 ```
 id            VARCHAR(64)  primary key

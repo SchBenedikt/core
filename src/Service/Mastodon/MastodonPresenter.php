@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\MediaService;
 
 /**
@@ -33,6 +34,7 @@ final class MastodonPresenter
 		private readonly ActivityFactory $activities,
 		private readonly ?MediaService $media = null,
 		private readonly ?FavouriteRepository $favourites = null,
+		private readonly ?LocalRelationshipService $relationships = null,
 	) {
 	}
 
@@ -59,8 +61,8 @@ final class MastodonPresenter
 			'avatar_static' => '',
 			'header' => '',
 			'header_static' => '',
-			'followers_count' => 0,
-			'following_count' => 0,
+			'followers_count' => $this->relationships?->followersCount($userId) ?? 0,
+			'following_count' => $this->relationships?->followingCount($userId) ?? 0,
 			'statuses_count' => 0,
 			'last_status_at' => null,
 			'noindex' => false,

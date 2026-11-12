@@ -19,6 +19,8 @@ use AlohaSocial\Core\Platform\Db\Connection;
  * is why the actor URL is capped at 255 characters here and rejected by the
  * service before it reaches the database. `shared_inbox_url` is nullable so existing
  * follower rows keep working and fall back to their individual inbox.
+ * `is_local` distinguishes a local-to-local edge from a remote inbox; local
+ * edges are never used for content delivery. Existing rows default to remote.
  */
 final class FollowerSchema
 {
@@ -36,7 +38,8 @@ final class FollowerSchema
 			. ' actor_id VARCHAR(255) NOT NULL,'
 			. ' inbox_url VARCHAR(512) NOT NULL,'
 			. ' shared_inbox_url VARCHAR(512) NULL,'
-			. ' followed_at VARCHAR(20) NOT NULL'
+			. ' followed_at VARCHAR(20) NOT NULL,'
+			. ' is_local SMALLINT NOT NULL DEFAULT 0'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::TABLE . '_identity ON ' . self::TABLE
 			. ' (local_user_id, actor_id)',

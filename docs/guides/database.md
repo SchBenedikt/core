@@ -27,7 +27,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
-- `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url`)
+- `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
@@ -42,11 +42,13 @@ therefore move between the two databases.
 
 Adding a column means changing the schema class **and** both hosts' migration
 paths in the same release. There is no automatic migration runner in the core:
-it would need to know the host's migration mechanism, which is exactly the kind
-of host concern ports exist to keep out. Existing follower tables need the
+it would need to know the host's migration mechanism, which is exactly the kind of host concern ports exist to keep out. Existing follower tables need the
 nullable `social_follower.shared_inbox_url VARCHAR(512)` column; rows with
 `NULL` keep delivering to `inbox_url`, so no backfill is required. See
-[shared inboxes](shared-inboxes.md).
+[shared inboxes](shared-inboxes.md). For the Mastodon-compatible local follow
+routes, add `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; existing
+rows stay remote (`0`) and need no backfill. Local edges are excluded from
+`inboxesFor()`, and an unfollow removes the row.
 
 `social_job` is the durable queue used by `PdoJobQueue`; `social_activity_log`
 is the replay guard used by `PdoActivityLog`. The queue reserves a row with a

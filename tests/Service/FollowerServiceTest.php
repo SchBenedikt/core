@@ -169,6 +169,33 @@ final class FollowerServiceTest extends TestCase
 		self::assertSame(0, $this->service->count('alice'));
 	}
 
+	public function testLocalFollowIsIdempotentAndNeverEntersRemoteDelivery(): void
+	{
+		$first = $this->service->follow(new FollowActor(
+			'bob',
+			'https://social.example/@alice',
+			'https://social.example/inbox/shared',
+		), local: true);
+
+		self::assertTrue($first->follower->local);
+		self::assertSame(1, $this->service->count('bob'));
+		self::assertSame([], $this->repository->inboxesFor('bob'));
+
+		$second = $this->service->follow(new FollowActor(
+			'bob',
+			'https://social.example/@alice',
+			'https://social.example/inbox/shared',
+		), local: true);
+
+		self::assertFalse($second->created);
+		self::assertSame($first->follower->id, $second->follower->id);
+		self::assertSame(1, $this->service->count('bob'));
+
+		self::assertTrue($this->service->unfollowLocalByActor('bob', 'https://social.example/@alice'));
+		self::assertSame(0, $this->service->count('bob'));
+		self::assertFalse($this->service->unfollowLocalByActor('bob', 'https://social.example/@alice'));
+	}
+
 	public function testFollowersArePagedNewestFirst(): void
 	{
 		foreach (['bob', 'carol', 'dave'] as $index => $name) {

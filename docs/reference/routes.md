@@ -46,6 +46,9 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
 | `mastodon.statuses.unfavourite` | `POST` | `/api/mastodon/v1/statuses/{id}/unfavourite` | yes, `write:favourites` | 30 / 900 s |
+| `mastodon.accounts.relationships` | `GET` | `/api/mastodon/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
+| `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
+| `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
 | `mastodon.accounts.verify_credentials` | `GET` | `/api/mastodon/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 
@@ -459,7 +462,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The twelve routes above are additive and disabled by default. Their paths use
+The fifteen routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -471,6 +474,9 @@ GET /api/mastodon/v1/timelines/public?limit=20&max_id=…
 GET /api/mastodon/v1/statuses/{id}
 POST /api/mastodon/v1/statuses/{id}/favourite
 POST /api/mastodon/v1/statuses/{id}/unfavourite
+GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
+POST /api/mastodon/v1/accounts/bob/follow
+POST /api/mastodon/v1/accounts/bob/unfollow
 POST /api/mastodon/v1/statuses
 Idempotency-Key: client-key-1
 Content-Type: application/json

@@ -85,6 +85,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$mediaDelete = $manifest->find('mastodon.media.delete');
 		$favourite = $manifest->find('mastodon.statuses.favourite');
 		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
+		$relationships = $manifest->find('mastodon.accounts.relationships');
+		$follow = $manifest->find('mastodon.accounts.follow');
+		$unfollow = $manifest->find('mastodon.accounts.unfollow');
 
 		self::assertNotNull($create);
 		self::assertNotNull($delete);
@@ -95,6 +98,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($mediaDelete);
 		self::assertNotNull($favourite);
 		self::assertNotNull($unfavourite);
+		self::assertNotNull($relationships);
+		self::assertNotNull($follow);
+		self::assertNotNull($unfollow);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
 		self::assertSame('30/900', $create->rateLimit);
@@ -120,5 +126,17 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame('/api/mastodon/v1/statuses/{id}/favourite', $favourite->path);
 		self::assertSame(['write:favourites'], $unfavourite->requiredScopes);
 		self::assertSame('/api/mastodon/v1/statuses/{id}/unfavourite', $unfavourite->path);
+		self::assertTrue($relationships->requiresAuth);
+		self::assertSame(['read:follows'], $relationships->requiredScopes);
+		self::assertSame('60/60', $relationships->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/relationships', $relationships->path);
+		self::assertTrue($follow->requiresAuth);
+		self::assertSame(['write:follows'], $follow->requiredScopes);
+		self::assertSame('30/900', $follow->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/follow', $follow->path);
+		self::assertTrue($unfollow->requiresAuth);
+		self::assertSame(['write:follows'], $unfollow->requiredScopes);
+		self::assertSame('30/900', $unfollow->rateLimit);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/unfollow', $unfollow->path);
 	}
 }

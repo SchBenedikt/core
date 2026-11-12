@@ -314,7 +314,34 @@ GET {mastodon.prefix}/timelines/public
 `favourites_count` is public; `favourited` is only true for the authenticated
 viewer and is false on the unauthenticated timeline. A repeat favourite is
 idempotent through the composite primary key, and unfavourite removes only the
-caller's row and is a successful no-op when absent. `MastodonApiGate` answers
+caller's row and is a successful no-op when absent. Local follow/unfollow is a
+projection of the same follower graph, not a second relationship table:
+
+```
+POST {mastodon.prefix}/accounts/{id}/follow
+  └─ MastodonFollowAccountHandler
+      └─ MastodonService::followAccount
+          └─ LocalRelationshipService::follow
+              ├─ LocalActorDirectory        both ids must be local
+              └─ FollowerService::follow(local: true)
+                  └─ FollowerRepository::insert   social_follower.is_local = 1
+
+GET {mastodon.prefix}/accounts/relationships?id[]=…
+  └─ MastodonRelationshipsHandler
+      └─ LocalRelationshipService::relationships
+          ├─ FollowerRepository::findByActor      following / followed_by
+          └─ BlockRepository::findByActor         blocking
+```
+
+`FollowerRepository::inboxesFor()` excludes local rows, so this path queues no
+remote delivery and sends no signed `Follow`; `LocalRelationshipService`
+combines the follower edge with the outgoing graph for `followers_count` and
+`following_count`. The public following collection adds local actor ids to its
+outgoing page, while the followers collection already reads the follower
+graph. `LocalFollowHomeTimelineRepository` decorates the existing home
+repository: it fetches the base top page plus the top page of locally followed
+authors, applies the same cursor, sort and limit, and delegates unchanged when
+there are no local follows. `MastodonApiGate` answers
 `404 mastodon_api_disabled` before auth while the switch is off. The prefix is
 validated against `/api/v1` and the protocol paths at boot. Pagination uses the
 id-aware cursor on `PostRepository`, not an offset. See
@@ -355,7 +382,10 @@ GET /@{handle}/followers[?page=&limit=]
       └─ ActorDocumentService::followers → FollowerRepository::actorIdsPage
 GET /@{handle}/following[?page=&limit=]
   └─ FollowingCollectionHandler
-      └─ ActorDocumentService::following → FollowingRepository::actorIdsPage
+      └─ ActorDocumentService::following
+          ├─ FollowingRepository::actorIdsPage     remote outgoing edges
+          └─ LocalRelationshipService::localFollowingActorIds
+              └─ FollowerRepository local edges (is_local = 1)
 GET /@{handle}/outbox[?page=&limit=]
   └─ OutboxHandler
       └─ ActorOutboxService → PostRepository::authorPostsPage
@@ -467,7 +497,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and relationship APIs) | host/integration work over the local compatibility subset, including media management and local favourites; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, notifications, streaming, polls, search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local follow/unfollow and relationship reads; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
@@ -523,7 +553,9 @@ genuinely owns the capability.
   oversized/slow targets. `CurlHttpClientTest` covers the production client's
   body cap and address pinning against the same fixture server.
   `MastodonApiTest` drives the optional compatibility routes through the same
-  kernel, including JSON/form writes, media upload/update/delete, scopes,
-  disabled-before-auth, cursor pagination, idempotency and media projection;
-  `ApplicationHostTest` repeats the idempotent write over SQL.
-  `MastodonCompatibilityTest` covers the prefix and scope rules.
+  kernel, including JSON/form writes, media upload/update/delete, local
+  follow/unfollow and relationship reads, scopes, disabled-before-auth, cursor
+  pagination, idempotency and media projection; `ApplicationHostTest` repeats
+  the idempotent write over SQL. `MastodonCompatibilityTest` covers the prefix,
+  scope and relationship route metadata. `FollowerRepositoryTestCase` covers
+  the local edge and its exclusion from delivery.

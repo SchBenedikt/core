@@ -115,11 +115,38 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return array_slice($this->actorIds($localUserId), max(0, $offset), max(0, $limit));
 	}
 
+	public function localUserIdsFollowedBy(string $actorId): array
+	{
+		$users = [];
+		foreach ($this->followers as $follower) {
+			if ($follower->local && $follower->actorId === $actorId) {
+				$users[$follower->localUserId] = true;
+			}
+		}
+
+		$result = array_keys($users);
+		sort($result, SORT_STRING);
+
+		return $result;
+	}
+
+	public function localFollowingCount(string $actorId): int
+	{
+		$count = 0;
+		foreach ($this->followers as $follower) {
+			if ($follower->local && $follower->actorId === $actorId) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
 	public function inboxesFor(string $localUserId): array
 	{
 		$inboxes = [];
 		foreach ($this->followers as $follower) {
-			if ($follower->localUserId === $localUserId) {
+			if ($follower->localUserId === $localUserId && !$follower->local) {
 				$inboxes[$follower->deliveryInboxUrl()] = true;
 			}
 		}

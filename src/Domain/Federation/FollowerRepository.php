@@ -72,7 +72,26 @@ interface FollowerRepository
 	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
 
 	/**
-	 * The distinct inboxes to deliver one local user's posts to.
+	 * The local accounts that follow the given local actor.
+	 *
+	 * Local-to-local follows are stored in this graph too, but they have no
+	 * remote inbox to deliver to. The local actor id makes the direction
+	 * unambiguous: local user B is in the list when actor A follows B.
+	 *
+	 * @return list<string> local user ids, in stable order
+	 */
+	public function localUserIdsFollowedBy(string $actorId): array;
+
+	/**
+	 * The number of local accounts the given local actor follows.
+	 */
+	public function localFollowingCount(string $actorId): int;
+
+	/**
+	 * The distinct remote inboxes to deliver one local user's posts to.
+	 *
+	 * Local-to-local edges are excluded: they are already on this instance
+	 * and must not be sent into the ActivityPub delivery queue.
 	 *
 	 * @return list<string>
 	 */

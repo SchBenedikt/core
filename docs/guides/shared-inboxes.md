@@ -58,7 +58,9 @@ queued to the actor's individual inbox.
 ## Outbound batching
 
 `social_follower` has a nullable `shared_inbox_url` next to `inbox_url`.
-`FollowerRepository::inboxesFor()` returns:
+Local-to-local Mastodon follows are stored with `is_local = 1` and are
+filtered out before this query, so they never produce a delivery job or a
+signed `Follow`. `FollowerRepository::inboxesFor()` returns:
 
 ```
 COALESCE(shared_inbox_url, inbox_url)
@@ -95,9 +97,12 @@ version:
 
 ```sql
 ALTER TABLE social_follower ADD COLUMN shared_inbox_url VARCHAR(512) NULL;
+ALTER TABLE social_follower ADD COLUMN is_local SMALLINT NOT NULL DEFAULT 0;
 ```
 
-The DDL is also part of `FollowerSchema::statements()` for a fresh install. A
+The `is_local` column defaults existing rows to remote (`0`), so the local
+follow feature needs no backfill. The DDL is also part of
+`FollowerSchema::statements()` for a fresh install. A
 row with `NULL` behaves exactly as before, so the migration does not require a
 backfill and does not rewrite existing inbox values. `PdoFollowerRepository`
 reads and writes the column on insert and on a repeated Follow.

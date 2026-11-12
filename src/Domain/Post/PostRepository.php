@@ -95,6 +95,20 @@ interface PostRepository
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array;
 
 	/**
+	 * Live posts of several local authors, newest first.
+	 *
+	 * Used by the home timeline for local accounts the reader follows. Visibility
+	 * is not filtered: an accepted local follower may also see followers-only
+	 * and unlisted posts.
+	 *
+	 * @param list<string> $authorIds
+	 *
+	 * @return list<Post>
+	 */
+	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array;
+
+
+	/**
 	 * Attachment ids for a set of posts, in their stored order.
 	 *
 	 * The home timeline's local entries carry a post id but not the full post;

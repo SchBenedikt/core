@@ -213,6 +213,33 @@ final class PdoPostRepository implements PostRepository
 		return (int) $value;
 	}
 
+	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		if ($authorIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach (array_values($authorIds) as $index => $authorId) {
+			$name = 'author_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $authorId;
+		}
+
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')';
+
+		if ($before !== null) {
+			$sql .= ' AND published_at < :before';
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE

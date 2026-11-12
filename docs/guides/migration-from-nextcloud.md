@@ -231,6 +231,7 @@ actor URL. Do not replace UIDs with generated values.
 | `social_follower.inbox_url` | Stored inbox | Prefer the latest stored inbox; validate scheme/host and the 512-character limit |
 | `social_follower.shared_inbox_url` | Actor's `endpoints.sharedInbox`, if known | Nullable; validate scheme/host and the 512-character limit. `NULL` falls back to `inbox_url`, so this needs no backfill |
 | `social_follower.followed_at` | Original follow time | Canonical UTC second format |
+| `social_follower.is_local` | Not in the legacy export | Import as `0`; only the local Mastodon follow route writes `1` |
 | `social_following.id` | **Legacy outgoing follow row id** | **Preserve it**; a future `Undo` embeds an id derived from it |
 | `social_following.local_user_id` | Legacy account id | Must match the actor owner |
 | `social_following.actor_id` | Remote actor URL | Copy exactly; must fit 255 characters |

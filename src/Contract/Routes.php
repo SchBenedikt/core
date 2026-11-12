@@ -38,10 +38,13 @@ use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
@@ -381,6 +384,36 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:favourites'],
 				summary: 'Remove the signed-in account\'s favourite from a visible local status.',
+			),
+			new Route(
+				name: 'mastodon.accounts.relationships',
+				method: 'GET',
+				path: $mastodon . '/accounts/relationships',
+				handler: MastodonRelationshipsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:follows'],
+				summary: 'Relationships between the signed-in account and local accounts.',
+			),
+			new Route(
+				name: 'mastodon.accounts.follow',
+				method: 'POST',
+				path: $mastodon . '/accounts/{id}/follow',
+				handler: MastodonFollowAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:follows'],
+				summary: 'Follow one local account; idempotent per relationship.',
+			),
+			new Route(
+				name: 'mastodon.accounts.unfollow',
+				method: 'POST',
+				path: $mastodon . '/accounts/{id}/unfollow',
+				handler: MastodonUnfollowAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:follows'],
+				summary: 'Unfollow one local account; idempotent per relationship.',
 			),
 			new Route(
 				name: 'mastodon.accounts.statuses',

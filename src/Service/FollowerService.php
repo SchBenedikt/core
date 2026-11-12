@@ -42,7 +42,10 @@ final class FollowerService
 	) {
 	}
 
-	public function follow(FollowActor $command): FollowResult
+	/**
+	 * @param bool $local true for a local-to-local edge, which has no remote delivery
+	 */
+	public function follow(FollowActor $command, bool $local = false): FollowResult
 	{
 		$localUserId = trim($command->localUserId);
 		$actorId = trim($command->actorId);
@@ -104,6 +107,7 @@ final class FollowerService
 			inboxUrl: $inboxUrl,
 			followedAt: Time::toSecondPrecision($this->clock->now()),
 			sharedInboxUrl: $sharedInboxUrl,
+			local: $local,
 		);
 
 		$this->followers->insert($follower);
@@ -117,6 +121,21 @@ final class FollowerService
 	public function unfollow(string $localUserId, string $followerId): bool
 	{
 		return $this->followers->remove($followerId, $localUserId);
+	}
+
+	/**
+	 * Removes a local-to-local edge. A missing or remote edge is ignored.
+	 *
+	 * @return bool whether a local edge was removed
+	 */
+	public function unfollowLocalByActor(string $localUserId, string $actorId): bool
+	{
+		$existing = $this->followers->findByActor(trim($localUserId), trim($actorId));
+		if ($existing === null || !$existing->local) {
+			return false;
+		}
+
+		return $this->followers->removeByActor($existing->localUserId, $existing->actorId);
 	}
 
 	/**

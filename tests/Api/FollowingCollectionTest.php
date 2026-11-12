@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\ValidationException;
@@ -106,6 +107,33 @@ final class FollowingCollectionTest extends TestCase
 		$collection = $this->collection($app);
 		self::assertSame(0, $collection['totalItems']);
 		self::assertSame([], $collection['orderedItems']);
+	}
+
+	public function testALocalFollowAppearsInTheFollowingCollection(): void
+	{
+		$app = Application::inMemory(
+			clock: $this->clock,
+			signingKey: self::$localKey,
+			localActors: new InMemoryActorDirectory(['alice', 'bob']),
+			config: new ArrayConfig([
+				'social' => [
+					'mastodon.api' => 'true',
+					'instance.url' => 'https://localhost:8080',
+				],
+			]),
+		);
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/accounts/bob/follow',
+			userId: 'alice',
+			scopes: ['write:follows'],
+		));
+		self::assertSame(200, $response->status);
+
+		$collection = $this->collection($app);
+		self::assertSame(1, $collection['totalItems']);
+		self::assertSame(['https://localhost:8080/@bob'], $collection['orderedItems']);
 	}
 
 	public function testFollowingTwiceDoesNotDuplicateTheEntry(): void

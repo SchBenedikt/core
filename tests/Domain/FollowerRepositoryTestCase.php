@@ -183,6 +183,31 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->actorIdsPage('dave', 10, 0));
 	}
 
+	public function testLocalFollowsAreScopedAndExcludedFromDelivery(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower(
+			'local',
+			'bob',
+			'https://social.example/@alice',
+			local: true,
+		));
+		$repository->insert($this->follower('remote', 'bob', 'https://remote.example/users/carol'));
+
+		self::assertSame(
+			['bob'],
+			$repository->localUserIdsFollowedBy('https://social.example/@alice'),
+		);
+		self::assertSame(1, $repository->localFollowingCount('https://social.example/@alice'));
+		self::assertSame([], $repository->localUserIdsFollowedBy('https://social.example/@nobody'));
+		self::assertSame(
+			['https://remote.example/users/carol/inbox'],
+			$repository->inboxesFor('bob'),
+		);
+		self::assertTrue($repository->find('local')?->local);
+		self::assertFalse($repository->find('remote')?->local);
+	}
+
 	public function testInboxesAreDistinctAndSorted(): void
 	{
 		$repository = $this->repository();
@@ -246,6 +271,7 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		string $followedAt = '2026-11-11T10:00:00Z',
 		?string $inboxUrl = null,
 		?string $sharedInboxUrl = null,
+		bool $local = false,
 	): Follower {
 		return new Follower(
 			$id,
@@ -254,6 +280,7 @@ abstract class FollowerRepositoryTestCase extends TestCase
 			$inboxUrl ?? $this->inboxFor($actorId),
 			Time::parse($followedAt),
 			$sharedInboxUrl,
+			$local,
 		);
 	}
 

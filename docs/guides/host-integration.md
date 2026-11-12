@@ -110,7 +110,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including media upload/update/delete through the same `$app->media` and local follow/unfollow/relationship reads through `LocalRelationshipService`; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -178,7 +178,7 @@ The core owns the schema classes, not the migration mechanism:
 - `PostSchema` → `social_post` and `social_post_attachment`
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
-- `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox)
+- `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox plus `is_local` for local-to-local follows)
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
@@ -197,7 +197,10 @@ If `social_following` already exists from an earlier core version, add the
 If `social_follower` exists from an earlier core version, add the nullable
 `shared_inbox_url VARCHAR(512) NULL` column. Existing rows need no backfill and
 fall back to their individual inbox; see
-[shared inboxes](shared-inboxes.md#migration).
+[shared inboxes](shared-inboxes.md#migration). Also add
+`is_local SMALLINT NOT NULL DEFAULT 0`; existing rows stay remote, and only the
+Mastodon-compatible local follow route writes `1`. Without the column, follower
+reads and follow/unfollow fail.
 If `social_attachment` predates remote media, add nullable `source_url
 VARCHAR(512)` and its unique index, and create
 `social_remote_post_attachment` from `RemotePostSchema::statements()`.
@@ -207,7 +210,10 @@ For thread/context fetching, create `social_remote_thread_post` from
 the route. For local Mastodon favourites, create `social_favourite` from
 `FavouriteSchema::statements()` before exposing the favourite/unfavourite
 routes; existing posts need no backfill, and deleting a post leaves the row for
-the host's cleanup policy. For AT Protocol publishing, create
+the host's cleanup policy. For follow/unfollow and relationship reads, add
+`is_local` as described above and pass a local account directory so
+`Application` assembles `LocalRelationshipService`; without it those routes
+answer `503 follows_not_configured`. For AT Protocol publishing, create
 `social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
 supply an `AtprotoAccountResolver`;
 supplying no resolver leaves the existing route at `503 atproto_not_configured`

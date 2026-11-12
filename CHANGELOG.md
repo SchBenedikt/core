@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local follows and relationships: `POST
+  {mastodon.prefix}/accounts/{id}/follow` and `.../unfollow` require
+  `write:follows`, declare a `30/900` rate limit and return the normal
+  relationship shape. Both are idempotent; a self-follow is `422` and an
+  unknown local target is `404`. `GET {mastodon.prefix}/accounts/relationships`
+  requires `read:follows`, accepts a scalar `id` or `id[]`, de-duplicates,
+  limits the request to 100 ids and answers `404` for an unknown target.
+  Local follows are stored in the existing `social_follower` graph with
+  `is_local = 1`, so follower counts, the followers collection and both
+  relationship directions share one source of truth; `inboxesFor()` excludes
+  those rows, so no remote delivery or signed `Follow` is queued. The local
+  following collection now combines local actor ids with remote outgoing
+  edges, and the authenticated home timeline includes the followed account's
+  live local posts (blocked accounts stay hidden). The route manifest and OpenAPI export have 41 routes. Existing hosts
+  must add `social_follower.is_local SMALLINT NOT NULL DEFAULT 0` through their
+  migration path; existing rows stay remote and need no backfill. The rest of
+  the Mastodon server API, including following a remote actor through this
+  prefix and remote relationship APIs, stays external; see
+  `docs/guides/mastodon-api.md`.
 - Mastodon-compatible media management: `PUT {mastodon.prefix}/media/{id}`
   updates an unattached attachment's description from JSON, form or multipart
   input and returns the usual Mastodon attachment shape. `DELETE

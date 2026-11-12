@@ -131,6 +131,29 @@ final class InMemoryPostRepository implements PostRepository
 		return count($this->authorPosts($userId));
 	}
 
+	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		$authors = array_fill_keys(array_values($authorIds), true);
+		if ($authors === []) {
+			return [];
+		}
+
+		$posts = array_values(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted()
+				&& isset($authors[$post->authorId])
+				&& ($before === null || $post->publishedAt < $before),
+		));
+
+		usort($posts, static function (Post $a, Post $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($posts, 0, max(1, $limit));
+	}
+
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		return $this->slice(

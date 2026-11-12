@@ -24,6 +24,7 @@ use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\CreatePost;
+use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Support\Time;
@@ -53,6 +54,7 @@ final class MastodonService
 		private readonly ?MediaService $media = null,
 		private readonly ?FavouriteRepository $favourites = null,
 		private readonly ?Clock $clock = null,
+		private readonly ?LocalRelationshipService $relationships = null,
 	) {
 	}
 
@@ -338,6 +340,58 @@ final class MastodonService
 	}
 
 	/**
+	 * Follows one local account and returns the resulting relationship.
+	 *
+	 * A repeat is idempotent through the follower identity; the route returns
+	 * the same relationship without creating a second edge.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function followAccount(string $userId, string $targetId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$this->requireLocalAccount($targetId);
+		$this->requireRelationships()->follow($userId, $targetId);
+
+		return $this->requireRelationships()->relationship($userId, $targetId);
+	}
+
+	/**
+	 * Removes a local follow and returns the resulting relationship.
+	 *
+	 * Unfollowing an absent local edge is a successful no-op, matching
+	 * Mastodon's idempotent unfollow response.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function unfollowAccount(string $userId, string $targetId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$this->requireLocalAccount($targetId);
+		$this->requireRelationships()->unfollow($userId, $targetId);
+
+		return $this->requireRelationships()->relationship($userId, $targetId);
+	}
+
+	/**
+	 * @param list<string> $targetIds
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function relationships(string $userId, array $targetIds): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		foreach ($targetIds as $targetId) {
+			$this->requireLocalAccount($targetId);
+		}
+
+		return $this->requireRelationships()->relationships($userId, $targetIds);
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	public function verifyCredentials(string $userId): array
@@ -391,6 +445,19 @@ final class MastodonService
 		}
 
 		return $attachment;
+	}
+
+	private function requireRelationships(): LocalRelationshipService
+	{
+		if ($this->relationships === null) {
+			throw new MastodonRequestException(
+				503,
+				'follows_not_configured',
+				'Local relationship storage is not configured.',
+			);
+		}
+
+		return $this->relationships;
 	}
 
 	private function requireMedia(): MediaService

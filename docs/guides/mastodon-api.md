@@ -19,6 +19,9 @@ Locally implemented (core):
 - `POST /statuses`
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
+- `GET /accounts/relationships`
+- `POST /accounts/{id}/follow`
+- `POST /accounts/{id}/unfollow`
 - `POST /media`
 - `PUT /media/{id}`
 - `DELETE /media/{id}`
@@ -27,9 +30,10 @@ Locally implemented (core):
 - `GET /accounts/verify_credentials`
 
 The local subset covers public/unlisted/followers-only text posts, local
-favourite/unfavourite bookkeeping, media upload, metadata update/delete and
-local media attachments. It deliberately does **not** implement remote
-timelines, favourite federation
+favourite/unfavourite bookkeeping, local follow/unfollow and relationship
+bookkeeping, media upload, metadata update/delete and local media attachments.
+It deliberately does **not** implement remote timelines, following a remote
+actor through this compatibility prefix, remote favourite federation
 (outbound `Like`/`Undo` or remote favourite counts), boosts, notifications,
 streaming, polls, scheduled posts, filters, followed tags, lists, OAuth
 authorization/token endpoints, search, admin APIs or the full account/profile
@@ -40,7 +44,7 @@ surface. Those remain external work; see the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twelve routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all fifteen routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -77,19 +81,23 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/unfavourite` | yes | `write:favourites` | 30 / 900 s |
+| `GET {prefix}/accounts/relationships` | yes | `read:follows` | 60 / 60 s |
+| `POST {prefix}/accounts/{id}/follow` | yes | `write:follows` | 30 / 900 s |
+| `POST {prefix}/accounts/{id}/unfollow` | yes | `write:follows` | 30 / 900 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/verify_credentials` | yes | `read:accounts` | 60 / 60 s |
 
-A parent scope grants its children (`read` grants `read:accounts`, `write`
-grants `write:favourites` and `write:media`); a granular scope does not grant
-its parent. `*` grants everything. A token with too few scopes gets `403
-insufficient_scope`. The host still owns bearer parsing, token expiry/revocation
-and the actual rate limiter; the route manifest only declares the budget,
-exactly like the rest of the core API.
+A parent scope grants its children (`read` grants `read:accounts` and
+`read:follows`, `write` grants `write:favourites`, `write:follows` and
+`write:media`); a granular scope does not grant its parent. `*` grants
+everything. A token with too few scopes gets `403 insufficient_scope`. The host
+still owns bearer parsing, token expiry/revocation and the actual rate limiter;
+the route manifest only declares the budget, exactly like the rest of the core
+API.
 
 The local-account directory, when supplied, is checked for
-`verify_credentials`, status creation, favourite/unfavourite, media management
-and account statuses.
+`verify_credentials`, status creation, favourite/unfavourite, follow/unfollow,
+relationships, media management and account statuses.
 Without a directory the core cannot distinguish local from remote account ids;
 a host that enables this API should always pass one.
 
@@ -175,6 +183,69 @@ An assembly without a `FavouriteRepository` answers `503
 favourites_not_configured` instead of silently dropping the write. The normal
 `Application::inMemory()`/`Application::forHost()` assemblies always supply
 one.
+
+### Following accounts and relationships
+
+`POST /accounts/{id}/follow` follows a **local** account from the signed-in
+local account. The target id is the local directory id used by the rest of
+this API, not a remote actor URL. A self-follow is `422 validation_failed`
+with `error.fields.id`; an unknown or non-local target is `404 not_found`.
+The write is idempotent: repeating the follow returns the same relationship
+and does not create a second edge. `POST /accounts/{id}/unfollow` removes only
+the caller's edge and is a successful no-op when the account was not followed.
+
+The edge is stored in the existing incoming graph (`social_follower`) with
+`is_local = 1`, because the same graph already answers follower counts and the
+public followers collection. Local edges are excluded from
+`FollowerRepository::inboxesFor()`, so a local follow never queues a remote
+delivery or a signed `Follow`. A local follow appears in the target's public
+followers collection and in the caller's public following collection; remote
+follow edges stay in `social_following` and count through the existing
+outgoing service. The authenticated core home timeline
+(`GET /api/v1/timelines/home`) also includes live local posts by accounts the
+reader follows locally; blocking one of those accounts hides it from the
+reader without deleting the follow edge. This is a local relationship only —
+following a remote actor through this compatibility prefix is not part of the
+slice; the core `POST /api/v1/following` remains the federation path.
+
+`GET /accounts/relationships` accepts either a scalar `id` or repeated
+`id[]` parameters:
+
+```http
+GET {prefix}/accounts/relationships?id[]=bob&id[]=carol
+```
+
+It returns one object per requested id, in request order, without duplicates.
+At most 100 unique ids are accepted; a missing or empty `id` is `422
+validation_failed`, and any unknown local id makes the whole request `404
+not_found` so the response cannot silently omit a target. The fields follow
+the Mastodon relationship shape:
+
+```json
+{
+  "id": "bob",
+  "following": true,
+  "showing_reblogs": true,
+  "notifying": false,
+  "languages": [],
+  "followed_by": false,
+  "blocking": false,
+  "blocked_by": false,
+  "muting": false,
+  "muting_notifications": false,
+  "requested": false,
+  "domain_blocking": false,
+  "endorsed": false,
+  "note": ""
+}
+```
+
+`following` and `followed_by` are true only for local edges in this slice;
+`blocking` reads the existing per-user block repository. Relationship reads
+and the two writes require a `LocalRelationshipService` and a local account
+directory. `Application::inMemory()`/`Application::forHost()` create the
+service when a directory is supplied; an assembly without one answers `503
+follows_not_configured` rather than returning an empty relationship.
 
 ### Uploading media
 
@@ -291,11 +362,13 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off |
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
+| `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
+| `instance_not_configured` | 503 | `social/instance.url` is missing; a local follow needs it to derive actor URLs |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
-| `validation_failed` | 422 | Missing/invalid status fields or media ids; see `error.fields` |
-| `not_found` | 404 | Missing/private status, unknown cursor or unknown local account |
+| `validation_failed` | 422 | Missing/invalid status fields, media ids, relationship ids or a self-follow; see `error.fields` |
+| `not_found` | 404 | Missing/private status, unknown cursor, unknown local account or unknown relationship target |
 
 Authentication failures use the existing `401 authentication_required`; the
 host's limiter should use `429` with its own retry metadata. The core does not
@@ -311,7 +384,8 @@ internal key. Media update changes only `social_attachment.alt_text`; media
 delete removes that row and both blobs, but only while no `social_post_attachment`
 row references it. Neither operation adds a table or migration. Local
 favourites use the new `social_favourite` table from
-`FavouriteSchema`:
+`FavouriteSchema`. Local follow edges add one column to the existing
+`social_follower` table from `FollowerSchema`:
 
 ```sql
 CREATE TABLE social_favourite (
@@ -324,16 +398,29 @@ CREATE INDEX social_favourite_post ON social_favourite (post_id);
 CREATE INDEX social_favourite_user ON social_favourite (user_id, created_at);
 ```
 
-An existing host must create the table through its migration path before
-exposing the two favourite routes; there is no data backfill. A fresh host can
-run `FavouriteSchema::create()`. Deleting a post follows the normal soft-delete
-path and deliberately leaves favourite rows for an explicit host cleanup; the
-post is not visible, so its count is not served. Attachment rows and blobs
-remain governed by the existing media cleanup policy, not duplicated here.
+```sql
+ALTER TABLE social_follower ADD COLUMN is_local SMALLINT NOT NULL DEFAULT 0;
+```
+
+Existing follower rows default to `is_local = 0`, which is exactly the old
+remote-delivery meaning, so the migration needs no backfill. Only
+`POST /accounts/{id}/follow` writes `is_local = 1`; unfollow removes the row.
+An existing host must add the column before exposing the follow routes; a
+fresh host gets it from `FollowerSchema::create()`. A host that leaves the old
+schema in place will fail on follower reads and on follow/unfollow. There is
+no cleanup job for the marker: it is part of the edge and disappears with it.
+
+An existing host must create `social_favourite` through its migration path
+before exposing the two favourite routes; there is no data backfill. A fresh
+host can run `FavouriteSchema::create()`. Deleting a post follows the normal
+soft-delete path and deliberately leaves favourite rows for an explicit host
+cleanup; the post is not visible, so its count is not served. Attachment rows
+and blobs remain governed by the existing media cleanup policy, not duplicated
+here.
 
 ## OpenAPI and tests
 
-The twelve routes are in the manifest with auth, scope and rate-limit metadata.
+The fifteen routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance,
 media upload (success, description, media-in-status, auth, scope, disabled,
@@ -343,12 +430,18 @@ attached refusal, binary refusal) and delete (empty object, blob cleanup,
 attached refusal, foreign/missing ids, scopes and disabled feature),
 timeline, create (JSON and form), read, local favourite/unfavourite (counts,
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
-deleted status and custom prefix), account statuses, verify, delete and cursor
-cases. `FavouriteRepositoryTestCase` is the shared contract for the in-memory
-and PDO stores (pair uniqueness, ownership, batch counts and removal).
-`MastodonCompatibilityTest` covers prefix validation, scope matching and route
-metadata. The post repository contract still covers the id-aware cursor used
-by the API.
+deleted status and custom prefix), local follow/unfollow (relationship flags,
+idempotency, self-follow, unknown target, home-timeline visibility, scopes,
+disabled feature), and
+relationship reads (scalar and `id[]`, deduplication, missing/empty input,
+unknown ids and the 100-id limit), account statuses, verify, delete and cursor
+cases. `FollowerRepositoryTestCase` is the shared contract for the in-memory
+and PDO stores and now covers local edges, their exclusion from delivery
+inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
+uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
+covers prefix validation, scope matching and route metadata, including the
+three relationship routes. The post repository contract still covers the
+id-aware cursor used by the API.
 
 ## What remains external
 
@@ -360,10 +453,13 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   `Like`/`Undo` and remote counts), boosts, bookmarks, notifications,
   streaming and search need remote data the core does not fetch for this
   surface.
-- Polls, scheduled posts, filters, lists and the full account
-  profile/relationship APIs are separate features.
-- Follow/follower endpoints and moderation/admin APIs are not part of this
-  slice.
+- Polls, scheduled posts, filters, lists and the full account profile APIs
+  are separate features. Remote relationship APIs remain external; the local
+  follow/unfollow and relationship views above are done.
+- Following a remote actor through the compatibility prefix and remote
+  follower/following listings are not part of this slice; moderation/admin
+  APIs are also external. The core `/api/v1/following` path remains the
+  federation route.
 - The host must map bearer tokens to `userId`/`scopes`, enforce the declared
   rate limits and decide whether to expose the custom prefix publicly.
 

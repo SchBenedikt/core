@@ -29,8 +29,8 @@ Implemented and tested here:
 | Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
 | AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route, an idempotent remote delete for core-published records and an OAuth session-refresh exchange with ES256 DPoP proofs; account linking, the credential store and the full AppView/repository stack are still external (see the [guide](docs/guides/atproto.md)) |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 38 routes and its JSON export |
-| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, local favourite/unfavourite, media upload/update/delete, account statuses, verify credentials) over the same posts and media service, with scopes (`write:statuses`, `write:favourites`, `write:media`, `read:accounts`), id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 41 routes and its JSON export |
+| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance, public timeline, status read/write/delete, local favourite/unfavourite, local follow/unfollow and relationship reads, media upload/update/delete, account statuses, verify credentials) over the same posts, media service and follower graph, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `read:accounts`, `read:follows`), id-aware pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
@@ -59,7 +59,7 @@ remaining seams.
 composer install
 composer check          # lint, boundary, attribution, links, tests
 php bin/core-demo       # drives the core through real HTTP requests
-php bin/export-routes   # the HTTP contract as JSON (38 routes)
+php bin/export-routes   # the HTTP contract as JSON (41 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
 ```
@@ -161,11 +161,13 @@ invalid input and idempotency), media update/delete (form, JSON, multipart,
 ownership, attached-media refusal, empty-object delete, no orphan blobs, scopes
 and disabled feature), create (form and JSON), read, local
 favourite/unfavourite (counts, viewer flags, idempotency, auth, scope,
-deleted status and custom prefix), account statuses, verify, delete, cursor
-pagination and invalid media. The `FavouriteRepository` and `PostRepository`
-contracts cover the new storage and attachment-link queries. The
-`MastodonCompatibilityTest` covers prefix validation, scope matching and route
-metadata.
+deleted status and custom prefix), local follow/unfollow and relationship
+reads (flags, idempotency, self/unknown targets, scalar and array ids, limits
+and scopes), account statuses, verify, delete, cursor pagination and invalid
+media. The `FavouriteRepository`, `FollowerRepository` and `PostRepository`
+contracts cover the new storage, local-edge delivery exclusion and
+attachment-link queries. The `MastodonCompatibilityTest` covers prefix
+validation, scope matching and route metadata.
 
 ## Documentation
 

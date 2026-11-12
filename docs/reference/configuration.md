@@ -100,15 +100,29 @@ favourite/unfavourite writes the new `social_favourite` table through
 `FavouriteRepository`; create it with `FavouriteSchema::statements()` through
 the host migration path before exposing those routes. There is no backfill,
 and the table has a composite `(user_id, post_id)` primary key, so a repeat
-cannot duplicate a favourite. Media upload needs the same
+cannot duplicate a favourite. Local follow/unfollow writes the existing
+`social_follower` edge with `is_local = 1`; existing hosts must add the column:
+
+```sql
+ALTER TABLE social_follower ADD COLUMN is_local SMALLINT NOT NULL DEFAULT 0;
+```
+
+Existing rows default to remote (`0`), so no backfill is needed. The marker
+keeps local edges out of `inboxesFor()` delivery resolution and out of signed
+Follow/Undo delivery. Relationship reads and both writes need a local account
+directory and the assembled `LocalRelationshipService`; without them the
+routes answer `503 follows_not_configured`. The local edge disappears with an
+unfollow, so there is no separate cleanup job. Media upload needs the same
 `MediaService`/`BlobStore` as `/api/v1/media`; without one the route answers
 `503 media_not_configured`, and a storage failure after validation answers
 `503 media_storage_unavailable`. A manually assembled service without a
 `FavouriteRepository` answers `503 favourites_not_configured`; the standard
 `Application` assemblies always provide one. The host must
 map bearer tokens to `Request::$userId` and `Request::$scopes`; a parent scope
-such as `read` grants `read:accounts`, a granular scope does not grant its
-parent, and a token without the route's scope gets `403 insufficient_scope`.
+such as `read` grants `read:accounts` and `read:follows`, `write` grants
+`write:favourites`, `write:follows` and `write:media`, a granular scope does
+not grant its parent, and a token without the route's scope gets `403
+insufficient_scope`.
 The declared rate limits are enforced by the host like every other route. The
 prefix must not overlap `/api/v1`; changing it changes both the served routes
 and, when passed explicitly, the exported manifest. Existing data needs no

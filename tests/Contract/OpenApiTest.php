@@ -83,6 +83,24 @@ final class OpenApiTest extends TestCase
 		self::assertSame('30/900', $mediaDelete['x-rate-limit']);
 		self::assertSame(['write:media'], $mediaDelete['x-required-scopes']);
 
+		$relationships = $document['paths']['/api/mastodon/v1/accounts/relationships']['get'];
+		self::assertSame('mastodon_accounts_relationships', $relationships['operationId']);
+		self::assertSame([['bearerAuth' => []]], $relationships['security']);
+		self::assertSame('60/60', $relationships['x-rate-limit']);
+		self::assertSame(['read:follows'], $relationships['x-required-scopes']);
+
+		$follow = $document['paths']['/api/mastodon/v1/accounts/{id}/follow']['post'];
+		self::assertSame('mastodon_accounts_follow', $follow['operationId']);
+		self::assertSame([['bearerAuth' => []]], $follow['security']);
+		self::assertSame('30/900', $follow['x-rate-limit']);
+		self::assertSame(['write:follows'], $follow['x-required-scopes']);
+
+		$unfollow = $document['paths']['/api/mastodon/v1/accounts/{id}/unfollow']['post'];
+		self::assertSame('mastodon_accounts_unfollow', $unfollow['operationId']);
+		self::assertSame([['bearerAuth' => []]], $unfollow['security']);
+		self::assertSame('30/900', $unfollow['x-rate-limit']);
+		self::assertSame(['write:follows'], $unfollow['x-required-scopes']);
+
 		$favourite = $document['paths']['/api/mastodon/v1/statuses/{id}/favourite']['post'];
 		self::assertSame('mastodon_statuses_favourite', $favourite['operationId']);
 		self::assertSame([['bearerAuth' => []]], $favourite['security']);
@@ -118,6 +136,9 @@ final class OpenApiTest extends TestCase
 		self::assertArrayHasKey('/api/mastodon/v1/media/{id}', $decoded['paths']);
 		self::assertArrayHasKey('put', $decoded['paths']['/api/mastodon/v1/media/{id}']);
 		self::assertArrayHasKey('delete', $decoded['paths']['/api/mastodon/v1/media/{id}']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/relationships', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/follow', $decoded['paths']);
+		self::assertArrayHasKey('/api/mastodon/v1/accounts/{id}/unfollow', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/favourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/mastodon/v1/statuses/{id}/unfavourite', $decoded['paths']);
 		self::assertArrayHasKey('/api/v1/remote-posts/{id}/thread', $decoded['paths']);

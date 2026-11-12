@@ -69,6 +69,8 @@ it.
 | `POST /inbox` or `/inbox/shared` with `Undo(Follow)` | The actor disappears |
 | `POST /api/v1/followers` (local API) | Same table, so the actor appears as well |
 | `DELETE /api/v1/followers/{id}` | The actor disappears |
+| Mastodon `POST {prefix}/accounts/{id}/follow` | A local account edge with `is_local = 1` appears; no remote delivery is queued |
+| Mastodon `POST {prefix}/accounts/{id}/unfollow` | The local edge disappears |
 
 A repeated `Follow` does not duplicate the entry: `(local user, actor)` is
 unique. A repeated `Undo` is a no-op, so the collection stays empty.

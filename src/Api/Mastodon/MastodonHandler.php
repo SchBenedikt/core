@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Api\Mastodon;
 
+use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
@@ -43,6 +44,12 @@ abstract class MastodonHandler implements Handler
 			);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($this->fields($exception->fields()), $exception->getMessage());
+		} catch (ConfigurationException $exception) {
+			throw new HttpException(
+				503,
+				'instance_not_configured',
+				'The instance URL is not configured.',
+			);
 		}
 	}
 
@@ -83,6 +90,12 @@ abstract class MastodonHandler implements Handler
 			);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($this->fields($exception->fields()), $exception->getMessage());
+		} catch (ConfigurationException $exception) {
+			throw new HttpException(
+				503,
+				'instance_not_configured',
+				'The instance URL is not configured.',
+			);
 		}
 	}
 

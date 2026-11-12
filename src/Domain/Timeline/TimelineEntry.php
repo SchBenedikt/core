@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -38,6 +39,20 @@ final readonly class TimelineEntry
 		if ($id === '' || $authorId === '' || $objectId === '') {
 			throw new InvalidArgumentException('A timeline entry needs an id, an author and an object.');
 		}
+	}
+
+	public static function fromPost(Post $post): self
+	{
+		return new self(
+			id: $post->id,
+			authorId: $post->authorId,
+			objectId: $post->id,
+			objectAuthorId: $post->authorId,
+			content: $post->content,
+			contentWarning: $post->contentWarning,
+			publishedAt: $post->publishedAt,
+			visibility: $post->visibility,
+		);
 	}
 
 	public function isBoost(): bool

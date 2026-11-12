@@ -14,11 +14,13 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 
 /**
- * A remote actor that follows one local account.
+ * An actor that follows one local account.
  *
- * The actor id is the identity — a follower always arrives as an absolute
+ * The actor id is the identity — a follower arrives as an absolute
  * ActivityPub actor URL, never as a local user name. The inbox is stored
- * alongside it so delivery needs no network round trip at post time.
+ * alongside it so remote delivery needs no network round trip at post time;
+ * local-to-local edges carry the local shared inbox but are excluded from
+ * delivery resolution.
  */
 final readonly class Follower
 {
@@ -29,6 +31,8 @@ final readonly class Follower
 		public string $inboxUrl,
 		public DateTimeImmutable $followedAt,
 		public ?string $sharedInboxUrl = null,
+		/** True when this is a local-to-local edge, not a remote inbox. */
+		public bool $local = false,
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A follower needs an id.');
@@ -66,6 +70,7 @@ final readonly class Follower
 			$inboxUrl,
 			$this->followedAt,
 			$sharedInboxUrl ?? $this->sharedInboxUrl,
+			$this->local,
 		);
 	}
 

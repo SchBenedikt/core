@@ -204,6 +204,33 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->ownTimeline('nobody', 10));
 	}
 
+	public function testTimelineForAuthorsIncludesTheirLivePostsOnly(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('a-public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('a-private', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('b-private', 'bob', Visibility::Followers, '2026-11-11T10:02:00Z'));
+		$repository->insert($this->post('c-public', 'carol', Visibility::Public, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post('a-gone', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
+		$repository->softDelete('a-gone', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['b-private', 'a-private', 'a-public'],
+			array_map(
+				static fn (Post $post): string => $post->id,
+				$repository->timelineForAuthors(['alice', 'bob'], 10),
+			),
+		);
+		self::assertSame(
+			['a-public'],
+			array_map(
+				static fn (Post $post): string => $post->id,
+				$repository->timelineForAuthors(['alice', 'bob'], 10, Time::parse('2026-11-11T10:01:00Z')),
+			),
+		);
+		self::assertSame([], $repository->timelineForAuthors([], 10));
+	}
+
 	public function testSoftDeleteHidesThePostButKeepsTheRow(): void
 	{
 		$repository = $this->repository();

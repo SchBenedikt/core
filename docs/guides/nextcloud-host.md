@@ -409,6 +409,10 @@ If `social_follower` already exists, add the nullable
 `shared_inbox_url VARCHAR(512) NULL` column before enabling follower reads or
 writes. Existing rows need no backfill and keep using their individual inbox;
 the host serves `POST /inbox/shared` with the same controller as `/inbox`.
+For the Mastodon-compatible local follow/unfollow and relationship routes,
+add `is_local SMALLINT NOT NULL DEFAULT 0` to `social_follower`; existing rows
+stay remote and only `POST {prefix}/accounts/{id}/follow` writes `1`. A host
+without the column cannot read followers or serve those routes.
 Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
 or reading the combined home timeline; it has no legacy rows to import. Create
 `social_block` before enabling `GET`/`POST /api/v1/blocks` or the combined home
