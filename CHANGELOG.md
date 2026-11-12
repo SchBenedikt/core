@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Follow approval: the optional `FollowPolicy` runs after signature
+  verification and before the follower repository write. It can refuse a
+  Follow for a specific local account with `403 follow_not_accepted`; the
+  refusal creates no edge and releases the activity claim so a later retry can
+  succeed. `AcceptAllFollows` is the default and keeps the previous behaviour.
+- Bounded actor-key cache: `CachingActorResolver` wraps any `ActorResolver`,
+  keys entries by the full key id, reuses only validated successes and drops
+  entries after a short TTL or when the bounded cache is full. Failed
+  resolutions are never cached, so a transient fetch error cannot pin an actor
+  as unknown.
 - Per-user blocks: `Block`/`BlockRepository` with in-memory and PDO adapters,
   one contract test and the canonical `BlockSchema` (`social_block`).
   `GET`/`POST /api/v1/blocks` and `DELETE /api/v1/blocks/{id}` let an account

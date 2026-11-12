@@ -122,8 +122,9 @@ production bootstrap.
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
-| `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver` |
+| `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
 | `BlockedActorPolicy` | Optional instance-wide decision whether inbound content from an actor is refused | `NoBlockedActors` by default; host policy otherwise |
+| `FollowPolicy` | Optional per-account decision whether an inbound Follow creates an edge | `AcceptAllFollows` by default; host policy otherwise |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
 

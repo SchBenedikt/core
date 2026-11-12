@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
+use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -72,6 +73,7 @@ final class InboxService
 		private readonly JobQueue $queue,
 		private readonly Clock $clock,
 		private readonly ?BlockedActorPolicy $blockedActors = null,
+		private readonly ?FollowPolicy $followPolicy = null,
 	) {
 	}
 
@@ -493,6 +495,13 @@ final class InboxService
 		}
 
 		$localUserId = $this->localUserFromActorId($object);
+
+		if ($this->followPolicy?->accepts($actor, $localUserId) === false) {
+			throw new InboxRejectedException(
+				'follow_not_accepted',
+				'This account does not accept the Follow.',
+			);
+		}
 
 		$result = $this->followers->follow(new FollowActor(
 			$localUserId,

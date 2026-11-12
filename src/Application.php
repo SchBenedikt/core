@@ -31,11 +31,13 @@ use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
+use AlohaSocial\Core\Domain\Federation\AcceptAllFollows;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowerInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
@@ -138,6 +140,7 @@ final readonly class Application
 		?RemotePostRepository $remotePostRepository = null,
 		?BlockedActorPolicy $blockedActors = null,
 		?BlockRepository $blockRepository = null,
+		?FollowPolicy $followPolicy = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -180,6 +183,7 @@ final readonly class Application
 			homeTimeline: $homeTimeline,
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
+			followPolicy: $followPolicy,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -220,6 +224,7 @@ final readonly class Application
 		bool $debug = false,
 		?BlockedActorPolicy $blockedActors = null,
 		?BlockRepository $blockRepository = null,
+		?FollowPolicy $followPolicy = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -240,6 +245,7 @@ final readonly class Application
 			homeTimeline: new PdoHomeTimelineRepository($database),
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
+			followPolicy: $followPolicy,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -268,6 +274,7 @@ final readonly class Application
 		HomeTimelineRepository $homeTimeline,
 		BlockRepository $blockRepository,
 		?BlockedActorPolicy $blockedActors,
+		?FollowPolicy $followPolicy,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
@@ -313,6 +320,7 @@ final readonly class Application
 		);
 		$instance = new InstanceInfo($config);
 		$blockedActors ??= new NoBlockedActors();
+		$followPolicy ??= new AcceptAllFollows();
 
 		// Inbound federation needs a way to resolve a key id, a client to
 		// reach the peer and a key to sign the Accept. Missing any of them
@@ -328,6 +336,7 @@ final readonly class Application
 				$queue,
 				$clock,
 				$blockedActors,
+				$followPolicy,
 			)
 			: null;
 

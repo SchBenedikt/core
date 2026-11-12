@@ -27,9 +27,9 @@ use function is_string;
  * against what the request claimed. A document that does not confirm the key
  * id is refused: otherwise any actor could sign with a key it merely mentions.
  *
- * There is no cache yet. A host that fetches on every request pays a round
- * trip; caching belongs to the host, with the same identity check applied to
- * the cached document.
+ * There is no cache in this class. Wrap it in {@see CachingActorResolver} to
+ * avoid a round trip per signed request while keeping every identity check on
+ * a miss; a host may also implement its own cache with the same rules.
  */
 final class HttpActorResolver implements ActorResolver
 {

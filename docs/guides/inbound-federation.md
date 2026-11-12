@@ -25,6 +25,12 @@ blocks are separate; they hide shared remote rows from one reader's home
 timeline and do not reject a delivery for other followers. See
 [blocks](blocks.md).
 
+A `FollowPolicy` can refuse an inbound Follow for a specific local account
+before the follower edge is written; `AcceptAllFollows` is the default. A
+refusal answers `403 follow_not_accepted`, changes no graph row and releases
+the activity claim, so the same signed Follow can be retried if the host later
+accepts it.
+
 ## Order of checks
 
 Every step refuses before anything changes:
@@ -43,9 +49,11 @@ Every step refuses before anything changes:
 9. **Actor blocked by the host policy?** — 403 `blocked_actor`.
 10. **Activity id not seen before?** — 400 `replayed_activity`.
 11. **Type supported?** — 400 `unsupported_activity`.
-12. **For `Create`, `Delete` and `Announce`: does at least one local account
+12. **For a `Follow`: does the local account's `FollowPolicy` accept it?** —
+    403 `follow_not_accepted`.
+13. **For `Create`, `Delete` and `Announce`: does at least one local account
     follow the actor?** — 403 `not_followed`.
-13. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
+14. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
 
 A refusal releases the replay claim when the claim was already taken, so a peer
 that fixes its document can deliver the same activity again. A blocked actor is
@@ -55,7 +63,7 @@ refused before a claim, and a replay is refused without changing anything.
 
 | Type | Effect |
 | --- | --- |
-| `Follow` | stores the follower edge (idempotently) and queues an `Accept` to the follower's inbox |
+| `Follow` | stores the follower edge when the optional `FollowPolicy` accepts it (idempotently) and queues an `Accept` to the follower's inbox |
 | `Undo` with an embedded `Follow` | removes the follower edge; an Undo for a follow that is already gone is still accepted |
 | `Create` | stores the embedded `Note` in the remote-post store as a post |
 | `Delete` | soft-deletes the matching remote activity/post, if this actor owns it; an unknown target is a successful no-op |
@@ -142,7 +150,4 @@ The clock window for the signed `Date` is 300 seconds; see
 ## What is missing
 
 - fetching/backfilling remote posts or threads that were not delivered;
-- a key cache (the core fetches on every request when using
-  `HttpActorResolver`);
-- a policy layer for approving Follows instead of accepting every valid one;
 - shared-inbox handling and delivery batching.

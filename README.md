@@ -24,10 +24,10 @@ Implemented and tested here:
 | Platform ports | config, clock, blob storage (local and in-memory), database (PDO), outbound HTTP (curl) |
 | Domain | posts, visibility, remote posts/boosts, per-user blocks, post/remote-post/block repositories (in-memory and SQL, same contract tests), combined home-timeline repository |
 | Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
-| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence and per-user timeline blocking |
+| Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
 | Services | write/read/delete a post, public and follow-based home timelines, followers, following, instance description |
-| Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
+| Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 21 routes and its JSON export |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
@@ -51,7 +51,7 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, 520 tests
+composer check          # lint, boundary, attribution, links, 526 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (21 routes)
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity

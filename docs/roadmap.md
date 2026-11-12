@@ -28,6 +28,14 @@ Status of the core, not a promise about dates.
 - Inbound content authorization: an actor must be followed by at least one
   local account, an optional host `BlockedActorPolicy` can refuse an actor,
   and an object/Delete ownership mismatch is refused without changing state.
+- Actor-key cache: `CachingActorResolver` wraps the HTTP resolver, keys by the
+  full key id, caches only successful resolutions and bounds entries by a short
+  TTL and a maximum size. A cached entry still came from the full identity
+  check; failures are not cached.
+- Follow approval: the optional `FollowPolicy` decides whether a verified
+  inbound Follow creates an edge for a local account. A refusal is
+  `follow_not_accepted`, writes nothing and releases the replay claim; the
+  default `AcceptAllFollows` preserves the previous behaviour.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting

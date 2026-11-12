@@ -96,7 +96,6 @@ are served next to it; the outbox lists the account's public posts as the same
 
 - fetching/backfilling remote posts, threads or media that were not delivered;
 - delivery to shared inboxes;
-- a key cache (the HTTP resolver fetches per request).
 
 The seams are named in [the architecture](../architecture.md#what-is-not-here-yet),
 so each of these is an addition, not a rewrite.

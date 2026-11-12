@@ -29,7 +29,7 @@ signed `Digest` is refused.
 
 | `type` | Required fields | Effect |
 | --- | --- | --- |
-| `Follow` | `id`, `actor`, `object` = local actor URL | Creates the follower edge; queues `Accept` |
+| `Follow` | `id`, `actor`, `object` = local actor URL | Creates the follower edge when the optional `FollowPolicy` accepts it; queues `Accept` |
 | `Undo` | `id`, `actor`, `object` = embedded `Follow` | Removes the follower edge |
 | `Create` | `id`, `actor`, embedded `object` with `id` and `content` | Stores a remote post |
 | `Delete` | `id`, `actor`, `object` = URI or embedded object with an `id` | Soft-deletes the matching remote post/activity |
@@ -62,6 +62,7 @@ the activity timestamp and then the server clock. An invalid timestamp is
 | 403 | `actor_mismatch` | Valid signature, but the activity claims another actor, a created object belongs to another actor, or a Delete targets another actor's row |
 | 403 | `blocked_actor` | The host's blocked-actor policy refuses this actor |
 | 403 | `not_followed` | `Create`/`Delete`/`Announce` from an actor no local account follows |
+| 403 | `follow_not_accepted` | A valid Follow is refused by the host's `FollowPolicy` |
 | 404 | `unknown_actor` | The `keyid` does not resolve to a usable actor |
 | 404 | `unknown_object` | A Follow does not address an actor on this instance |
 | 503 | `inbox_not_configured` | No actor resolver, HTTP client or signing key configured |

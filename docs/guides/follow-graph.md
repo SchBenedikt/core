@@ -142,10 +142,18 @@ The optional instance-wide `BlockedActorPolicy` is a different seam: it
 refuses inbound activities before they are stored. It is not the per-user block
 list.
 
+## Follow policy
+
+A verified Follow is not automatically accepted. The optional `FollowPolicy`
+receives the resolved `RemoteActor` and the local user id and can refuse the
+edge; `AcceptAllFollows` is the default. A refusal writes nothing, answers
+`403 follow_not_accepted` and releases the activity claim, so the peer's retry
+can succeed after the host changes its policy. See
+[inbound federation](inbound-federation.md).
+
 ## What is missing
 
-- local-to-local follow edges and a local-follow home timeline;
-- a policy for approving Follows instead of accepting every valid one.
+- local-to-local follow edges and a local-follow home timeline.
 
 The follower list is published at `/@{handle}/followers`; see the
 [followers collection](followers-collection.md).

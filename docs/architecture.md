@@ -125,6 +125,7 @@ POST /inbox
           ├─ ActorResolver::resolveByKeyId   (HTTP or fixture)
           ├─ HttpSignature::verify           raw body, signed headers
           ├─ BlockedActorPolicy::isBlocked   optional host policy
+          ├─ FollowPolicy::accepts            optional Follow approval
           ├─ ActivityLog::claim              replay guard
           ├─ FollowingService::localUserIds  content authorization
           ├─ RemotePostRepository::insert    Create/Announce

@@ -25,14 +25,32 @@ Step 4 is the important one: a document may list several keys, and the request
 must be signed by the exact key it names. Accepting "any key in the document"
 would let a rotation key sign for an old identity.
 
-### No cache in the core
+### Bounded actor cache
 
-The resolver fetches on every request. That is correct but slow. A host may
-cache the document or the key, under two rules:
+`CachingActorResolver` wraps `HttpActorResolver` and remembers the already
+validated actor by the **full key id**:
 
-- key the cache by the full key id, not by actor URL;
-- re-apply the identity checks after a cache hit, and expire the entry (an hour
-  is common) so a revoked key stops working.
+```php
+$resolver = new CachingActorResolver(
+	new HttpActorResolver($http),
+	$clock,
+	ttlSeconds: 300,   // default
+	maxEntries: 512,   // default
+);
+```
+
+A hit avoids the HTTP round trip; a miss still performs every identity check.
+Failures are not cached, so a transient network error does not keep an actor
+unknown. The default TTL is deliberately short: a revoked or rotated key
+remains usable until the entry expires, and the cache is bounded so a busy
+inbox cannot grow it without limit. Call `clear()` after an emergency key
+rotation that must take effect immediately.
+
+A host with its own cache may use the same rules:
+
+- key by the full key id, not by actor URL;
+- re-apply the identity checks after a cache hit and expire the entry;
+- never cache a failed resolution.
 
 A cache that never expires keeps a compromised key alive.
 
