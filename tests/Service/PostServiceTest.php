@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
@@ -250,6 +251,7 @@ final class PostServiceTest extends TestCase
 	{
 		return new PostService(
 			$this->repository,
+			new InMemoryAttachmentRepository(),
 			$this->queue,
 			$inboxes ?? new EmptyInboxResolver(),
 			new ActivityFactory($config ?? $this->config),

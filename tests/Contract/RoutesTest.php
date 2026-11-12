@@ -22,7 +22,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(21, $manifest->routes());
+		self::assertCount(23, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('timelines.home'));
 		self::assertNotNull($manifest->find('inbox'));
@@ -32,6 +32,8 @@ final class RoutesTest extends TestCase
 		self::assertNotNull($manifest->find('blocks.list'));
 		self::assertNotNull($manifest->find('blocks.block'));
 		self::assertNotNull($manifest->find('blocks.unblock'));
+		self::assertNotNull($manifest->find('media.upload'));
+		self::assertNotNull($manifest->find('media.get'));
 		self::assertNotNull($manifest->find('following.follow'));
 		self::assertNotNull($manifest->find('following.unfollow'));
 		self::assertNotNull($manifest->find('actors.outbox'));
@@ -94,6 +96,22 @@ final class RoutesTest extends TestCase
 		self::assertTrue($unblock->requiresAuth);
 		self::assertSame('60/900', $unblock->rateLimit);
 		self::assertSame('/api/v1/blocks/{id}', $unblock->path);
+	}
+
+	public function testTheMediaRoutesHaveTheirAuthAndRateLimits(): void
+	{
+		$upload = Routes::manifest()->find('media.upload');
+		$get = Routes::manifest()->find('media.get');
+
+		self::assertNotNull($upload);
+		self::assertTrue($upload->requiresAuth);
+		self::assertSame('20/900', $upload->rateLimit);
+		self::assertSame('/api/v1/media', $upload->path);
+
+		self::assertNotNull($get);
+		self::assertFalse($get->requiresAuth, 'Media must be public for remote servers to fetch it.');
+		self::assertSame('240/60', $get->rateLimit);
+		self::assertSame('/api/v1/media/{id}', $get->path);
 	}
 
 	public function testTheFollowingWriteRoutesAreProtectedAndRateLimited(): void
@@ -164,7 +182,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(21, $decoded['routes']);
+		self::assertCount(23, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -174,6 +192,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(21, $app->routes->routes());
+		self::assertCount(23, $app->routes->routes());
 	}
 }

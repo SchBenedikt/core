@@ -42,8 +42,16 @@ Status of the core, not a promise about dates.
 - Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
   `Announce` activities from a followed actor's public outbox. It is bounded by
   pages and items, stays on the outbox origin, skips unsupported or malformed
-  entries and deduplicates by activity id. Thread, context and media fetching
-  remain separate.
+  entries and deduplicates by activity id. Thread, context and remote media
+  fetching remain separate.
+- Media: `Attachment` metadata with JPEG/PNG/WebP validation, an
+  `AttachmentRepository` with in-memory and PDO adapters behind one contract
+  test, `BlobStore` storage of an untouched original and a GD-generated
+  thumbnail, authenticated multipart upload, public original/thumbnail fetch
+  and up to four attachments on a post. Alt text and URLs are included in the
+  post and both timeline shapes without changing posts that have no
+  attachments. Invalid, corrupt and oversized uploads leave no blob and no
+  row.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
@@ -77,7 +85,7 @@ Status of the core, not a promise about dates.
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
-| Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
+| Remote media fetching and attachment ingestion | `HttpClient` + `BlobStore`; local upload is complete |
 | Migration runner for the standalone | host concern, schemas already exist |
 
 ## Later

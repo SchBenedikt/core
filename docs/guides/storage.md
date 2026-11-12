@@ -40,14 +40,18 @@ the same case and keep the same key rules.
 
 ## What the core does not do
 
-- no image processing: resizing, thumbnails and metadata belong outside the
-  core (the host runs ffmpeg or an image library);
-- no public URLs: a store answers bytes, the host decides how they are served
-  and with which cache headers;
-- no quota accounting: the host owns its limits.
+- no quota accounting: the host owns its limits;
+- no object-storage adapter: the local and in-memory stores are complete, an
+  S3-compatible adapter is a future host choice and must pass the same case;
+- no automatic media sweeper. Image validation, thumbnails and the public
+  media route live in `MediaService`, not in the store; see
+  [media](media.md) for its layout and orphan cleanup.
+
+A `BlobStore` still only answers bytes. It does not decide cache headers or
+post visibility; the media route does that.
 
 ## Reading and writing
 
 `put()` takes a key and the bytes, and returns nothing; `read()` returns the
 bytes or throws. `exists()`/`size()` are cheap checks; `delete()` is idempotent
-and returns false when there was nothing to delete.
+and is a no-op when there was nothing to delete.

@@ -24,6 +24,8 @@ final readonly class CreatePost
 		public string $content,
 		public Visibility $visibility = Visibility::Public,
 		public ?string $contentWarning = null,
+		/** @var list<string> */
+		public array $attachmentIds = [],
 	) {
 	}
 }

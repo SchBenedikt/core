@@ -85,6 +85,8 @@ $app = Application::forHost(
     activityLog: $activityLog,   // Core\Domain\Federation\ActivityLog, durable
     actorResolver: $resolver,    // optional; without it POST /inbox is 503
     blockedActors: $policy,      // optional; instance-wide block policy
+    blobStore: $blobs,           // optional; without it media routes are 503
+    imageProcessor: $images,     // optional; default is GdImageProcessor
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
 );
@@ -101,6 +103,7 @@ The object exposes the parts a host needs:
 | `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
+| `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -119,7 +122,7 @@ production bootstrap.
 | `Config` | Store `social/instance.url`, `social/instance.name` and the host's settings | `ArrayConfig` only for tests |
 | `Db\Connection` | Execute parameterised SQL, fetch rows, join transactions and report the driver | `PdoConnection` if PDO is available |
 | `Http\HttpClient` | Return non-2xx answers as `HttpResponse`; throw `HttpClientException` only on transport failure | `CurlHttpClient` |
-| `Storage\BlobStore` | Store future media and avatar blobs | `LocalBlobStore`, `InMemoryBlobStore` |
+| `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
@@ -128,6 +131,7 @@ production bootstrap.
 | `FollowPolicy` | Optional per-account decision whether an inbound Follow creates an edge | `AcceptAllFollows` by default; host policy otherwise |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
+| `ImageProcessor` | Produce a bounded thumbnail; the default GD adapter is complete for local use | `GdImageProcessor` |
 
 ### Config keys
 
@@ -147,7 +151,8 @@ host must strip it before passing the request to the kernel.
 
 The core owns the schema classes, not the migration mechanism:
 
-- `PostSchema` → `social_post`
+- `PostSchema` → `social_post` and `social_post_attachment`
+- `AttachmentSchema` → `social_attachment` (metadata; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower`
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts)
@@ -337,6 +342,7 @@ done when it passes the existing case, not when its own smoke test passes:
 
 - `tests/Platform/Storage/BlobStoreTestCase.php`
 - `tests/Domain/PostRepositoryTestCase.php`
+- `tests/Domain/AttachmentRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
 - `tests/Domain/RemotePostRepositoryTestCase.php`
@@ -372,11 +378,13 @@ host's own tests as well.
 ## What it does not give you yet
 
 The core is a foundation, not a drop-in replacement for the current Nextcloud
-app. It does not contain media processing, an admin UI, the Mastodon-compatible
-API, or thread/context and media fetching. It does provide a bounded outbox
-backfill for missed `Create`/`Announce` activities. A host that needs the
-remaining features either keeps its existing implementation for them or waits
-for the corresponding core milestone.
+app. It contains local image upload, validation and thumbnails, but not remote
+media fetching, an admin UI or the Mastodon-compatible API. It does provide a
+bounded outbox backfill for missed `Create`/`Announce` activities. A host that
+needs the remaining features either keeps its existing implementation for them
+or waits for the corresponding core milestone. See [media](media.md) for the
+local storage and cleanup contract; an object-storage adapter is still a host
+decision.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two
@@ -385,8 +393,9 @@ owners for the same handle.
 ## Adoption order
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
-2. Create the seven tables through the host's migration system (including
-   `social_remote_post` and `social_block`).
+2. Create the core tables through the host's migration system (including
+   `social_remote_post`, `social_block`, `social_attachment` and
+   `social_post_attachment`).
 3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
    `PdoActivityLog` and a fake HTTP client.
 4. Serve one slice behind a feature flag (posts/timelines is the smallest).

@@ -63,7 +63,8 @@ full documentation index is `docs/README.md`.
 - A route exists only in `src/Contract/Routes.php`.
 - Every new behaviour needs a test that fails without it. Every new port
   implementation must pass the existing contract test (`BlobStoreTestCase`,
-  `PostRepositoryTestCase`, `JobQueueTestCase`, `ActivityLogTestCase`).
+  `PostRepositoryTestCase`, `AttachmentRepositoryTestCase`,
+  `JobQueueTestCase`, `ActivityLogTestCase`).
 - Conventional Commits with a scope: `feat(posts): …`, `fix(signature): …`.
 - Commits carry no tool or AI attribution trailers; the author is the human
   who submits the work.
@@ -87,15 +88,18 @@ signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
-backfill, the HTTP contract, the platform ports, durable
+backfill, local image upload with validation, GD thumbnails, post attachments
+and public media fetch, the HTTP contract, the platform ports, durable
 `PdoJobQueue`/`PdoActivityLog` and `Application::forHost()` for a real host,
 plus the read-only cutover validator for the neutral migration export.
 The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.
-Not implemented in the core: remote-post backfill/thread fetching, media,
-AT Protocol. See `docs/roadmap.md` before starting a large feature, and
-`docs/guides/host-integration.md` before wiring a host.
+Not implemented in the core: remote-post backfill/thread fetching, remote
+media fetching, AT Protocol. Local media, including its storage and cleanup
+contract, is documented in `docs/guides/media.md`. See `docs/roadmap.md`
+before starting a large feature, and `docs/guides/host-integration.md` before
+wiring a host.
 
 ## What not to do
 

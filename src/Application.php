@@ -25,8 +25,10 @@ use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
+use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
+use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -54,6 +56,9 @@ use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Media\AttachmentRepository;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
@@ -78,6 +83,10 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Http\HttpClient;
+use AlohaSocial\Core\Platform\Image\GdImageProcessor;
+use AlohaSocial\Core\Platform\Image\ImageProcessor;
+use AlohaSocial\Core\Platform\Storage\BlobStore;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
@@ -91,6 +100,7 @@ use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\TimelineService;
 use AlohaSocial\Core\Support\IdGenerator;
@@ -125,6 +135,7 @@ final readonly class Application
 		public FollowingService $following,
 		public BlockService $blocks,
 		public ?RemoteOutboxBackfill $backfill,
+		public ?MediaService $media,
 	) {
 	}
 
@@ -144,6 +155,9 @@ final readonly class Application
 		?BlockedActorPolicy $blockedActors = null,
 		?BlockRepository $blockRepository = null,
 		?FollowPolicy $followPolicy = null,
+		?AttachmentRepository $attachmentRepository = null,
+		?BlobStore $blobStore = null,
+		?ImageProcessor $imageProcessor = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -161,6 +175,9 @@ final readonly class Application
 		$followingRepository ??= new InMemoryFollowingRepository();
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
 		$blockRepository ??= new InMemoryBlockRepository();
+		$attachmentRepository ??= new InMemoryAttachmentRepository();
+		$blobStore ??= new InMemoryBlobStore();
+		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
 			$posts,
 			$remotePostRepository,
@@ -187,6 +204,9 @@ final readonly class Application
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
 			followPolicy: $followPolicy,
+			attachmentRepository: $attachmentRepository,
+			blobStore: $blobStore,
+			imageProcessor: $imageProcessor,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -228,6 +248,9 @@ final readonly class Application
 		?BlockedActorPolicy $blockedActors = null,
 		?BlockRepository $blockRepository = null,
 		?FollowPolicy $followPolicy = null,
+		?AttachmentRepository $attachmentRepository = null,
+		?BlobStore $blobStore = null,
+		?ImageProcessor $imageProcessor = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -249,6 +272,9 @@ final readonly class Application
 			blockRepository: $blockRepository,
 			blockedActors: $blockedActors,
 			followPolicy: $followPolicy,
+			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
+			blobStore: $blobStore,
+			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -278,6 +304,9 @@ final readonly class Application
 		BlockRepository $blockRepository,
 		?BlockedActorPolicy $blockedActors,
 		?FollowPolicy $followPolicy,
+		AttachmentRepository $attachmentRepository,
+		?BlobStore $blobStore,
+		ImageProcessor $imageProcessor,
 		InboxResolver $inboxResolver,
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
@@ -310,8 +339,21 @@ final readonly class Application
 				$blockedActors,
 			);
 
+		$mediaService = $blobStore === null
+			? null
+			: new MediaService(
+				$attachmentRepository,
+				$posts,
+				$blobStore,
+				$imageProcessor,
+				$config,
+				$clock,
+				$ids,
+			);
+
 		$postService = new PostService(
 			$posts,
+			$attachmentRepository,
 			$queue,
 			$inboxResolver,
 			$activities,
@@ -377,11 +419,13 @@ final readonly class Application
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
-			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService))
-			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService))
+			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
+			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService))
+			->with(UploadMediaHandler::class, static fn (): UploadMediaHandler => new UploadMediaHandler($mediaService))
+			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService))
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
-			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines))
-			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines))
+			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService))
+			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(BlocksHandler::class, static fn (): BlocksHandler => new BlocksHandler($blockService))
@@ -439,6 +483,7 @@ final readonly class Application
 			$followingService,
 			$blockService,
 			$backfill,
+			$mediaService,
 		);
 	}
 

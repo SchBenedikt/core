@@ -49,6 +49,7 @@ final class InMemoryPostRepository implements PostRepository
 			$post->publishedAt,
 			$post->contentWarning,
 			$deletedAt,
+			$post->attachmentIds,
 		);
 	}
 
@@ -102,6 +103,18 @@ final class InMemoryPostRepository implements PostRepository
 			$limit,
 			$before,
 		);
+	}
+
+	public function attachmentIdsFor(array $postIds): array
+	{
+		$result = [];
+		foreach ($postIds as $postId) {
+			if (isset($this->posts[$postId])) {
+				$result[$postId] = $this->posts[$postId]->attachmentIds;
+			}
+		}
+
+		return $result;
 	}
 
 	/**

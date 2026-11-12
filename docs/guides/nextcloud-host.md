@@ -75,7 +75,7 @@ pin a tag or a commit rather than floating `dev-main`.
 | `Config` | `OCP\IConfig` | App id `social`; values are strings |
 | `Db\Connection` | `OCP\IDBConnection` | Doctrine DBAL; see the adapter below |
 | `Http\HttpClient` | `OCP\Http\Client\IClientService` | Keep Nextcloud's CA/proxy policy; or use `CurlHttpClient` |
-| `Storage\BlobStore` | `OCP\Files\IAppData` | Needed for future media, not for the current post/follow core |
+| `Storage\BlobStore` | `OCP\Files\IAppData` | Pass it to `forHost()` to enable media; the core supplies the local filesystem adapter for the standalone host |
 | `LocalActorDirectory` | `OCP\IUserManager` / external user backend | The app already has external users; include them |
 | `Jobs\JobQueue` | core `PdoJobQueue` over `NextcloudConnection` | Nothing to implement; the core owns atomic reserve, retry and dead-letter rules |
 | `ActivityLog` | core `PdoActivityLog` over `NextcloudConnection` | Nothing to implement; the primary key is the replay guard |

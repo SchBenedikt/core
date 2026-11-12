@@ -10,6 +10,8 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | --- | --- | --- | --- | --- |
 | `health` | `GET` | `/healthz` | no | — |
 | `instance.get` | `GET` | `/api/v1/instance` | no | — |
+| `media.upload` | `POST` | `/api/v1/media` | yes | 20 / 900 s |
+| `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
@@ -57,24 +59,76 @@ GET /api/v1/instance
 {"instance": {"name": "Aloha Social", "url": "https://social.example", "api": "v1"}}
 ```
 
+## Upload media
+
+```http
+POST /api/v1/media
+Content-Type: multipart/form-data; boundary=…
+
+file=@cat.png;type=image/png
+alt_text=A cat on a keyboard
+```
+
+The only file field is `file`; `alt_text` is optional. JPEG, PNG and WebP are
+accepted up to 5 MiB and 40 megapixels. The original is stored unchanged and a
+bounded thumbnail is generated next to it. A successful upload answers `201`:
+
+```json
+{"attachment": {"id": "…", "media_type": "image", "mime_type": "image/png",
+  "width": 1200, "height": 800, "byte_size": 18342,
+  "alt_text": "A cat on a keyboard", "created_at": "2026-11-11T10:00:00Z",
+  "url": "https://social.example/api/v1/media/…",
+  "thumbnail_url": "https://social.example/api/v1/media/…?variant=thumbnail"}}
+```
+
+Errors: `400 invalid_multipart`, `413 payload_too_large`, `422
+validation_failed`, `503 media_not_configured` or `503
+media_storage_unavailable`. A rejected upload leaves neither a blob nor a
+metadata row. See [media](../guides/media.md).
+
+## Fetch media
+
+```http
+GET /api/v1/media/{id}
+GET /api/v1/media/{id}?variant=thumbnail
+```
+
+`200` with the exact stored bytes and the stored MIME type. The route is
+public so a remote server can fetch a URL referenced by a post; the id is
+random. Responses are immutable and cacheable for a year. A missing id or blob
+is `404 not_found`; an unknown variant is `400 invalid_media_variant`; an
+instance without a configured `BlobStore` is `503 media_not_configured`.
+
 ## Write a post
 
 ```http
 POST /api/v1/posts
 Content-Type: application/json
 
-{"content": "hello", "visibility": "public", "content_warning": null}
+{"content": "hello", "visibility": "public", "content_warning": null,
+ "attachment_ids": ["…"]}
 ```
+
+`attachment_ids` is optional and limited to four ids, each uploaded by the
+author. The post and its attachment links are written in one transaction; an
+id that does not belong to the caller is `422 validation_failed` and creates
+no post. Delivery is queued after the write, as for any other post.
 
 `201` with a `Location` header:
 
 ```json
 {"post": {"id": "…", "author_id": "alice", "content": "hello",
   "content_warning": null, "visibility": "public",
-  "published_at": "2026-11-11T10:00:00Z", "deleted_at": null}}
+  "published_at": "2026-11-11T10:00:00Z", "deleted_at": null,
+  "attachments": [{"id": "…", "media_type": "image", "mime_type": "image/png",
+    "width": 1200, "height": 800, "byte_size": 18342,
+    "alt_text": "A cat on a keyboard", "created_at": "2026-11-11T10:00:00Z",
+    "url": "https://social.example/api/v1/media/…",
+    "thumbnail_url": "https://social.example/api/v1/media/…?variant=thumbnail"}]}}
 ```
 
-Errors: `400 invalid_json`, `401 authentication_required`,
+`attachments` is omitted for a post without attachments, so existing shapes do
+not change. Errors: `400 invalid_json`, `401 authentication_required`,
 `422 validation_failed` with `error.fields`.
 
 ## Read a post
@@ -83,8 +137,9 @@ Errors: `400 invalid_json`, `401 authentication_required`,
 GET /api/v1/posts/{id}
 ```
 
-`200` with `{"post": …}`. A missing, deleted or non-public post answers `404`;
-see [posts and timelines](../guides/posts-and-timelines.md).
+`200` with `{"post": …}`, including the same `attachments` array as the
+write response. A missing, deleted or non-public post answers `404`; see
+[posts and timelines](../guides/posts-and-timelines.md).
 
 ## Delete a post
 
@@ -110,7 +165,9 @@ GET /api/v1/timelines/home
 that is not a canonical timestamp is `400 invalid_cursor`. The public timeline
 contains local posts; the home timeline contains the caller's own local posts
 plus remote posts and boosts from followed actors, with `kind`, `object_id`,
-`object_author_id` and `boosted_by` on each entry. See
+`object_author_id` and `boosted_by` on each entry. Local posts carry the same
+`attachments` array as the single-post response; remote entries do not carry a
+local attachment relation. See
 [posts and timelines](../guides/posts-and-timelines.md).
 
 ## Followers

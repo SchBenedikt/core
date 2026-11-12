@@ -15,6 +15,7 @@ use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\InvalidCursorException;
+use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
 
 /**
@@ -24,6 +25,7 @@ final class HomeTimelineHandler implements Handler
 {
 	public function __construct(
 		private readonly TimelineService $timelines,
+		private readonly ?MediaService $media = null,
 	) {
 	}
 
@@ -45,7 +47,9 @@ final class HomeTimelineHandler implements Handler
 		}
 
 		return Response::json([
-			'posts' => array_map(static fn (TimelineEntry $entry): array => $entry->toArray(), $posts),
+			'posts' => $this->media === null
+				? array_map(static fn (TimelineEntry $entry): array => $entry->toArray(), $posts)
+				: $this->media->presentTimelineEntries($posts),
 		]);
 	}
 }

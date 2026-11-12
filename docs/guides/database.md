@@ -24,7 +24,8 @@ timestamp, and anything else is refused.
 
 Each table's definition lives next to its repository or adapter:
 
-- `src/Domain/Post/PostSchema.php` → `social_post`
+- `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
+- `src/Domain/Media/AttachmentSchema.php` → `social_attachment`
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post`
@@ -57,6 +58,13 @@ local followers and the join, rather than a per-user copy, scopes visibility.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md).
+
+`social_attachment` stores only metadata; the original and thumbnail bytes live
+under the keys in the host's `BlobStore`. `social_post_attachment` is the
+ordered join between a post and its attachments. Both are written by the post
+insert transaction. `PdoAttachmentRepository::findMany` deliberately does not
+promise SQL row order; callers such as the presenter order the attachments by
+the post's position list. See [media](media.md).
 
 ## Transactions and uniqueness
 

@@ -72,4 +72,16 @@ interface PostRepository
 	 * @return list<Post>
 	 */
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array;
+
+	/**
+	 * Attachment ids for a set of posts, in their stored order.
+	 *
+	 * The home timeline's local entries carry a post id but not the full post;
+	 * the presenter uses this one query instead of loading each post again.
+	 *
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, list<string>> keyed by post id
+	 */
+	public function attachmentIdsFor(array $postIds): array;
 }

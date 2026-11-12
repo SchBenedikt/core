@@ -10,10 +10,14 @@ the database — the core does not care.
 | --- | --- | --- | --- |
 | `social` | `instance.url` | for federation | Absolute http(s) base URL, no trailing slash required |
 | `social` | `instance.name` | no | Display name; defaults to the product name |
+| `social` | `media.max_bytes` | no | Upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
+| `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
 
-`instance.url` is read when an activity is built. A post with an audience on an
-instance without it fails with `503 instance_not_configured` instead of sending
-documents with a broken id.
+`instance.url` is read when an activity is built and when a media URL is
+presented. A post with an audience on an instance without it fails with `503
+instance_not_configured` instead of sending documents with a broken id. Media
+URLs stay relative when it is unset, which is useful for a local-only host but
+not for federation.
 
 `Config` is not a secret store. Private keys are passed as objects, and when a
 host persists them it seals them with `Security\SecretBox`.
@@ -24,6 +28,12 @@ host persists them it seals them with `Security\SecretBox`.
 | --- | --- | --- |
 | `PostService::MAX_CONTENT_LENGTH` | 5000 | Characters after trimming |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
+| `Attachment::MAX_BYTES` | 5 MiB | Hard upload ceiling; `media.max_bytes` may only lower it |
+| `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |
+| `Attachment::MAX_DIMENSION` | 10000 | Longest stored image side |
+| `Attachment::MAX_PIXELS` | 40,000,000 | Decode guard against decompression bombs |
+| `Post::MAX_ATTACHMENTS` | 4 | Attachments per post |
+| `MediaService::DEFAULT_THUMBNAIL_MAX_DIMENSION` | 640 | Default longest thumbnail side |
 | `TimelineService::DEFAULT_LIMIT` | 20 | Default page size |
 | `TimelineService::MAX_LIMIT` | 40 | Page size ceiling |
 | `OrderedCollection::DEFAULT_LIMIT` | 20 | Default page size of an actor collection |

@@ -38,8 +38,11 @@ about the host, and everything a host must provide is an interface in
 
 `Domain\Federation` holds the follow graph, the remote-post store, the
 per-user block store and the `InboxResolver` seam. `Domain\Timeline` owns the
-combined home-timeline read model. These are domain ports, not platform ports: the question "where does
-this audience live?" belongs to the application, only the inbox URLs are data.
+combined home-timeline read model. `Domain\Media` owns attachment metadata and
+its post link; the bytes go through the `BlobStore` port and image processing
+through the `ImageProcessor` port. These are domain ports, not platform ports:
+the question "where does this audience live?" belongs to the application, only
+the inbox URLs are data.
 
 ## Request lifecycle
 
@@ -93,11 +96,13 @@ backend and not a place for OCP or server code. See
 
 ```
 POST /api/v1/posts
-  └─ CreatePostHandler        parse and validate the shape
-      └─ PostService::create  trim, length, content warning, visibility
-          ├─ PostRepository::insert        one row, second-precision UTC
-          ├─ InboxResolver::inboxesFor     the author's stored followers
-          └─ JobQueue::push (per inbox)    {"inbox", "activity", "key_id"}
+  └─ CreatePostHandler        parse and validate the shape, including attachment_ids
+      └─ PostService::create  trim, length, content warning, visibility,
+          │                   attachment ownership and references
+          ├─ AttachmentRepository::find   one lookup per referenced id
+          ├─ PostRepository::insert       one row + their links in one transaction
+          ├─ InboxResolver::inboxesFor    the author's stored followers
+          └─ JobQueue::push (per inbox)   {"inbox", "activity", "key_id"}
                                               │
 JobWorker::runOnce ──────────────────────────┘
   └─ FederationDeliveryHandler
@@ -242,11 +247,17 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post
-  table once; `RemotePostSchema`, `BlockSchema`, `JobSchema` and
-  `ActivityLogSchema` do the same for remote content, per-user blocks, the
-  durable queue and the replay log. The
-  standalone runs those statements; the Nextcloud host creates the same
-  columns through its schema API. A dump can therefore move between the two.
+  and post-attachment tables once; `AttachmentSchema`, `RemotePostSchema`,
+  `BlockSchema`, `JobSchema` and `ActivityLogSchema` do the same for media
+  metadata, remote content, per-user blocks, the durable queue and the replay
+  log. The standalone runs those statements; the Nextcloud host creates the
+  same columns through its schema API. A dump can therefore move between the
+  two.
+- **Media metadata and bytes are separate.** A row points at one original and
+  one thumbnail key. The service writes both blobs before the row and cleans
+  them up if the row fails; the original bytes are never rewritten by the
+  thumbnail step. Unreferenced blobs are an operational cleanup concern, not a
+  read-time fallback.
 
 ## Ports
 
@@ -255,6 +266,7 @@ maximum is 40, and generated links carry a non-default limit.
 | `Clock` | `now()` | `FrozenClock` | `SystemClock` |
 | `Config` | get/set/delete/has/all, typed getters | `ArrayConfig` | YAML + env + DB |
 | `BlobStore` | put/read/exists/delete/size/list | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
+| `ImageProcessor` | `thumbnail()` | `GdImageProcessor` (local) | host replacement such as ImageMagick |
 | `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
@@ -268,8 +280,8 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| thread/context fetching and media fetching | `HttpClient` + the remote-post repository; outbox backfill already catches up missed `Create`/`Announce`, but does not walk replies or download media |
-| media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
+| thread/context fetching | `HttpClient` + the remote-post repository; outbox backfill already catches up missed `Create`/`Announce`, but does not walk replies |
+| remote media fetching | `HttpClient` + `BlobStore`; the local upload pipeline is implemented, federated attachment ingestion is not |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
 | admin settings | host pages; the core keeps the settings *rules* |
@@ -283,10 +295,10 @@ genuinely owns the capability.
 - **Unit** for value objects, formatting and validation.
 - **Contract tests** — one abstract case run against every implementation of a
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
-  `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
-  `RemotePostRepositoryTestCase`, `BlockRepositoryTestCase`,
-  `HomeTimelineRepositoryTestCase`, `JobQueueTestCase`,
-  `ActivityLogTestCase`). A new adapter is only done when
+  `AttachmentRepositoryTestCase`, `FollowerRepositoryTestCase`,
+  `FollowingRepositoryTestCase`, `RemotePostRepositoryTestCase`,
+  `BlockRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
+  `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
   file and a fresh connection, so a restart is part of the contract.
 - **Protocol vectors** — a signature is verified by the same code that produced
@@ -299,4 +311,8 @@ genuinely owns the capability.
   authenticated home timeline. `RemoteOutboxBackfillTest` exercises paging,
   deduplication and scope limits without a network. `ApplicationHostTest`
   repeats the Create-to-home path through `forHost()` with SQL repositories,
-  `PdoJobQueue` and `PdoActivityLog`.
+  `PdoJobQueue` and `PdoActivityLog`. `MediaTest` uploads a PNG through the
+  real route into a temporary `LocalBlobStore`, fetches the original and
+  thumbnail, attaches it to a post and reads it back through a post and both
+  timelines; it also proves wrong, corrupt and oversized uploads write no blob
+  and no post.

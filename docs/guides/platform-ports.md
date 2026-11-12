@@ -1,7 +1,7 @@
 # Platform ports
 
-A port is what the core needs from the world. There are five, all in
-`src/Platform/`, and both hosts implement them. Adding a sixth is a breaking
+A port is what the core needs from the world. There are six, all in
+`src/Platform/`, and both hosts implement them. Adding another is a breaking
 change for both hosts, so the list stays short on purpose.
 
 | Port | Methods | In-memory | Production |
@@ -11,6 +11,7 @@ change for both hosts, so the list stays short on purpose.
 | `Storage\BlobStore` | `put`/`read`/`exists`/`delete`/`size`/`list` | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
 | `Db\Connection` | `execute`/`fetchAll`/`fetchOne`/`fetchValue`/`transaction`/`driver` | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
+| `Image\ImageProcessor` | `thumbnail()` | test adapter | `GdImageProcessor` |
 
 ## What each one promises
 
@@ -23,10 +24,11 @@ makes the tests deterministic: `FrozenClock` moves only when a test moves it.
 ### Config
 
 A two-level store (`app`, `key`) with typed getters that take a default. The
-core reads only `social/instance.url` and `social/instance.name`; a host may
-store them in `config.php`, an `.env` file or the database. `Config` is not a
-secret store — private keys belong in the host's secret handling, sealed with
-`Security\SecretBox` when persisted.
+core reads `social/instance.url`, `social/instance.name` and the optional
+`social/media.max_bytes` and `social/media.thumbnail_max_dimension` limits; a
+host may store them in `config.php`, an `.env` file or the database. `Config`
+is not a secret store — private keys belong in the host's secret handling,
+sealed with `Security\SecretBox` when persisted.
 
 ### BlobStore
 
@@ -34,6 +36,14 @@ Keys are relative paths, never absolute, and `BlobPath` rejects empty segments,
 `..` and backslashes before a driver sees them. A store may be backed by a
 directory, an object bucket or memory, but `list($prefix)` must return sorted
 paths that match by path segment, not by string prefix.
+
+### ImageProcessor
+
+The `thumbnail()` method returns encoded bytes and their dimensions; it never
+mutates the input string. `GdImageProcessor` is the complete local adapter and
+needs `ext-gd`; a host with ImageMagick or libvips can implement the same port.
+The media service validates type, dimensions and pixel count before calling
+it, so an adapter does not have to repeat those policy checks.
 
 ### Connection
 
@@ -51,10 +61,11 @@ status is retryable.
 
 ## Contract tests
 
-Four ports have a shared test case that every implementation must pass:
+Several ports have a shared test case that every implementation must pass:
 
 - `tests/Platform/Storage/BlobStoreTestCase.php`
 - `tests/Domain/PostRepositoryTestCase.php`
+- `tests/Domain/AttachmentRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
 - `tests/Domain/FollowingRepositoryTestCase.php`
 

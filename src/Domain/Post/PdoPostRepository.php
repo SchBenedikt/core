@@ -31,20 +31,34 @@ final class PdoPostRepository implements PostRepository
 
 	public function insert(Post $post): void
 	{
-		$this->db->execute(
-			'INSERT INTO ' . PostSchema::TABLE
-			. ' (id, author_id, content, content_warning, visibility, published_at, deleted_at)'
-			. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :published_at, :deleted_at)',
-			[
-				'id' => $post->id,
-				'author_id' => $post->authorId,
-				'content' => $post->content,
-				'content_warning' => $post->contentWarning,
-				'visibility' => $post->visibility->value,
-				'published_at' => Time::format($post->publishedAt),
-				'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
-			],
-		);
+		$this->db->transaction(function () use ($post): void {
+			$this->db->execute(
+				'INSERT INTO ' . PostSchema::TABLE
+				. ' (id, author_id, content, content_warning, visibility, published_at, deleted_at)'
+				. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :published_at, :deleted_at)',
+				[
+					'id' => $post->id,
+					'author_id' => $post->authorId,
+					'content' => $post->content,
+					'content_warning' => $post->contentWarning,
+					'visibility' => $post->visibility->value,
+					'published_at' => Time::format($post->publishedAt),
+					'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
+				],
+			);
+
+			foreach ($post->attachmentIds as $position => $attachmentId) {
+				$this->db->execute(
+					'INSERT INTO ' . PostSchema::ATTACHMENT_TABLE
+					. ' (post_id, attachment_id, position) VALUES (:post_id, :attachment_id, :position)',
+					[
+						'post_id' => $post->id,
+						'attachment_id' => $attachmentId,
+						'position' => $position,
+					],
+				);
+			}
+		});
 	}
 
 	public function find(string $id): ?Post
@@ -54,7 +68,7 @@ final class PdoPostRepository implements PostRepository
 			['id' => $id],
 		);
 
-		return $row === null ? null : $this->hydrate($row);
+		return $row === null ? null : $this->hydrate($row, $this->attachmentIdsFor([$id])[$id] ?? []);
 	}
 
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void
@@ -147,6 +161,35 @@ final class PdoPostRepository implements PostRepository
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
 
+	public function attachmentIdsFor(array $postIds): array
+	{
+		if ($postIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach (array_values($postIds) as $index => $postId) {
+			$name = 'post_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $postId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT post_id, attachment_id FROM ' . PostSchema::ATTACHMENT_TABLE
+			. ' WHERE post_id IN (' . implode(', ', $placeholders) . ')'
+			. ' ORDER BY post_id, position',
+			$parameters,
+		);
+
+		$result = [];
+		foreach ($rows as $row) {
+			$result[(string) $row['post_id']][] = (string) $row['attachment_id'];
+		}
+
+		return $result;
+	}
+
 	/**
 	 * Limits are integers the service already clamped; inlining one is what
 	 * keeps the statement identical on drivers that refuse a bound LIMIT.
@@ -172,13 +215,19 @@ final class PdoPostRepository implements PostRepository
 	 */
 	private function hydrateAll(array $rows): array
 	{
-		return array_map(fn (array $row): Post => $this->hydrate($row), $rows);
+		$ids = array_map(static fn (array $row): string => (string) $row['id'], $rows);
+		$attachmentIds = $this->attachmentIdsFor($ids);
+
+		return array_map(
+			fn (array $row): Post => $this->hydrate($row, $attachmentIds[(string) $row['id']] ?? []),
+			$rows,
+		);
 	}
 
 	/**
 	 * @param array<string, mixed> $row
 	 */
-	private function hydrate(array $row): Post
+	private function hydrate(array $row, array $attachmentIds = []): Post
 	{
 		return new Post(
 			id: (string) $row['id'],
@@ -188,6 +237,7 @@ final class PdoPostRepository implements PostRepository
 			publishedAt: Time::parse((string) $row['published_at']),
 			contentWarning: $row['content_warning'] === null ? null : (string) $row['content_warning'],
 			deletedAt: $row['deleted_at'] === null ? null : Time::parse((string) $row['deleted_at']),
+			attachmentIds: $attachmentIds,
 		);
 	}
 }

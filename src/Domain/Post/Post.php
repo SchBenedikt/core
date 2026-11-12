@@ -21,6 +21,8 @@ use InvalidArgumentException;
  */
 final readonly class Post
 {
+	public const MAX_ATTACHMENTS = 4;
+
 	public function __construct(
 		public string $id,
 		public string $authorId,
@@ -29,6 +31,8 @@ final readonly class Post
 		public DateTimeImmutable $publishedAt,
 		public ?string $contentWarning = null,
 		public ?DateTimeImmutable $deletedAt = null,
+		/** @var list<string> */
+		public array $attachmentIds = [],
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A post needs an id.');
@@ -36,6 +40,27 @@ final readonly class Post
 
 		if ($authorId === '') {
 			throw new InvalidArgumentException('A post needs an author.');
+		}
+
+		if (count($attachmentIds) > self::MAX_ATTACHMENTS) {
+			throw new InvalidArgumentException('A post has too many attachments.');
+		}
+
+		if (array_values($attachmentIds) !== $attachmentIds) {
+			throw new InvalidArgumentException('Post attachment ids must be a list.');
+		}
+
+		$seen = [];
+		foreach ($attachmentIds as $attachmentId) {
+			if (!is_string($attachmentId) || $attachmentId === '') {
+				throw new InvalidArgumentException('A post attachment needs an id.');
+			}
+
+			if (isset($seen[$attachmentId])) {
+				throw new InvalidArgumentException('A post cannot repeat an attachment.');
+			}
+
+			$seen[$attachmentId] = true;
 		}
 	}
 

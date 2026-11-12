@@ -13,8 +13,8 @@ that prints or skips is a failure.
 
 | Directory | What lives there |
 | --- | --- |
-| `tests/Platform` | clock, config, PDO connection, blob stores |
-| `tests/Domain` | post, follower, followed-actor, remote-post and block entities, local/remote/block/timeline repository contracts and the activity-log contract |
+| `tests/Platform` | clock, config, PDO connection, blob stores and image processing |
+| `tests/Domain` | post, attachment, follower, followed-actor, remote-post and block entities, local/remote/block/timeline/attachment repository contracts and the activity-log contract |
 | `tests/Service` | post, timeline and follower rules |
 | `tests/Protocol` | ActivityStreams documents, RSA keys, signatures |
 | `tests/Security` | the secret box |
@@ -24,6 +24,7 @@ that prints or skips is a failure.
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly |
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |
+| `tests/Api/MediaTest.php` | multipart upload into a temporary local store, original/thumbnail fetch, post and timeline presentation, and no-write rejection of wrong, corrupt and oversized files |
 | `tests/Api/FollowPolicyTest.php` | a refused inbound Follow writes nothing and the same activity can be retried after the policy accepts it |
 | `tests/Service/RemoteOutboxBackfillTest.php` | paging, deduplication, foreign/malformed entries, the item limit, blocked/unfollowed refusal before any fetch and cross-origin pagination |
 | `tests/ApplicationHostTest.php` | `Application::forHost()` with SQL repositories, a signed inbox Create and the SQL home timeline |
@@ -36,6 +37,8 @@ case:
 ```php
 final class InMemoryPostRepositoryTest extends PostRepositoryTestCase { … }
 final class PdoPostRepositoryTest extends PostRepositoryTestCase { … }
+final class InMemoryAttachmentRepositoryTest extends AttachmentRepositoryTestCase { … }
+final class PdoAttachmentRepositoryTest extends AttachmentRepositoryTestCase { … }
 final class PdoJobQueueTest extends JobQueueTestCase { … }
 final class PdoActivityLogTest extends ActivityLogTestCase { … }
 final class InMemoryRemotePostRepositoryTest extends RemotePostRepositoryTestCase { … }

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
@@ -39,6 +40,7 @@ final class PostService
 
 	public function __construct(
 		private readonly PostRepository $posts,
+		private readonly AttachmentRepository $attachments,
 		private readonly JobQueue $queue,
 		private readonly InboxResolver $inboxes,
 		private readonly ActivityFactory $activities,
@@ -64,6 +66,7 @@ final class PostService
 			visibility: $command->visibility,
 			publishedAt: Time::toSecondPrecision($this->clock->now()),
 			contentWarning: $warning,
+			attachmentIds: $command->attachmentIds,
 		);
 
 		$this->posts->insert($post);
@@ -146,6 +149,32 @@ final class PostService
 		if ($warning !== null && mb_strlen($warning) > self::MAX_CONTENT_WARNING_LENGTH) {
 			$errors['content_warning'] = 'A content warning may be at most '
 				. self::MAX_CONTENT_WARNING_LENGTH . ' characters long.';
+		}
+
+		if (!array_is_list($command->attachmentIds)) {
+			$errors['attachment_ids'] = 'Attachments must be a list of ids.';
+		} elseif (count($command->attachmentIds) > Post::MAX_ATTACHMENTS) {
+			$errors['attachment_ids'] = 'A post may have at most ' . Post::MAX_ATTACHMENTS . ' attachments.';
+		} else {
+			$seen = [];
+			foreach ($command->attachmentIds as $attachmentId) {
+				if (!is_string($attachmentId) || $attachmentId === '') {
+					$errors['attachment_ids'] = 'An attachment id must be a non-empty string.';
+					break;
+				}
+
+				if (isset($seen[$attachmentId])) {
+					$errors['attachment_ids'] = 'An attachment cannot be used twice.';
+					break;
+				}
+
+				$seen[$attachmentId] = true;
+				$attachment = $this->attachments->find($attachmentId);
+				if ($attachment === null || $attachment->ownerId !== $command->authorId) {
+					$errors['attachment_ids'] = 'An attachment does not exist for this account.';
+					break;
+				}
+			}
 		}
 
 		if ($command->visibility === Visibility::Direct) {

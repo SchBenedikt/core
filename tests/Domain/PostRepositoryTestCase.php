@@ -159,6 +159,22 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->publicTimeline(10));
 	}
 
+	public function testAttachmentIdsAreStoredInOrderAndLoadedBack(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post(
+			'p1',
+			'alice',
+			Visibility::Public,
+			'2026-11-11T10:00:00Z',
+			attachmentIds: ['a2', 'a1'],
+		));
+
+		self::assertSame(['a2', 'a1'], $repository->find('p1')?->attachmentIds);
+		self::assertSame(['p1' => ['a2', 'a1']], $repository->attachmentIdsFor(['p1']));
+		self::assertSame([], $repository->attachmentIdsFor(['unknown']));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();
@@ -176,6 +192,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		Visibility $visibility,
 		string $publishedAt,
 		?string $contentWarning = null,
+		array $attachmentIds = [],
 	): Post {
 		return new Post(
 			$id,
@@ -184,6 +201,8 @@ abstract class PostRepositoryTestCase extends TestCase
 			$visibility,
 			Time::parse($publishedAt),
 			$contentWarning,
+			null,
+			$attachmentIds,
 		);
 	}
 }

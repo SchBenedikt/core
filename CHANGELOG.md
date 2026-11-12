@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Media pipeline: authenticated `POST /api/v1/media` accepts a multipart image
+  with optional alt text, sniffs JPEG/PNG/WebP, enforces size, dimension and
+  pixel limits, stores the untouched original and a GD-generated thumbnail in
+  a `BlobStore`, and writes metadata to the new `social_attachment` table. A
+  public `GET /api/v1/media/{id}` serves the original or
+  `?variant=thumbnail`. Posts accept up to four `attachment_ids` owned by their
+  author and expose alt text plus fetchable URLs in the post, public-timeline
+  and home-timeline shapes; posts without attachments keep the old shape.
+  Invalid, corrupt and oversized uploads leave no blob or row. This adds two
+  routes, the `AttachmentRepository` contract test and an end-to-end media
+  test; 23 routes.
 - Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
   `Announce` activities from a followed actor's public outbox. It follows
   `first`/`next` only on the outbox origin, is bounded by pages and items,

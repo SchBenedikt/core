@@ -25,8 +25,10 @@ use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
+use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
+use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -88,6 +90,24 @@ final class Routes
 				handler: DeletePostHandler::class,
 				requiresAuth: true,
 				summary: 'Delete a post you wrote.',
+			),
+			new Route(
+				name: 'media.upload',
+				method: 'POST',
+				path: $base . '/media',
+				handler: UploadMediaHandler::class,
+				requiresAuth: true,
+				rateLimit: '20/900',
+				summary: 'Upload an image with optional alt text.',
+			),
+			new Route(
+				name: 'media.get',
+				method: 'GET',
+				path: $base . '/media/{id}',
+				handler: ShowMediaHandler::class,
+				requiresAuth: false,
+				rateLimit: '240/60',
+				summary: 'Fetch an uploaded image, or its thumbnail with ?variant=thumbnail.',
 			),
 			new Route(
 				name: 'timelines.public',

@@ -10,18 +10,20 @@ This document is the checklist that host is built against.
 
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `FollowerSchema`, `FollowingSchema`,
-   `RemotePostSchema`, `BlockSchema`, `JobSchema`, `ActivityLogSchema`) from
-   the migration step.
+   statements (`PostSchema`, `AttachmentSchema`, `FollowerSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `BlockSchema`, `JobSchema`,
+   `ActivityLogSchema`) from the migration step.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.
-6. **Repositories** — `PdoPostRepository`, `PdoFollowerRepository`,
-   `PdoFollowingRepository`, `PdoRemotePostRepository`, `PdoBlockRepository`
-   and the combined `PdoHomeTimelineRepository`.
+6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
+   `PdoFollowerRepository`, `PdoFollowingRepository`,
+   `PdoRemotePostRepository`, `PdoBlockRepository` and the combined
+   `PdoHomeTimelineRepository`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery
-   handler, and `BlockService`.
+   handler, `BlockService`, and `MediaService` with a `BlobStore` and an
+   `ImageProcessor`.
 8. **Inbound** — `HttpActorResolver` over the HTTP client, `PdoActivityLog`,
    `InboxService` and, when `social_remote_post` exists, a `RemotePostRepository`
    for signed Create/Delete/Announce. The home timeline additionally needs
@@ -54,7 +56,7 @@ are in [ADR 0005](../adr/0005-shared-ui.md) and the
 | HTTP kernel and routing to the entry point | The core exposes `Kernel`, not a server |
 | Templates and the admin UI | Presentation is host business |
 | Migrations | The mechanism differs per host; schemas are shared |
-| Media processing | ffmpeg and image libraries are deployment choices |
+| Media processing beyond local GD | The core ships a complete GD adapter; a host may replace `ImageProcessor` with ffmpeg, ImageMagick or libvips |
 | Scheduler and worker supervision | A systemd timer, cron or a queue service; `PdoJobQueue` supplies the storage |
 | TLS, proxy headers, rate limiting | Deployment, not application logic |
 

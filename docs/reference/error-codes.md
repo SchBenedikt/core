@@ -12,6 +12,9 @@ change. `fields` appears only when an error belongs to specific input.
 | Code | Status | When |
 | --- | --- | --- |
 | `invalid_json` | 400 | The body is not valid JSON or not an object |
+| `invalid_multipart` | 400 | The upload is not valid `multipart/form-data` (missing boundary, malformed part, repeated field) |
+| `invalid_media_variant` | 400 | `variant` is neither absent, `original` nor `thumbnail` |
+| `payload_too_large` | 413 | The multipart request is larger than the file limit plus framing |
 | `invalid_cursor` | 400 | `before` is not a canonical timestamp |
 | `invalid_resource` | 400 | WebFinger `resource` is missing or not a usable `acct:` URI |
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
@@ -30,6 +33,8 @@ change. `fields` appears only when an error belongs to specific input.
 | `unsupported_activity` | 400 | An inbox activity type the core does not apply |
 | `replayed_activity` | 400 | An activity id that was already accepted |
 | `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
+| `media_not_configured` | 503 | No `BlobStore` is configured for the media routes |
+| `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `delivery_failed` | 502 | A peer inbox answered non-2xx or could not be reached while delivering a local Follow or Undo. A Follow is rolled back; an Undo keeps the edge so the request can be retried |
 | `federation_not_configured` | 503 | A local follow write has no HTTP client or signing key to deliver the Follow/Undo |
 | `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers/following collections, outbox, WebFinger) |
@@ -45,6 +50,7 @@ change. `fields` appears only when an error belongs to specific input.
 - Never reuse a code for a different meaning; clients switch on it.
 - A 404 for a private resource is deliberate. Do not "improve" it to 403.
 - `fields` keys are the JSON field names (`content`, `content_warning`,
-  `visibility`, `actor`, `inbox`), never internal column names.
+  `visibility`, `actor`, `inbox`, `file`, `alt_text`, `attachment_ids`), never
+  internal column names.
 - The kernel owns the shape; a handler that builds an error object by hand is a
   bug waiting to happen.

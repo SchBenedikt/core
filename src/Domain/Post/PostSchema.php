@@ -23,6 +23,8 @@ final class PostSchema
 {
 	public const TABLE = 'social_post';
 
+	public const ATTACHMENT_TABLE = 'social_post_attachment';
+
 	/**
 	 * @return list<string>
 	 */
@@ -40,6 +42,13 @@ final class PostSchema
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',
+			'CREATE TABLE ' . self::ATTACHMENT_TABLE . ' ('
+			. ' post_id VARCHAR(64) NOT NULL,'
+			. ' attachment_id VARCHAR(64) NOT NULL,'
+			. ' position INTEGER NOT NULL,'
+			. ' PRIMARY KEY (post_id, attachment_id)'
+			. ')',
+			'CREATE INDEX ' . self::ATTACHMENT_TABLE . '_post ON ' . self::ATTACHMENT_TABLE . ' (post_id, position)',
 		];
 	}
 

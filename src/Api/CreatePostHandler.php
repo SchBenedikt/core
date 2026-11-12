@@ -18,6 +18,7 @@ use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\CreatePost;
+use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ValidationException;
 use InvalidArgumentException;
@@ -35,6 +36,7 @@ final class CreatePostHandler implements Handler
 {
 	public function __construct(
 		private readonly PostService $posts,
+		private readonly ?MediaService $media = null,
 	) {
 	}
 
@@ -57,6 +59,20 @@ final class CreatePostHandler implements Handler
 			throw HttpException::validationFailed(['content_warning' => 'content_warning must be a string or null.']);
 		}
 
+		$rawAttachmentIds = $body['attachment_ids'] ?? [];
+		if (!is_array($rawAttachmentIds) || !array_is_list($rawAttachmentIds)) {
+			throw HttpException::validationFailed(['attachment_ids' => 'attachment_ids must be a list of strings.']);
+		}
+
+		$attachmentIds = [];
+		foreach ($rawAttachmentIds as $attachmentId) {
+			if (!is_string($attachmentId) || trim($attachmentId) === '') {
+				throw HttpException::validationFailed(['attachment_ids' => 'attachment_ids must be a list of strings.']);
+			}
+
+			$attachmentIds[] = $attachmentId;
+		}
+
 		$rawVisibility = $body['visibility'] ?? Visibility::Public->value;
 		if (!is_string($rawVisibility)) {
 			throw HttpException::validationFailed(['visibility' => 'visibility must be a string.']);
@@ -74,6 +90,7 @@ final class CreatePostHandler implements Handler
 				content: $content,
 				visibility: $visibility,
 				contentWarning: $contentWarning,
+				attachmentIds: $attachmentIds,
 			));
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
@@ -88,8 +105,10 @@ final class CreatePostHandler implements Handler
 
 	private function respond(Post $post): Response
 	{
+		$shape = $this->media === null ? $post->toArray() : $this->media->presentPost($post);
+
 		return Response::json(
-			['post' => $post->toArray()],
+			['post' => $shape],
 			201,
 			['Location' => ApiVersion::BASE_PATH . '/posts/' . rawurlencode($post->id)],
 		);
