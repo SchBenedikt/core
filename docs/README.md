@@ -19,13 +19,13 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Platform ports](guides/platform-ports.md) | Every interface a host implements, and the contract tests behind them |
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
-| [Follow graph](guides/follow-graph.md) | Followers, inbox resolution and why delivery is idempotent |
+| [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and why it is idempotent |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox`, verification order, Follow and Undo |
 | [Peer discovery](guides/peer-discovery.md) | How a peer finds the actor, its key and the inbox |
 | [WebFinger](guides/webfinger.md) | The JRD that resolves an `acct:` handle to the actor document |
 | [Followers collection](guides/followers-collection.md) | The incoming `OrderedCollection` and what changes it |
-| [Following collection](guides/following-collection.md) | The outgoing `OrderedCollection` and why it is separate from followers |
+| [Following collection](guides/following-collection.md) | The outgoing `OrderedCollection`, the local Follow/Undo endpoint and why it is separate from followers |
 | [Outbox](guides/outbox.md) | The public post collection, its `Create` items and how peers reconcile them |
 | [Jobs and delivery](guides/jobs-and-delivery.md) | The queue contract, retries, backoff and dead letters |
 | [Database](guides/database.md) | The SQL port, schemas, timestamps and transactions |

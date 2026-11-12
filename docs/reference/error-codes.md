@@ -27,6 +27,8 @@ change. `fields` appears only when an error belongs to specific input.
 | `unsupported_activity` | 400 | An inbox activity type the core does not apply |
 | `replayed_activity` | 400 | An activity id that was already accepted |
 | `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
+| `delivery_failed` | 502 | A peer inbox answered non-2xx or could not be reached while delivering a local Follow or Undo. A Follow is rolled back; an Undo keeps the edge so the request can be retried |
+| `federation_not_configured` | 503 | A local follow write has no HTTP client or signing key to deliver the Follow/Undo |
 | `actor_not_found` | 404 | A handle that is not an account on this instance, or a WebFinger host that is not this instance (actor document, followers/following collections, outbox, WebFinger) |
 | `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |

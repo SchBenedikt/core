@@ -10,13 +10,16 @@ This document is the checklist that host is built against.
 
 1. **Configuration** — read the environment, build a `Config`.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `FollowerSchema`) from the migration step.
+   statements (`PostSchema`, `FollowerSchema`, `FollowingSchema`) from the
+   migration step.
 3. **Clock and ids** — `SystemClock`, `RandomIdGenerator`.
 4. **Keys** — load the instance key pair; seal it at rest with `SecretBox`.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.
-6. **Repositories** — `PdoPostRepository`, `PdoFollowerRepository`.
+6. **Repositories** — `PdoPostRepository`, `PdoFollowerRepository`,
+   `PdoFollowingRepository`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
-   `TimelineService`, `FollowerService`.
+   `TimelineService`, `FollowerService`, `FollowingService` with the delivery
+   handler.
 8. **Inbound** — `HttpActorResolver` over the HTTP client, a durable
    `ActivityLog`, and `InboxService`. Without all three the inbox answers 503.
 9. **Handlers and kernel** — register every handler from the route manifest and

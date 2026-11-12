@@ -65,9 +65,9 @@ the route is public. See [outbox](guides/outbox.md).
 
 `followers` lists the actors that follow this account; `following` lists the
 actors this account follows. They are separate repositories because the
-directions are opposite. Following is populated by `FollowingService`; there
-is no local follow HTTP route yet, and outbound `Follow` delivery is still
-open. See [following collection](guides/following-collection.md).
+directions are opposite. Following is written by `POST` and
+`DELETE /api/v1/following`, which also deliver the signed `Follow`/`Undo` to
+the peer; see [following collection](guides/following-collection.md).
 
 ### How is an inbound activity authenticated?
 

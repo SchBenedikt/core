@@ -66,6 +66,12 @@ queueing and sending must not change what a retry sends. The worker signs each
 request and treats a non-2xx answer as a retryable failure; the queue backs off
 and eventually dead-letters.
 
+A local `Follow`/`Undo` is not queued: the endpoint has to know whether the
+peer accepted it before it can answer. `FollowingService` signs and delivers
+it synchronously through the same `FederationDeliveryHandler`, rolls a Follow
+back when the peer refuses it, and keeps an edge when an Undo fails so the
+request can be retried. See the [following collection](following-collection.md).
+
 ## Inbound
 
 The other direction is implemented too: `POST /inbox` verifies the signature
@@ -86,7 +92,7 @@ are served next to it; the outbox lists the account's public posts as the same
 ## Not implemented yet
 
 - inbound `Create`/`Delete`/`Announce`, and fetching remote posts;
-- outbound `Follow` delivery and a follow-based home timeline;
+- a follow-based home timeline;
 - delivery to shared inboxes;
 - a key cache (the HTTP resolver fetches per request).
 

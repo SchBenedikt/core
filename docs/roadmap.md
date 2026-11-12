@@ -23,6 +23,9 @@ Status of the core, not a promise about dates.
   `Create` activities, read from the same post repository the local API uses.
 - Following: the public `OrderedCollection` of the actors a local account
   follows, read from a separate outgoing follow repository.
+- Local following: `POST`/`DELETE /api/v1/following` writes the edge, delivers
+  a signed `Follow`/`Undo`, rolls back a refused Follow and keeps a refused
+  Undo retryable.
 - WebFinger: `GET /.well-known/webfinger` resolves a local `acct:` handle to
   the actor document URL, with the configured host enforced.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
@@ -35,7 +38,7 @@ Status of the core, not a promise about dates.
 | --- | --- |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
 | Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
-| Local follow API, outbound Follow delivery and a follow-based home timeline | `FollowingService` + the delivery queue |
+| A follow-based home timeline | `FollowingService` + `TimelineService` |
 | Media pipeline (upload, resize, alt text) | `BlobStore` + a new service |
 | Durable queue adapter | `Jobs\JobQueue` |
 | Migration runner for the standalone | host concern, schemas already exist |

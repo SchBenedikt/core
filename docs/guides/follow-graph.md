@@ -23,6 +23,19 @@ final readonly class Follower
 inbox instead of creating a second row — a peer that retries cannot cause
 duplicate deliveries.
 
+The outgoing edge has the same identity and inbox, but points the other way:
+
+```php
+final readonly class FollowedActor
+{
+    public string $id;             // local id, used by the API
+    public string $localUserId;    // whose follow this is
+    public string $actorId;        // absolute ActivityPub actor URL
+    public string $inboxUrl;       // where Follow and Undo go
+    public DateTimeImmutable $followedAt;
+}
+```
+
 The table is `social_follower`; its definition lives in `FollowerSchema` and is
 shared by both hosts:
 
@@ -45,10 +58,14 @@ unique index inside MySQL's key limit. The service rejects a longer URL with
 | `GET` | `/api/v1/followers?limit=&before=` | Followers of the caller, newest first, plus `total` |
 | `POST` | `/api/v1/followers` | Record a follower; `201` when created, `200` when it already existed |
 | `DELETE` | `/api/v1/followers/{id}` | Forget a follower; `204`, or `404` when it is not the caller's |
+| `POST` | `/api/v1/following` | Follow a remote actor and deliver a signed `Follow`; `201` or `200` |
+| `DELETE` | `/api/v1/following/{id}` | Deliver an `Undo`; `204`, or `404` when it is not the caller's |
 
 The `POST` body is `{"actor": "https://remote.example/users/bob", "inbox":
 "https://remote.example/users/bob/inbox"}`. Both must be absolute http(s) URLs;
-anything else is a 422 naming the field.
+anything else is a 422 naming the field. The following `POST` uses the same
+body shape, but stores the outgoing edge and delivers a `Follow` instead of
+recording a follower.
 
 Deleting is scoped to the caller: the id alone must not let one account remove
 another account's follower, and the answer is 404 rather than 403 so it does
@@ -82,8 +99,9 @@ Two paths write the graph:
 Either way the actor and its inbox come from the actor document, never from an
 unauthenticated request body.
 
-The outgoing graph is written separately: `FollowingService::follow()`
-records whom a local account follows, and no inbound activity can change it.
+The outgoing graph is written separately by `POST /api/v1/following`, which
+records whom a local account follows and delivers the matching `Follow`; no
+inbound activity can change it.
 
 ## Following graph
 
@@ -93,19 +111,23 @@ records whom a local account follows, and no inbound activity can change it.
 id            VARCHAR(64)  primary key
 local_user_id VARCHAR(255)
 actor_id      VARCHAR(255) unique with local_user_id
+inbox_url     VARCHAR(512)
 followed_at   VARCHAR(20)  canonical UTC timestamp
 ```
 
-There is no inbox column: this graph is for reading who the account follows,
-not for delivery. `FollowingService::follow()` and `unfollow()` write it, and
-`FollowingRepository::actorIds()` feeds the public
-[following collection](following-collection.md). A local follow HTTP route and
-the outbound `Follow` activity are still missing.
+The inbox is stored because the `Follow` and its later `Undo` have to be
+delivered there. It is separate from the follower inbox: one receives posts,
+the other receives follow activities. `FollowingService::follow()` inserts the
+edge and sends a signed `Follow`; `unfollowById()` sends the `Undo` first and
+removes the edge only after the peer accepted it. A refused `Follow` is rolled
+back, a refused `Undo` leaves the edge retryable. See the
+[following collection](following-collection.md).
+
+`FollowingRepository::actorIds()` feeds the public collection. A follow-based
+home timeline that reads the same graph is still missing.
 
 ## What is missing
 
-- a local follow HTTP route and outbound Follow delivery; the following
-  collection is read-only for now;
 - a follow-based home timeline that reads the outgoing graph;
 - a policy for approving Follows instead of accepting every valid one;
 - paging for very large follower and following collections.

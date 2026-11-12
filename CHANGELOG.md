@@ -28,6 +28,11 @@ All notable changes to this project are documented here. The format follows
   follow repository (`social_following`), so it is not a copy of the
   followers table; the collection id is exactly the `following` URL the actor
   document advertises.
+- Local following: `POST /api/v1/following` stores the outgoing edge and
+  delivers a signed `Follow` to the supplied inbox; `DELETE
+  /api/v1/following/{id}` delivers an `Undo` and removes the edge only after
+  the peer accepted it. A refused Follow is rolled back, a refused Undo keeps
+  the follow retryable. The outgoing schema now stores the inbox. 18 routes.
 - Inbound `POST /inbox`: signature verification against an actor resolved by
   key id, `Follow` → follower edge + queued `Accept`, `Undo(Follow)`, and a
   replay guard. The endpoint stays at 503 without a configured resolver.
@@ -38,8 +43,8 @@ All notable changes to this project are documented here. The format follows
   contract test, `FollowerSchema`, and `FollowerInboxResolver`.
 - `FollowerService` with idempotent follow, per-account isolation and cursor
   pagination.
-- Routes `followers.list`, `followers.follow`, `followers.unfollow` (10 in
-  total).
+- Routes `followers.list`, `followers.follow`, `followers.unfollow` (the
+  manifest now has 18 routes).
 - End-to-end delivery to real followers: a followed actor's inbox receives the
   signed `Create` of the next post.
 - Documentation: concept guides, a route reference, an error-code reference, a

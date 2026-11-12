@@ -30,6 +30,8 @@ host persists them it seals them with `Security\SecretBox`.
 | `FollowerService::MAX_LIMIT` | 100 | Follower page ceiling |
 | `FollowerService::MAX_ACTOR_LENGTH` | 255 | Indexed actor URL length |
 | `FollowerService::MAX_INBOX_LENGTH` | 512 | Inbox URL length |
+| `FollowingService::MAX_ACTOR_LENGTH` | 255 | Indexed actor URL length of an outgoing follow |
+| `FollowingService::MAX_INBOX_LENGTH` | 512 | Inbox URL length of an outgoing follow |
 | `InboxService::MAX_SKEW_SECONDS` | 300 | Allowed clock skew of a signed inbox request |
 | `InMemoryActivityLog::RETENTION_SECONDS` | 86400 | How long an accepted activity id blocks a replay |
 | `InMemoryJobQueue::MAX_ATTEMPTS` | 5 | Attempts before a dead letter |

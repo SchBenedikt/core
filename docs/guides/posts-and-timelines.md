@@ -26,7 +26,7 @@ is honest; sending an empty audience to the network is not.
 | --- | --- | --- | --- |
 | `public` | yes | yes | anyone |
 | `unlisted` | yes | yes | anyone |
-| `followers` | no | author only | author only (until local follows exist) |
+| `followers` | no | author only | author only |
 | `direct` | no | author only | author only |
 
 The single-post rule is enforced by `PostService::getVisible()`: a non-public
@@ -38,7 +38,7 @@ design — it is only hidden from timelines.
 `GET /api/v1/timelines/public` returns `public` and `unlisted` posts, newest
 first, with the id as the tie-break. `GET /api/v1/timelines/home` returns the
 caller's own posts plus everything publicly visible. Neither is a follow-based
-timeline yet: that needs local follows, which the core does not model.
+timeline yet: the outgoing follow graph exists, but no timeline reads it.
 
 Both accept `limit` (default 20, clamped to 1–40) and `before`, an exclusive
 canonical timestamp cursor. A cursor that is not a timestamp is a 400

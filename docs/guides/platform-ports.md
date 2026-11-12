@@ -51,11 +51,12 @@ status is retryable.
 
 ## Contract tests
 
-Two ports have a shared test case that every implementation must pass:
+Four ports have a shared test case that every implementation must pass:
 
 - `tests/Platform/Storage/BlobStoreTestCase.php`
 - `tests/Domain/PostRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
+- `tests/Domain/FollowingRepositoryTestCase.php`
 
 A new adapter is done when it passes the existing case, not when its own tests
 pass. That is the mechanism that keeps `InMemoryPostRepository` and

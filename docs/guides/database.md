@@ -26,6 +26,7 @@ Each table's definition lives next to its repository:
 
 - `src/Domain/Post/PostSchema.php` → `social_post`
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower`
+- `src/Domain/Federation/FollowingSchema.php` → `social_following`
 
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can

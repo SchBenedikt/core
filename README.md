@@ -23,18 +23,18 @@ Implemented and tested here:
 | --- | --- |
 | Platform ports | config, clock, blob storage (local and in-memory), database (PDO), outbound HTTP (curl) |
 | Domain | posts, visibility, post repositories (in-memory and SQL, same contract test) |
-| Follow graph | followers per local account, in-memory and SQL repositories behind one contract test, inbox resolution |
+| Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, inbox resolution, signed `Follow`/`Undo` delivery |
 | Inbound federation | signed `POST /inbox`, actor-key resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay guard |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, the followers/following `OrderedCollection`s and the public outbox |
-| Services | write/read/delete a post, timelines, followers, instance description |
+| Services | write/read/delete a post, timelines, followers, following, instance description |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
 | Security | AES-256-GCM secret box for private keys at rest |
 
-Deliberately not here yet: inbound `Create`/`Delete`, local follows, paged
-collections, media processing, the AT Protocol stack, the Mastodon-compatible
-API, an admin UI, a migration runner, the Vue UI package and the host
-adapters. The
+Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
+timeline, paged collections, media processing, the AT Protocol stack, the
+Mastodon-compatible API, an admin UI, a migration runner, the Vue UI package
+and the host adapters. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists them
 with the seam they will attach to.
 
@@ -48,15 +48,16 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, host-neutrality guard, 408 tests
+composer check          # lint, host-neutrality guard, 420 tests
 php bin/core-demo       # drives the core through real HTTP requests
-php bin/export-routes   # the HTTP contract as JSON (16 routes)
+php bin/export-routes   # the HTTP contract as JSON (18 routes)
 ```
 
 The demo builds the in-memory assembly, writes a post, reads the timeline,
-records a follower, shows the error shapes and shows that the inbox, the
-actor routes and WebFinger answer 503 without a key or resolver — no database
-and no network.
+records a follower, attempts a local follow (503 without delivery
+configuration), shows the error shapes and shows that the inbox, the actor
+routes and WebFinger answer 503 without a key or resolver — no database and no
+network.
 
 ## Layout
 
@@ -90,7 +91,8 @@ docs/              index, architecture, guides, reference, operations, ADRs
    on every run.
 3. **Data** — the schema of a table lives next to its repository
    ([`PostSchema`](src/Domain/Post/PostSchema.php),
-   [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php)), so both
+   [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php),
+   [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php)), so both
    databases have the same columns and a dump can move between them.
 
 ## Tests
@@ -105,7 +107,8 @@ The suite covers the platform adapters, the domain, both repository
 implementations against one contract, the signature and ActivityPub
 primitives, the queue's retry and dead-letter rules, routing and error
 rendering, and end-to-end paths from HTTP through the queue to a signed
-delivery to a real follower.
+delivery to a real follower. The outgoing follow path is tested end to end:
+Follow/Undo requests, signature verification, rollback and retry.
 
 ## Documentation
 

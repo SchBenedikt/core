@@ -97,6 +97,30 @@ is the only place that maps a reason to an HTTP status. The inbox is enabled
 only when an actor resolver, an HTTP client and a signing key are all present —
 otherwise it answers 503 instead of pretending.
 
+## Following an actor
+
+```
+POST /api/v1/following
+  └─ FollowRemoteActorHandler  parse actor + inbox
+      └─ FollowingService::follow
+          ├─ FollowingRepository::insert
+          ├─ ActivityFactory::followActor       Follow with derived id
+          └─ FederationDeliveryHandler::deliver
+              ├─ HttpSignature::sign   (request-target) host date digest
+              └─ HttpClient::request   non-2xx → throw, edge rolled back
+DELETE /api/v1/following/{id}
+  └─ UnfollowRemoteActorHandler
+      └─ FollowingService::unfollowById
+          ├─ ActivityFactory::undoFollow       Undo embedding the Follow
+          ├─ FederationDeliveryHandler::deliver
+          └─ FollowingRepository::remove       only after acceptance
+```
+
+The delivery is synchronous because the answer decides the local state: a
+refused Follow must not stay in the collection, and a refused Undo must leave
+a retryable edge. Posts still queue their delivery; a Follow cannot, because
+its handler has to know whether the peer accepted it before it answers.
+
 ## Serving an actor
 
 ```
@@ -158,7 +182,7 @@ genuinely owns the capability.
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | inbound `Create`/`Delete`/`Announce`, fetching remote posts | `InboxService` + a remote post store |
 | Paged collections | the existing `actors.*` handlers and repositories |
-| local follow API/delivery and a follow-based home timeline | `FollowingService` + the delivery queue |
+| a follow-based home timeline | `FollowingService` + `TimelineService` |
 | media pipeline | `BlobStore` + a `Media` service, ffmpeg outside the core |
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
@@ -172,8 +196,8 @@ genuinely owns the capability.
 - **Unit** for value objects, formatting and validation.
 - **Contract tests** — one abstract case run against every implementation of a
   port (`BlobStoreTestCase`, `PostRepositoryTestCase`,
-  `FollowerRepositoryTestCase`). A new adapter is only done when it passes the
-  shared case.
+  `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`). A new adapter
+  is only done when it passes the shared case.
 - **Protocol vectors** — a signature is verified by the same code that produced
   it *and* rejected for a changed body, a changed header, a stale date, an
   unsigned digest and a foreign key.

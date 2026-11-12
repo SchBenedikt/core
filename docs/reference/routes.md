@@ -17,6 +17,8 @@ endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
+| `following.follow` | `POST` | `/api/v1/following` | yes | 30 / 900 s |
+| `following.unfollow` | `DELETE` | `/api/v1/following/{id}` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
@@ -137,6 +139,39 @@ DELETE /api/v1/followers/{id}
 `204`, or `404` when the follower does not exist **or belongs to another
 account** — the answer must not reveal the difference.
 
+## Following
+
+```http
+POST /api/v1/following
+Content-Type: application/json
+
+{"actor": "https://remote.example/users/bob",
+ "inbox": "https://remote.example/users/bob/inbox"}
+```
+
+`201` with `Location: /api/v1/following/{id}` when the outgoing edge is new,
+`200` when the actor was already followed and only the inbox may have changed:
+
+```json
+{"following": {"id": "…", "actor": "https://remote.example/users/bob",
+  "inbox": "https://remote.example/users/bob/inbox",
+  "followed_at": "2026-11-11T10:00:00Z"}}
+```
+
+The endpoint stores the edge and delivers a signed ActivityPub `Follow` to the
+inbox; a repeated `POST` sends nothing. If the peer refuses the delivery, the
+edge is rolled back and the answer is `502 delivery_failed`.
+
+```http
+DELETE /api/v1/following/{id}
+```
+
+`204` after the peer accepted the `Undo` of the embedded `Follow`. A failed
+`Undo` answers `502 delivery_failed` and keeps the edge, so the same request
+can be retried. An id of another account is `404 not_found`; a write without
+an HTTP client or signing key is `503 federation_not_configured`. See the
+[following collection guide](../guides/following-collection.md).
+
 ## Inbox
 
 ```http
@@ -182,8 +217,9 @@ GET /@alice/following
 ```
 
 `200` with an `OrderedCollection` whose `id` is exactly the `following` URL
-of the actor document. It reads the outgoing follow repository; `POST
-/api/v1/followers` and inbound Follows do not change it. See the
+of the actor document. It reads the outgoing follow repository; `POST` and
+`DELETE /api/v1/following` write it, while `POST /api/v1/followers` and
+inbound Follows do not change it. See the
 [following collection guide](../guides/following-collection.md). An unknown
 handle is `404 actor_not_found`; an instance without a key or directory is
 `503 actor_not_configured`.
