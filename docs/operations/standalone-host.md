@@ -36,6 +36,11 @@ over the same connection and pass them to `forHost()`. See
 [using the core from a host](../guides/host-integration.md) for the exact call
 and the port table.
 
+The shared Vue page mounts through a server `HostBridge`, not through a
+Nextcloud compatibility layer. The bridge contract and the extraction order
+are in [ADR 0005](../adr/0005-shared-ui.md) and the
+[shared UI guide](../guides/shared-ui.md).
+
 ## What the host owns
 
 | Concern | Why it is not in the core |

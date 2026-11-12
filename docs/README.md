@@ -11,6 +11,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0001 — one core, two hosts](adr/0001-shared-core-two-hosts.md) | Why this repository exists and how the three repositories work together |
 | [ADR 0002 — runtime](adr/0002-runtime.md) | Why PHP, why components instead of a framework |
 | [ADR 0003 — HTTP contract](adr/0003-http-contract.md) | Why one route manifest drives both hosts |
+| [ADR 0004 — incremental migration and ownership](adr/0004-incremental-migration-and-ownership.md) | How existing data moves without changing federation identities, and which repository owns a feature |
+| [ADR 0005 — shared UI](adr/0005-shared-ui.md) | The `@alohasocial/ui` package and its `HostBridge` boundary |
 
 ## Guides
 
@@ -20,6 +22,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
 | [Using the core from a host](guides/host-integration.md) | Composer setup, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
+| [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, identity invariants, shadow runs, cutover gates and rollback for the existing app |
+| [Shared UI and HostBridge](guides/shared-ui.md) | The Vue package boundary, bridge contract, package layout and extraction order |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, what a timeline contains |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and why it is idempotent |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |

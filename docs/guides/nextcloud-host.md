@@ -7,7 +7,9 @@ this page only adds the Nextcloud-specific decisions.
 The app already implements posts, federation and a large UI. The core is not a
 drop-in replacement for all of it. Treat the integration as a migration of one
 slice at a time, behind a feature flag, while the old path keeps serving
-everything that the core does not cover yet.
+everything that the core does not cover yet. The data and identity procedure
+is in [migrating a Nextcloud installation](migration-from-nextcloud.md); do
+not use the rollout below as a substitute for that procedure.
 
 ## 1. Choose the URL shape before writing code
 
@@ -420,8 +422,9 @@ in-memory implementation.
 5. **Inbound inbox:** only after a durable activity log and actor resolver are
    in place. Start with a test domain; a replay or a wrong key must be refused,
    not logged and ignored.
-6. **UI:** point one page at the core routes. Keep the old path until the page
-   has no feature the core lacks.
+6. **UI:** point one page at the core routes through the
+   [`HostBridge`](shared-ui.md), not a host global. Keep the old path until the
+   page has no feature the core lacks.
 
 Do not run the old and new stacks for the same handle. One actor URL must have
 one owner, or a peer will see two different answers for the same account.
@@ -429,7 +432,8 @@ one owner, or a peer will see two different answers for the same account.
 ## What this buys the Nextcloud app
 
 - The app keeps its users, permissions, navigation, Vue UI and deployment; it
-  stops maintaining a second federation core.
+  stops maintaining a second federation core. Existing actor and key URLs are
+  preserved by the [migration procedure](migration-from-nextcloud.md).
 - Signatures, actor documents, inbox verification, Follow/Undo and delivery
   are shared with the standalone product and tested without Nextcloud.
 - The core's `PdoJobQueue` and `PdoActivityLog` provide durable delivery and

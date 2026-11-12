@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Migration and ownership decisions: ADR 0004 defines a feature-by-feature
+  strangler migration, immutable actor/key/post/follow identities, host-owned
+  imports and one owner per feature. The Nextcloud migration guide records the
+  data mapping, shadow-run checks, cutover gates and rollback.
+- Shared UI contract: ADR 0005 defines `@alohasocial/ui` and a narrow
+  `HostBridge` for authentication, transport, navigation and capabilities, so
+  both hosts can share Vue components without sharing their runtimes.
 - Durable queue and replay log: `PdoJobQueue` and `PdoActivityLog` implement
   the existing ports over `Platform\Db\Connection`, with `JobSchema` and
   `ActivityLogSchema` as the canonical DDL. A job survives a fresh connection;

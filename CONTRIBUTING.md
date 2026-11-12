@@ -13,6 +13,24 @@ composer check
 PHP 8.3+ and the extensions listed in the README. No database or network is
 needed for the suite.
 
+## Which repository owns the change?
+
+Before writing code, decide where the behaviour belongs:
+
+- **`core`** — social behaviour that both hosts need, protocol rules, shared
+  schemas and the shared UI package under `ui/`.
+- **`AlohaSocial/social`** — Nextcloud adapters, controllers, templates, admin
+  settings and Nextcloud authentication integration.
+- **`AlohaSocial/server`** — standalone bootstrap, accounts/auth, installer,
+  container/systemd setup and server migrations.
+
+If only one host needs it, keep it there. If both hosts need it, the core owns
+the rule and each host owns its adapter. Do not hide a Nextcloud-only branch
+in `src/`. Migrations are host-owned; see
+[ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) and the
+[migration guide](docs/guides/migration-from-nextcloud.md). Shared screens
+use the [`HostBridge`](docs/guides/shared-ui.md), never a host global.
+
 ## Before you open a pull request
 
 ```sh

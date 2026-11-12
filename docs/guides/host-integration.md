@@ -386,4 +386,8 @@ owners for the same handle.
 7. Move the UI calls to the core routes once the slice is complete.
 
 For the concrete Nextcloud mapping, see
-[Nextcloud host integration](nextcloud-host.md).
+[Nextcloud host integration](nextcloud-host.md). If this is an existing
+installation rather than a fresh one, follow
+[migrating a Nextcloud installation](migration-from-nextcloud.md) first: the
+actor, key, post and follow identities must be checked before cutover. Shared
+screens use the [`HostBridge`](shared-ui.md), never a host global.

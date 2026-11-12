@@ -32,11 +32,17 @@ Status of the core, not a promise about dates.
 - HTTP: one route manifest, generic kernel, one error shape, JSON export.
 - Security: AES-256-GCM secret box.
 - Documentation and CI across PHP 8.3, 8.4, 8.5.
+- Migration and ownership contract: [ADR 0004](adr/0004-incremental-migration-and-ownership.md),
+  the [Nextcloud migration guide](guides/migration-from-nextcloud.md) and the
+  shared UI contract in [ADR 0005](adr/0005-shared-ui.md).
 
 ## Next
 
 | Item | Seam |
 | --- | --- |
+| Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas |
+| Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
+| `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |
 | Inbound `Create`/`Delete`/`Announce` and fetching remote posts | `InboxService` + a remote post store |
 | Paged collections (followers and outbox) | `actors.*` handlers + the existing repositories |
 | A follow-based home timeline | `FollowingService` + `TimelineService` |
@@ -45,9 +51,10 @@ Status of the core, not a promise about dates.
 
 ## Later
 
-- AT Protocol stack, moved out of the Nextcloud app.
+- AT Protocol stack, moved out of the Nextcloud app only after the core owns
+  the shared protocol behaviour.
 - Mastodon-compatible API as additional routes over the same services.
-- `@alohasocial/ui` with a host bridge, so the Vue front end is shared too.
+- Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
 - Shared inboxes and delivery batching.
 - OpenAPI generation from the route manifest.
 

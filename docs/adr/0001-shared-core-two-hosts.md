@@ -89,7 +89,13 @@ hosts around it.**
 
 ## Follow-ups
 
-- Move the Vue front end into `@alohasocial/ui` with a `HostBridge` per host.
+- Migrate the existing Nextcloud data and features incrementally, preserving
+  actor, key, post and follow identities. See
+  [ADR 0004](0004-incremental-migration-and-ownership.md) and the
+  [Nextcloud migration guide](../guides/migration-from-nextcloud.md).
+- Move the Vue front end into `@alohasocial/ui` with a `HostBridge` per host;
+  the contract is in [ADR 0005](0005-shared-ui.md) and the
+  [shared UI guide](../guides/shared-ui.md).
 - Add ports for users, sessions and jobs when the standalone gets its own
   accounts.
 - Add a parity test in both hosts that compares their registered routes with

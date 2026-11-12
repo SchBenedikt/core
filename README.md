@@ -30,6 +30,8 @@ Implemented and tested here:
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and its JSON export |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
+| Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary |
+| Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: inbound `Create`/`Delete`, a follow-based home
@@ -121,7 +123,9 @@ retry.
 - [Documentation index](docs/README.md)
 - [Architecture](docs/architecture.md)
 - [Using the core from a host](docs/guides/host-integration.md),
-  [Nextcloud host integration](docs/guides/nextcloud-host.md)
+  [Nextcloud host integration](docs/guides/nextcloud-host.md),
+  [migrating a Nextcloud installation](docs/guides/migration-from-nextcloud.md),
+  [shared UI and HostBridge](docs/guides/shared-ui.md)
 - [Development](docs/development.md)
 - [Routes](docs/reference/routes.md), [error codes](docs/reference/error-codes.md),
   [configuration](docs/reference/configuration.md)
@@ -136,7 +140,9 @@ retry.
   [WebFinger](docs/guides/webfinger.md)
 - [ADR 0001 — one core, two hosts](docs/adr/0001-shared-core-two-hosts.md)
 - [ADR 0002 — runtime](docs/adr/0002-runtime.md)
-- [ADR 0003 — HTTP contract](docs/adr/0003-http-contract.md)
+- [ADR 0003 — HTTP contract](docs/adr/0003-http-contract.md),
+  [ADR 0004 — incremental migration and ownership](docs/adr/0004-incremental-migration-and-ownership.md),
+  [ADR 0005 — shared UI](docs/adr/0005-shared-ui.md)
 - [Contributing](CONTRIBUTING.md), [security](SECURITY.md),
   [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md)
 - [Agent conventions](AGENTS.md)

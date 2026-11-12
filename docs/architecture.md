@@ -64,6 +64,29 @@ private assembly, so the two cannot drift apart. The host still owns
 authentication, migrations, the HTTP controller and the worker process. See
 [using the core from a host](guides/host-integration.md).
 
+## Repository boundaries and migration
+
+Three repositories share the product, each with one kind of responsibility:
+`core` owns social behaviour and protocol rules that both products need;
+`AlohaSocial/social` owns Nextcloud adapters, pages, admin settings and
+Nextcloud auth; `AlohaSocial/server` owns the standalone bootstrap, accounts,
+installer and deployment. A feature needed by only one host stays there. The
+full decision and data-ownership rules are in
+[ADR 0004](adr/0004-incremental-migration-and-ownership.md).
+
+Existing installations move with a strangler migration. The host imports its
+old data into the core schemas, verifies that actor URLs, key ids, post URLs
+and outgoing follow activity ids did not change, and cuts over one slice at a
+time. The core has no Nextcloud importer and no universal migration runner;
+those would make one host's schema part of the shared architecture. The
+concrete procedure is in
+[migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
+
+The shared Vue front end is `@alohasocial/ui`, with a `HostBridge` per host.
+It is a separate npm artifact under `ui/` when extraction starts, not a fourth
+backend and not a place for OCP or server code. See
+[ADR 0005](adr/0005-shared-ui.md) and [shared UI](guides/shared-ui.md).
+
 ## Writing a post (the implemented vertical slice)
 
 ```
@@ -203,9 +226,10 @@ genuinely owns the capability.
 | AT Protocol | `Protocol\Atproto`, moved from the app |
 | Mastodon-compatible API | more routes in the manifest; handlers over the same services |
 | admin settings | host pages; the core keeps the settings *rules* |
-| migrations runner | the standalone host, executing `*Schema` statements |
-| Vue UI | `@alohasocial/ui` with a `HostBridge` per host |
+| migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
+| Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
 | Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
+| Nextcloud data import | the `social` host, following the [migration guide](guides/migration-from-nextcloud.md) |
 
 ## Testing strategy
 
