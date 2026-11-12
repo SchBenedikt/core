@@ -45,6 +45,7 @@ php vendor/bin/phpunit tests/Http
 php vendor/bin/phpunit --filter HttpSignatureTest
 php bin/core-demo
 php bin/export-routes
+php bin/export-openapi
 php bin/validate-cutover <migration-export.json>
 ```
 

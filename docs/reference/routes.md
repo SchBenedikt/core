@@ -1,7 +1,8 @@
 # Routes
 
 The manifest in [`src/Contract/Routes.php`](../../src/Contract/Routes.php) is the
-source of truth; `php bin/export-routes` prints it as JSON. Paths are absolute
+source of truth; `php bin/export-routes` prints it as JSON and
+`php bin/export-openapi` renders the same routes as OpenAPI 3.1. Paths are absolute
 and versioned under `/api/v1` except the liveness probe and the protocol
 endpoints (`/inbox`, `/@{handle}`, `/.well-known/webfinger`).
 

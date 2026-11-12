@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- OpenAPI export: `Contract\OpenApi`, `bin/export-openapi` and the
+  `composer openapi:export` script render the existing route manifest as
+  OpenAPI 3.1 with exact paths, methods, operation ids, auth, rate limits and
+  path parameters. Payload schemas are deliberately not invented.
 - Follow approval: the optional `FollowPolicy` runs after signature
   verification and before the follower repository write. It can refuse a
   Follow for a specific local account with `403 follow_not_accepted`; the

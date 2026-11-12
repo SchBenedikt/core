@@ -51,9 +51,10 @@ with the seam they will attach to.
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, 526 tests
+composer check          # lint, boundary, attribution, links, 529 tests
 php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (21 routes)
+php bin/export-openapi  # the same manifest as OpenAPI 3.1
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
 ```
 

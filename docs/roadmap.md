@@ -36,6 +36,9 @@ Status of the core, not a promise about dates.
   inbound Follow creates an edge for a local account. A refusal is
   `follow_not_accepted`, writes nothing and releases the replay claim; the
   default `AcceptAllFollows` preserves the previous behaviour.
+- OpenAPI export: `bin/export-openapi` renders the route manifest as OpenAPI
+  3.1, including paths, methods, operation ids, auth, rate limits and path
+  parameters. It does not invent payload schemas the manifest does not have.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
   test) over `social_block`, an authenticated block API and a home-timeline
   filter scoped to the reader. Blocks hide shared remote rows without deleting
@@ -81,7 +84,6 @@ Status of the core, not a promise about dates.
 - Remote-post backfill, thread/context fetching and media fetching (the
   current implementation only stores embedded objects delivered to the inbox).
 - Shared inboxes and delivery batching.
-- OpenAPI generation from the route manifest.
 
 ## Explicitly not planned
 

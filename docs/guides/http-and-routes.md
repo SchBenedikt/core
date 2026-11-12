@@ -52,6 +52,17 @@ Request ──► Router::match ──► Kernel::bind ──► middleware ─�
 - **Lists** return a named array (`posts`, `followers`), never a bare array, so
   a field can be added later without breaking clients.
 
+## OpenAPI export
+
+`php bin/export-openapi` (or `composer openapi:export`) prints the same route
+manifest as an OpenAPI 3.1 document. It carries the exact paths, methods,
+operation ids, auth requirement, rate limit and path parameters.
+
+It intentionally does **not** invent request or response schemas: the manifest
+has no field-level schema, and generating one would make the export look more
+authoritative than the contract. Payload details stay in the
+[route reference](../reference/routes.md).
+
 ## Status codes used
 
 | Code | When |

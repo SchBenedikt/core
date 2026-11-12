@@ -38,6 +38,7 @@
 		"check:attribution": "@php tools/check-attribution.php",
 		"check:links": "@php tools/check-links.php",
 		"migration:validate": "@php bin/validate-cutover",
+		"openapi:export": "@php bin/export-openapi",
 		"check": [
 			"@lint",
 			"@check:boundary",
