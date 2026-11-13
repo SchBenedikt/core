@@ -48,6 +48,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
@@ -56,6 +57,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Route;
@@ -394,7 +396,26 @@ final class Routes
 				summary: 'Remove the signed-in account\'s favourite from a visible local status.',
 			),
 			new Route(
-				name: 'mastodon.accounts.relationships',
+				name: 'mastodon.polls.show',
+				method: 'GET',
+				path: $mastodon . '/polls/{id}',
+				handler: MastodonPollHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Read one local poll, including the viewer\'s own choices when authenticated.',
+			),
+			new Route(
+				name: 'mastodon.polls.vote',
+				method: 'POST',
+				path: $mastodon . '/polls/{id}/votes',
+				handler: MastodonVotePollHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Vote in a visible local poll; an identical retry is idempotent.',
+			),
+			new Route(
+					name: 'mastodon.accounts.relationships',
 				method: 'GET',
 				path: $mastodon . '/accounts/relationships',
 				handler: MastodonRelationshipsHandler::class,

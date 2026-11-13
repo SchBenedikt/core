@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Mastodon-compatible local poll voting: `POST
+  {mastodon.prefix}/polls/{id}/votes` accepts JSON or form `choices[]`
+  positions, requires `write:statuses`, declares `30/900` and remains behind
+  the disabled-by-default gate. `GET {mastodon.prefix}/polls/{id}` is public
+  (`120/60`) and includes viewer-specific `voted`/`own_votes` when the host
+  supplies a user id. Votes live in the new `social_poll_vote` table behind
+  `PollVoteRepository`; an insert advances the stored poll and option counters
+  in one transaction. Single-choice and multiple-choice rules, zero-based
+  positions, duplicate/out-of-range choices, expiry, private visibility,
+  missing ids, authentication, scope, disabled feature and SQL counters are
+  covered through the real kernel. An identical retry is idempotent, a
+  changed second vote is `422 already_voted`, and an ended poll is `422
+  poll_ended` without a write. The route manifest/OpenAPI export now has 51
+  routes (25 under the compatibility prefix). Existing hosts must create the
+  vote table from `PollSchema` before enabling local votes; status and poll
+  reads degrade to `voted: false` until it exists. Remote poll fetching/voting
+  and ActivityPub `Question` federation remain external. See
+  `docs/guides/mastodon-api.md`.
 - Shared UI package: `@alohasocial/ui` now lives under `ui/` with a typed
   `HostBridge`, `createAlohaUi()`/`useHostBridge()` dependency injection, a typed
   `CoreApi` over the existing route manifest, a network-free `FakeHostBridge`
@@ -101,15 +119,16 @@ All notable changes to this project are documented here. The format follows
   The poll is stored atomically with its post in the new `social_poll` and
   ordered `social_poll_option` tables from `PollSchema`, validated before
   `PostService`, and returned through `MastodonPresenter` as the Mastodon poll
-  entity with zero local vote counts, `voted: false`, empty `own_votes`/`emojis`
-  and a clock-derived `expired` flag. Status reads, timelines, account statuses
-  and search project the same object; an idempotent retry reuses the original
-  post and does not duplicate poll rows. Invalid options, expiry or booleans
-  are `422 validation_failed` and create no partial status. The instance
-  endpoint now advertises the real `polls` limits. Existing hosts must create
-  the two tables before the repository reads polls or a poll is accepted; a
-  fresh host gets them from `PollSchema::create()`. Voting, remote polls and
-  ActivityPub `Question` federation remain external. See
+  entity with initially zero local vote counts, `voted: false`, empty
+  `own_votes`/`emojis` and a clock-derived `expired` flag. Status reads,
+  timelines, account statuses and search project the same object; an
+  idempotent retry reuses the original post and does not duplicate poll rows.
+  Invalid options, expiry or booleans are `422 validation_failed` and create
+  no partial status. The instance endpoint now advertises the real `polls`
+  limits. Existing hosts must create the two tables before the repository reads
+  polls or a poll is accepted; a fresh host gets them from
+  `PollSchema::create()`. Local voting is added separately below; remote poll
+  fetching/voting and ActivityPub `Question` federation remain external. See
   `docs/guides/mastodon-api.md`.
 - Mastodon-compatible local search: `GET {mastodon.prefix}/search` requires
   `read:search`, declares a `60/60` rate limit and returns the Mastodon v2

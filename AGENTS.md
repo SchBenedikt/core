@@ -95,7 +95,7 @@ rows, remote delete for published posts, OAuth session refresh and the
 authorization-code/PAR/revocation protocol client with ES256 DPoP proofs and a
 disabled-by-default publish route), the optional disabled-by-default Mastodon
 compatibility subset (instance metadata/statistics, public timeline, status
-read/create/delete with local poll creation, local favourite/unfavourite,
+read/create/delete with local poll creation/voting, local favourite/unfavourite,
 local follow/unfollow and relationship reads, local notification listing with
 dismiss/unread state, local status/actor search, media upload/update/delete,
 local account profiles, paged local follower/following lists, account statuses,
@@ -122,9 +122,10 @@ and token revocation are implemented), the full
 repository/AppView/media/firehose stack, the external Mastodon server
 remainder (OAuth/token issuance and app registration, remote timelines and
 delivery, favourite federation, boosts, remote notifications, streaming,
-remote search, account/admin and remote relationship APIs), and an
+remote poll fetching/voting/federation, remote search, account/admin and
+remote relationship APIs), and an
 object-storage adapter. Local Mastodon notification listing with
-dismiss/unread state, local status/actor search, local poll creation,
+dismiss/unread state, local status/actor search, local poll creation/voting,
 instance metadata/statistics, local account profiles and paged local
 follower/following lists are done; no locally implementable Mastodon profile
 follow-up remains. The local AT Protocol publishing slice is

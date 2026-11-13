@@ -23,7 +23,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(49, $manifest->routes());
+		self::assertCount(51, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('atproto.publish'));
 		self::assertNotNull($manifest->find('timelines.home'));
@@ -48,6 +48,8 @@ final class RoutesTest extends TestCase
 		self::assertNotNull($manifest->find('mastodon.accounts.following'));
 		self::assertNotNull($manifest->find('mastodon.accounts.follow'));
 		self::assertNotNull($manifest->find('mastodon.accounts.unfollow'));
+		self::assertNotNull($manifest->find('mastodon.polls.show'));
+		self::assertNotNull($manifest->find('mastodon.polls.vote'));
 	}
 
 	public function testEveryHandlerExistsAndImplementsTheContract(): void
@@ -215,7 +217,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(49, $decoded['routes']);
+		self::assertCount(51, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -225,6 +227,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(49, $app->routes->routes());
+		self::assertCount(51, $app->routes->routes());
 	}
 }

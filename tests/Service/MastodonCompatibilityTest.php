@@ -96,6 +96,8 @@ final class MastodonCompatibilityTest extends TestCase
 		$dismiss = $manifest->find('mastodon.notifications.dismiss');
 		$clear = $manifest->find('mastodon.notifications.clear');
 		$search = $manifest->find('mastodon.search');
+		$poll = $manifest->find('mastodon.polls.show');
+		$vote = $manifest->find('mastodon.polls.vote');
 
 		self::assertNotNull($create);
 		self::assertNotNull($delete);
@@ -117,6 +119,8 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($dismiss);
 		self::assertNotNull($clear);
 		self::assertNotNull($search);
+		self::assertNotNull($poll);
+		self::assertNotNull($vote);
 		self::assertTrue($create->requiresAuth);
 		self::assertSame(['write:statuses'], $create->requiredScopes);
 		self::assertSame('30/900', $create->rateLimit);
@@ -183,5 +187,12 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:search'], $search->requiredScopes);
 		self::assertSame('60/60', $search->rateLimit);
 		self::assertSame('/api/mastodon/v1/search', $search->path);
+		self::assertFalse($poll->requiresAuth);
+		self::assertSame('120/60', $poll->rateLimit);
+		self::assertSame('/api/mastodon/v1/polls/{id}', $poll->path);
+		self::assertTrue($vote->requiresAuth);
+		self::assertSame(['write:statuses'], $vote->requiredScopes);
+		self::assertSame('30/900', $vote->rateLimit);
+		self::assertSame('/api/mastodon/v1/polls/{id}/votes', $vote->path);
 	}
 }

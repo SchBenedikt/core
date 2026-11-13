@@ -18,6 +18,8 @@ use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Poll;
 use AlohaSocial\Core\Domain\Post\PollOption;
+use AlohaSocial\Core\Domain\Post\PollVote;
+use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
@@ -80,6 +82,7 @@ final class MastodonService
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?PostSearchRepository $searchPosts = null,
 		private readonly ?LocalActorSearch $searchActors = null,
+		private readonly ?PollVoteRepository $pollVotes = null,
 	) {
 	}
 
@@ -216,6 +219,99 @@ final class MastodonService
 		$this->requireEnabled();
 
 		return $this->presenter->status($this->visiblePost($postId, $viewerId), $viewerId);
+	}
+
+	/**
+	 * Reads one local poll, including the viewer's own choices when the host
+	 * supplied an authenticated user id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function showPoll(string $pollId, ?string $viewerId): array
+	{
+		$this->requireEnabled();
+
+		$post = $this->pollPost($pollId, $viewerId);
+		$poll = $this->presenter->poll($post, $viewerId);
+		if ($poll === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+
+		return $poll;
+	}
+
+	/**
+	 * Records one local account's choices and returns the updated poll.
+	 *
+	 * A retry with the same positions is an idempotent success; a different
+	 * vote from the same account is refused. The repository's primary key is
+	 * the race-safe authority, while this check keeps the response friendly.
+	 *
+	 * @param list<int|string> $choices option positions from the Mastodon request
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function votePoll(string $userId, string $pollId, array $choices): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$post = $this->pollPost($pollId, $userId);
+		$poll = $post->poll;
+		if ($poll === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+
+		if ($poll->isExpired($this->now())) {
+			throw new MastodonRequestException(422, 'poll_ended', 'This poll has ended.');
+		}
+
+		$positions = $this->pollChoices($choices, $poll);
+		$votes = $this->requirePollVotes();
+		$existing = $this->findPollVote($votes, $post->id, $userId);
+		if ($existing !== null) {
+			if ($existing->positions === $positions) {
+				return $this->presenter->poll($post, $userId, $existing, true) ?? [];
+			}
+
+			throw new MastodonRequestException(422, 'already_voted', 'You have already voted in this poll.');
+		}
+
+		$vote = new PollVote(
+			postId: $post->id,
+			userId: $userId,
+			positions: $positions,
+			createdAt: $this->now(),
+		);
+
+		try {
+			$votes->insert($vote);
+		} catch (DatabaseException $exception) {
+			// Another request may have inserted the same row between the read
+			// above and this insert. Return the winner for an identical retry;
+			// anything else is either a real conflict or a missing table.
+			$existing = $this->findPollVote($votes, $post->id, $userId);
+			if ($existing !== null && $existing->positions === $positions) {
+				return $this->presenter->poll($post, $userId, $existing, true) ?? [];
+			}
+
+			if ($existing !== null) {
+				throw new MastodonRequestException(422, 'already_voted', 'You have already voted in this poll.');
+			}
+
+			throw new MastodonRequestException(
+				503,
+				'polls_not_configured',
+				'Poll voting storage is not configured.',
+			);
+		}
+
+		$updated = $this->posts->find($post->id);
+		if ($updated === null || $updated->poll === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+
+		return $this->presenter->poll($updated, $userId, $vote, true) ?? [];
 	}
 
 	/**
@@ -790,6 +886,108 @@ final class MastodonService
 		} catch (PostNotFoundException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 		}
+	}
+
+	/**
+	 * Resolves the stable `poll-<postId>` projection back to its visible post.
+	 *
+	 * A poll has no separate id table. A malformed, missing or invisible id is
+	 * the same 404 as a missing status, so the response cannot reveal whether
+	 * the post exists.
+	 */
+	private function pollPost(string $pollId, ?string $viewerId): Post
+	{
+		if (!str_starts_with($pollId, 'poll-') || strlen($pollId) <= 5) {
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+
+		$post = $this->visiblePost(substr($pollId, 5), $viewerId);
+		if ($post->poll === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+
+		return $post;
+	}
+
+	/**
+	 * Validates the Mastodon `choices[]` payload against the stored poll.
+	 *
+	 * Positions are zero-based and must be unique. A single-choice poll accepts
+	 * exactly one; a multiple-choice poll accepts one or more up to the option
+	 * count. Unknown, duplicate and non-numeric choices are validation errors.
+	 *
+	 * @param array<mixed> $choices
+	 *
+	 * @return list<int>
+	 */
+	private function pollChoices(array $choices, Poll $poll): array
+	{
+		if (!array_is_list($choices) || $choices === []) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'choices must be a non-empty list of poll option positions.',
+			);
+		}
+
+		$positions = [];
+		foreach ($choices as $choice) {
+			if (is_int($choice)) {
+				$position = $choice;
+			} elseif (is_string($choice) && preg_match('/^\d+$/', trim($choice)) === 1) {
+				$position = (int) $choice;
+			} else {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					'choices must contain poll option positions.',
+				);
+			}
+
+			if (!isset($poll->options[$position])) {
+				throw new MastodonRequestException(422, 'validation_failed', 'A poll option does not exist.');
+			}
+
+			if (in_array($position, $positions, true)) {
+				throw new MastodonRequestException(422, 'validation_failed', 'A poll option cannot be selected twice.');
+			}
+
+			$positions[] = $position;
+		}
+
+		if (!$poll->multiple && count($positions) !== 1) {
+			throw new MastodonRequestException(422, 'validation_failed', 'This poll accepts exactly one choice.');
+		}
+
+		sort($positions);
+
+		return $positions;
+	}
+
+	private function findPollVote(PollVoteRepository $votes, string $postId, string $userId): ?PollVote
+	{
+		try {
+			return $votes->find($postId, $userId);
+		} catch (DatabaseException $exception) {
+			throw new MastodonRequestException(
+				503,
+				'polls_not_configured',
+				'Poll voting storage is not configured.',
+			);
+		}
+	}
+
+	private function requirePollVotes(): PollVoteRepository
+	{
+		if ($this->pollVotes === null) {
+			throw new MastodonRequestException(
+				503,
+				'polls_not_configured',
+				'Poll voting storage is not configured.',
+			);
+		}
+
+		return $this->pollVotes;
 	}
 
 	private function ownedUnattachedMedia(

@@ -165,8 +165,8 @@ Status of the core, not a promise about dates.
 - **Mastodon-compatible API**: the core now owns the additive,
   disabled-by-default compatibility subset under `social/mastodon.prefix`
   (default `/api/mastodon/v1`): instance metadata and statistics, public timeline, status
-  read/create/delete including local poll creation on an own status, local
-  favourite/unfavourite, local follow/unfollow and relationship reads, local
+  read/create/delete including local poll creation and voting on an own or
+  visible local status, local favourite/unfavourite, local follow/unfollow and relationship reads, local
   notification listing with dismiss/unread state, media upload/update/delete,
   local account statuses and verify credentials. It maps
   to the existing posts, `PostService`, `MediaService` and repositories rather
@@ -181,10 +181,12 @@ Status of the core, not a promise about dates.
   second status model, and unfavourite is an idempotent no-op when the row is
   already absent. Polls live in `social_poll` and `social_poll_option` behind
   `PollSchema` and are attached to the existing post; creation is atomic with
-  the post insert, and the Mastodon status projection returns the poll with
-  zero local vote counts. There is no vote endpoint yet, so `voted`, `own_votes`
-  and the option counts stay zero/false, and `expired` is derived from the
-  clock rather than a scheduled job. Local follows use the existing follower graph with
+  the post insert. Local votes live in `social_poll_vote` behind
+  `PollVoteRepository`; an insert updates the poll and option counters in the
+  same transaction, and the status projection returns the viewer's `voted`,
+  `own_votes` and the shared counts. An identical retry is idempotent, a
+  changed second vote and a vote after expiry are rejected, and `expired` is
+  derived from the clock rather than a scheduled job. Local follows use the existing follower graph with
   `social_follower.is_local = 1`, so the target's followers collection and
   both relationship directions share one source of truth; those edges are
   excluded from remote inbox resolution and feed the authenticated home
@@ -212,12 +214,13 @@ Status of the core, not a promise about dates.
   OAuth/authorization/token issuance and app registration; real remote
   timelines and remote delivery; favourite federation (outbound `Like`/`Undo`
   and remote counts); boosts; remote notifications; streaming infrastructure;
-  remote relationship/admin APIs; and migrations in an existing host database.
+  remote poll fetching/voting/federation; remote relationship/admin APIs; and
+  migrations in an existing host database.
   Local account profiles and paged follower/following lists are complete
   locally too, not host prerequisites. Media upload/update/delete, local
   favourite bookkeeping, local follow/unfollow/relationship reads, local
   notification listing with dismiss/unread state, local status/actor search,
-  local poll creation, account profiles/lists and instance
+  local poll creation/voting, account profiles/lists and instance
   metadata/statistics are complete locally. The
   migration for the local follow marker remains a host step: add
   `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
@@ -262,12 +265,12 @@ table: the local media catch-up, thread/context, AT Protocol publishing and
 Mastodon compatibility (including instance metadata/statistics, media
 management, local favourites, local follow/relationships, local account
 profiles and follower/following lists, notification listing with
-dismiss/unread state, local search and poll creation) slices are recorded
+dismiss/unread state, local search and poll creation/voting) slices are recorded
 above.
 
 | Item | Seam |
 | --- | --- |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll` migrations remain host steps |
+| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote poll fetching/voting/federation, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation/voting are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll`/`social_poll_vote` migrations remain host steps |
 | AT Protocol account-linking UI/callback and full client/AppView extraction (authorization-code/PAR/revocation and OAuth session refresh are local) | `AlohaSocial/social` host and a future standalone AT Protocol client; the host owns credential storage, PDS selection and the browser flow store, while the core owns the protocol client and metadata validation |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |

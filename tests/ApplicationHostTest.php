@@ -82,7 +82,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(49, $app->routes->routes());
+		self::assertCount(51, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -293,6 +293,106 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $shown->status);
 		self::assertSame($status['poll'], $shown->decodedBody()['poll']);
 		self::assertSame('2026-11-11T11:00:00.000Z', $shown->decodedBody()['poll']['expires_at']);
+	}
+
+	public function testForHostVotesInAPollOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query([
+				'status' => 'vote over sql',
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_in' => '3600',
+				],
+			]),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $created->status);
+		$pollId = $created->decodedBody()['poll']['id'];
+
+		$voted = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/polls/' . rawurlencode($pollId) . '/votes',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: 'choices[0]=1',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(200, $voted->status);
+		self::assertSame([1], $voted->decodedBody()['own_votes']);
+		self::assertSame(1, $voted->decodedBody()['votes_count']);
+		self::assertSame(1, $voted->decodedBody()['voters_count']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . PollSchema::TABLE . ' WHERE votes_count = 1',
+		));
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT votes_count FROM ' . PollSchema::OPTION_TABLE . ' WHERE post_id = :post_id AND position = 1',
+			['post_id' => $created->decodedBody()['id']],
+		));
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . PollSchema::VOTE_TABLE,
+		));
+	}
+
+	public function testForHostDegradesPollReadsButRefusesVotesWithoutTheVoteTable(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query([
+				'status' => 'poll without votes table',
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_in' => '3600',
+				],
+			]),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $created->status);
+		$status = $created->decodedBody();
+
+		$database->execute('DROP TABLE ' . PollSchema::VOTE_TABLE);
+
+		$read = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/statuses/' . $status['id'],
+			userId: 'alice',
+		));
+		self::assertSame(200, $read->status);
+		self::assertFalse($read->decodedBody()['poll']['voted']);
+
+		$pollRead = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/polls/' . rawurlencode($status['poll']['id']),
+			userId: 'alice',
+		));
+		self::assertSame(200, $pollRead->status);
+		self::assertFalse($pollRead->decodedBody()['voted']);
+		self::assertSame([], $pollRead->decodedBody()['own_votes']);
+
+		$vote = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/polls/' . rawurlencode($status['poll']['id']) . '/votes',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: 'choices[0]=1',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(503, $vote->status);
+		self::assertSame('polls_not_configured', $vote->decodedBody()['error']['code']);
 	}
 
 	public function testForHostReportsInstanceMetadataAndSqlStats(): void

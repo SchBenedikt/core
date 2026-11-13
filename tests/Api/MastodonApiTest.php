@@ -1656,6 +1656,174 @@ final class MastodonApiTest extends TestCase
 		))->decodedBody());
 	}
 
+	public function testPollVotePersistsChoicesAndProjectsTheViewerState(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, [
+			'status' => 'Choose two',
+			'poll' => [
+				'options' => ['A', 'B', 'C'],
+				'expires_in' => '3600',
+				'multiple' => 'true',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		$response = $this->votePoll($app, $pollId, [0, 2], userId: 'bob');
+		self::assertSame(200, $response->status);
+		$poll = $response->decodedBody();
+		self::assertTrue($poll['voted']);
+		self::assertSame([0, 2], $poll['own_votes']);
+		self::assertSame(2, $poll['votes_count']);
+		self::assertSame(1, $poll['voters_count']);
+		self::assertSame([
+			['title' => 'A', 'votes_count' => 1],
+			['title' => 'B', 'votes_count' => 0],
+			['title' => 'C', 'votes_count' => 1],
+		], $poll['options']);
+
+		$viewer = $this->showPoll($app, $pollId, userId: 'bob');
+		self::assertSame($poll, $viewer->decodedBody());
+
+		$owner = $this->showPoll($app, $pollId, userId: 'alice');
+		self::assertFalse($owner->decodedBody()['voted']);
+		self::assertSame([], $owner->decodedBody()['own_votes']);
+		self::assertSame(2, $owner->decodedBody()['votes_count']);
+
+		$anonymous = $this->showPoll($app, $pollId);
+		self::assertFalse($anonymous->decodedBody()['voted']);
+		self::assertSame(2, $anonymous->decodedBody()['votes_count']);
+
+		$statusRead = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'bob',
+		));
+		self::assertSame($poll, $statusRead->decodedBody()['poll']);
+	}
+
+	public function testAnIdenticalPollVoteIsIdempotentButADifferentSecondVoteIsRejected(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, [
+			'status' => 'One choice',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		$first = $this->votePoll($app, $pollId, [1], userId: 'bob');
+		$second = $this->votePoll($app, $pollId, ['1'], userId: 'bob');
+		self::assertSame(200, $first->status);
+		self::assertSame(200, $second->status);
+		self::assertSame(1, $second->decodedBody()['votes_count']);
+		self::assertSame(1, $second->decodedBody()['voters_count']);
+		self::assertSame([1], $second->decodedBody()['own_votes']);
+
+		$different = $this->votePoll($app, $pollId, [0], userId: 'bob');
+		self::assertSame(422, $different->status);
+		self::assertSame('already_voted', $different->decodedBody()['error']['code']);
+		self::assertSame(1, $this->showPoll($app, $pollId)->decodedBody()['votes_count']);
+	}
+
+	public function testPollVoteValidatesChoiceShapeAndTheSingleChoiceRule(): void
+	{
+		$app = $this->app();
+		$status = $this->createStatus($app, [
+			'status' => 'One choice',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		foreach ([[], [0, 1], [2], ['not-a-number'], [0, 0]] as $choices) {
+			$response = $this->votePoll($app, $pollId, $choices, userId: 'alice');
+			self::assertSame(422, $response->status);
+			self::assertSame('validation_failed', $response->decodedBody()['error']['code']);
+		}
+
+		self::assertSame(0, $this->showPoll($app, $pollId)->decodedBody()['votes_count']);
+	}
+
+	public function testPollVoteAcceptsJsonAndRequiresAnActiveUnexpiredPoll(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, [
+			'status' => 'Expires',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '300',
+				'multiple' => 'true',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/polls/' . rawurlencode($pollId) . '/votes',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['choices' => [0]], JSON_THROW_ON_ERROR),
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $response->status);
+		self::assertSame([0], $response->decodedBody()['own_votes']);
+
+		$this->clock->advance(300);
+		$ended = $this->votePoll($app, $pollId, [1], userId: 'alice');
+		self::assertSame(422, $ended->status);
+		self::assertSame('poll_ended', $ended->decodedBody()['error']['code']);
+		self::assertSame(1, $this->showPoll($app, $pollId)->decodedBody()['votes_count']);
+	}
+
+	public function testPollVoteAndReadRespectVisibilityAndMissingPollIds(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, [
+			'status' => 'Private poll',
+			'visibility' => 'private',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		self::assertSame(404, $this->votePoll($app, $pollId, [0], userId: 'bob')->status);
+		self::assertSame(404, $this->showPoll($app, $pollId)->status);
+		self::assertSame(200, $this->showPoll($app, $pollId, userId: 'alice')->status);
+
+		self::assertSame(404, $this->showPoll($app, 'poll-missing')->status);
+		self::assertSame(404, $this->votePoll($app, 'poll-missing', [0])->status);
+		self::assertSame(404, $this->showPoll($app, 'not-a-poll')->status);
+	}
+
+	public function testPollVoteRequiresAuthTheWriteScopeAndTheFeatureFlag(): void
+	{
+		$app = $this->app();
+		$status = $this->createStatus($app, [
+			'status' => 'Protected poll',
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => '3600',
+			],
+		])->decodedBody();
+		$pollId = $status['poll']['id'];
+
+		self::assertSame(401, $this->votePoll($app, $pollId, [0], userId: null)->status);
+		self::assertSame(403, $this->votePoll($app, $pollId, [0], scopes: ['read:statuses'])->status);
+		self::assertSame(200, $this->showPoll($app, $pollId)->status);
+
+		$disabled = $this->app(enabled: false);
+		self::assertSame(404, $this->showPoll($disabled, $pollId)->status);
+		self::assertSame(404, $this->votePoll($disabled, $pollId, [0])->status);
+		self::assertSame(404, $this->votePoll($disabled, $pollId, [0], userId: null)->status);
+	}
+
 	/**
 	 * @param array<string, string> $query
 	 * @param list<string> $scopes
@@ -1932,6 +2100,43 @@ final class MastodonApiTest extends TestCase
 		self::assertIsString($bytes);
 
 		return $bytes;
+	}
+
+	/**
+	 * @param list<int|string> $choices
+	 * @param list<string> $scopes
+	 */
+	private function votePoll(
+		Application $app,
+		string $pollId,
+		array $choices,
+		array $scopes = ['write:statuses'],
+		?string $userId = 'alice',
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: $prefix . '/polls/' . rawurlencode($pollId) . '/votes',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['choices' => $choices]),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	private function showPoll(
+		Application $app,
+		string $pollId,
+		array $scopes = [],
+		?string $userId = null,
+		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: $prefix . '/polls/' . rawurlencode($pollId),
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	private function createStatus(

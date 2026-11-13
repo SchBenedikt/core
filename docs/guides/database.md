@@ -25,7 +25,7 @@ timestamp, and anything else is refused.
 Each table's definition lives next to its repository or adapter:
 
 - `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
-- `src/Domain/Post/PollSchema.php` → `social_poll` and ordered `social_poll_option` (one poll per post; no vote rows yet)
+- `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
@@ -91,6 +91,12 @@ like attachments and favourites; a hard delete should remove the option rows
 and the poll row in that order (the core schema adds no foreign key). An
 existing host must create both tables with `PollSchema::statements()` before
 serving a status whose repository reads them or accepting a `poll` parameter.
+`social_poll_vote` is keyed by `(post_id, user_id)` and stores the viewer's
+sorted zero-based positions. `PdoPollVoteRepository::insert()` writes the row
+and advances the poll and option counters in one transaction; a duplicate key
+is the race-safe no-second-vote boundary. Status and poll reads degrade to
+`voted: false` until the table exists, while the vote route answers `503
+polls_not_configured`; these writes are not imported from a legacy host.
 `social_block` is unique by (local user, actor) and is applied to the same
 home query with a `NOT EXISTS`, so a block hides an actor only for the reader
 who created it; see [blocks](blocks.md). `social_favourite` is unique by

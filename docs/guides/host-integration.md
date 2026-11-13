@@ -197,7 +197,7 @@ host must strip it before passing the request to the kernel.
 The core owns the schema classes, not the migration mechanism:
 
 - `PostSchema` → `social_post` and `social_post_attachment`
-- `PollSchema` → `social_poll` and `social_poll_option` (one poll per post; options are ordered; no vote rows yet)
+- `PollSchema` → `social_poll`, ordered `social_poll_option` and one `social_poll_vote` row per voter and poll
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `NotificationSchema` → `social_notification` (local favourite/follow notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
@@ -233,10 +233,14 @@ For thread/context fetching, create `social_remote_thread_post` from
 the route. For local Mastodon favourites, create `social_favourite` from
 `FavouriteSchema::statements()` before exposing the favourite/unfavourite
 routes; existing posts need no backfill, and deleting a post leaves the row for
-the host's cleanup policy. For local polls, create `social_poll` and `social_poll_option` from
-`PollSchema::statements()` before serving the Mastodon status reads/writes
-(which read the poll tables) or accepting a `poll` parameter; there is no
-backfill, and poll rows are written in the same transaction as their post. For
+the host's cleanup policy. For local polls, create `social_poll` and
+`social_poll_option` from `PollSchema::statements()` before accepting a `poll`
+parameter or serving a status whose repository reads the poll tables. Create
+`social_poll_vote` before enabling the vote route; without it, status and poll
+reads still work but omit the viewer's vote state, while the vote route answers
+`503 polls_not_configured`. There is no backfill, poll rows are written in the
+same transaction as their post, and a vote advances the poll and option
+counters in the same transaction as its row. For
 local notifications, create `social_notification` from
 `NotificationSchema::statements()` before exposing the notification routes;
 there is no backfill from older favourites or followers. Existing

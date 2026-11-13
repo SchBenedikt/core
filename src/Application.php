@@ -39,6 +39,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
@@ -47,6 +48,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
@@ -99,9 +101,13 @@ use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryPollVoteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PdoFavouriteRepository;
+use AlohaSocial\Core\Domain\Post\PdoPollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
+use AlohaSocial\Core\Domain\Post\PollVoteCounter;
+use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
@@ -222,6 +228,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
 		?FavouriteRepository $favouriteRepository = null,
+		?PollVoteRepository $pollVoteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
@@ -252,6 +259,9 @@ final readonly class Application
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository();
 		$favouriteRepository ??= new InMemoryFavouriteRepository();
+		$pollVoteRepository ??= new InMemoryPollVoteRepository(
+			$posts instanceof PollVoteCounter ? $posts : null,
+		);
 		$notificationRepository ??= new InMemoryNotificationRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
@@ -284,6 +294,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository,
 			favouriteRepository: $favouriteRepository,
+			pollVoteRepository: $pollVoteRepository,
 			notificationRepository: $notificationRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
@@ -334,6 +345,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
 		?FavouriteRepository $favouriteRepository = null,
+		?PollVoteRepository $pollVoteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
 		?HostResolver $hostResolver = null,
@@ -365,6 +377,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
 			favouriteRepository: $favouriteRepository ?? new PdoFavouriteRepository($database),
+			pollVoteRepository: $pollVoteRepository ?? new PdoPollVoteRepository($database),
 			notificationRepository: $notificationRepository ?? new PdoNotificationRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
@@ -404,6 +417,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy,
 		AttachmentRepository $attachmentRepository,
 		FavouriteRepository $favouriteRepository,
+		PollVoteRepository $pollVoteRepository,
 		NotificationRepository $notificationRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
@@ -501,7 +515,7 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
@@ -510,6 +524,7 @@ final readonly class Application
 			$notificationService,
 			$posts instanceof PostSearchRepository ? $posts : null,
 			$localActors instanceof LocalActorSearch ? $localActors : null,
+			$pollVoteRepository,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -637,6 +652,8 @@ final readonly class Application
 			->with(MastodonPublicTimelineHandler::class, static fn (): MastodonPublicTimelineHandler => new MastodonPublicTimelineHandler($mastodonService))
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonNotificationsHandler::class, static fn (): MastodonNotificationsHandler => new MastodonNotificationsHandler($mastodonService))
+			->with(MastodonPollHandler::class, static fn (): MastodonPollHandler => new MastodonPollHandler($mastodonService))
+			->with(MastodonVotePollHandler::class, static fn (): MastodonVotePollHandler => new MastodonVotePollHandler($mastodonService))
 			->with(MastodonNotificationUnreadCountHandler::class, static fn (): MastodonNotificationUnreadCountHandler => new MastodonNotificationUnreadCountHandler($mastodonService))
 			->with(MastodonDismissNotificationHandler::class, static fn (): MastodonDismissNotificationHandler => new MastodonDismissNotificationHandler($mastodonService))
 			->with(MastodonClearNotificationsHandler::class, static fn (): MastodonClearNotificationsHandler => new MastodonClearNotificationsHandler($mastodonService))

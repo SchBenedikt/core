@@ -297,8 +297,11 @@ POST {mastodon.prefix}/statuses  with poll
 
 `PdoPostRepository` batches the poll and ordered option rows for a page of
 posts instead of querying per status. `MastodonPresenter` projects the Mastodon
-poll object and derives `expired` from the injected clock against `expires_at`;
-there is no vote row or expiry job, and a status without a poll returns `null`.
+poll object and derives `expired` from the injected clock against `expires_at`.
+Local votes are keyed by `(post_id, user_id)` in `social_poll_vote`, and the
+poll/option counters are advanced by `PollVoteRepository` in the same
+transaction as the row; there is no expiry job, and a status without a poll
+returns `null`.
 The core `Post::toArray()` carries the same optional object for `/api/v1/posts`
 and timeline consumers. Media upload reuses the same service as the core route:
 
@@ -663,7 +666,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screen; the package under `ui/` is now extracted |
@@ -679,7 +682,8 @@ genuinely owns the capability.
   `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
   `RemotePostRepositoryTestCase`, `RemoteThreadRepositoryTestCase`,
   `BlockRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
-  `NotificationRepositoryTestCase`, `AtprotoPublicationRepositoryTestCase`,
+  `NotificationRepositoryTestCase`, `PollVoteRepositoryTestCase`,
+  `AtprotoPublicationRepositoryTestCase`,
   `AtprotoSessionStoreTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
   it passes the shared case. The PDO queue and log cases also use a real SQLite
@@ -727,11 +731,15 @@ genuinely owns the capability.
   `MastodonApiTest` drives the optional compatibility routes through the same
   kernel, including JSON/form writes, poll creation (options, both expiry
   forms, expiry flip, validation with no partial rows, idempotent retry),
+  poll read/voting (viewer state, multiple choices, idempotent retry,
+  changed-vote rejection, expiry, private visibility, auth/scope/disabled),
   media upload/update/delete, local follow/unfollow and relationship reads,
   local search, scopes, disabled-before-auth, cursor/offset pagination,
   idempotency and media projection; `ApplicationHostTest` repeats the
   idempotent write, poll persistence and a SQL search over SQL repositories.
-  `MastodonCompatibilityTest` covers the prefix, scope and route metadata.
+  `MastodonCompatibilityTest` covers the prefix, scope and route metadata;
+  `PollVoteRepositoryTestCase` covers the in-memory and SQL vote stores and
+  their atomic poll/option counters.
   `FollowerRepositoryTestCase` covers the local edge and its exclusion from
   delivery; the post contract now also covers poll round-tripping, soft-delete
   retention and `PostSearchRepository` visibility, author filtering and offset

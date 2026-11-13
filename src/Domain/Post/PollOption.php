@@ -17,9 +17,8 @@ use function trim;
 /**
  * One choice of a local poll.
  *
- * Vote counts are stored with the option so a later voting slice can add
- * votes without changing the post or poll shape. This slice only creates
- * polls, so every count starts at zero.
+ * Vote counts are stored with the option and advanced atomically with a
+ * poll vote. A freshly created poll starts at zero.
  */
 final readonly class PollOption
 {

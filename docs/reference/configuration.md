@@ -146,8 +146,12 @@ an `Idempotency-Key` is translated into a deterministic post id or media
 source key. Media update changes only the description, and delete is allowed
 only while no post link references the attachment; neither adds a table. Poll
 creation writes `social_poll` and `social_poll_option` in the same transaction
-as the post; create both with `PollSchema::statements()` before serving status
-reads through the SQL repository. Local
+as the post; local voting writes one `social_poll_vote` row per voter and
+advances the counters in the same transaction. Create all three with
+`PollSchema::statements()` before accepting votes through the SQL repository.
+A status or poll read before the vote table exists still succeeds but omits the
+viewer's vote state; the vote route answers `503 polls_not_configured` when the
+vote repository or its table is absent. Local
 favourite/unfavourite writes the new `social_favourite` table through
 `FavouriteRepository`; create it with `FavouriteSchema::statements()` through
 the host migration path before exposing those routes. There is no backfill,
@@ -228,7 +232,7 @@ documented in [remote threads](../guides/remote-threads.md).
 | `MastodonService::DEFAULT_NOTIFICATION_COUNT_LIMIT` | 100 | Default cap for `GET /notifications/unread_count` |
 | `MastodonService::MAX_NOTIFICATION_COUNT_LIMIT` | 1000 | Hard cap for `GET /notifications/unread_count` `limit` |
 | `MastodonService::MAX_SEARCH_OFFSET` | 1000 | Hard offset ceiling for the compatibility search |
-| `Poll::MIN_OPTIONS` / `Poll::MAX_OPTIONS` | 2 / 4 | Option count accepted by local poll creation and advertised by the instance endpoint |
+| `Poll::MIN_OPTIONS` / `Poll::MAX_OPTIONS` | 2 / 4 | Option count accepted by local poll creation and voting and advertised by the instance endpoint |
 | `PollOption::MAX_TITLE_LENGTH` | 50 | Characters per poll option after trimming |
 | `Poll::MIN_EXPIRY_SECONDS` / `Poll::MAX_EXPIRY_SECONDS` | 300 / 604800 | Expiry window accepted by `expires_in`/`expires_at`; advertised by the instance endpoint |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |

@@ -12,10 +12,12 @@ namespace AlohaSocial\Core\Domain\Post;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
 
+use function array_fill;
 use function array_fill_keys;
 use function array_filter;
 use function array_slice;
 use function array_values;
+use function count;
 use function in_array;
 use function mb_stripos;
 use function strcmp;
@@ -28,7 +30,7 @@ use function usort;
  * It applies exactly the ordering and visibility rules of the SQL
  * implementation, so behaviour cannot differ between the two unnoticed.
  */
-final class InMemoryPostRepository implements PostRepository, PostSearchRepository, PostCount
+final class InMemoryPostRepository implements PostRepository, PostSearchRepository, PostCount, PollVoteCounter
 {
 	/**
 	 * @var array<string, Post>
@@ -180,6 +182,48 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			)),
 			$limit,
 			$before,
+		);
+	}
+
+	public function incrementPollVote(PollVote $vote): void
+	{
+		$post = $this->posts[$vote->postId] ?? null;
+		if ($post === null || $post->poll === null) {
+			throw new DatabaseException('The poll no longer exists.');
+		}
+
+		$poll = $post->poll;
+		$counts = array_fill(0, count($poll->options), 0);
+		foreach ($vote->positions as $position) {
+			if (!isset($poll->options[$position])) {
+				throw new DatabaseException('The poll option no longer exists.');
+			}
+
+			$counts[$position]++;
+		}
+
+		$options = [];
+		foreach ($poll->options as $position => $option) {
+			$options[] = new PollOption($option->title, $option->votesCount + $counts[$position]);
+		}
+
+		$this->posts[$post->id] = new Post(
+			id: $post->id,
+			authorId: $post->authorId,
+			content: $post->content,
+			visibility: $post->visibility,
+			publishedAt: $post->publishedAt,
+			contentWarning: $post->contentWarning,
+			deletedAt: $post->deletedAt,
+			attachmentIds: $post->attachmentIds,
+			poll: new Poll(
+				options: $options,
+				multiple: $poll->multiple,
+				hideTotals: $poll->hideTotals,
+				expiresAt: $poll->expiresAt,
+				votesCount: $poll->votesCount + count($vote->positions),
+				votersCount: $poll->votersCount + 1,
+			),
 		);
 	}
 

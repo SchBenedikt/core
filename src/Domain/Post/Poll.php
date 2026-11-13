@@ -20,10 +20,11 @@ use function count;
 /**
  * A poll attached to one local post.
  *
- * The core stores the poll next to its post and has no voting endpoint yet;
- * the counts and the per-viewer fields are therefore zero/false. The expiry is
- * computed once at creation time and is not a scheduled job: `expired` is
- * derived from the clock when the status is presented.
+ * The core stores the poll next to its post. Votes are kept in their own
+ * table and advance the counts; the per-viewer `voted` and `own_votes` fields
+ * are projected from those rows. The expiry is computed once at creation time
+ * and is not a scheduled job: `expired` is derived from the clock when the
+ * status is presented.
  */
 final readonly class Poll
 {

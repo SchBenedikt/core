@@ -18,12 +18,16 @@ use AlohaSocial\Core\Platform\Db\Connection;
  * adds them before it accepts polls. A post without a poll has no poll rows,
  * so the tables can be deployed before the feature is enabled. Deleting a
  * post is a soft delete and leaves the poll rows for the host's cleanup.
+ * Votes live in their own table so a poll can retain its option ordering and
+ * the per-viewer vote is independent of the option titles.
  */
 final class PollSchema
 {
 	public const TABLE = 'social_poll';
 
 	public const OPTION_TABLE = 'social_poll_option';
+
+	public const VOTE_TABLE = 'social_poll_vote';
 
 	/**
 	 * @return list<string>
@@ -48,6 +52,14 @@ final class PollSchema
 			. ' PRIMARY KEY (post_id, position)'
 			. ')',
 			'CREATE INDEX ' . self::OPTION_TABLE . '_post ON ' . self::OPTION_TABLE . ' (post_id)',
+			'CREATE TABLE ' . self::VOTE_TABLE . ' ('
+			. ' post_id VARCHAR(64) NOT NULL,'
+			. ' user_id VARCHAR(255) NOT NULL,'
+			. ' positions VARCHAR(32) NOT NULL,'
+			. ' created_at VARCHAR(20) NOT NULL,'
+			. ' PRIMARY KEY (post_id, user_id)'
+			. ')',
+			'CREATE INDEX ' . self::VOTE_TABLE . '_user ON ' . self::VOTE_TABLE . ' (user_id, created_at)',
 		];
 	}
 

@@ -491,7 +491,7 @@ one owner, or a peer will see two different answers for the same account.
 - Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
 - The core now owns the optional Mastodon-compatible subset (instance
   metadata/statistics, public timeline, status read/create/delete with local
-  poll creation, local favourite/unfavourite, local follow/unfollow and
+  poll creation/voting, local favourite/unfavourite, local follow/unfollow and
   relationships, local notifications with dismiss/unread state, media
   upload/update/delete, account profiles and follower/following lists,
   account statuses and verify credentials). The app can

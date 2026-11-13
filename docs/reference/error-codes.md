@@ -71,7 +71,12 @@ media_storage_unavailable`; `write:media` is enforced like every other declared
 scope. A notification cursor must belong to the signed-in recipient; an
 unknown or foreign cursor is `404 not_found`. Dismissing a missing or foreign
 notification is also `404 not_found`, while repeating an owned dismiss or
-clear is a successful `200 {}`. An assembly without the needed
+clear is a successful `200 {}`. Poll reads use the same `404 not_found` for a
+missing, malformed or invisible poll; voting on an ended poll is `422
+poll_ended`, different choices after an existing vote are `422 already_voted`,
+and malformed choices are `422 validation_failed`. An assembly without the
+needed vote repository or table answers `503 polls_not_configured` on the vote
+route, while reads still report `voted: false`. An assembly without the needed
 repository answers `503 favourites_not_configured` or `503
 notifications_not_configured`, and an assembly without local relationships
 answers `503 follows_not_configured`. Search answers `422 validation_failed`

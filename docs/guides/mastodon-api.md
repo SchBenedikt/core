@@ -16,6 +16,8 @@ Locally implemented (core):
 - `GET /instance`
 - `GET /timelines/public`
 - `GET /statuses/{id}`
+- `GET /polls/{id}`
+- `POST /polls/{id}/votes`
 - `POST /statuses`
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
@@ -58,7 +60,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-three routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-five routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -91,6 +93,8 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `DELETE {prefix}/media/{id}` | yes | `write:media` | 30 / 900 s |
 | `GET {prefix}/timelines/public` | no | — | 60 / 60 s |
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
+| `GET {prefix}/polls/{id}` | no | — | 120 / 60 s |
+| `POST {prefix}/polls/{id}/votes` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
@@ -184,10 +188,12 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
   false while still reporting the count.
 - `poll` is `null` when the status has no poll, otherwise the Mastodon poll
   object. Its options and counts come from the existing status row and the
-  poll tables; no separate status model is created. There is no vote endpoint
-  yet, so every option and `votes_count`/`voters_count` is `0`, `voted` is
-  `false`, and `own_votes`/`emojis` are empty. `expired` is computed from
-  `expires_at` and the clock, so it flips without a scheduled job.
+  poll tables; no separate status model is created. `votes_count`,
+  `voters_count` and each option count advance atomically with a local vote.
+  `voted` and `own_votes` are viewer-specific; an unauthenticated reader sees
+  `false`/`[]`, while an authenticated viewer gets their stored positions.
+  `emojis` is always empty. `expired` is computed from `expires_at` and the
+  clock, so it flips without a scheduled job.
 - `uri`/`url` point at the core post URL; `created_at` is the stored publish
   time.
 
@@ -270,8 +276,37 @@ booleans are `422 validation_failed`; the handler validates before calling
 `PostService`, so a rejected poll creates no post, attachment link or poll row.
 The same route then returns the status with `poll` populated, and `GET
 /statuses/{id}`, timelines, account statuses and search return the same object.
-Poll creation currently has no local vote endpoint and does not federate an
-ActivityPub `Question`; those are separate slices.
+
+### Voting and reading a poll
+
+`POST {prefix}/polls/{id}/votes` records the caller's choices and returns the
+updated Mastodon poll object. The poll id is the stable `poll-<postId>` value
+from the status. The body accepts JSON `{"choices":[0,2]}` or the usual form
+encoding `choices[]=0&choices[]=2`; positions are zero-based. A single-choice
+poll accepts exactly one position; a multiple-choice poll accepts one to four
+unique positions. An unknown position, a duplicate, an empty list, a
+non-numeric value, a poll for an invisible/deleted status, a poll without a
+row, or a malformed id is `422 validation_failed` or `404 not_found` as
+appropriate. A vote on an ended poll is `422 poll_ended` and writes nothing.
+
+The route requires `write:statuses`, declares `30/900`, and stays behind the
+Mastodon gate. An identical retry is an idempotent success; a different second
+vote by the same account is `422 already_voted`. The composite
+`(post_id, user_id)` key is the race-safe boundary. Votes live in
+`social_poll_vote`; an assembly without a vote repository answers `503
+polls_not_configured` rather than silently accepting a write. A poll on a
+followers-only status is readable and votable only by its author, through the
+same `404` visibility rule as statuses.
+
+`GET {prefix}/polls/{id}` is public and returns the poll object; when the host
+supplies an authenticated user id it includes that viewer's `voted` and
+`own_votes`. Without a vote repository, or before the host has created its
+table, the read still works but reports `voted: false`; only the write route
+answers `503 polls_not_configured`. Poll voting is local bookkeeping only and does not federate an
+ActivityPub `Question`; remote poll fetching/voting and federation remain
+external.
+
+Poll creation does not federate an ActivityPub `Question` in this slice.
 
 `DELETE /statuses/{id}` soft-deletes the caller's status and returns `204`.
 Another account's status, a missing status or an already deleted status is
@@ -630,12 +665,15 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
 | `search_not_configured` | 503 | The assembly has no `PostSearchRepository` or `LocalActorSearch` for the requested collection, or no relationship service for `following=true` |
+| `polls_not_configured` | 503 | The assembly has no `PollVoteRepository`, or the vote table is missing |
+| `poll_ended` | 422 | A vote was attempted after the poll expiry |
+| `already_voted` | 422 | The caller already stored different choices in this poll |
 | `instance_not_configured` | 503 | `social/instance.url` is missing; a local follow needs it to derive actor URLs |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
-| `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
-| `not_found` | 404 | Missing/private status, unknown cursor, unknown local account or unknown relationship target |
+| `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry/choices, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
+| `not_found` | 404 | Missing/private status or poll, unknown cursor, unknown local account or unknown relationship target |
 
 Authentication failures use the existing `401 authentication_required`; the
 host's limiter should use `429` with its own retry metadata. The core does not
@@ -649,11 +687,28 @@ Statuses live in `social_post` / `social_post_attachment`; uploaded images use
 `post_id` and written in the same transaction as the post. Existing hosts must
 create both tables before accepting a `poll` parameter or serving statuses
 whose repository reads the poll table; a fresh host gets them from
-`PollSchema::create()`. Poll rows and their options are removed with the post's
-hard-delete cleanup, while a soft-deleted post leaves them as a tombstone like
-favourites and attachments. There is no vote or expiry row: `expired` is
-derived at read time. Status idempotency uses the primary key and a
-deterministic post id; media
+`PollSchema::create()`. Voting additionally requires `social_poll_vote`:
+
+```sql
+CREATE TABLE social_poll_vote (
+  post_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(255) NOT NULL,
+  positions VARCHAR(32) NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  PRIMARY KEY (post_id, user_id)
+);
+CREATE INDEX social_poll_vote_user ON social_poll_vote (user_id, created_at);
+```
+
+`positions` is a sorted comma-separated list of zero-based option indexes and
+is written together with the poll/option count increments in one transaction.
+An existing host must add the table before enabling local votes; the route
+answers `503 polls_not_configured` when the vote repository or table is absent,
+while status and poll reads degrade to `voted: false` until it exists. Poll
+rows, options and votes are removed with the post's hard-delete cleanup, while
+a soft-deleted post leaves them as a tombstone like favourites and attachments.
+There is no separate expiry row: `expired` is derived at read time. Status
+idempotency uses the primary key and a deterministic post id; media
 idempotency uses the existing unique `source_url` column with a deterministic
 internal key. Media update changes only `social_attachment.alt_text`; media
 delete removes that row and both blobs, but only while no `social_post_attachment`
@@ -766,7 +821,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The twenty-three routes are in the manifest with auth, scope and rate-limit metadata.
+The twenty-five routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -777,7 +832,9 @@ attached refusal, binary refusal) and delete (empty object, blob cleanup,
 attached refusal, foreign/missing ids, scopes and disabled feature),
 timeline, create (JSON and form), poll creation (JSON/form, `expires_in` and
 `expires_at`, expiry flip, options/expiry/boolean validation with no partial
-rows, idempotent retry, instance limits), read, local favourite/unfavourite (counts,
+rows, idempotent retry, instance limits), poll read/voting (viewer state,
+multiple choices, idempotent retry, changed-vote rejection, expiry, private
+visibility, missing ids, auth/scope/disabled and SQL counters), read, local favourite/unfavourite (counts,
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
 deleted status and custom prefix), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
@@ -821,7 +878,7 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   voting or federating a `Question`), domain blocks that would need a remote
   moderation feed, and remote search remain external; the local
   follow/unfollow, relationship, profile, follower/following list,
-  notification, search, poll-creation and instance views above are done.
+  notification, search, poll-creation/voting and instance views above are done.
 - Following a remote actor through the compatibility prefix is not part of
   this slice. The public profile lists project remote follow edges that are
   already stored locally, but they never fetch a remote collection; moderation

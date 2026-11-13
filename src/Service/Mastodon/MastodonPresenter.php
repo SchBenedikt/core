@@ -15,9 +15,12 @@ use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Poll;
 use AlohaSocial\Core\Domain\Post\PollOption;
+use AlohaSocial\Core\Domain\Post\PollVote;
+use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\InstanceInfo;
@@ -43,6 +46,7 @@ final class MastodonPresenter
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?LocalActorDirectory $localActors = null,
 		private readonly ?Clock $clock = null,
+		private readonly ?PollVoteRepository $pollVotes = null,
 	) {
 	}
 
@@ -91,6 +95,8 @@ final class MastodonPresenter
 		?string $viewerId = null,
 		?int $favouritesCount = null,
 		?bool $favourited = null,
+		?PollVote $viewerVote = null,
+		bool $viewerVoteLoaded = false,
 	): array {
 		$attachments = [];
 		$presented = $this->media === null ? [] : ($this->media->presentPost($post)['attachments'] ?? []);
@@ -128,7 +134,7 @@ final class MastodonPresenter
 			'tags' => [],
 			'emojis' => [],
 			'card' => null,
-			'poll' => $this->poll($post),
+			'poll' => $this->poll($post, $viewerId, $viewerVote, $viewerVoteLoaded),
 			'favourited' => $favourited
 				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
 			'reblogged' => false,
@@ -146,11 +152,25 @@ final class MastodonPresenter
 	 *
 	 * @return array<string, mixed>|null
 	 */
-	private function poll(Post $post): ?array
-	{
+	public function poll(
+		Post $post,
+		?string $viewerId = null,
+		?PollVote $viewerVote = null,
+		bool $viewerVoteLoaded = false,
+	): ?array {
 		$poll = $post->poll;
 		if ($poll === null) {
 			return null;
+		}
+
+		if (!$viewerVoteLoaded && $viewerId !== null) {
+			try {
+				$viewerVote = $this->pollVotes?->find($post->id, $viewerId);
+			} catch (DatabaseException) {
+				// A host that has not created the vote table can still serve
+				// statuses; the write route reports the missing capability.
+				$viewerVote = null;
+			}
 		}
 
 		$now = $this->clock?->now() ?? new DateTimeImmutable('now');
@@ -162,8 +182,8 @@ final class MastodonPresenter
 			'multiple' => $poll->multiple,
 			'votes_count' => $poll->votesCount,
 			'voters_count' => $poll->votersCount,
-			'voted' => false,
-			'own_votes' => [],
+			'voted' => $viewerVote !== null,
+			'own_votes' => $viewerVote?->positions ?? [],
 			'options' => array_map(
 				static fn (PollOption $option): array => $option->toArray(),
 				$poll->options,
@@ -184,6 +204,15 @@ final class MastodonPresenter
 		$favourited = $viewerId === null
 			? []
 			: ($this->favourites?->existsForPosts($viewerId, $postIds) ?? []);
+		$pollVotes = [];
+		if ($viewerId !== null) {
+			try {
+				$pollVotes = $this->pollVotes?->findForPosts($viewerId, $postIds) ?? [];
+			} catch (DatabaseException) {
+				// Keep status reads usable before the host migration.
+				$pollVotes = [];
+			}
+		}
 
 		return array_map(
 			fn (Post $post): array => $this->status(
@@ -191,6 +220,8 @@ final class MastodonPresenter
 				$viewerId,
 				$counts[$post->id] ?? 0,
 				$favourited[$post->id] ?? false,
+				$pollVotes[$post->id] ?? null,
+				true,
 			),
 			$posts,
 		);

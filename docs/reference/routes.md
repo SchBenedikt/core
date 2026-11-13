@@ -42,6 +42,8 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.media.delete` | `DELETE` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
+| `mastodon.polls.show` | `GET` | `/api/mastodon/v1/polls/{id}` | no | 120 / 60 s |
+| `mastodon.polls.vote` | `POST` | `/api/mastodon/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
@@ -493,7 +495,7 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 
 ## Mastodon-compatible API
 
-The twenty-three routes above are additive and disabled by default. Their paths use
+The twenty-five routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -503,6 +505,11 @@ mastodon_api_disabled` before auth and scope checks. They never shadow
 GET /api/mastodon/v1/instance
 GET /api/mastodon/v1/timelines/public?limit=20&max_id=…
 GET /api/mastodon/v1/statuses/{id}
+GET /api/mastodon/v1/polls/poll-{postId}
+POST /api/mastodon/v1/polls/poll-{postId}/votes
+Content-Type: application/x-www-form-urlencoded
+
+choices[]=0
 POST /api/mastodon/v1/statuses/{id}/favourite
 POST /api/mastodon/v1/statuses/{id}/unfavourite
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
@@ -523,8 +530,8 @@ Content-Type: application/json
 A status response is the usual Mastodon shape (`id`, `content`,
 `spoiler_text`, `sensitive`, `visibility`, `account`, `media_attachments`,
 `poll`, `favourites_count`, `favourited`, …). `poll` is `null` without one;
-otherwise it carries two to four options and a clock-derived `expired` flag,
-with zero counts until a vote endpoint exists. `private` maps to
+otherwise it carries two to four options, a clock-derived `expired` flag and
+the stored vote counts; `voted`/`own_votes` are viewer-specific. `private` maps to
 followers-only; `direct` and `in_reply_to_id` are `422 unsupported_parameter`
 in this slice. The write goes through `PostService`, so validation, ownership,
 soft deletion and delivery are identical to `/api/v1/posts`. A valid `poll` is
