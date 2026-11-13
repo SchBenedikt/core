@@ -2,11 +2,13 @@
 
 ## Setup
 
-Requirements: PHP 8.3+, Composer 2, and the extensions listed in the README.
+Requirements: PHP 8.3+, Composer 2, the extensions listed in the README and,
+for the shared UI package, Node.js 20+ with npm.
 
 ```bash
 composer install
 composer check
+cd ui && npm ci && npm run typecheck && npm test && npm run build
 ```
 
 `composer check` runs five gates in order:
@@ -30,6 +32,9 @@ php bin/export-routes
 php bin/validate-cutover var/migration-export.json
 composer migration:validate -- var/migration-export.json
 composer check:attribution
+cd ui && npm test
+cd ui && npm run typecheck
+cd ui && npm run build
 ```
 
 The attribution guard scans every commit reachable from any ref, including
@@ -75,6 +80,8 @@ The order matters: the contract first, then the core, then the hosts.
 ### Definition of done
 
 - [ ] `composer check` is green.
+- [ ] For a `ui/` change, `npm run typecheck`, `npm test` and `npm run build`
+      are green.
 - [ ] New behaviour has a test that would fail without it.
 - [ ] A new port implementation passes its contract test.
 - [ ] `bin/export-routes` changed only if the HTTP surface did, and both hosts

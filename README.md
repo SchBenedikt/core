@@ -33,7 +33,7 @@ Implemented and tested here:
 | Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance metadata/statistics, public timeline, status read/write/delete with local poll creation, local favourite/unfavourite, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, local status/actor search, media upload/update/delete, local account profiles, paged local follower/following lists, account statuses, verify credentials) over the same posts, media service, follower graph, notification repository and local account directory, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `write:notifications`, `read:accounts`, `read:follows`, `read:notifications`, `read:search`), id-aware and offset pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
 | Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
-| Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
+| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, `CoreApi`, network-free `FakeHostBridge`, `PostCard` and a read-only `PublicTimeline` with loading/empty/error/load-more states; host bridges and mount pages remain host work |
 | Security | AES-256-GCM secret box for private keys at rest |
 
 Deliberately not here yet: the rest of the AT Protocol stack (account-linking
@@ -41,8 +41,8 @@ UI/callback, the credential store, full repository/AppView, media and firehose),
 the full
 Mastodon server API (the local compatibility subset is in
 `docs/guides/mastodon-api.md`), an
-admin UI, a migration runner, the Vue UI
-package and the Nextcloud/standalone host applications. Local image upload, thumbnails, guarded remote-media
+admin UI, a migration runner, host-specific UI bridges/mount pages and the
+Nextcloud/standalone host applications. Local image upload, thumbnails, guarded remote-media
 ingestion for incoming federated posts and bounded thread/context fetches are
 implemented; an object-storage adapter remains a host choice. The
 [architecture document](docs/architecture.md#what-is-not-here-yet) lists the
@@ -54,6 +54,7 @@ remaining seams.
 - `ext-gd`, `ext-json`, `ext-mbstring`, `ext-openssl`, `ext-pdo` (runtime)
 - `ext-curl` when the host uses `CurlHttpClient` for outbound delivery, remote media or thread/context fetching
 - `ext-pdo_sqlite` (tests)
+- Node.js 20 or newer for the `ui/` package
 
 ## Quick start
 
@@ -64,6 +65,7 @@ php bin/core-demo       # drives the core through real HTTP requests
 php bin/export-routes   # the HTTP contract as JSON (49 routes)
 php bin/export-openapi  # the same manifest as OpenAPI 3.1
 php bin/validate-cutover var/migration-export.json  # read-only cutover parity
+cd ui && npm ci && npm test && npm run build  # shared UI package
 ```
 
 The demo builds the in-memory assembly, writes a post, reads the timeline,
@@ -88,6 +90,7 @@ src/
   Security/        encryption at rest
   Support/         time and id helpers
 tests/             unit, contract and end-to-end tests
+ui/                @alohasocial/ui Vue package, HostBridge contract and tests
 bin/               demo, route export and cutover validation
 tools/             lint, link, attribution and host-neutrality guards
 docs/              index, architecture, guides, reference, operations, ADRs
@@ -183,7 +186,10 @@ delivery exclusion, attachment-link queries,
 poll round-tripping/soft-delete retention and the search
 visibility/author/offset contract. The
 `MastodonCompatibilityTest` covers prefix validation, scope matching and route
-metadata, including the search route.
+metadata, including the search route. The `ui/` package has 27 Vitest tests for
+the `HostBridge` plugin/FakeBridge, typed `CoreApi`, loading/empty/error/401,
+retry, cursor pagination and route parity against `bin/export-routes`; it is
+typechecked and built separately in CI.
 
 ## Documentation
 

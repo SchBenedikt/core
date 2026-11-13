@@ -55,7 +55,7 @@ function markdownFiles(string $root, array $arguments): array
 		$relative = substr($path, strlen($root) + 1);
 		if (str_starts_with($relative, 'vendor/')
 			|| str_starts_with($relative, '.git/')
-			|| str_starts_with($relative, 'node_modules/')) {
+			|| preg_match('#(^|/)node_modules/#', $relative) === 1) {
 			continue;
 		}
 

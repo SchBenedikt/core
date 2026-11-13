@@ -5,9 +5,10 @@ the Nextcloud app and the standalone server. This guide is the practical
 contract for that package; [ADR 0005](../adr/0005-shared-ui.md) explains why
 the boundary is drawn this way.
 
-The package does not exist in this repository yet. This guide defines what it
-must expose before the first component is moved out of `social`; it is not a
-claim that extraction has happened.
+The package now exists under [`ui/`](../../ui/README.md). This guide defines
+what it exposes, which first screen was moved and what remains in the hosts.
+The Nextcloud bridge and mount page are still host work; the package does not
+contain either host's session or CSRF implementation.
 
 ## The boundary
 
@@ -98,18 +99,24 @@ transports; the core decides visibility, validation and federation.
 
 ## Package layout
 
-When extraction starts, keep the package isolated from the PHP tree:
+The package is isolated from the PHP tree:
 
 ```
 ui/
   package.json          @alohasocial/ui, peerDependency vue
-  tsconfig.json
+  tsconfig.json         strict typecheck for src and tests
+  vite.config.ts        ES-module library build
+  vitest.config.ts      jsdom component tests
   src/
     host-bridge.ts      the exported contract and types
-    components/         shared Vue components
-    composables/        data loading and API calls
+    plugin.ts           createAlohaUi() and useHostBridge()
+    core-api.ts         typed core reads and JSON error mapping
+    routes.ts           core paths checked against the route manifest
+    components/         PostCard and PublicTimeline
+    composables/        data loading and cursor state
     testing/            FakeHostBridge and fixtures
     index.ts            public exports
+  tests/                contract, component and route-parity tests
   README.md
 ```
 
@@ -126,6 +133,13 @@ host pins both versions.
   shape;
 - accessible focus, keyboard and label behaviour;
 - a fake bridge for component tests.
+
+The first extracted screen is `PublicTimeline` plus `PostCard`. It reads
+`GET /api/v1/timelines/public`, uses the core's `limit`/`before` cursor, and
+covers loading, empty, error, retry and load-more states. `CoreApi` maps the
+documented JSON error shape to `UiApiError`; it never retains the raw response
+body. `FakeHostBridge` answers from a fixture and records every request, so a
+component test does not need a server or a browser network.
 
 ## What stays in the host
 
@@ -202,6 +216,7 @@ The host creates the app once at its page boundary:
 ```ts
 import { createApp } from 'vue';
 import { createAlohaUi } from '@alohasocial/ui';
+import '@alohasocial/ui/style.css';
 import App from './App.vue';
 import { bridge } from './bridge';
 
@@ -233,7 +248,13 @@ Tests in the package cover:
 - a component's loading, empty, error and success states;
 - request paths against `Routes::manifest()` paths;
 - a 401 path without a token leak;
+- cursor pagination and the last-page button state;
 - keyboard navigation and accessible labels.
+
+Run them with `cd ui && npm test`; typecheck and build with
+`npm run typecheck` and `npm run build`. The route-parity test invokes
+`php bin/export-routes`, so the repository's PHP dependencies must be installed
+when it runs. The CI workflow has a separate `UI package` job for these steps.
 
 Each host adds one integration test:
 
@@ -247,7 +268,8 @@ A host smoke test is not a replacement for the package tests.
 
 ## Rollout
 
-1. Extract one read-only screen and its component tests.
+1. **Done:** the package, bridge contract, fake bridge and the read-only public
+   timeline with component tests live under `ui/`.
 2. Add the Nextcloud bridge behind a feature flag.
 3. Verify login, request, 401 and logout in the real page.
 4. Add the standalone bridge when its auth flow exists.

@@ -511,4 +511,5 @@ For the concrete Nextcloud mapping, see
 installation rather than a fresh one, follow
 [migrating a Nextcloud installation](migration-from-nextcloud.md) first: the
 actor, key, post and follow identities must be checked before cutover. Shared
-screens use the [`HostBridge`](shared-ui.md), never a host global.
+screens use the [`HostBridge`](shared-ui.md) from `@alohasocial/ui` under
+`ui/`, never a host global.

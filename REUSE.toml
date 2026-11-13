@@ -16,6 +16,11 @@ path = [
 	"REUSE.toml",
 	"AGENTS.md",
 	"docs/**",
+	"ui/package.json",
+	"ui/package-lock.json",
+	"ui/tsconfig.json",
+	"ui/tsconfig.build.json",
+	"ui/README.md",
 	".github/**",
 	"tools/lint.sh",
 ]

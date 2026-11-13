@@ -12,6 +12,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ui:
+    name: UI package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Set up PHP for route parity
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: openssl, pdo_sqlite, mbstring, curl
+          coverage: none
+          tools: composer:v2
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Typecheck the UI package
+        working-directory: ui
+        run: npm run typecheck
+
+      - name: Test the UI package
+        working-directory: ui
+        run: npm test
+
+      - name: Build the UI package
+        working-directory: ui
+        run: npm run build
+
   check:
     name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest

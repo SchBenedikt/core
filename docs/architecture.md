@@ -96,8 +96,10 @@ part of the shared architecture. The concrete procedure and export format are
 in [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
 
 The shared Vue front end is `@alohasocial/ui`, with a `HostBridge` per host.
-It is a separate npm artifact under `ui/` when extraction starts, not a fourth
-backend and not a place for OCP or server code. See
+It is a separate npm artifact under `ui/`, not a fourth backend and not a place
+for OCP or server code. The package now owns the contract, the Vue plugin,
+typed core reads, a fake bridge and the first read-only public timeline;
+host-specific bridges, mount pages and navigation remain in the hosts. See
 [ADR 0005](adr/0005-shared-ui.md) and [shared UI](guides/shared-ui.md).
 
 ## Writing a post (the implemented vertical slice)
@@ -664,7 +666,7 @@ genuinely owns the capability.
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
-| Vue UI | `@alohasocial/ui`; contract is [ADR 0005](adr/0005-shared-ui.md), extraction pending |
+| Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screen; the package under `ui/` is now extracted |
 | Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
 | Nextcloud data import | the `social` host, following the [migration guide](guides/migration-from-nextcloud.md) |
 
@@ -695,7 +697,9 @@ genuinely owns the capability.
   fake HTTP token endpoint, plus a service test that rotates only an expiring
   session. The authorization-code client is tested against fake metadata and
   token endpoints for PAR, PKCE, `dpop_jkt`, nonce retries, issuer/DID checks
-  and revocation. `InboundTimelineTest` delivers a signed Create, Announce
+  and revocation. The UI package has contract/component tests over a network-free
+  `FakeHostBridge`, and its route constants are checked against
+  `bin/export-routes` from the same test run. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `ApplicationTest` proves that two followers on
   one server sharing an advertised inbox produce one signed job to the shared

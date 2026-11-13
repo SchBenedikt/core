@@ -121,6 +121,14 @@ host decides whether to expose it. There is no core flow/session table, so
 there is no cleanup job for flow rows: the host expires its own flow store.
 See [AT Protocol publishing](../guides/atproto.md#authorization-code-flow).
 
+The shared `ui/` package has no `social` configuration key and no server
+runtime. Its `HostBridge` supplies `apiBase`, authentication, CSRF and
+navigation; the package only reads existing core routes. The public timeline
+uses the same `limit`/`before` rules as `GET /api/v1/timelines/public`, so there
+is no second pagination setting. A host that mounts the package without a
+bridge gets the fail-fast `useHostBridge()` error rather than an unauthenticated
+fallback. The package has no table, migration or cleanup job.
+
 Shared inboxes have no configuration key. Both inbox routes are controlled by
 the same prerequisites as the normal inbox: without an actor resolver, an
 HTTP client and a signing key they answer `503 inbox_not_configured`. Outbound

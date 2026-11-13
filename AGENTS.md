@@ -47,6 +47,7 @@ php bin/core-demo
 php bin/export-routes
 php bin/export-openapi
 php bin/validate-cutover <migration-export.json>
+cd ui && npm ci && npm run typecheck && npm test
 ```
 
 PHP 8.3+ is required; see `docs/development.md` for a rootless setup. The
@@ -111,9 +112,10 @@ ingestion for incoming `Create`/`Announce` attachments, the HTTP contract, the
 platform ports, durable
 `PdoJobQueue`/`PdoActivityLog` and `Application::forHost()` for a real host,
 plus the read-only cutover validator for the neutral migration export.
-The migration, repository-owner and shared-UI contracts are accepted in ADR
-0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
-happen in their host workflows.
+The migration and repository-owner contracts are accepted in ADR 0004; the
+actual Nextcloud data import remains host work. The shared-UI contract from ADR
+0005 is implemented as `@alohasocial/ui` under `ui/`; host-specific bridges,
+mount pages and navigation remain in their host repositories.
 Not implemented in the core: the AT Protocol account-linking UI/browser
 callback, credential store and PDS selection (the authorization-code/PAR flow
 and token revocation are implemented), the full
@@ -140,9 +142,8 @@ and `docs/guides/host-integration.md` before wiring a host.
   ORM, a second HTTP stack).
 - Do not add a `Platform` method for something only one host has; that is the
   host's business.
-- Do not move the Vue UI or the Nextcloud controllers into this repository
-  before the `ui/` extraction starts. Shared UI code belongs under `ui/` and
-  only talks to a host through `HostBridge`; Nextcloud pages and controllers
-  stay in `AlohaSocial/social`.
+- Do not move Nextcloud controllers into this repository. Shared UI code
+  belongs under `ui/` and only talks to a host through `HostBridge`; Nextcloud
+  pages, host bridges and controllers stay in `AlohaSocial/social`.
 - Do not add a host migration, installer, admin page or server-runtime detail
   to the core just because one product needs it.

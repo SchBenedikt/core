@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Shared UI package: `@alohasocial/ui` now lives under `ui/` with a typed
+  `HostBridge`, `createAlohaUi()`/`useHostBridge()` dependency injection, a typed
+  `CoreApi` over the existing route manifest, a network-free `FakeHostBridge`
+  and the first read-only screen (`PublicTimeline` plus `PostCard`). The
+  timeline uses the existing public-timeline path and `limit`/`before` cursor,
+  renders escaped content, content warnings, times and attachment alt text,
+  and covers loading, empty, error, retry, 401 and load-more states. The
+  package has strict TypeScript, Vitest component/contract tests, an ES-module
+  build and a route-parity test against `bin/export-routes`; CI runs it in a
+  separate `UI package` job. Host bridges, Nextcloud mount pages, login/logout
+  and navigation remain host-owned; there is no new core route, table or
+  migration. See `ui/README.md` and `docs/guides/shared-ui.md`.
 - AT Protocol authorization-code/PAR/revocation client:
   `AtprotoOAuthMetadataResolver` discovers the PDS protected-resource document
   and validates the authorization-server metadata (issuer binding, exactly one
