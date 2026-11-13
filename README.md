@@ -157,6 +157,7 @@ timeline
     title Aloha Social core
     2026-11-11 : 0.1.0 foundation
     2026-11-13 : 0.2.0 local social slice
+    2026-11-13 : 0.3.0 neutral interactions
     next : Nextcloud cutover
          : standalone host
 ```
