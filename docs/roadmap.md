@@ -49,7 +49,8 @@ the host that serves it. See
 | --- | --- |
 | HTTP contract | 84 routes, 43 of them under the Mastodon prefix |
 | Persistence | 18 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 120 PHP test files (1077 tests, 5103 assertions) and 8 UI test files (63 tests) |
+| Tests | 121 PHP test files (1084 tests, 5132 assertions) and 9 UI test files (69 tests) |
+| Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
@@ -126,6 +127,11 @@ the host that serves it. See
   screens `ActorHeader` (follow control), `PostComposer` and
   `NotificationList` (dismiss, clear, paging).
   See [shared UI](guides/shared-ui.md).
+- **Version compatibility** — `Version::CURRENT` and `ui/package.json` are the
+  two package authorities; the UI lockfile and TypeScript constants are
+  checked against them, and HostBridge contract `1` is checked at
+  `createAlohaUi()` with an optional, backward-compatible field. See the
+  [compatibility matrix](guides/host-integration.md#compatibility).
 
 ### Not in this repository
 

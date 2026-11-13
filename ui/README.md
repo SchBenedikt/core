@@ -14,7 +14,9 @@ See [ADR 0005](../docs/adr/0005-shared-ui.md) and the
   CSRF, origin policy and navigation; the package owns presentational
   components and typed core API reads.
 - `createAlohaUi({ bridge })` and `useHostBridge()`: one bridge provided at the
-  host page boundary through Vue dependency injection.
+  host page boundary through Vue dependency injection. The bridge may omit
+  `contractVersion` for contract `1`; an explicitly newer contract, a missing
+  method or an incomplete `capabilities()` object fails with an upgrade error.
 - `CoreApi`: typed reads and writes over the core HTTP contract, including the
   documented JSON error shape, the public-timeline `before`/`limit` cursor and
   the notification id cursor.
@@ -33,6 +35,18 @@ The package does not add a host page, a Nextcloud bridge or a standalone
 bridge; those stay in the host repositories. It has no persistence layer,
 schema or migration: screen state lives in the components and composables and
 is read from or written to existing manifest paths.
+
+## Version compatibility
+
+`ui/package.json` is the UI package's version authority; `UI_VERSION` in
+`src/version.ts` is the value emitted in the build. `CORE_API_VERSION` mirrors
+the core's `ApiVersion::CURRENT` (`v1`) and `HOST_BRIDGE_CONTRACT_VERSION` is
+`1`. The core and UI are released on the same line (currently `0.7.x`; for 0.x
+the minor line is breaking). `ui/tests/compatibility.test.ts` checks the
+package, lockfile and constants and tests both a compatible bridge and the
+rejection of an incompatible one. The full matrix, including the not-yet-
+existing hosts, is in the
+[host integration guide](../docs/guides/host-integration.md#compatibility).
 
 ## Development
 
@@ -64,4 +78,6 @@ createApp(App).use(createAlohaUi({ bridge })).mount('#aloha-social');
 
 A component uses `useHostBridge()` or `useCoreApi()`; it never calls `fetch()`,
 reads `OC`, reads a session global or learns the host's URL prefix. The bridge
-must not expose a token to component code.
+must not expose a token to component code. A host that targets a future
+HostBridge surface declares `contractVersion`; omitting it selects the current
+contract `1`.

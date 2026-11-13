@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 export { hostBridgeKey, createAlohaUi, useHostBridge, type AlohaUiOptions } from './plugin.js';
+export { assertHostBridgeCompatible } from './compatibility.js';
+export { CORE_API_VERSION, HOST_BRIDGE_CONTRACT_VERSION, UI_VERSION } from './version.js';
 export type { HostBridge } from './host-bridge.js';
 export type {
 	Account,

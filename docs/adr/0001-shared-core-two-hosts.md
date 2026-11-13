@@ -40,15 +40,21 @@ hosts around it.**
    guard in CI fails the build if `OCP\`, `OCA\` or a `nextcloud/*` dependency
    appears in `src/`.
 2. Everything a host must provide is a port in `src/Platform/`: config, clock,
-   blob storage, database, outbound HTTP — and later users, sessions, jobs and
-   mail. Ports are few and small on purpose; each one is a compatibility
-   promise to both hosts.
+   blob storage, database, outbound HTTP, jobs and mail. Ports are few and
+   small on purpose; each one is a compatibility promise to both hosts.
+   Accounts, sessions and roles are not ports: they stay host-owned under
+   [ADR 0006](0006-host-owned-accounts.md).
 3. Each host owns its bootstrap, its authentication, its templates and its
    admin pages. **HTTP page controllers stay host-specific**; the JSON API does
    not (see [ADR 0003](0003-http-contract.md)).
 4. Versions: the core is semver-tagged, both hosts pin it, and a dependency bot
    opens the bump PR. A feature is therefore one code PR in the core plus two
-   automated version bumps — not two implementations.
+   automated version bumps — not two implementations. The runtime source is
+   `Version::CURRENT`; the UI package source is `ui/package.json`. Both are
+   released on the same compatibility line (`0.7.x`; for 0.x the minor line is
+   breaking), and the HostBridge contract is versioned separately (`1`, with an
+   omitted field meaning 1). PHPUnit and the UI suite enforce the pair. See the
+   [compatibility matrix](../guides/host-integration.md#compatibility).
 5. Three repositories, one contract each: core, `social`, `server`. They are
    not merged into a monorepo now, because the Nextcloud app's release
    machinery (App Store archive, committed `js/`, Transifex, REUSE) is delicate
@@ -108,6 +114,8 @@ hosts around it.**
 As of 2026-11-13: the boundary guard, the platform ports, the durable queue and
 replay log are implemented, and `@alohasocial/ui` exists under `ui/`.
 [ADR 0006](0006-host-owned-accounts.md) (accepted) keeps accounts, sessions,
-credentials and roles host-owned instead of adding a user/identity port; the
-host parity tests are still open (M3). This note records progress; it does not
-change the decision.
+credentials and roles host-owned instead of adding a user/identity port. The
+core/UI version pair and HostBridge contract are now checked by
+`tests/Contract/CompatibilityTest.php` and `ui/tests/compatibility.test.ts`;
+the host parity tests are still open (M3). This note records progress; it does
+not change the decision.

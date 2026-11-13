@@ -9,6 +9,11 @@ and the optional, disabled-by-default Mastodon compatibility prefix (which
 defaults to `/api/mastodon/v1`). There are 84 routes in total; 43 use the
 compatibility prefix.
 
+The top-level `version` in the JSON export is the **export format** version
+(`RouteManifest::VERSION`, currently `1`), not the core package version. The
+package version is `Version::CURRENT` in [`src/Version.php`](../../src/Version.php);
+see the [compatibility matrix](../guides/host-integration.md#compatibility).
+
 | Name | Method | Path | Auth | Rate limit |
 | --- | --- | --- | --- | --- |
 | `health` | `GET` | `/healthz` | no | — |

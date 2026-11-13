@@ -103,6 +103,16 @@ screens, and the shared actor header, composer and notification list;
 host-specific bridges, mount pages and navigation remain in the hosts. See
 [ADR 0005](adr/0005-shared-ui.md) and [shared UI](guides/shared-ui.md).
 
+Version compatibility is explicit rather than implied. `Version::CURRENT` is
+the core authority and `ui/package.json` the UI authority; both are released on
+the same line (`0.7.x`, where 0.x makes the minor line breaking) and
+`api/v1` remains the HTTP contract. The HostBridge contract is separately
+versioned (`1`); omitting its optional `contractVersion` means 1, so existing
+bridges keep working, while a declared newer contract or an incomplete
+`capabilities()` object is rejected at `createAlohaUi()`. PHPUnit and the UI
+suite check the pair. See the
+[compatibility matrix](guides/host-integration.md#compatibility).
+
 ## Writing a post (the implemented vertical slice)
 
 ```

@@ -39,6 +39,9 @@ internals.
 export interface HostBridge {
   readonly apiBase: string;
 
+  /** Optional; omit for the original contract 1. */
+  readonly contractVersion?: number;
+
   currentUser(): Promise<UiUser | null>;
 
   request(request: UiRequest): Promise<UiResponse>;
@@ -97,6 +100,11 @@ export interface UiCapabilities {
   role or administrator field, and a component must not infer one. Roles and
   admin screens stay in the host. See
   [ADR 0006](../adr/0006-host-owned-accounts.md).
+- `capabilities()` must return the boolean `media` and `atproto` fields. `false`
+  means the host does not provide the feature; do not omit the field.
+- `contractVersion` is optional only because contract `1` predates it. A host
+  that implements a newer contract declares it, and `createAlohaUi()` fails
+  fast with an upgrade message instead of calling an unknown surface.
 
 The host bridge is not a place for business logic. It authenticates and
 transports; the core decides visibility, validation and federation.
@@ -113,6 +121,8 @@ ui/
   vitest.config.ts      jsdom component tests
   src/
     host-bridge.ts      the exported contract and types
+    compatibility.ts    fail-fast bridge contract/capability check
+    version.ts          UI, core API and HostBridge contract versions
     plugin.ts           createAlohaUi() and useHostBridge()
     core-api.ts         typed core reads and JSON error mapping
     routes.ts           core paths checked against the route manifest
@@ -127,7 +137,12 @@ ui/
 
 The PHP autoloader and the npm package must not import each other's internals.
 A release publishes the npm artifact and the Composer package separately; a
-host pins both versions.
+host pins both versions. The supported pair is one line, currently `0.7.x`
+for both packages, with HostBridge contract `1`. A missing `contractVersion`
+means `1` for backwards compatibility; a declared different contract is
+rejected at `createAlohaUi()`. See the
+[compatibility matrix](host-integration.md#compatibility) and
+[ADR 0005](../adr/0005-shared-ui.md).
 
 ## What belongs in the package
 
@@ -195,6 +210,7 @@ The Nextcloud page owns the bridge implementation:
 ```ts
 const bridge: HostBridge = {
   apiBase: '/apps/social/federation',
+  contractVersion: 1,
 
   async currentUser() {
     const user = OC.currentUser;
@@ -282,6 +298,9 @@ Tests in the package cover:
 
 - a component's loading, empty, error and success states;
 - request paths against `Routes::manifest()` paths;
+- the UI package version against `ui/package.json` and its lockfile;
+- a compatible HostBridge contract and the rejection of a newer contract, a
+  missing method or an incomplete `capabilities()` object;
 - a 401 path without a token leak;
 - cursor pagination and the last-page button state;
 - keyboard navigation and accessible labels.

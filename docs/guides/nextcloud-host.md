@@ -52,7 +52,7 @@ The app's `composer.json` uses `nextcloud/social` and has a committed
     }
   ],
   "require": {
-    "alohasocial/core": "dev-main"
+    "alohasocial/core": "^0.7"
   },
   "minimum-stability": "dev",
   "prefer-stable": true
@@ -65,8 +65,12 @@ composer dump-autoload -o
 ```
 
 The app already does `require_once __DIR__ . '/../../vendor/autoload.php'` in
-`lib/AppInfo/Application.php`; no second autoloader is required. For a release,
-pin a tag or a commit rather than floating `dev-main`.
+`lib/AppInfo/Application.php`; no second autoloader is required. `^0.7` means
+the 0.7.x line, matching the supported UI and HostBridge contract in the
+[compatibility matrix](host-integration.md#compatibility). While the package is
+not on Packagist, the VCS repository must be able to resolve the release tag;
+do not float `dev-main` for a release. The Nextcloud host repository itself is
+not versioned here; the adapter work has not started.
 
 ## 3. Implement the ports with OCP
 

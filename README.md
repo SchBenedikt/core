@@ -185,6 +185,13 @@ The canonical status, milestone table and open decisions are in the
 - `ext-pdo_sqlite` for the test suite and the SQLite transaction part of `bin/core-demo`
 - Node.js 20 or newer for the `ui/` package
 
+`alohasocial/core` and `@alohasocial/ui` are released on the same compatibility
+line (currently `0.7.x`) with HostBridge contract `1`. `Version::CURRENT` in
+[`src/Version.php`](src/Version.php) is the core authority; `ui/package.json`
+is the UI authority. The pair is checked by PHPUnit and the UI suite, not only
+by documentation. See the
+[compatibility matrix](docs/guides/host-integration.md#compatibility).
+
 ## Quick start
 
 ```bash
@@ -223,7 +230,7 @@ SQLite for the transaction section, but no external database and no network.
   PHP dependencies must be installed first.
 - CI runs the PHP matrix (8.3–8.5) and the UI job separately.
 
-## The three shared contracts
+## The shared contracts
 
 1. **HTTP** — [`src/Contract/Routes.php`](src/Contract/Routes.php) is the only
    route declaration. Both hosts must serve exactly this manifest; the OpenAPI
@@ -231,7 +238,12 @@ SQLite for the transaction section, but no external database and no network.
 2. **Platform** — everything the core needs from a host is an interface in
    `src/Platform/`. The core imports no host code; the boundary check fails the
    build otherwise.
-3. **Data** — each table's schema lives next to its repository or adapter.
+3. **UI** — `@alohasocial/ui` exports the `HostBridge` contract (`1`) and the
+   typed `v1` core routes. A bridge may omit `contractVersion` for contract 1;
+   `createAlohaUi()` rejects a newer contract or an incomplete capability
+   object. See [shared UI](docs/guides/shared-ui.md) and
+   [ADR 0005](docs/adr/0005-shared-ui.md).
+4. **Data** — each table's schema lives next to its repository or adapter.
    `PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `BoostSchema`,
    `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `BlockSchema`,

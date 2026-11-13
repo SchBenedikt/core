@@ -155,3 +155,7 @@ is available in the core today except the host's own accounts/sessions and the
 migration runner. [ADR 0006](../adr/0006-host-owned-accounts.md) (accepted)
 keeps accounts, sessions, credentials, roles and administrator rights
 host-owned; the standalone implements them against its own schema.
+
+When created, the server pins core `0.7.x` and `@alohasocial/ui` `0.7.x` with
+HostBridge contract `1`; the server itself has no published version yet. See
+the [compatibility matrix](../guides/host-integration.md#compatibility).

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { inject, type App, type InjectionKey, type Plugin } from 'vue';
+import { assertHostBridgeCompatible } from './compatibility.js';
 import type { HostBridge } from './host-bridge.js';
 
 export const hostBridgeKey: InjectionKey<HostBridge> = Symbol('alohasocial.host-bridge');
@@ -19,6 +20,8 @@ export function createAlohaUi(options: AlohaUiOptions): Plugin {
 	if (!options.bridge) {
 		throw new Error('createAlohaUi() needs a HostBridge.');
 	}
+
+	assertHostBridgeCompatible(options.bridge);
 
 	return {
 		install(app: App): void {

@@ -11,7 +11,7 @@ the database — the core does not care.
 | `social` | `instance.url` | for federation | Absolute http(s) base URL, no trailing slash required |
 | `social` | `instance.name` | no | Display name; defaults to the product name |
 | `social` | `instance.description` | no | Public description used by both instance endpoints; defaults to empty |
-| `social` | `instance.version` | no | Version segment in the Mastodon compatibility string; defaults to `0.1.0` |
+| `social` | `instance.version` | no | Version segment in the Mastodon compatibility string; defaults to `0.1.0`. This is instance metadata, not the package version (`Version::CURRENT`) |
 | `social` | `instance.contact_email` | no | Public administrator contact address. `instance.email` remains accepted as a fallback; defaults to empty |
 | `social` | `instance.contact_account` | no | Local account id projected as the instance contact account. A supplied directory must contain it or the core field is empty and the Mastodon projection is `null`; defaults to empty |
 | `social` | `instance.registrations` | no | Whether registrations are open; defaults to `false` |
@@ -287,7 +287,9 @@ documented in [remote threads](../guides/remote-threads.md).
 | `InMemoryJobQueue::MAX_BACKOFF_SECONDS` / `PdoJobQueue::MAX_BACKOFF_SECONDS` | 3600 | Backoff ceiling |
 | `PdoJobQueue::RESERVATION_SECONDS` | 300 | A reservation older than this may be claimed by another worker |
 | `RandomIdGenerator::BYTES` | 12 | 96 bits of randomness |
-| `RouteManifest::VERSION` | 1 | Export document version |
+| `Version::CURRENT` | `0.7.0` | Core package version; the UI package and HostBridge contract are checked against it |
+| `Version::HOST_BRIDGE_CONTRACT` | 1 | HostBridge surface version; an omitted bridge field means 1 |
+| `RouteManifest::VERSION` | 1 | Export document version, not the package version |
 | `ApiVersion::BASE_PATH` | `/api/v1` | API prefix |
 
 The queue and activity-log limits are shared by the in-memory and PDO

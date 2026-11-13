@@ -7,20 +7,24 @@
  * Core route paths, not host controller paths. Keep the placeholders in the
  * pattern constants so a parity test can compare them with Routes::manifest().
  */
+import { CORE_API_VERSION } from './version.js';
+
+const apiBase = `/api/${CORE_API_VERSION}`;
+
 export const coreRoutes = {
-	publicTimeline: '/api/v1/timelines/public',
-	hashtagTimelinePattern: '/api/v1/timelines/tag/{tag}',
-	hashtagTimeline: (tag: string): string => `/api/v1/timelines/tag/${encodeURIComponent(tag)}`,
-	posts: '/api/v1/posts',
-	postPattern: '/api/v1/posts/{id}',
-	post: (id: string): string => `/api/v1/posts/${encodeURIComponent(id)}`,
-	accountPattern: '/api/v1/accounts/{id}',
-	account: (id: string): string => `/api/v1/accounts/${encodeURIComponent(id)}`,
-	accountFollowPattern: '/api/v1/accounts/{id}/follow',
-	accountFollow: (id: string): string => `/api/v1/accounts/${encodeURIComponent(id)}/follow`,
-	notifications: '/api/v1/notifications',
-	notificationDismissPattern: '/api/v1/notifications/{id}/dismiss',
-	notificationDismiss: (id: string): string => `/api/v1/notifications/${encodeURIComponent(id)}/dismiss`,
-	notificationsClear: '/api/v1/notifications/clear',
-	notificationsUnreadCount: '/api/v1/notifications/unread_count',
+	publicTimeline: `${apiBase}/timelines/public`,
+	hashtagTimelinePattern: `${apiBase}/timelines/tag/{tag}`,
+	hashtagTimeline: (tag: string): string => `${apiBase}/timelines/tag/${encodeURIComponent(tag)}`,
+	posts: `${apiBase}/posts`,
+	postPattern: `${apiBase}/posts/{id}`,
+	post: (id: string): string => `${apiBase}/posts/${encodeURIComponent(id)}`,
+	accountPattern: `${apiBase}/accounts/{id}`,
+	account: (id: string): string => `${apiBase}/accounts/${encodeURIComponent(id)}`,
+	accountFollowPattern: `${apiBase}/accounts/{id}/follow`,
+	accountFollow: (id: string): string => `${apiBase}/accounts/${encodeURIComponent(id)}/follow`,
+	notifications: `${apiBase}/notifications`,
+	notificationDismissPattern: `${apiBase}/notifications/{id}/dismiss`,
+	notificationDismiss: (id: string): string => `${apiBase}/notifications/${encodeURIComponent(id)}/dismiss`,
+	notificationsClear: `${apiBase}/notifications/clear`,
+	notificationsUnreadCount: `${apiBase}/notifications/unread_count`,
 } as const;

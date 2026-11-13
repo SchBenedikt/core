@@ -4,6 +4,7 @@
  */
 import type { HostBridge } from '../host-bridge.js';
 import type { UiCapabilities, UiRequest, UiResponse, UiUser } from '../types.js';
+import { HOST_BRIDGE_CONTRACT_VERSION } from '../version.js';
 
 export interface FakeResponse {
 	status?: number;
@@ -18,6 +19,7 @@ export interface FakeHostBridgeOptions {
 	responses?: Record<string, FakeResponder>;
 	capabilities?: UiCapabilities;
 	apiBase?: string;
+	contractVersion?: number;
 }
 
 /**
@@ -29,6 +31,8 @@ export interface FakeHostBridgeOptions {
  */
 export class FakeHostBridge implements HostBridge {
 	readonly apiBase: string;
+
+	readonly contractVersion: number;
 
 	readonly calls: UiRequest[] = [];
 
@@ -46,6 +50,7 @@ export class FakeHostBridge implements HostBridge {
 
 	constructor(options: FakeHostBridgeOptions = {}) {
 		this.apiBase = options.apiBase ?? '/api/v1';
+		this.contractVersion = options.contractVersion ?? HOST_BRIDGE_CONTRACT_VERSION;
 		this.user = options.user ?? null;
 		this.capabilitiesValue = options.capabilities ?? { media: false, atproto: false };
 		this.responses = { ...(options.responses ?? {}) };

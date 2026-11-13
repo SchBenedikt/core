@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Enforce the core/UI release pair and HostBridge contract with code rather
+  than documentation. `Version::CURRENT` and `ui/package.json` are the package
+  authorities; PHPUnit checks the UI lockfile and TypeScript constants, while
+  the UI suite checks the package pair and accepts or rejects bridge contracts
+  and capabilities in both directions. The HostBridge field is optional and an
+  omitted value means contract 1, so existing bridges keep working. Test counts
+  are now 121 PHP files (1084 tests, 5132 assertions) and 9 UI files (69 tests).
+
 ### Changed
 
 - Finalize [ADR 0006](docs/adr/0006-host-owned-accounts.md) as accepted: the

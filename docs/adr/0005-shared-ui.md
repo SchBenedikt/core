@@ -42,6 +42,9 @@ export interface HostBridge {
   /** Prefix under which the core's instance.url is served, no trailing slash. */
   readonly apiBase: string;
 
+  /** Optional; omit for the original contract 1. */
+  readonly contractVersion?: number;
+
   currentUser(): Promise<UiUser | null>;
 
   /**
@@ -153,7 +156,10 @@ stable first.
 - Accessible names, keyboard operation and focus behaviour are tested in the
   package, not left to each host.
 - A breaking change to `HostBridge` or a component prop is a major package
-  version.
+  version. The bridge also carries an optional `contractVersion`; omitting it
+  means contract `1`, and a breaking bridge change increments the constant.
+  `@alohasocial/ui` rejects a declared newer contract at `createAlohaUi()`
+  instead of calling an unknown surface.
 
 ## Consequences
 
@@ -197,6 +203,9 @@ stable first.
 As of 2026-11-13: the package, `HostBridge`, `FakeHostBridge`, `CoreApi`,
 `PostCard`, `PublicTimeline`, `PostDetail`, `ActorHeader`, `PostComposer` and
 `NotificationList` are implemented under `ui/`. The neutral profile/follow and
-notification routes they consume are part of the core contract. Host bridges
-and mount pages are open; M5 in [the roadmap](../roadmap.md) tracks them. This
-note records progress; it does not change the decision.
+notification routes they consume are part of the core contract.
+`ui/src/version.ts` exports the UI version, core API version and HostBridge
+contract; `ui/tests/compatibility.test.ts` checks them against the package and
+lockfile and rejects an incompatible bridge. Host bridges and mount pages are
+open; M5 in [the roadmap](../roadmap.md) tracks them. This note records
+progress; it does not change the decision.

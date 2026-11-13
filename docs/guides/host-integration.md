@@ -33,9 +33,10 @@ check, not a user or login adapter.
 
 ## Install it in the other repository
 
-The package is not on Packagist yet. Until there is a tagged release, add the
-current Git repository as a VCS repository and require `dev-main` explicitly.
-This is the `composer.json` shape for a host such as the Nextcloud app:
+The package is not on Packagist yet. Add the Git repository as a VCS repository
+and require the supported line explicitly; the release tag is still the
+Composer version. This is the `composer.json` shape for a host such as the
+Nextcloud app:
 
 ```json
 {
@@ -46,10 +47,8 @@ This is the `composer.json` shape for a host such as the Nextcloud app:
     }
   ],
   "require": {
-    "alohasocial/core": "dev-main"
-  },
-  "minimum-stability": "dev",
-  "prefer-stable": true
+    "alohasocial/core": "^0.7"
+  }
 }
 ```
 
@@ -60,8 +59,10 @@ composer update alohasocial/core
 composer dump-autoload -o
 ```
 
-For a reproducible deployment, pin a commit (`dev-main#c05f1aa`) or, once tags
-exist, a version range such as `^1.0`. The package requires PHP 8.3+ and the
+For a reproducible deployment, use the tagged `^0.7` line; if you are testing
+an unreleased commit, pin it explicitly (`dev-main#c05f1aa`). For 0.x releases
+the minor line is the compatibility boundary, so `^0.7` means 0.7.x; see
+[Compatibility](#compatibility). The package requires PHP 8.3+ and the
 extensions listed in the [README](../../README.md#requirements). The host's
 own autoloader includes the package's PSR-4 mapping; no extra bootstrap file is
 needed.
@@ -69,6 +70,45 @@ needed.
 If the host already has a `vendor/autoload.php` (as the Nextcloud app does),
 the core is available after that `require_once`. Do not copy `src/` into the
 host — that would create a second copy with a different upgrade path.
+
+## Compatibility
+
+[`src/Version.php`](../../src/Version.php) is the core's version authority
+(`Version::CURRENT`). `composer.json` deliberately has no `version` field; the
+release tag supplies the Composer/Packagist version. [`ui/package.json`](../../ui/package.json)
+is the UI package authority; the build exports the same value as `UI_VERSION`.
+`tests/Contract/CompatibilityTest.php` compares the core constant, the UI
+package and lockfile, and the TypeScript constants, so a release cannot
+silently ship two lines.
+
+For 0.x releases the minor line is the compatibility boundary; from 1.0 on it
+is the major line. The HostBridge contract is separate and currently `1`. A
+bridge that omits its optional `contractVersion` is treated as contract `1`,
+so existing bridges keep working. `createAlohaUi()` rejects a bridge that
+explicitly declares a different contract, omits a required method, or returns
+an incomplete `capabilities()` object. The HTTP API remains [`v1`](../../src/Http/ApiVersion.php).
+
+| Artifact | Current | Supported together | Authority |
+| --- | --- | --- | --- |
+| `alohasocial/core` | `0.7.0` | `0.7.x` | `src/Version.php` (`Version::CURRENT`); the release tag is the distribution version |
+| `@alohasocial/ui` | `0.7.0` | `0.7.x` | `ui/package.json`; `UI_VERSION` in the build |
+| `HostBridge` | contract `1` | contract `1`; an omitted `contractVersion` means 1 | `Version::HOST_BRIDGE_CONTRACT`; `HOST_BRIDGE_CONTRACT_VERSION` in `ui/src/version.ts` |
+| HTTP API | `v1` | `v1` | `src/Http/ApiVersion.php` (`ApiVersion::CURRENT`) |
+| Nextcloud host (`AlohaSocial/social`) | not in this repository | pin core `0.7.x`, UI `0.7.x`, bridge contract `1` when it adopts them | host repository; adapter work has not started |
+| Standalone host (`AlohaSocial/server`) | does not exist yet | pin core `0.7.x`, UI `0.7.x`, bridge contract `1` when created | host repository; not created |
+
+A host integration test can call
+`Compatibility::assertSupported($installedUiVersion, $bridgeContract)` with the
+version from its own npm lockfile. The UI performs the equivalent bridge check
+at `createAlohaUi()`. Do not pair `dev-main` with a released UI version, and do
+not claim support for a host version that its repository has not published.
+
+The **currently enforced support policy** is lockstep: core and UI share the
+same line, and a different line is rejected. Whether `@alohasocial/ui` may
+publish an independent semver line is a maintainer policy decision, not a code
+fact. The recommended option is to keep lockstep through 0.x and revisit the
+question only at 1.0, with HostBridge contract `1` unchanged. Until that
+decision, a pair outside the matrix is not supported.
 
 ## Boot the production assembly
 
