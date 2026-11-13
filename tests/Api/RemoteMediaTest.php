@@ -476,6 +476,7 @@ final class RemoteMediaTest extends TestCase
 			attachmentRepository: $this->attachments,
 			blobStore: $this->blobs,
 			hostResolver: new TestHostResolver([
+				'remote.example' => ['93.184.216.34'],
 				'media.remote.example' => ['93.184.216.34'],
 			]),
 			logger: $this->logger,

@@ -11,8 +11,11 @@ namespace AlohaSocial\Core\Protocol\ActivityPub;
 
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
+use AlohaSocial\Core\Service\Federation\RemoteFetchException;
 use JsonException;
 
 use function is_array;
@@ -31,6 +34,7 @@ final class HttpActorInboxResolver implements ActorInboxResolver
 {
 	public function __construct(
 		private readonly HttpClient $http,
+		private readonly ?FederationTargetGuard $targetGuard = null,
 	) {
 	}
 
@@ -42,13 +46,29 @@ final class HttpActorInboxResolver implements ActorInboxResolver
 		}
 
 		try {
-			$response = $this->http->request(
-				'GET',
-				$actorId,
-				['Accept' => HttpActorResolver::ACCEPT],
-				'',
-				10,
-			);
+			$addresses = $this->targetGuard?->addressesFor($actorId) ?? [];
+		} catch (RemoteFetchException) {
+			return null;
+		}
+
+		try {
+			$response = $this->http instanceof BoundedHttpClient && $addresses !== []
+				? $this->http->requestBounded(
+					'GET',
+					$actorId,
+					['Accept' => HttpActorResolver::ACCEPT],
+					'',
+					10,
+					1_048_576,
+					$addresses,
+				)
+				: $this->http->request(
+					'GET',
+					$actorId,
+					['Accept' => HttpActorResolver::ACCEPT],
+					'',
+					10,
+				);
 		} catch (HttpClientException) {
 			return null;
 		}

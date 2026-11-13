@@ -191,6 +191,7 @@ use AlohaSocial\Core\Platform\Image\ImageProcessor;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
@@ -201,6 +202,7 @@ use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\Federation\RemoteFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
@@ -438,6 +440,10 @@ final readonly class Application
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
 		$ids = new RandomIdGenerator();
+		// A production host must not let a peer point delivery or actor
+		// discovery at a private address. In-memory callers keep the option to
+		// supply a deterministic resolver without forcing DNS on fixtures.
+		$hostResolver ??= new DnsHostResolver();
 
 		$followers = new PdoFollowerRepository($database);
 		$inboxResolver ??= new FollowerInboxResolver($followers);
@@ -556,6 +562,18 @@ final readonly class Application
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
 		$followedHashtagService = new FollowedHashtagService($followedHashtagRepository, $clock);
 		$remotePostFactory = new RemotePostFactory($clock);
+		$targetGuard = new FederationTargetGuard($hostResolver);
+		if ($actorResolver !== null) {
+			// Even a host-provided resolver must not be asked to fetch a
+			// private actor URL on behalf of an inbound signature. Local
+			// actor IDs are already owned by this instance and skip the fetch.
+			$localBaseUrl = $config->get('social', 'instance.url');
+			$actorResolver = new GuardedActorResolver(
+				$actorResolver,
+				$targetGuard,
+				is_string($localBaseUrl) ? $localBaseUrl : null,
+			);
+		}
 
 		$mediaService = $blobStore === null
 			? null
@@ -587,10 +605,10 @@ final readonly class Application
 			$ids,
 			$queue,
 			$activities,
-			$httpClient === null ? null : new HttpActorInboxResolver($httpClient),
+			$httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard),
 		);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
-			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
+			? new FederationDeliveryHandler($httpClient, $signingKey, $clock, $targetGuard)
 			: null;
 		$followingService = new FollowingService(
 			$followingRepository,

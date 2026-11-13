@@ -239,7 +239,7 @@ final class RemoteFetcher
 		}
 
 		foreach ($addresses as $address) {
-			if (!$this->isPublicAddress($address)) {
+			if (!self::isPublicAddress($address)) {
 				throw new RemoteFetchException('ssrf_blocked', 'Local and private addresses are blocked.');
 			}
 		}
@@ -247,7 +247,7 @@ final class RemoteFetcher
 		return $addresses;
 	}
 
-	private function isPublicAddress(string $address): bool
+	public static function isPublicAddress(string $address): bool
 	{
 		$packed = @inet_pton($address);
 		if ($packed === false) {
@@ -262,7 +262,7 @@ final class RemoteFetcher
 		if (strlen($packed) === 16 && str_starts_with($packed, $mappedPrefix)) {
 			$ipv4 = inet_ntop(substr($packed, 12));
 
-			return is_string($ipv4) && $this->isPublicAddress($ipv4);
+			return is_string($ipv4) && self::isPublicAddress($ipv4);
 		}
 
 		if (filter_var(
@@ -275,7 +275,7 @@ final class RemoteFetcher
 
 		$blocked = strlen($packed) === 4 ? self::BLOCKED_IPV4_CIDRS : self::BLOCKED_IPV6_CIDRS;
 		foreach ($blocked as $cidr) {
-			if ($this->inCidr($packed, $cidr)) {
+			if (self::inCidr($packed, $cidr)) {
 				return false;
 			}
 		}
@@ -283,7 +283,7 @@ final class RemoteFetcher
 		return true;
 	}
 
-	private function inCidr(string $packedAddress, string $cidr): bool
+	private static function inCidr(string $packedAddress, string $cidr): bool
 	{
 		[$network, $bits] = explode('/', $cidr, 2);
 		$packedNetwork = inet_pton($network);

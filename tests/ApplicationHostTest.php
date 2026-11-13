@@ -64,6 +64,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
 use AlohaSocial\Core\Tests\Support\InMemoryActorResolver;
 use AlohaSocial\Core\Tests\Support\RejectingJobQueue;
@@ -1145,6 +1146,10 @@ final class ApplicationHostTest extends TestCase
 			atprotoAccounts: $atprotoAccounts,
 			blobStore: $blobStore,
 			clock: $this->clock,
+			hostResolver: new TestHostResolver([
+				'remote.example' => ['93.184.216.34'],
+				'localhost' => ['127.0.0.1'],
+			]),
 		);
 	}
 

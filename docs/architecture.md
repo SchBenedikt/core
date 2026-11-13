@@ -260,6 +260,15 @@ host and every redirect, manual redirect following, timeout and body cap.
 `thread_*` reasons without reimplementing the network guard. The thread cache
 stores text/structure only; media is not imported.
 
+The same destination rules apply to the write/delivery path:
+`FederationTargetGuard` checks inboxes before `FederationDeliveryHandler`
+signs or sends, and `Application` wraps every `ActorResolver` in
+`GuardedActorResolver` before the inbox can fetch a key. A resolved
+`BoundedHttpClient` pins the checked addresses; a plain client still gets the
+URL and DNS checks. `DnsHostResolver` is the production default. A local actor
+URL under `social/instance.url` is exempt because resolving it is not an
+outbound request.
+
 ## Mastodon compatibility
 
 The public instance description is assembled from configuration and the
@@ -751,7 +760,7 @@ the job; the core does not start a timer. See
 | `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
 | `Http\BoundedHttpClient` | `requestBounded()` body cap and address pinning | `FakeHttpClient`, `LocalHttpClient` | `CurlHttpClient` |
-| `Network\HostResolver` | `resolve()` | test host map | `DnsHostResolver` |
+| `Network\HostResolver` | `resolve()` | test host map | `DnsHostResolver`; used by delivery, actor/inbox discovery and remote media |
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 

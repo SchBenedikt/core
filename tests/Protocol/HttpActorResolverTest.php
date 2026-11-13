@@ -13,7 +13,9 @@ use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use PHPUnit\Framework\TestCase;
 
 final class HttpActorResolverTest extends TestCase
@@ -129,6 +131,24 @@ final class HttpActorResolverTest extends TestCase
 		$this->expectException(UnknownActorException::class);
 
 		$this->resolver->resolveByKeyId('not-a-url#main-key');
+	}
+
+	public function testAPrivateActorTargetIsRefusedWithoutARequest(): void
+	{
+		$resolver = new HttpActorResolver(
+			$this->http,
+			new FederationTargetGuard(new TestHostResolver([
+				'remote.example' => ['10.0.0.5'],
+			])),
+		);
+
+		$this->expectException(UnknownActorException::class);
+
+		try {
+			$resolver->resolveByKeyId(self::KEY_ID);
+		} finally {
+			self::assertSame([], $this->http->requests);
+		}
 	}
 
 	/**

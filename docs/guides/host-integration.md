@@ -138,7 +138,7 @@ $app = Application::forHost(
     blockedActors: $policy,      // optional; instance-wide block policy
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
-    hostResolver: $dns,          // optional; default is DnsHostResolver
+    hostResolver: $dns,          // optional; default is DnsHostResolver; guards all federation targets
     accountListRepository: null,  // optional; default is PdoAccountListRepository($database)
     atprotoAccounts: $atprotoAccounts, // optional; enables AT Protocol publishing
     atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http)
@@ -195,7 +195,7 @@ production bootstrap.
 | `Db\Connection` | Execute parameterised SQL, fetch rows, join transactions and report the driver | `PdoConnection` if PDO is available |
 | `Http\HttpClient` | Return non-2xx answers as `HttpResponse`; throw `HttpClientException` only on transport failure | `CurlHttpClient` |
 | `Http\BoundedHttpClient` | Also cap the response body while reading and pin a validated address; required for remote media | `CurlHttpClient`; test `FakeHttpClient` / `LocalHttpClient` |
-| `Network\HostResolver` | Resolve every A/AAAA answer so the remote-media guard can reject private addresses | `DnsHostResolver`; hosts may supply their DNS policy |
+| `Network\HostResolver` | Resolve every A/AAAA answer so outbound delivery, actor/inbox discovery and remote media reject private addresses | `DnsHostResolver`; hosts may supply their DNS policy |
 | `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
 | `LocalActorSearch` | Optional: search local account ids for `GET {mastodon.prefix}/search`; a directory that also implements this gets account search, otherwise the route answers `503 search_not_configured` for `type=accounts` | host-specific; `InMemoryActorDirectory` for tests/tools |
@@ -204,7 +204,7 @@ production bootstrap.
 | `RemoteDomainCount` | Optional: report distinct live remote-post hosts for instance stats; without it the count is `0` | `InMemoryRemotePostRepository`, `PdoRemotePostRepository`; host adapter otherwise |
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably; `0.7.0` adds `deadLetter()` | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
-| `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
+| `ActorResolver` | Resolve a signing key id to a remote actor; the assembly wraps it in `GuardedActorResolver`, which applies the outbound SSRF guard before the host adapter can fetch | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
 | `ActorInboxResolver` | Resolve a remote actor URL to its individual inbox for `Block`/`Undo(Block)`; an unavailable actor document queues nothing | `HttpActorInboxResolver` when the assembly has an HTTP client |
 | `BlockedActorPolicy` | Optional instance-wide decision whether inbound content from an actor is refused | `NoBlockedActors` by default; host policy otherwise |
 | `FollowPolicy` | Optional per-account decision whether an inbound Follow creates an edge | `AcceptAllFollows` by default; host policy otherwise |

@@ -2,7 +2,8 @@
 
 The core speaks ActivityPub over signed HTTP POSTs, serves its actor
 documents and resolves handles through WebFinger. It also accepts inbound
-`Follow`, `Undo(Follow)`, `Create`, `Delete` and `Announce` activities.
+`Follow`, `Undo(Follow)`, `Create`, `Delete`, `Announce` and `Undo(Announce)`
+activities.
 
 ## Ids
 
@@ -73,9 +74,11 @@ the same server are de-duplicated:
 ```
 
 The activity is built **at write time** and stored in the job. An edit between
-queueing and sending must not change what a retry sends. The worker signs each
-request and treats a non-2xx answer as a retryable failure; the queue backs off
-and eventually dead-letters.
+queueing and sending must not change what a retry sends. Before signing, the
+worker passes the inbox through `FederationTargetGuard`: only a public http(s)
+target is accepted, and a bounded client pins the addresses that were checked.
+The worker signs each request and treats a non-2xx answer as a retryable
+failure; the queue backs off and eventually dead-letters.
 
 A local `Follow`/`Undo` is not queued: the endpoint has to know whether the
 peer accepted it before it can answer. `FollowingService` signs and delivers
@@ -90,8 +93,9 @@ signed `Block` or `Undo(Block)` job is added. See [blocks](blocks.md).
 ## Inbound
 
 The other direction is implemented too: `POST /inbox` and `POST /inbox/shared`
-verify the signature of a remote actor, apply `Follow`/`Undo(Follow)`, and store
-`Create`, `Delete` and `Announce` from actors followed by at least one local
+verify the signature of a remote actor, apply `Follow`/`Undo(Follow)` and
+`Undo(Announce)`, and store `Create`, `Delete` and `Announce` from actors
+followed by at least one local
 account. The actor document advertises the shared route under
 `endpoints.sharedInbox`; see [shared inboxes](shared-inboxes.md).
 The home timeline reads those remote rows through the outgoing follow graph

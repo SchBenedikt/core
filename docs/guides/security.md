@@ -49,12 +49,35 @@ message and the key id as additional authenticated data. A sealed value is
 PHP's `sodium` extension is not assumed: the build here has OpenSSL only, and
 AES-GCM is available in every supported installation.
 
+## Outbound federation targets
+
+`Service\Federation\FederationTargetGuard` is the shared destination check for
+federation URLs. It accepts only http(s) without userinfo, rejects localhost
+and literal private/reserved addresses, and, when a `HostResolver` is present,
+requires every A/AAAA answer to be publicly routable. `FederationDeliveryHandler`
+runs it before signing or opening a connection and uses the validated addresses
+for connection pinning when the host supplied a `BoundedHttpClient`.
+`HttpActorResolver` and `HttpActorInboxResolver` use the same guard, and
+`Application` wraps any host-provided `ActorResolver` in `GuardedActorResolver`
+so a custom resolver cannot bypass the check. The actor URL of a local account
+under `social/instance.url` is the one deliberate exception: resolving it never
+leaves the instance.
+
+The production `Application::forHost()` defaults to `DnsHostResolver`; the
+in-memory assembly without a resolver still blocks localhost and literal
+private addresses, but cannot judge a hostname until a resolver is supplied.
+
 ## Transport
 
 The core never decides whether a request is allowed to arrive: the host
 terminates TLS, authenticates the caller and passes `userId`. A host that
 skips authentication and passes a user id breaks every `requiresAuth` route at
 once. The core can only refuse when `userId` is null.
+
+Outbound requests are different: their destination comes from a peer. The
+guard above is therefore part of the core's security boundary, not an optional
+host concern. A host that supplies its own resolver or HTTP client still gets
+the URL and public-address checks before any request.
 
 ## Error messages
 

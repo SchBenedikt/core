@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Jobs\Job;
 use AlohaSocial\Core\Jobs\JobHandler;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
@@ -35,6 +36,7 @@ final class FederationDeliveryHandler implements JobHandler
 		private readonly HttpClient $http,
 		private readonly RsaKeyPair $signingKey,
 		private readonly Clock $clock,
+		private readonly ?FederationTargetGuard $targetGuard = null,
 	) {
 	}
 
@@ -66,6 +68,7 @@ final class FederationDeliveryHandler implements JobHandler
 	 *
 	 * @throws DeliveryFailedException on a non-2xx answer
 	 * @throws InvalidJobPayloadException when the inbox is not an absolute http(s) URL
+	 * @throws RemoteFetchException when the target is not a public http(s) destination
 	 * @throws JsonException when the activity cannot be encoded
 	 */
 	public function deliver(string $inbox, array $activity, string $keyId): void
@@ -76,6 +79,10 @@ final class FederationDeliveryHandler implements JobHandler
 		if (!is_string($host) || ($scheme !== 'https' && $scheme !== 'http')) {
 			throw new InvalidJobPayloadException('Not an absolute http(s) inbox URL: ' . $inbox);
 		}
+
+		// Validate before signing or opening a connection. With a resolver this
+		// also supplies the addresses a bounded client can pin the request to.
+		$addresses = $this->targetGuard?->addressesFor($inbox) ?? [];
 
 		$hostHeader = $host;
 		if (isset($parts['port'])) {
@@ -100,7 +107,9 @@ final class FederationDeliveryHandler implements JobHandler
 		);
 		$headers['Content-Type'] = 'application/activity+json';
 
-		$response = $this->http->request('POST', $inbox, $headers, $body, 20);
+		$response = $this->http instanceof BoundedHttpClient && $addresses !== []
+			? $this->http->requestBounded('POST', $inbox, $headers, $body, 20, 65_536, $addresses)
+			: $this->http->request('POST', $inbox, $headers, $body, 20);
 
 		if (!$response->isSuccessful()) {
 			throw new DeliveryFailedException($inbox, $response->status);

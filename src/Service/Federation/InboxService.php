@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Jobs\JobQueue;
@@ -348,14 +349,41 @@ final class InboxService
 	{
 		$object = $activity['object'] ?? null;
 
-		if (!is_array($object) || ($object['type'] ?? null) !== 'Follow') {
-			throw new InboxRejectedException(
-				'unsupported_activity',
-				'Only Undo(Follow) with an embedded Follow is supported.',
-			);
+		if (is_string($object)) {
+			// Some peers send only the Announce id. It is safe to look up the
+			// stored row by that id, but the ownership check still happens in
+			// undoAnnounceById().
+			$this->undoAnnounceById($actor, $object);
+
+			return;
 		}
 
-		$undoneActor = $object['actor'] ?? null;
+		$type = is_array($object) ? ($object['type'] ?? null) : null;
+
+		if ($type === 'Follow') {
+			$this->undoFollow($actor, $object);
+
+			return;
+		}
+
+		if ($type === 'Announce') {
+			$this->undoAnnounce($actor, $object);
+
+			return;
+		}
+
+		throw new InboxRejectedException(
+			'unsupported_activity',
+			'Only Undo(Follow) and Undo(Announce) are supported.',
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $follow
+	 */
+	private function undoFollow(RemoteActor $actor, array $follow): void
+	{
+		$undoneActor = $follow['actor'] ?? null;
 		if (!is_string($undoneActor) || $undoneActor !== $actor->actorId) {
 			throw new InboxRejectedException(
 				'actor_mismatch',
@@ -363,7 +391,7 @@ final class InboxService
 			);
 		}
 
-		$target = $object['object'] ?? null;
+		$target = $follow['object'] ?? null;
 		if (!is_string($target)) {
 			throw new InboxRejectedException('invalid_activity', 'A Follow needs an object actor.');
 		}
@@ -373,6 +401,65 @@ final class InboxService
 		// An Undo for a follow that is already gone is still a successful
 		// Undo: the peer's intent is satisfied.
 		$this->followers->unfollowByActor($localUserId, $actor->actorId);
+	}
+
+	/**
+	 * @param array<string, mixed> $announce
+	 */
+	private function undoAnnounce(RemoteActor $actor, array $announce): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$actorId = $announce['actor'] ?? null;
+		if (!is_string($actorId) || $actorId !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'An actor may only undo its own Announce.',
+			);
+		}
+
+		$activityId = $announce['id'] ?? null;
+		if (!is_string($activityId) || trim($activityId) === '') {
+			throw new InboxRejectedException('invalid_activity', 'An Announce needs an activity id.');
+		}
+
+		$this->undoAnnounceById($actor, $activityId);
+	}
+
+	private function undoAnnounceById(RemoteActor $actor, string $activityId): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$activityId = trim($activityId);
+		if ($activityId === '') {
+			throw new InboxRejectedException('invalid_activity', 'An Undo needs an Announce id.');
+		}
+
+		$stored = $this->remotePosts->findByActivityId($activityId);
+		if ($stored === null) {
+			// The peer's intended state (no boost) is already true. This also
+			// makes a retried Undo after a lost response a successful no-op.
+			return;
+		}
+
+		if ($stored->kind !== RemotePostKind::Boost) {
+			// The id names a post, not an Announce. Never let an Undo(Announce)
+			// remove an unrelated stored object.
+			return;
+		}
+
+		if ($stored->actorId !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'An actor may only undo its own Announce.',
+			);
+		}
+
+		$this->remotePosts->softDeleteByActivityId(
+			$activityId,
+			$actor->actorId,
+			Time::toSecondPrecision($this->clock->now()),
+		);
 	}
 
 	/**

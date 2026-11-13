@@ -11,7 +11,9 @@ namespace AlohaSocial\Core\Tests\Protocol;
 
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use PHPUnit\Framework\TestCase;
 
 final class HttpActorInboxResolverTest extends TestCase
@@ -37,6 +39,20 @@ final class HttpActorInboxResolverTest extends TestCase
 		$http = new FakeHttpClient();
 
 		self::assertNull((new HttpActorInboxResolver($http))->inboxFor('bob'));
+		self::assertSame([], $http->requests);
+	}
+
+	public function testAPrivateTargetHasNoInboxAndMakesNoRequest(): void
+	{
+		$http = new FakeHttpClient();
+		$resolver = new HttpActorInboxResolver(
+			$http,
+			new FederationTargetGuard(new TestHostResolver([
+				'remote.example' => ['127.0.0.1'],
+			])),
+		);
+
+		self::assertNull($resolver->inboxFor(self::ACTOR));
 		self::assertSame([], $http->requests);
 	}
 

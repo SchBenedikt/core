@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Accept inbound `Undo(Announce)` in both its embedded and id-only forms,
+  removing only a boost owned by the signing actor and treating an absent
+  target or a retry as an idempotent no-op.
+- Guard outbound federation targets against SSRF in delivery, actor-document
+  resolution and inbox discovery, with public-DNS checks, connection pinning
+  on a bounded client and a guard around host-provided actor resolvers.
 - Prepare the Composer and npm release artifacts without claiming a registry
   publication: `.gitattributes` and `composer.json` `archive.exclude` keep
   `vendor/`, `tests/`, `ui/`, `docs/` and development files out of the library
@@ -20,7 +26,7 @@ All notable changes to this project are documented here. The format follows
   the UI suite checks the package pair and accepts or rejects bridge contracts
   and capabilities in both directions. The HostBridge field is optional and an
   omitted value means contract 1, so existing bridges keep working. Test counts
-  are now 121 PHP files (1084 tests, 5142 assertions) and 9 UI files (69 tests).
+  are now 123 PHP files (1095 tests, 5174 assertions) and 9 UI files (69 tests).
 
 ### Changed
 

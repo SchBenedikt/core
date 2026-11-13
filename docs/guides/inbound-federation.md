@@ -52,8 +52,8 @@ Every step refuses before anything changes:
 11. **Type supported?** — 400 `unsupported_activity`.
 12. **For a `Follow`: does the local account's `FollowPolicy` accept it?** —
     403 `follow_not_accepted`.
-13. **For `Create`, `Delete` and `Announce`: does at least one local account
-    follow the actor?** — 403 `not_followed`.
+13. **For `Create`, `Delete`, `Announce` and `Undo(Announce)`: does at least
+    one local account follow the actor?** — 403 `not_followed`.
 14. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
 
 A refusal releases the replay claim when the claim was already taken, so a peer
@@ -65,7 +65,7 @@ refused before a claim, and a replay is refused without changing anything.
 | Type | Effect |
 | --- | --- |
 | `Follow` | stores the follower edge when the optional `FollowPolicy` accepts it (idempotently) and queues an `Accept` to the follower's inbox |
-| `Undo` with an embedded `Follow` | removes the follower edge; an Undo for a follow that is already gone is still accepted |
+| `Undo` with an embedded `Follow` or an `Announce` (embedded or by id) | removes the follower edge or soft-deletes the stored boost; an Undo for an already-absent edge/boost is still accepted |
 | `Create` | stores the embedded `Note` in the remote-post store as a post |
 | `Delete` | soft-deletes the matching remote activity/post, if this actor owns it; an unknown target is a successful no-op |
 | `Announce` | stores the announced object as a boost, not as a standalone post |
@@ -94,10 +94,16 @@ not used for this Accept.
 
 ## What an Undo does
 
-The embedded `Follow` is required: an Undo that names an activity id only
-cannot be matched without storing every Follow activity we ever answered. The
-actor inside the embedded Follow must be the signing actor, so nobody can undo
-somebody else's follow.
+For `Undo(Follow)`, the embedded `Follow` is required: an Undo that names a
+Follow activity id only cannot be matched without storing every Follow we ever
+answered. The actor inside the embedded Follow must be the signing actor, so
+nobody can undo somebody else's follow.
+
+For `Undo(Announce)`, the object may be the embedded `Announce` or its activity
+id. The stored row must be a boost owned by the signing actor; an unknown id or
+a retried Undo after the response was lost is a successful no-op. An id that
+names a stored post is never treated as a boost, and an id owned by another
+actor is `403 actor_mismatch`.
 
 ## What a Create does
 

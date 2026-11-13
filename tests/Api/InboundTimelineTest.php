@@ -147,6 +147,59 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
 	}
 
+	public function testUndoAnnounceRemovesTheBoostAndIsIdempotent(): void
+	{
+		$app = $this->app();
+		$announce = $this->announce(
+			'https://remote.example/activities/announce-undo',
+			self::NOTE_3,
+			'boosted remote note',
+			'2026-11-11T10:03:00Z',
+		);
+
+		self::assertSame(202, $this->deliver($app, $announce)->status);
+		self::assertCount(1, $this->feed($app)->decodedBody()['posts']);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-announce',
+			'type' => 'Undo',
+			'actor' => self::BOB,
+			'object' => $announce,
+		];
+
+		self::assertSame(202, $this->deliver($app, $undo)->status);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+
+		// A retried Undo after a lost response must not fail when the boost is
+		// already gone.
+		$retry = array_merge($undo, ['id' => 'https://remote.example/activities/undo-announce-2']);
+		self::assertSame(202, $this->deliver($app, $retry)->status);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+	}
+
+	public function testUndoAnnounceAcceptsTheAnnounceIdWithoutAnEmbeddedActivity(): void
+	{
+		$app = $this->app();
+		$announce = $this->announce(
+			'https://remote.example/activities/announce-id-only',
+			self::NOTE_3,
+			'boosted remote note',
+			'2026-11-11T10:03:00Z',
+		);
+
+		self::assertSame(202, $this->deliver($app, $announce)->status);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-announce-id-only',
+			'type' => 'Undo',
+			'actor' => self::BOB,
+			'object' => $announce['id'],
+		];
+
+		self::assertSame(202, $this->deliver($app, $undo)->status);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+	}
+
 	public function testBlockingAnActorHidesItsStoredPostsAndUnblockingRestoresThem(): void
 	{
 		$app = $this->app();
