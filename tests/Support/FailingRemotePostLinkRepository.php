@@ -72,4 +72,9 @@ final class FailingRemotePostLinkRepository implements RemotePostRepository
 	{
 		return $this->inner->attachmentIdsFor($activityIds);
 	}
+
+	public function isAttachmentLinked(string $attachmentId): bool
+	{
+		return $this->inner->isAttachmentLinked($attachmentId);
+	}
 }

@@ -158,6 +158,41 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		return $marked;
 	}
 
+	public function countReadBefore(DateTimeImmutable $before): int
+	{
+		$count = 0;
+		foreach ($this->notifications as $notification) {
+			if ($notification->readAt !== null && $notification->readAt < $before) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
+	public function deleteReadBefore(DateTimeImmutable $before, int $limit): int
+	{
+		$expired = array_values(array_filter(
+			$this->notifications,
+			static fn (Notification $notification): bool => $notification->readAt !== null
+				&& $notification->readAt < $before,
+		));
+
+		usort($expired, static function (Notification $left, Notification $right): int {
+			$byRead = $left->readAt <=> $right->readAt;
+
+			return $byRead !== 0 ? $byRead : strcmp($left->id, $right->id);
+		});
+
+		$removed = 0;
+		foreach (array_slice($expired, 0, max(0, $limit)) as $notification) {
+			unset($this->notifications[$notification->id]);
+			$removed++;
+		}
+
+		return $removed;
+	}
+
 	public function countUnread(
 		string $recipientId,
 		?string $accountId = null,

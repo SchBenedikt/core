@@ -281,6 +281,26 @@ abstract class NotificationRepositoryTestCase extends TestCase
 		self::assertSame(0, $repository->countUnread('alice', null, [NotificationType::Favourite]));
 	}
 
+	public function testReadCleanupIsBoundedAndNeverRemovesUnreadRows(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->notification('old-a', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:00:00Z', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->notification('old-b', 'alice', 'carol', NotificationType::Follow, null, '2026-11-11T10:00:00Z', '2026-11-11T10:02:00Z'));
+		$repository->insert($this->notification('unread', 'alice', 'dave', NotificationType::Follow, null, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->notification('fresh', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:10:00Z', '2026-11-11T10:11:00Z'));
+
+		self::assertSame(2, $repository->countReadBefore(Time::parse('2026-11-11T10:05:00Z')));
+		self::assertSame(1, $repository->deleteReadBefore(Time::parse('2026-11-11T10:05:00Z'), 1));
+		self::assertNull($repository->find('old-a'));
+		self::assertNotNull($repository->find('old-b'));
+		self::assertNotNull($repository->find('unread'));
+		self::assertNotNull($repository->find('fresh'));
+
+		self::assertSame(1, $repository->deleteReadBefore(Time::parse('2026-11-11T10:05:00Z'), 10));
+		self::assertSame(0, $repository->countReadBefore(Time::parse('2026-11-11T10:05:00Z')));
+		self::assertSame(0, $repository->deleteReadBefore(Time::parse('2026-11-11T10:05:00Z'), 10));
+	}
+
 	private function notification(
 		string $id,
 		string $recipientId,
@@ -288,6 +308,7 @@ abstract class NotificationRepositoryTestCase extends TestCase
 		NotificationType $type,
 		?string $postId,
 		string $createdAt = '2026-11-11T10:00:00Z',
+		?string $readAt = null,
 	): Notification {
 		return new Notification(
 			$id,
@@ -296,6 +317,7 @@ abstract class NotificationRepositoryTestCase extends TestCase
 			$type,
 			$postId,
 			Time::parse($createdAt),
+			$readAt === null ? null : Time::parse($readAt),
 		);
 	}
 }

@@ -10,8 +10,26 @@ declare(strict_types=1);
 
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
+use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Jobs\JobType;
+use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
+use AlohaSocial\Core\Service\Cleanup\CleanupOptions;
+use AlohaSocial\Core\Support\Time;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -216,4 +234,207 @@ if (!is_array($followedPosts) || $followedPosts === []) {
 	exit(1);
 }
 
+// Cleanup is a worker operation: seed old and fresh rows, preview the cutoff,
+// enqueue the real job and prove that only the expired rows disappeared.
+$cleanupClock = new FrozenClock(Time::parse('2026-03-02T00:00:00Z'));
+$cleanupBlobs = new InMemoryBlobStore();
+$cleanupPosts = new InMemoryPostRepository();
+$cleanupRemotePosts = new InMemoryRemotePostRepository();
+$cleanupAttachments = new InMemoryAttachmentRepository($cleanupPosts, $cleanupRemotePosts);
+$cleanupNotifications = new InMemoryNotificationRepository();
+$cleanupThreads = new InMemoryRemoteThreadRepository();
+
+$oldAttachment = new Attachment(
+	id: 'cleanup-old',
+	ownerId: 'alice',
+	storageKey: 'media/cleanup-old/original.png',
+	thumbnailKey: 'media/cleanup-old/thumbnail.png',
+	mimeType: 'image/png',
+	width: 800,
+	height: 600,
+	byteSize: 1234,
+	altText: null,
+	createdAt: Time::parse('2026-01-01T00:00:00Z'),
+);
+$linkedAttachment = new Attachment(
+	id: 'cleanup-linked',
+	ownerId: 'alice',
+	storageKey: 'media/cleanup-linked/original.png',
+	thumbnailKey: 'media/cleanup-linked/thumbnail.png',
+	mimeType: 'image/png',
+	width: 800,
+	height: 600,
+	byteSize: 1234,
+	altText: null,
+	createdAt: Time::parse('2026-01-01T00:00:00Z'),
+);
+$remoteLinkedAttachment = new Attachment(
+	id: 'cleanup-remote-linked',
+	ownerId: 'alice',
+	storageKey: 'media/cleanup-remote-linked/original.png',
+	thumbnailKey: 'media/cleanup-remote-linked/thumbnail.png',
+	mimeType: 'image/png',
+	width: 800,
+	height: 600,
+	byteSize: 1234,
+	altText: null,
+	createdAt: Time::parse('2026-01-01T00:00:00Z'),
+);
+$freshAttachment = new Attachment(
+	id: 'cleanup-fresh',
+	ownerId: 'alice',
+	storageKey: 'media/cleanup-fresh/original.png',
+	thumbnailKey: 'media/cleanup-fresh/thumbnail.png',
+	mimeType: 'image/png',
+	width: 800,
+	height: 600,
+	byteSize: 1234,
+	altText: null,
+	createdAt: Time::parse('2026-03-02T00:00:00Z'),
+);
+foreach ([$oldAttachment, $linkedAttachment, $remoteLinkedAttachment, $freshAttachment] as $attachment) {
+	$cleanupAttachments->insert($attachment);
+	$cleanupBlobs->put($attachment->storageKey, 'original');
+	$cleanupBlobs->put($attachment->thumbnailKey, 'thumbnail');
+}
+$cleanupRemotePosts->insert(new RemotePost(
+	activityId: 'https://remote.example/activities/cleanup',
+	objectId: 'https://remote.example/notes/cleanup',
+	actorId: 'https://remote.example/users/bob',
+	kind: RemotePostKind::Post,
+	content: 'remote post with a shared image',
+	contentWarning: null,
+	publishedAt: Time::parse('2026-01-01T00:00:00Z'),
+	objectAuthorId: 'https://remote.example/users/bob',
+));
+$cleanupRemotePosts->linkAttachments('https://remote.example/activities/cleanup', ['cleanup-remote-linked']);
+$cleanupPosts->insert(new Post(
+	id: 'cleanup-post',
+	authorId: 'alice',
+	content: 'linked media stays',
+	visibility: Visibility::Public,
+	publishedAt: Time::parse('2026-01-01T00:00:00Z'),
+	attachmentIds: ['cleanup-linked'],
+));
+$cleanupNotifications->insert(new Notification(
+	id: 'cleanup-old-read',
+	recipientId: 'alice',
+	actorId: 'bob',
+	type: NotificationType::Follow,
+	postId: null,
+	createdAt: Time::parse('2026-01-01T00:00:00Z'),
+	readAt: Time::parse('2026-01-01T00:00:00Z'),
+));
+$cleanupNotifications->insert(new Notification(
+	id: 'cleanup-old-unread',
+	recipientId: 'alice',
+	actorId: 'bob',
+	type: NotificationType::Follow,
+	postId: null,
+	createdAt: Time::parse('2026-01-01T00:00:00Z'),
+));
+$cleanupNotifications->insert(new Notification(
+	id: 'cleanup-fresh-read',
+	recipientId: 'alice',
+	actorId: 'bob',
+	type: NotificationType::Follow,
+	postId: null,
+	createdAt: Time::parse('2026-03-02T00:00:00Z'),
+	readAt: Time::parse('2026-03-02T00:00:00Z'),
+));
+$cleanupThreads->upsert(new RemoteThreadPost(
+	objectId: 'https://remote.example/notes/cleanup-old',
+	authorId: 'https://remote.example/users/bob',
+	content: 'expired cached node',
+	publishedAt: Time::parse('2026-01-01T00:00:00Z'),
+	fetchedAt: Time::parse('2026-01-01T00:00:00Z'),
+));
+$cleanupThreads->upsert(new RemoteThreadPost(
+	objectId: 'https://remote.example/notes/cleanup-fresh',
+	authorId: 'https://remote.example/users/bob',
+	content: 'fresh cached node',
+	publishedAt: Time::parse('2026-03-02T00:00:00Z'),
+	fetchedAt: Time::parse('2026-03-02T00:00:00Z'),
+));
+
+$cleanupApp = Application::inMemory(
+	clock: $cleanupClock,
+	attachmentRepository: $cleanupAttachments,
+	remotePostRepository: $cleanupRemotePosts,
+	notificationRepository: $cleanupNotifications,
+	remoteThreadRepository: $cleanupThreads,
+	blobStore: $cleanupBlobs,
+	localActors: new InMemoryActorDirectory(['alice']),
+);
+
+if ($cleanupApp->cleanup === null) {
+	fwrite(STDERR, "demo failed: cleanup service is not wired\n");
+	exit(1);
+}
+
+$cleanupOptions = new CleanupOptions(
+	kind: CleanupOptions::KIND_ALL,
+	mediaRetentionDays: 30,
+	notificationRetentionDays: 30,
+	threadRetentionDays: 30,
+	limit: 100,
+);
+$preview = $cleanupApp->cleanup->run(new CleanupOptions(
+	kind: $cleanupOptions->kind,
+	mediaRetentionDays: $cleanupOptions->mediaRetentionDays,
+	notificationRetentionDays: $cleanupOptions->notificationRetentionDays,
+	threadRetentionDays: $cleanupOptions->threadRetentionDays,
+	limit: $cleanupOptions->limit,
+	dryRun: true,
+));
+echo "cleanup preview: ", json_encode($preview->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n\n";
+
+$cleanupApp->queue->push(JobType::CLEANUP, $cleanupOptions->toArray());
+$cleanupApp->worker->runOnce();
+
+$after = $cleanupApp->cleanup->run(new CleanupOptions(
+	kind: $cleanupOptions->kind,
+	mediaRetentionDays: $cleanupOptions->mediaRetentionDays,
+	notificationRetentionDays: $cleanupOptions->notificationRetentionDays,
+	threadRetentionDays: $cleanupOptions->threadRetentionDays,
+	limit: $cleanupOptions->limit,
+	dryRun: true,
+));
+
+if ($preview->matched() !== 3 || $cleanupApp->queue->pendingCount() !== 0 || $after->matched() !== 0) {
+	fwrite(STDERR, "demo failed: cleanup preview/job did not remove exactly the expired rows\n");
+	exit(1);
+}
+if ($cleanupAttachments->find('cleanup-old') !== null
+	|| $cleanupAttachments->find('cleanup-linked') === null
+	|| $cleanupAttachments->find('cleanup-remote-linked') === null
+	|| $cleanupAttachments->find('cleanup-fresh') === null
+) {
+	fwrite(STDERR, "demo failed: media cleanup removed a linked or fresh attachment\n");
+	exit(1);
+}
+if ($cleanupNotifications->find('cleanup-old-read') !== null
+	|| $cleanupNotifications->find('cleanup-old-unread') === null
+	|| $cleanupNotifications->find('cleanup-fresh-read') === null
+) {
+	fwrite(STDERR, "demo failed: notification cleanup removed an unread or fresh row\n");
+	exit(1);
+}
+if ($cleanupThreads->find('https://remote.example/notes/cleanup-old') !== null
+	|| $cleanupThreads->find('https://remote.example/notes/cleanup-fresh') === null
+) {
+	fwrite(STDERR, "demo failed: thread cleanup removed a fresh cache node\n");
+	exit(1);
+}
+if ($cleanupBlobs->exists($oldAttachment->storageKey)
+	|| $cleanupBlobs->exists($oldAttachment->thumbnailKey)
+	|| !$cleanupBlobs->exists($linkedAttachment->storageKey)
+	|| !$cleanupBlobs->exists($remoteLinkedAttachment->storageKey)
+	|| !$cleanupBlobs->exists($freshAttachment->storageKey)
+) {
+	fwrite(STDERR, "demo failed: media blobs do not match the cleanup result\n");
+	exit(1);
+}
+
+echo "cleanup ok: 3 expired rows (media, notification, thread cache) removed; local/remote-linked, fresh and unread rows kept\n";
 echo "demo ok: ", count($posts), " post(s) on the public timeline, ", count($followedPosts), " on the followed hashtag timeline\n";

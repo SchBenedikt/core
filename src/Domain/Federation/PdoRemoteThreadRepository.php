@@ -97,12 +97,30 @@ final class PdoRemoteThreadRepository implements RemoteThreadRepository
 		);
 	}
 
-	public function deleteFetchedBefore(DateTimeImmutable $before): int
+	public function countFetchedBefore(DateTimeImmutable $before): int
+	{
+		try {
+			return (int) $this->db->fetchValue(
+				'SELECT COUNT(*) FROM ' . RemoteThreadSchema::TABLE . ' WHERE fetched_at < :before',
+				['before' => Time::format($before)],
+			);
+		} catch (Throwable $exception) {
+			if ($exception instanceof DatabaseException) {
+				throw $exception;
+			}
+
+			throw new DatabaseException('Remote thread context could not be counted.', 0, $exception);
+		}
+	}
+
+	public function deleteFetchedBefore(DateTimeImmutable $before, int $limit = 500): int
 	{
 		try {
 			return $this->db->execute(
 				'DELETE FROM ' . RemoteThreadSchema::TABLE
-				. ' WHERE fetched_at < :before',
+				. ' WHERE object_id IN (SELECT object_id FROM ' . RemoteThreadSchema::TABLE
+				. ' WHERE fetched_at < :before'
+				. ' ORDER BY fetched_at ASC, object_id ASC LIMIT ' . max(1, min(1000, $limit)) . ')',
 				['before' => Time::format($before)],
 			);
 		} catch (Throwable $exception) {

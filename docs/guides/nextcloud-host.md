@@ -301,7 +301,11 @@ ceiling and 30 s to 3600 s backoff as `InMemoryJobQueue`; `complete()` removes
 the row and `fail()` either reschedules it or sets `dead_at`. A reservation
 older than `PdoJobQueue::RESERVATION_SECONDS` (300 s) is recoverable after a
 worker crash. `pendingCount()` and `deadLetterCount()` feed the app's health
-page.
+page. The same worker handles `JobType::CLEANUP`; the app should enqueue one
+cleanup job per day (or hour, for a large instance) with its retention values,
+as described in [retention cleanup](retention-cleanup.md). The job needs no
+Nextcloud-specific table beyond the existing attachment, post-link,
+notification and remote-thread schemas.
 
 ### Activity-log table
 
@@ -416,8 +420,9 @@ without the column cannot read followers or serve those routes. For the
 notification routes, create `social_notification` from
 `NotificationSchema::statements()`; there is no legacy import. Repeating an
 interaction cannot duplicate a notification, and deleting a post/follow leaves
-the historical row for the host's retention policy. A host that already has
-the listing-only table adds the nullable `read_at` marker and unread index:
+the historical row for the core cleanup job to remove later if it was read and
+older than the configured notification retention. A host that already has the
+listing-only table adds the nullable `read_at` marker and unread index:
 
 ```sql
 ALTER TABLE social_notification ADD COLUMN read_at VARCHAR(20) NULL;

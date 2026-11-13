@@ -49,8 +49,8 @@ the host that serves it. See
 | --- | --- |
 | HTTP contract | 84 routes, 43 of them under the Mastodon prefix |
 | Persistence | 18 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 116 PHP test files (1048 tests, 4918 assertions) and 8 UI test files (63 tests) |
-| Release | `0.5.0` (2026-11-13) is released together with `0.2.0`-`0.4.0`; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
+| Tests | 118 PHP test files (1060 tests, 5048 assertions) and 8 UI test files (63 tests) |
+| Release | `0.6.0` (2026-11-13) is released together with `0.2.0`-`0.5.0`; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
 
@@ -84,6 +84,11 @@ the host that serves it. See
 - **Media** — JPEG/PNG/WebP validation, untouched originals, GD thumbnails,
   authenticated upload, public fetch, post attachments and SSRF-safe remote
   ingestion. See [media](guides/media.md).
+- **Operations** — the `cleanup` worker job and `CleanupService` remove
+  unreferenced media, read notifications and thread-cache rows after a
+  configurable retention. Runs are dry-runnable, per-kind bounded and
+  idempotent; linked media, fresh rows and unread notifications are never
+  touched. See [retention cleanup](guides/retention-cleanup.md).
 - **AT Protocol** — public text-only publishing through authenticated XRPC
   `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
   a read of the stored publication state, remote delete, OAuth session refresh
@@ -141,13 +146,13 @@ server or a product decision.
 | --- | --- | --- | --- | --- |
 | M0 | Core foundation | done (`0.1.0`) | core | Ports, posts, HTTP signatures, delivery queue, kernel and boundary guard are green |
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
-| M2 | Release and documentation consistency | done (`0.2.0`-`0.5.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.5.0` released |
+| M2 | Release and documentation consistency | done (`0.2.0`-`0.6.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.6.0` released |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
 | M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
 | M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; smoke tests pass |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
-| M7 | Operations and packaging | open | `server` / ops | Installer, container, backup, cleanup jobs and an object-storage option exist |
+| M7 | Operations and packaging | open | `server` / ops | Installer, container, backup and an object-storage option exist; the core cleanup job is already available |
 
 ## Now (core)
 
@@ -156,7 +161,7 @@ server or a product decision.
    counts in the README and this page, and verifies that every `*Schema` class
    appears in the database guide. Add the configuration reference to the same
    guard when it drifts again.
-2. **Publish the registries.** `0.5.0` is cut and tagged; Packagist and the npm
+2. **Publish the registries.** `0.6.0` is cut and tagged; Packagist and the npm
    registry still need maintainer credentials. A host should be able to install
    a version instead of `dev-main`.
 3. **Close the identity decision.** [ADR 0006](adr/0006-host-owned-accounts.md)
@@ -182,7 +187,7 @@ server or a product decision.
 | Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
 | Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
-| Registry publication: Packagist and npm | core | core | A host installs `0.5.0` instead of `dev-main` |
+| Registry publication: Packagist and npm | core | core | A host installs `0.6.0` instead of `dev-main` |
 
 ## Later
 
@@ -193,8 +198,9 @@ server or a product decision.
 - **AT Protocol after account linking:** facets, mentions, link cards, media
   embeds, reply/thread mapping and the full repository/AppView client.
 - **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
-- **Operations:** retention jobs for the thread cache, read notifications and
-  orphaned blobs; backup/restore and monitoring for the standalone host.
+- **Operations:** backup/restore and monitoring for the standalone host,
+  plus an S3-compatible blob store whose layout can be swept independently of
+  the core metadata cleanup.
 - **Admin UI:** host pages; the core keeps the settings rules.
 
 ## Explicitly not planned
@@ -239,7 +245,8 @@ local gaps. The detailed lists live in the guides.
 | `0.3.0` | 2026-11-13 | Neutral profile/follow/notification API, shared `ActorHeader`/`PostComposer`/`NotificationList` write screens, host-level SQL coverage and release documentation |
 | `0.4.0` | 2026-11-13 | Public hashtag timelines with normalized storage, cursor paging, `timelines.tag` and a tag-scoped `PublicTimeline` |
 | `0.5.0` | 2026-11-13 | Private followed hashtags with SQL persistence, idempotent follow/unfollow, bounded tag pages and the `timelines.followed_tags` page |
+| `0.6.0` | 2026-11-13 | Core retention cleanup job for unreferenced media, read notifications and thread caches, with dry run, per-kind limits, stable reasons and a real demo |
 
-`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0`-`0.5.0` are released and
+`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0`-`0.6.0` are released and
 recorded in the [changelog](../CHANGELOG.md); registry publication is the
 remaining M2 step.

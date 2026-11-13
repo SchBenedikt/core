@@ -9,10 +9,15 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Media;
 
+use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 use PDOException;
+
+use function array_map;
 
 /**
  * Attachment metadata in SQL.
@@ -101,6 +106,47 @@ final class PdoAttachmentRepository implements AttachmentRepository
 	public function count(): int
 	{
 		return (int) $this->db->fetchValue('SELECT COUNT(*) FROM ' . AttachmentSchema::TABLE);
+	}
+
+	public function unattachedBefore(DateTimeImmutable $before, int $limit): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . AttachmentSchema::TABLE . ' a'
+			. ' WHERE a.created_at < :before'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . PostSchema::ATTACHMENT_TABLE . ' pa'
+			. ' WHERE pa.attachment_id = a.id)'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . RemotePostSchema::ATTACHMENT_TABLE . ' rpa'
+			. ' WHERE rpa.attachment_id = a.id)'
+			. ' ORDER BY a.created_at ASC, a.id ASC LIMIT ' . max(1, min(1000, $limit)),
+			['before' => Time::format($before)],
+		);
+
+		return array_map(fn (array $row): Attachment => $this->hydrate($row), $rows);
+	}
+
+	public function countUnattachedBefore(DateTimeImmutable $before): int
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . AttachmentSchema::TABLE . ' a'
+			. ' WHERE a.created_at < :before'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . PostSchema::ATTACHMENT_TABLE . ' pa'
+			. ' WHERE pa.attachment_id = a.id)'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . RemotePostSchema::ATTACHMENT_TABLE . ' rpa'
+			. ' WHERE rpa.attachment_id = a.id)',
+			['before' => Time::format($before)],
+		);
+	}
+
+	public function deleteIfUnattached(string $id): bool
+	{
+		return $this->db->execute(
+			'DELETE FROM ' . AttachmentSchema::TABLE . ' WHERE id = :id'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . PostSchema::ATTACHMENT_TABLE . ' pa'
+			. ' WHERE pa.attachment_id = :id)'
+			. ' AND NOT EXISTS (SELECT 1 FROM ' . RemotePostSchema::ATTACHMENT_TABLE . ' rpa'
+			. ' WHERE rpa.attachment_id = :id)',
+			['id' => $id],
+		) > 0;
 	}
 
 	public function findMany(array $ids): array

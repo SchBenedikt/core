@@ -23,6 +23,8 @@ final class JobType
 
 	public const ATPROTO_DELETE = 'atproto.delete';
 
+	public const CLEANUP = 'cleanup';
+
 	private function __construct()
 	{
 	}

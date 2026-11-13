@@ -70,6 +70,20 @@ interface NotificationRepository
 	public function markAllRead(string $recipientId, DateTimeImmutable $readAt): int;
 
 	/**
+	 * Read notifications whose read marker is older than the boundary. Unread
+	 * rows are never candidates, regardless of their age.
+	 */
+	public function countReadBefore(DateTimeImmutable $before): int;
+
+	/**
+	 * Deletes at most `$limit` read notifications older than the boundary,
+	 * oldest read marker first with the id as the tie-break.
+	 *
+	 * @return int number of removed rows
+	 */
+	public function deleteReadBefore(DateTimeImmutable $before, int $limit): int;
+
+	/**
 	 * Counts unread notifications for a recipient, with optional local filters.
 	 *
 	 * The service caps the returned number; the repository returns the uncapped

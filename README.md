@@ -59,6 +59,7 @@ The full mapping, guarantees and the path to a real bridge are in
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (84 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
+| Operations | core `cleanup` worker job and service for unreferenced media older than a retention window, read notifications and thread caches; dry run, per-kind limits, idempotent deletes, stable payload reasons and host scheduling |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
 | Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` (public or hashtag timeline)/`PostDetail`, and the write screens `ActorHeader` (with follow toggle), `PostComposer` and `NotificationList` |
@@ -161,6 +162,7 @@ timeline
     2026-11-13 : 0.3.0 neutral interactions
     2026-11-13 : 0.4.0 hashtag timelines
     2026-11-13 : 0.5.0 followed hashtags
+    2026-11-13 : 0.6.0 retention cleanup
     next : Nextcloud cutover
          : standalone host
 ```
@@ -197,7 +199,11 @@ npm run build
 hashtag and reads its followed-hashtag timeline, records a follower,
 shows the expected 503 for a follow without delivery configuration, and
 demonstrates the documented errors for unconfigured inboxes, actors and
-WebFinger. It needs no database and no network.
+WebFinger. It also seeds expired and fresh media, read and unread
+notifications, and expired and fresh thread-cache rows, prints the cleanup
+dry-run report, runs the real `cleanup` job through the worker, and asserts
+that only the expired rows and their blobs disappeared. It needs no database
+and no network.
 
 ### Quality gates
 
@@ -262,6 +268,7 @@ docs/              architecture, guides, reference, operations, ADRs
   [inbound federation](docs/guides/inbound-federation.md),
   [media](docs/guides/media.md), [blocks](docs/guides/blocks.md)
 - [Testing](docs/guides/testing.md), [development](docs/development.md),
+  [retention cleanup](docs/guides/retention-cleanup.md),
   [roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md), [security](SECURITY.md),
   [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md),

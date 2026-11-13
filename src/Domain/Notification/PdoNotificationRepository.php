@@ -168,6 +168,34 @@ final class PdoNotificationRepository implements NotificationRepository
 		}
 	}
 
+	public function countReadBefore(DateTimeImmutable $before): int
+	{
+		try {
+			return (int) $this->db->fetchValue(
+				'SELECT COUNT(*) FROM ' . NotificationSchema::TABLE
+				. ' WHERE read_at IS NOT NULL AND read_at < :before',
+				['before' => Time::format($before)],
+			);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('Read notifications could not be counted.', 0, $exception);
+		}
+	}
+
+	public function deleteReadBefore(DateTimeImmutable $before, int $limit): int
+	{
+		try {
+			return $this->db->execute(
+				'DELETE FROM ' . NotificationSchema::TABLE
+				. ' WHERE id IN (SELECT id FROM ' . NotificationSchema::TABLE
+				. ' WHERE read_at IS NOT NULL AND read_at < :before'
+				. ' ORDER BY read_at ASC, id ASC LIMIT ' . max(1, min(1000, $limit)) . ')',
+				['before' => Time::format($before)],
+			);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('Read notifications could not be expired.', 0, $exception);
+		}
+	}
+
 	public function countUnread(
 		string $recipientId,
 		?string $accountId = null,

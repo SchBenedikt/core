@@ -715,8 +715,20 @@ maximum is 40, and generated links carry a non-default limit.
 - **Media metadata and bytes are separate.** A row points at one original and
   one thumbnail key. The service writes both blobs before the row and cleans
   them up if the row fails; the original bytes are never rewritten by the
-  thumbnail step. Unreferenced blobs are an operational cleanup concern, not a
-  read-time fallback.
+  thumbnail step. Unreferenced rows and blobs are removed by the retention
+  job, not treated as a read-time fallback.
+
+## Retention cleanup
+
+The `cleanup` job is a worker operation over the existing repositories, not a
+route and not a second data model. `CleanupOptions` validates the payload,
+`CleanupService` runs one bounded pass per kind and `CleanupReport` returns the
+matched/deleted/remaining counts. The service checks both local and remote
+post links before deleting media, requires `read_at` for notifications and
+uses `fetched_at` for the thread cache. The worker completes invalid payloads
+with their stable reason and lets database/blob failures retry. A host schedules
+the job; the core does not start a timer. See
+[retention cleanup](guides/retention-cleanup.md).
 
 ## Ports
 

@@ -9,10 +9,22 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Media;
 
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use DateTimeImmutable;
+
+use function array_filter;
+use function array_slice;
+use function array_values;
+use function strcmp;
+use function usort;
 
 /**
  * Attachment metadata in memory, for tests and the reference assembly.
+ *
+ * The optional post repository supplies the same linked-row rule as SQL. A
+ * cleanup cannot remove media that a live or soft-deleted post still uses.
  */
 final class InMemoryAttachmentRepository implements AttachmentRepository
 {
@@ -20,6 +32,12 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 	 * @var array<string, Attachment>
 	 */
 	private array $attachments = [];
+
+	public function __construct(
+		private readonly ?PostRepository $posts = null,
+		private readonly ?RemotePostRepository $remotePosts = null,
+	) {
+	}
 
 	public function insert(Attachment $attachment): void
 	{
@@ -70,6 +88,43 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 		return count($this->attachments);
 	}
 
+	public function unattachedBefore(DateTimeImmutable $before, int $limit): array
+	{
+		$candidates = array_values(array_filter(
+			$this->attachments,
+			fn (Attachment $attachment): bool => $attachment->createdAt < $before
+				&& !$this->isLinked($attachment->id),
+		));
+
+		usort(
+			$candidates,
+			static fn (Attachment $left, Attachment $right): int => ($left->createdAt <=> $right->createdAt)
+				?: strcmp($left->id, $right->id),
+		);
+
+		return array_slice($candidates, 0, max(0, $limit));
+	}
+
+	public function countUnattachedBefore(DateTimeImmutable $before): int
+	{
+		return count(array_filter(
+			$this->attachments,
+			fn (Attachment $attachment): bool => $attachment->createdAt < $before
+				&& !$this->isLinked($attachment->id),
+		));
+	}
+
+	public function deleteIfUnattached(string $id): bool
+	{
+		if (!isset($this->attachments[$id]) || $this->isLinked($id)) {
+			return false;
+		}
+
+		unset($this->attachments[$id]);
+
+		return true;
+	}
+
 	public function findMany(array $ids): array
 	{
 		$found = [];
@@ -80,5 +135,11 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 		}
 
 		return $found;
+	}
+
+	private function isLinked(string $id): bool
+	{
+		return ($this->posts?->isAttachmentLinked($id) ?? false)
+			|| ($this->remotePosts?->isAttachmentLinked($id) ?? false);
 	}
 }

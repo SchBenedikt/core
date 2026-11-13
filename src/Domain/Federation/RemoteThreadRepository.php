@@ -34,9 +34,15 @@ interface RemoteThreadRepository
 	public function children(string $parentObjectId, int $limit): array;
 
 	/**
-	 * Removes cached nodes older than a host-chosen retention boundary.
+	 * Cached nodes older than a host-chosen retention boundary.
+	 */
+	public function countFetchedBefore(DateTimeImmutable $before): int;
+
+	/**
+	 * Removes at most `$limit` cached nodes older than the boundary, oldest
+	 * fetch first with the object id as the tie-break.
 	 *
 	 * @return int number of removed rows
 	 */
-	public function deleteFetchedBefore(DateTimeImmutable $before): int;
+	public function deleteFetchedBefore(DateTimeImmutable $before, int $limit = 500): int;
 }

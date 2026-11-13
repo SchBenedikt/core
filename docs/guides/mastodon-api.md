@@ -719,8 +719,9 @@ requires `write:notifications`, declares a `30/900` rate limit and answers
 `200 {}` (the same empty-object shape Mastodon uses). The id is scoped to the
 caller: a missing or foreign notification answers `404 not_found`, while a
 repeat dismiss of the caller's own already-read row answers `200 {}` again.
-No row is deleted, so a repeated event cannot resurrect an old notification
-and the host retains the historical event for its own retention window.
+No row is deleted, so a repeated event cannot resurrect an old notification.
+The core `cleanup` job later removes read rows after the configured
+notification retention; unread rows are never selected.
 
 `POST {prefix}/notifications/clear` marks every unread notification of the
 caller read. It requires `write:notifications`, declares a `30/900` rate limit
@@ -1138,12 +1139,13 @@ follows the normal soft-delete path and deliberately leaves favourite,
 poll, option and notification rows for an explicit host cleanup; the post is
 not visible, so its count and status are not served. Deleting a follower or
 unfavouriting removes the interaction, not its historical notification.
-Notification rows, including read rows, can be removed by recipient or by age
-in a host cleanup job; there is no scheduled core job and no separate
-read-state table. Poll cleanup should delete options first or
-rely on the host's `ON DELETE CASCADE`; the core schema does not add a foreign
-key. Attachment rows and blobs remain governed by the existing media
-cleanup policy, not duplicated here.
+The core `cleanup` job removes notification rows only when `read_at` is set and
+older than the notification retention; unread rows need an explicit host
+policy, and there is no separate read-state table. Poll cleanup should delete
+options first or rely on the host's `ON DELETE CASCADE`; the core schema does
+not add a foreign key. Attachment rows and blobs are covered by the same
+retention job, which checks local and remote post links first. See
+[retention cleanup](retention-cleanup.md).
 
 ## OpenAPI and tests
 

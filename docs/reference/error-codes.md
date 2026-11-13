@@ -59,6 +59,27 @@ change. `fields` appears only when an error belongs to specific input.
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
 
+## Cleanup job reasons
+
+The `cleanup` worker job and `CleanupService` add no HTTP status codes. They
+return or log these stable reasons:
+
+| Reason | When |
+| --- | --- |
+| `cleanup_invalid_kind` | The job's `kind` is not `media`, `notifications`, `threads` or `all` |
+| `cleanup_invalid_retention` | A retention value is not an integer from 1 to 3650 days |
+| `cleanup_invalid_limit` | `limit` is not an integer from 1 to 1000 |
+| `cleanup_invalid_dry_run` | `dry_run` is not a boolean |
+| `cleanup_unknown_parameter` | The job payload contains a key the cleanup options do not define |
+| `cleanup_media_unavailable` | No `BlobStore` was supplied; the media result is skipped and no attachment row is deleted |
+| `cleanup_blob_delete_failed` | The metadata row was deleted, but one blob could not be removed; the orphan is left for the storage sweep |
+
+The first five are payload validation failures: `CleanupJobHandler` logs them
+and completes the job instead of retrying invalid input forever. Database and
+storage exceptions are not converted to these reasons; they propagate so the
+queue applies its normal retry/backoff policy. See
+[retention cleanup](../guides/retention-cleanup.md).
+
 ## Mastodon compatibility failures
 
 A disabled compatibility surface is `404 mastodon_api_disabled`, including for

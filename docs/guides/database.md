@@ -87,10 +87,10 @@ one remote image is stored once and reused.
 not an activity id: an ancestor or reply may never have been delivered to this
 instance. It stores the author, content, optional content warning, publication
 time, `in_reply_to_id` and `fetched_at`. The parent and fetched indexes support
-direct-child queries and a host's retention job. Upserts by object id make a
-repeat or a shared ancestor idempotent; `deleteFetchedBefore()` is the only
-cleanup API and is not scheduled by the core. Rows are deliberately not shown
-in the home timeline and do not import media blobs.
+direct-child queries and the retention job. Upserts by object id make a repeat
+or a shared ancestor idempotent; the core `cleanup` job removes rows by
+`fetched_at` and `deleteFetchedBefore()` remains the lower-level API. Rows are
+deliberately not shown in the home timeline and do not import media blobs.
 `social_poll` is keyed by `post_id` and stores the two flags, the canonical
 `expires_at` and the aggregate counts; `social_poll_option` stores the ordered
 titles (`position` 0-based) and their counts. Both are written by
@@ -163,10 +163,11 @@ index serves the newest-first page and its id tie-break; the
 list and count. `read_at` is null until the recipient dismisses one row or
 clears all unread rows, and the list omits rows with a marker. A notification
 is historical: unfavouriting, unfollowing or deleting the post does not delete
-it. A deleted post is omitted from the projected notification. The host can
-prune rows, including read rows, by recipient or age; the core does not
-schedule that job. Existing listing-only hosts must add the nullable column and
-unread index before the read routes work; old rows remain unread.
+it. A deleted post is omitted from the projected notification. The core
+cleanup job removes only **read** rows whose `read_at` is older than the
+configured retention; unread rows are never eligible. Existing listing-only
+hosts must add the nullable column and unread index before the read routes
+work; old rows remain unread and are therefore not removed by the cleanup job.
 
 `social_atproto_publication` stores the idempotency mapping from a local post
 to the AT Protocol record written for one account. Its primary key is
@@ -199,6 +200,44 @@ post insert transaction. A remote post uses
 `social_remote_post_attachment` instead. `PdoAttachmentRepository::findMany`
 deliberately does not promise SQL row order; callers such as the presenter
 order the attachments by the position list. See [media](media.md).
+
+### Retention cleanup
+
+Version `0.6.0` adds the `cleanup` job and `CleanupService`. It adds no table
+and no migration; it deletes rows through the existing schemas:
+
+```sql
+-- media: metadata only; no local or remote-post link may reference the id
+DELETE FROM social_attachment
+WHERE id = :id
+  AND NOT EXISTS (SELECT 1 FROM social_post_attachment WHERE attachment_id = :id)
+  AND NOT EXISTS (SELECT 1 FROM social_remote_post_attachment WHERE attachment_id = :id);
+
+-- notifications: read marker is required and must be older than the cutoff
+DELETE FROM social_notification
+WHERE id IN (SELECT id FROM social_notification
+  WHERE read_at IS NOT NULL AND read_at < :cutoff
+  ORDER BY read_at ASC, id ASC LIMIT :limit);
+
+-- thread cache: fetched_at is the only age signal
+DELETE FROM social_remote_thread_post
+WHERE object_id IN (SELECT object_id FROM social_remote_thread_post
+  WHERE fetched_at < :cutoff
+  ORDER BY fetched_at ASC, object_id ASC LIMIT :limit);
+```
+
+The attachment query is rechecked by `deleteIfUnattached()` at delete time. A
+soft-deleted post still has its link row and therefore protects the attachment.
+The attachment candidate and delete queries check both `social_post_attachment`
+and `social_remote_post_attachment`, so a shared remote image survives even
+when no local post references it. The cleanup service deletes both blob keys
+after the metadata delete commits;
+a blob failure is logged as `cleanup_blob_delete_failed` and leaves an orphan
+object for the host's storage sweep, never a row that points at missing bytes.
+Notifications require `read_at`, so unread events survive regardless of age.
+Thread rows are a cache and do not touch remote posts or media. The
+`limit` is per kind, bounded to 1000, and the next run continues with the next
+oldest page. See [retention cleanup](../guides/retention-cleanup.md).
 
 ## Transactions and uniqueness
 

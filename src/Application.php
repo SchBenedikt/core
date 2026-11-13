@@ -210,6 +210,8 @@ use AlohaSocial\Core\Service\Federation\RemoteThreadFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteThreadService;
 use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\BoostService;
+use AlohaSocial\Core\Service\Cleanup\CleanupJobHandler;
+use AlohaSocial\Core\Service\Cleanup\CleanupService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowedHashtagService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -261,6 +263,7 @@ final readonly class Application
 		public ?RemoteThreadService $threads,
 		public ?AtprotoPublishService $atproto = null,
 		public ?MastodonService $mastodon = null,
+		public ?CleanupService $cleanup = null,
 	) {
 	}
 
@@ -316,7 +319,7 @@ final readonly class Application
 		$atprotoPublications ??= new InMemoryAtprotoPublicationRepository();
 		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient);
 		$blockRepository ??= new InMemoryBlockRepository();
-		$attachmentRepository ??= new InMemoryAttachmentRepository();
+		$attachmentRepository ??= new InMemoryAttachmentRepository($posts, $remotePostRepository);
 		$favouriteRepository ??= new InMemoryFavouriteRepository();
 		$pollVoteRepository ??= new InMemoryPollVoteRepository(
 			$posts instanceof PollVoteCounter ? $posts : null,
@@ -536,6 +539,14 @@ final readonly class Application
 
 		$logger ??= new NullLogger();
 		$activities = new ActivityFactory($config);
+		$cleanup = new CleanupService(
+			$attachmentRepository,
+			$notificationRepository,
+			$threadRepository,
+			$blobStore,
+			$clock,
+			$logger,
+		);
 		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
@@ -843,7 +854,8 @@ final readonly class Application
 		}
 		$jobHandlers = $jobHandlers
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
-			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger));
+			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
+			->with(JobType::CLEANUP, new CleanupJobHandler($cleanup, $logger));
 
 		$routes = Routes::manifest(MastodonApiConfig::prefix($config));
 
@@ -886,6 +898,7 @@ final readonly class Application
 			$remoteThreadService,
 			$atprotoService,
 			$mastodonService,
+			$cleanup,
 		);
 	}
 

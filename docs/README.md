@@ -37,7 +37,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
 | [Shared inboxes](guides/shared-inboxes.md) | Actor-document discovery, the shared route, stored peer shared inboxes, delivery batching, fallback and migration |
 | [Remote outbox backfill](guides/remote-backfill.md) | Bounded catch-up of a followed actor's public `Create`/`Announce` outbox, including historical media |
-| [Remote threads](guides/remote-threads.md) | On-demand ancestors and direct replies, the thread cache, limits and cleanup |
+| [Remote threads](guides/remote-threads.md) | On-demand ancestors and direct replies, the thread cache and limits |
+| [Retention cleanup](guides/retention-cleanup.md) | The `cleanup` job for orphan media, read notifications and thread caches: payload, limits, idempotence, failure reasons and host scheduling |
 | [Peer discovery](guides/peer-discovery.md) | How a peer finds the actor, its key and the inbox |
 | [WebFinger](guides/webfinger.md) | The JRD that resolves an `acct:` handle to the actor document |
 | [Followers collection](guides/followers-collection.md) | The incoming `OrderedCollection` and what changes it |

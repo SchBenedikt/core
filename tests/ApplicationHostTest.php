@@ -24,10 +24,21 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\AttachmentSchema;
+use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
+use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
+use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountListSchema;
 use AlohaSocial\Core\Domain\Timeline\FollowedHashtagSchema;
 use AlohaSocial\Core\Domain\Post\BookmarkSchema;
@@ -37,7 +48,10 @@ use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Jobs\PdoJobQueue;
+use AlohaSocial\Core\Platform\Storage\BlobStore;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
@@ -880,10 +894,177 @@ final class ApplicationHostTest extends TestCase
 		));
 	}
 
+	public function testForHostRunsTheCleanupJobOverSqlWithoutTouchingFreshRows(): void
+	{
+		$database = $this->database();
+		$blobs = new InMemoryBlobStore();
+		$app = $this->host($database, new FakeHttpClient(), blobStore: $blobs);
+		$attachments = new PdoAttachmentRepository($database);
+
+		$oldOrphan = new Attachment(
+			id: 'old-orphan',
+			ownerId: 'alice',
+			storageKey: 'media/old-orphan/original.png',
+			thumbnailKey: 'media/old-orphan/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 1234,
+			altText: null,
+			createdAt: Time::parse('2026-09-01T00:00:00Z'),
+		);
+		$oldLinked = new Attachment(
+			id: 'old-linked',
+			ownerId: 'alice',
+			storageKey: 'media/old-linked/original.png',
+			thumbnailKey: 'media/old-linked/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 1234,
+			altText: null,
+			createdAt: Time::parse('2026-09-01T00:00:00Z'),
+		);
+		$remoteLinked = new Attachment(
+			id: 'remote-linked',
+			ownerId: 'alice',
+			storageKey: 'media/remote-linked/original.png',
+			thumbnailKey: 'media/remote-linked/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 1234,
+			altText: null,
+			createdAt: Time::parse('2026-09-01T00:00:00Z'),
+		);
+		$fresh = new Attachment(
+			id: 'fresh',
+			ownerId: 'alice',
+			storageKey: 'media/fresh/original.png',
+			thumbnailKey: 'media/fresh/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 1234,
+			altText: null,
+			createdAt: Time::parse('2026-11-11T10:00:00Z'),
+		);
+		foreach ([$oldOrphan, $oldLinked, $remoteLinked, $fresh] as $attachment) {
+			$attachments->insert($attachment);
+			$blobs->put($attachment->storageKey, 'original');
+			$blobs->put($attachment->thumbnailKey, 'thumbnail');
+		}
+
+		$remotePosts = new PdoRemotePostRepository($database);
+		$remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/cleanup',
+			objectId: 'https://remote.example/notes/cleanup',
+			actorId: 'https://remote.example/users/bob',
+			kind: RemotePostKind::Post,
+			content: 'remote post with a shared image',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-09-01T00:00:00Z'),
+			objectAuthorId: 'https://remote.example/users/bob',
+		));
+		$remotePosts->linkAttachments('https://remote.example/activities/cleanup', ['remote-linked']);
+
+		$post = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode([
+				'content' => 'linked media',
+				'visibility' => 'public',
+				'attachment_ids' => ['old-linked'],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $post->status, $post->body);
+
+		$notifications = new PdoNotificationRepository($database);
+		$notifications->insert(new Notification(
+			'old-read',
+			'alice',
+			'bob',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-09-01T00:00:00Z'),
+			Time::parse('2026-09-01T00:00:00Z'),
+		));
+		$notifications->insert(new Notification(
+			'old-unread',
+			'alice',
+			'bob',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-09-01T00:00:00Z'),
+		));
+		$notifications->insert(new Notification(
+			'fresh-read',
+			'alice',
+			'bob',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-11-11T10:00:00Z'),
+			Time::parse('2026-11-11T10:00:00Z'),
+		));
+
+		$threads = new PdoRemoteThreadRepository($database);
+		$threads->upsert(new RemoteThreadPost(
+			'https://remote.example/notes/old',
+			'https://remote.example/users/bob',
+			'old thread node',
+			Time::parse('2026-09-01T00:00:00Z'),
+			Time::parse('2026-09-01T00:00:00Z'),
+		));
+		$threads->upsert(new RemoteThreadPost(
+			'https://remote.example/notes/fresh',
+			'https://remote.example/users/bob',
+			'fresh thread node',
+			Time::parse('2026-11-11T10:00:00Z'),
+			Time::parse('2026-11-11T10:00:00Z'),
+		));
+
+		$app->queue->push(JobType::CLEANUP, [
+			'kind' => 'all',
+			'media_retention_days' => 30,
+			'notification_retention_days' => 30,
+			'thread_retention_days' => 30,
+			'limit' => 100,
+		]);
+		self::assertSame(1, $app->worker->runOnce());
+
+		self::assertSame(3, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . AttachmentSchema::TABLE,
+		));
+		self::assertNull($attachments->find('old-orphan'));
+		self::assertNotNull($attachments->find('old-linked'));
+		self::assertNotNull($attachments->find('remote-linked'));
+		self::assertNotNull($attachments->find('fresh'));
+		self::assertFalse($blobs->exists($oldOrphan->storageKey));
+		self::assertTrue($blobs->exists($oldLinked->storageKey));
+		self::assertTrue($blobs->exists($remoteLinked->storageKey));
+		self::assertTrue($blobs->exists($fresh->storageKey));
+
+		self::assertSame(2, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . NotificationSchema::TABLE,
+		));
+		self::assertNull($notifications->find('old-read'));
+		self::assertNotNull($notifications->find('old-unread'));
+		self::assertNotNull($notifications->find('fresh-read'));
+
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . RemoteThreadSchema::TABLE,
+		));
+		self::assertNull($threads->find('https://remote.example/notes/old'));
+		self::assertNotNull($threads->find('https://remote.example/notes/fresh'));
+	}
+
 	private function database(): Connection
 	{
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
+		AttachmentSchema::create($database);
 		PollSchema::create($database);
 		BookmarkSchema::create($database);
 		BoostSchema::create($database);
@@ -912,6 +1093,7 @@ final class ApplicationHostTest extends TestCase
 		bool $atproto = false,
 		?AtprotoAccountResolver $atprotoAccounts = null,
 		array $actors = ['alice'],
+		?BlobStore $blobStore = null,
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
@@ -930,6 +1112,7 @@ final class ApplicationHostTest extends TestCase
 			activityLog: new PdoActivityLog($database),
 			actorResolver: $actorResolver,
 			atprotoAccounts: $atprotoAccounts,
+			blobStore: $blobStore,
 			clock: $this->clock,
 		);
 	}

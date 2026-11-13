@@ -51,14 +51,35 @@ final class InMemoryRemoteThreadRepository implements RemoteThreadRepository
 		return array_slice($children, 0, $limit);
 	}
 
-	public function deleteFetchedBefore(DateTimeImmutable $before): int
+	public function countFetchedBefore(DateTimeImmutable $before): int
 	{
-		$removed = 0;
-		foreach ($this->posts as $objectId => $post) {
+		$count = 0;
+		foreach ($this->posts as $post) {
 			if ($post->fetchedAt < $before) {
-				unset($this->posts[$objectId]);
-				++$removed;
+				$count++;
 			}
+		}
+
+		return $count;
+	}
+
+	public function deleteFetchedBefore(DateTimeImmutable $before, int $limit = 500): int
+	{
+		$expired = array_values(array_filter(
+			$this->posts,
+			static fn (RemoteThreadPost $post): bool => $post->fetchedAt < $before,
+		));
+
+		usort($expired, static function (RemoteThreadPost $left, RemoteThreadPost $right): int {
+			$byFetch = $left->fetchedAt <=> $right->fetchedAt;
+
+			return $byFetch !== 0 ? $byFetch : strcmp($left->objectId, $right->objectId);
+		});
+
+		$removed = 0;
+		foreach (array_slice($expired, 0, max(0, $limit)) as $post) {
+			unset($this->posts[$post->objectId]);
+			$removed++;
 		}
 
 		return $removed;

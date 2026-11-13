@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Media;
 
+use DateTimeImmutable;
+
 /**
  * Storage of uploaded attachment metadata.
  *
@@ -40,6 +42,24 @@ interface AttachmentRepository
 	 * Removes metadata for an attachment whose blobs are cleaned separately.
 	 */
 	public function delete(string $id): void;
+
+	/**
+	 * Unattached rows older than the retention boundary, oldest first with the
+	 * id as the tie-break. A soft-deleted post still links its attachments, so
+	 * its rows are not candidates.
+	 *
+	 * @return list<Attachment>
+	 */
+	public function unattachedBefore(DateTimeImmutable $before, int $limit): array;
+
+	public function countUnattachedBefore(DateTimeImmutable $before): int;
+
+	/**
+	 * Deletes only if no post links the row at the time of the delete.
+	 *
+	 * @return bool whether the row was removed
+	 */
+	public function deleteIfUnattached(string $id): bool;
 
 	/**
 	 * The number of stored rows, used by operational cleanup checks.

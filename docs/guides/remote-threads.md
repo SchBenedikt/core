@@ -112,18 +112,21 @@ fetch itself.
 
 ## Retention and cleanup
 
-The core does not schedule a TTL. A host that wants to bound the context cache
-calls:
+The core `cleanup` job removes `social_remote_thread_post` rows whose
+`fetched_at` is older than the configured thread window (7 days by default).
+A host schedules the job through its normal worker; a one-off run can call
+`$app->cleanup->run(CleanupOptions::fromArray(['kind' => 'threads']))`.
+The lower-level repository method remains available:
 
 ```php
-$threads->deleteFetchedBefore($cutoff);
+$threads->deleteFetchedBefore($cutoff, $limit);
 ```
 
-on its own schedule. The `fetched_at` index supports this query. Deleting cache
-rows does not touch remote posts, attachments, blobs or timeline rows. A later
-request refetches and repopulates the context. This repository has no migration
-runner; create `social_remote_thread_post` from
-`RemoteThreadSchema::statements()` in the host's migration path.
+The `fetched_at` index supports both. Deleting cache rows does not touch remote
+posts, attachments, blobs or timeline rows. A later request refetches and
+repopulates the context. This repository has no migration runner; create
+`social_remote_thread_post` from `RemoteThreadSchema::statements()` in the
+host's migration path. See [retention cleanup](retention-cleanup.md).
 
 ## Limitations
 

@@ -211,6 +211,23 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 		return count($domains);
 	}
 
+	public function isAttachmentLinked(string $attachmentId): bool
+	{
+		try {
+			return (int) $this->db->fetchValue(
+				'SELECT COUNT(*) FROM ' . RemotePostSchema::ATTACHMENT_TABLE
+				. ' WHERE attachment_id = :attachment_id',
+				['attachment_id' => $attachmentId],
+			) > 0;
+		} catch (Throwable $exception) {
+			if ($exception instanceof DatabaseException) {
+				throw $exception;
+			}
+
+			throw new DatabaseException('Remote attachment links could not be read.', 0, $exception);
+		}
+	}
+
 	public function attachmentIdsFor(array $activityIds): array
 	{
 		$activityIds = array_values(array_unique($activityIds));

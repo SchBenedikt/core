@@ -275,7 +275,8 @@ listing-only tables need `read_at VARCHAR(20) NULL` and the
 `(recipient_id, read_at, created_at, id)` index before dismiss, clear or
 unread-count are enabled; old rows remain unread. Repeating an event cannot
 duplicate a row. A post or follow deletion deliberately does not delete the
-historical notification; schedule any retention cleanup in the host. For follow/unfollow and
+historical notification; the core cleanup job removes read rows after the
+configured retention. For follow/unfollow and
 relationship reads, add
 `is_local` as described above and pass a local account directory so
 `Application` assembles `LocalRelationshipService`; without it those routes
@@ -283,9 +284,30 @@ answer `503 follows_not_configured`. For AT Protocol publishing, create
 `social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
 supply an `AtprotoAccountResolver`;
 supplying no resolver leaves the existing route at `503 atproto_not_configured`
-without writing anything. There is no migration runner and no automatic retention job in this
-repository. A host that wants context to expire calls
-`RemoteThreadRepository::deleteFetchedBefore()` on its own schedule.
+without writing anything. There is no migration runner, but `0.6.0` ships a
+retention job instead of leaving expiry entirely to each host. Register
+`JobType::CLEANUP` through `Application::forHost()`'s normal worker and
+schedule the worker (for example with cron):
+
+```php
+use AlohaSocial\Core\Jobs\JobType;
+use AlohaSocial\Core\Service\Cleanup\CleanupOptions;
+
+$app->queue->push(JobType::CLEANUP, CleanupOptions::fromArray([
+    'kind' => 'all',
+    'limit' => 100,
+])->toArray());
+```
+
+A one-off run can call `$app->cleanup->run(CleanupOptions::fromArray([...]))`
+directly. The job needs no new table; it uses the existing attachment,
+`social_post_attachment`, `social_remote_post_attachment`, notification and
+remote-thread schemas. A host without a `BlobStore` gets a skipped media
+result instead of a partial delete, while notifications and thread caches
+still run. See
+[retention cleanup](retention-cleanup.md) for the exact rules and failure
+behaviour. A host that only wants the thread cache to expire can still call
+`RemoteThreadRepository::deleteFetchedBefore()` itself.
 
 ### Durable queue and activity log
 
@@ -516,8 +538,10 @@ and the credential store remain host work. It does provide a
 bounded outbox backfill for missed `Create`/`Announce` activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the
-storage, remote-fetch and cleanup contract; an object-storage adapter is still
-a host decision.
+storage and remote-fetch contract and
+[retention cleanup](retention-cleanup.md) for orphan media, read
+notifications and the thread cache; an object-storage adapter is still a host
+decision.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two

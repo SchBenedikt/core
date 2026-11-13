@@ -47,6 +47,16 @@ final class FailingNotificationRepository implements NotificationRepository
 		throw new DatabaseException('The notification table is unavailable.');
 	}
 
+	public function countReadBefore(DateTimeImmutable $before): int
+	{
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
+	public function deleteReadBefore(DateTimeImmutable $before, int $limit = 500): int
+	{
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
 	public function markRead(string $id, string $recipientId, DateTimeImmutable $readAt): bool
 	{
 		throw new DatabaseException('The notification table is unavailable.');

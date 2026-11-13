@@ -266,8 +266,15 @@ There is no external image-library dependency in this repository.
 
 ### Orphan cleanup
 
-Normal failed uploads and failed remote imports clean themselves. Two
-operator cases remain:
+Normal failed uploads and failed remote imports clean themselves. The core
+`cleanup` job (version `0.6.0`) removes `social_attachment` metadata rows older
+than the configured media window only when neither `social_post_attachment` nor
+`social_remote_post_attachment` references them, then deletes both blob keys.
+It never removes media that a local or remote post still uses, and a missing
+`BlobStore` skips media rather than leaving a row without bytes. See
+[retention cleanup](retention-cleanup.md).
+
+Two operator cases remain outside that link-aware sweep:
 
 1. **Metadata row removed out of band.** The blobs are now unreferenced. Delete
    `media/{id}/original.*` and `media/{id}/thumbnail.*` (or remove the whole
@@ -290,18 +297,19 @@ WHERE a.source_url IS NOT NULL AND rp.attachment_id IS NULL AND p.attachment_id 
 
 Delete a row and both blob keys together. A remote post soft-delete
 intentionally keeps its shared local attachment rows: another post may reuse
-the same source URL, and the unique URL is the idempotence key. A host cleanup
-policy may remove a remote post's links and then unreferenced remote-source
-attachments after its retention window. Run cleanup from a host cron with the
-same `BlobStore`; there is no automatic sweeper in the core.
+the same source URL, and the unique URL is the idempotence key. The core cleanup
+job checks both link tables, so a linked remote image is safe; it does not
+remove remote-post links or remote-source rows itself. A host that deliberately
+removes a remote post and its links can then let the normal media retention
+sweep the unreferenced attachment.
 
 ## HTTP contract
 
 Remote media adds no route. Its state appears through the existing post and
 timeline responses, and its local bytes are served by the already documented
-`GET /api/v1/media/{id}` route. Consequently the route manifest remains 23
-routes and the OpenAPI export does not gain paths or payload schemas; no
-private fetch endpoint is exposed.
+`GET /api/v1/media/{id}` route. Consequently the route manifest remains 84
+routes (and the OpenAPI export 70 paths); remote media adds no path or payload
+schema and no private fetch endpoint is exposed.
 
 ## Open point
 

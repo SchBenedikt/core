@@ -113,8 +113,8 @@ are served next to it; the outbox lists the account's public posts as the same
 
 The local federation path is complete for the features in the roadmap: outbox
 backfill, thread/context fetching, remote media and shared-inbox batching are
-implemented. Scheduling the backfill, thread retention and host-specific
-policy remain host operations. The AT Protocol publishing foundation is now in
+implemented. Scheduling the backfill and the `cleanup` job remain host
+operations; the thread-retention rules themselves are now implemented. The AT Protocol publishing foundation is now in
 the core, while account linking/OAuth and the full repository/AppView stack
 remain external. The local Mastodon-compatible subset is implemented under its
 own disabled-by-default prefix; only its remote server remainder is external.

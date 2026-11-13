@@ -346,6 +346,24 @@ Only after the agreed observation window:
 - keep a per-account rollback path until the next release, not just a
   database backup.
 
+## Retention cleanup after cutover
+
+Do not enable the core cleanup job before the core owns the attachment,
+notification and thread tables for the migrated accounts. The job is additive
+and has no migration of its own: it deletes only unreferenced media older than
+the media window, **read** notifications older than the notification window
+and thread-cache rows older than the thread window. A soft-deleted post still
+protects its attachment; an unread notification is never removed by age.
+
+During the shadow phase, run `dry_run: true` with the same retention values the
+old app uses and compare `matched` per kind with the old maintenance counts. Do
+not delete old-stack rows: the core only touches its own tables, and the old
+app keeps its own retention policy until the rollback window closes. Once the
+cutover is final, add the normal worker cron described in
+[retention cleanup](retention-cleanup.md). If the host has no `BlobStore` in the
+worker, media cleanup is skipped with `cleanup_media_unavailable`; do not treat
+that as a successful media prune.
+
 ## Rollback
 
 The old tables are never mutated by the import. A rollback is a feature-flag

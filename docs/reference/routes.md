@@ -584,10 +584,11 @@ POST /api/v1/notifications/clear
 Dismiss marks one notification read and answers `{"dismissed": true}`. It is
 idempotent for the caller's own already-read row; a missing or foreign id is
 `404 not_found`. Clear marks every unread notification of the caller read and
-answers `{"cleared": 3}`; repeating it returns `0`. Read rows stay stored for
-the host's retention policy; `GET /api/v1/notifications` returns unread rows
-only. The core records a local follow, favourite, mention/reply and reblog;
-recording is best-effort and never fails the primary interaction.
+answers `{"cleared": 3}`; repeating it returns `0`. Read rows stay stored and
+become eligible for the cleanup job after the configured retention;
+`GET /api/v1/notifications` returns unread rows only. The core records a local
+follow, favourite, mention/reply and reblog; recording is best-effort and never
+fails the primary interaction.
 
 ## Inbox
 
@@ -929,6 +930,19 @@ favourites_not_configured`, `503 bookmarks_not_configured`, `503
 mutes_not_configured`, `503 notifications_not_configured`, `503
 notifications_unavailable` (missing or unreadable notification table, or a
 table without `read_at`).
+
+## Cleanup job (no route)
+
+The retention cleanup from `0.6.0` is a worker job (`cleanup`), not an HTTP
+route. It has no path, method, auth rule or rate limit, so the route manifest
+stays at 84 routes and the OpenAPI export keeps its 70 paths. The payload and
+report are documented in
+[retention cleanup](../guides/retention-cleanup.md); the stable reasons are
+listed in the [error code reference](error-codes.md#cleanup-job-reasons). The
+service deletes only unreferenced media, read notifications and thread-cache
+rows, with the same strict `before` cutoff and deterministic oldest-first
+limit on every run. A host schedules it through its existing worker or calls
+`CleanupService::run()` directly.
 
 ## Route parameters
 

@@ -4,6 +4,47 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-13
+
+### Added
+
+- Core retention cleanup: the `cleanup` worker job and `CleanupService`
+  remove unreferenced media attachments older than 7 days, **read**
+  notifications older than 30 days and `social_remote_thread_post` cache rows
+  fetched more than 7 days ago by default. The payload accepts `kind`
+  (`media`, `notifications`, `threads` or `all`), three retention values
+  (1–3650 days), a per-kind `limit` (1–1000) and `dry_run`; unknown keys and
+  wrong types are rejected with the stable reasons `cleanup_invalid_kind`,
+  `cleanup_invalid_retention`, `cleanup_invalid_limit`,
+  `cleanup_invalid_dry_run` and `cleanup_unknown_parameter`. Runs are bounded
+  oldest-first, report `matched`/`deleted`/`remaining` per kind, are idempotent
+  and recheck the post link at delete time. Unread notifications, linked media
+  (including media used by soft-deleted posts) and fresh rows are never
+  removed. A missing `BlobStore` skips media with
+  `cleanup_media_unavailable`; a failed blob delete logs
+  `cleanup_blob_delete_failed` after the metadata row is committed. Invalid
+  job payloads are logged and the job is completed instead of retried
+  forever; database/storage failures propagate to the normal queue backoff.
+- Contract tests for `AttachmentRepository::unattachedBefore()`,
+  `countUnattachedBefore()`, `deleteIfUnattached()`,
+  `NotificationRepository::countReadBefore()`/`deleteReadBefore()` and
+  `RemoteThreadRepository::countFetchedBefore()`/`deleteFetchedBefore()`, plus
+  service/options tests and a SQL host test that runs the job through
+  `Application::forHost()`. `RemotePostRepository` gains
+  `isAttachmentLinked()` so the in-memory adapter applies the same local and
+  remote link rule as SQL; the core implementations and test doubles are
+  updated.
+- `bin/core-demo` now seeds expired and fresh media, linked media, read and
+  unread notifications and two thread-cache nodes, prints the dry-run report,
+  runs the real job and asserts the exact remaining rows and blobs.
+- Documentation: a [retention cleanup guide](docs/guides/retention-cleanup.md),
+  the job payload and reasons in the route/error references, database and host
+  wiring notes, migration guidance, README and roadmap entries. The feature
+  adds no HTTP route, so the advertised contract stays at 84 routes and 70
+  OpenAPI paths.
+- The suite is now 118 PHP test files with 1060 tests and 5048 assertions;
+  the UI package stays at 63 tests.
+
 ## [0.5.0] - 2026-11-13
 
 ### Added

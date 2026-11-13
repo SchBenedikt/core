@@ -80,7 +80,10 @@ This document is the checklist that host is built against.
 9. **Handlers and kernel** — register every handler from the route manifest and
    fail at boot if one is missing.
 10. **Worker** — `PdoJobQueue` plus a process or cron entry calling
-    `JobWorker::runOnce()`.
+    `JobWorker::runOnce()`. The same worker handles the core `cleanup` job;
+    schedule a separate daily or hourly enqueue of `JobType::CLEANUP` with the
+    host's retention values. See
+    [retention cleanup](../guides/retention-cleanup.md).
 
 Steps 1–8 are what `Application::inMemory()` does with in-memory adapters; the
 server repeats it with real ones. The reusable production assembly is
@@ -116,7 +119,10 @@ are in [ADR 0005](../adr/0005-shared-ui.md) and the
 - a systemd service restarting the loop on exit.
 
 The loop must sleep between empty batches; a hot loop with no jobs is a busy
-wait, not a worker.
+wait, not a worker. Enqueue the cleanup job on a slower schedule than the
+worker (for example once a day); it is bounded by `limit` per kind, so a large
+instance can run it more often or raise the limit deliberately. A dry run is a
+one-off service call, not a queue job.
 
 ## The installer
 
@@ -127,7 +133,8 @@ The interactive installer belongs to the server repository. It should:
 3. create the database schema;
 4. generate and seal the instance key;
 5. write configuration outside the web root;
-6. print the exact cron line and a health-check URL.
+6. print the exact cron line and a health-check URL, including the cleanup
+   enqueue line if the host does not schedule it in application code.
 
 Nothing in this repository assumes an installer, and the core must keep working
 when a host is configured by hand.

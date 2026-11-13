@@ -79,9 +79,10 @@ same applies when the assembly has no bounded HTTP client
 (`503 thread_not_configured`) or no `RemoteThreadService`. Existing cached
 nodes remain stored and readable by a host through
 `RemoteThreadRepository`, but the route does not fall back to them without a
-fresh target fetch. Disabling the switch does not delete rows. There is no
-automatic cleanup timer: a host that wants a TTL calls
-`RemoteThreadRepository::deleteFetchedBefore()` on its own schedule.
+fresh target fetch. Disabling the switch does not delete rows. The `cleanup`
+worker job removes stale cache rows through `fetched_at`; the core still does
+not start a timer, so a host schedules the job (or calls
+`RemoteThreadRepository::deleteFetchedBefore()` directly).
 
 `thread.max_bytes` applies to each fetched object or replies collection, not
 to the whole response. Depth and reply limits are applied after fetching, so a
@@ -175,9 +176,9 @@ CREATE INDEX social_notification_unread
 
 Existing rows are unread (`NULL`) and no backfill is needed. There is no
 backfill from older favourites/followers, and deleting a post or follow
-deliberately does not delete the historical notification. Notification rows,
-including read rows, can be cleaned up by recipient or age in a host job; the
-core schedules no cleanup and uses no second read-state table. Local follow/unfollow writes the existing
+deliberately does not delete the historical notification. The core `cleanup`
+job removes read rows older than the notification retention; unread rows stay,
+and there is no second read-state table. Local follow/unfollow writes the existing
 `social_follower` edge with `is_local = 1`; existing hosts must add the column:
 
 ```sql

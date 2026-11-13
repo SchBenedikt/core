@@ -109,6 +109,28 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 		$repository->delete('a1');
 	}
 
+	public function testUnattachedCleanupCandidatesAreOldestFirstAndConditional(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->attachmentAt('old', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->attachmentAt('new', '2026-11-11T10:10:00Z'));
+		$repository->insert($this->attachmentAt('mid', '2026-11-11T10:05:00Z'));
+
+		self::assertSame(2, $repository->countUnattachedBefore(Time::parse('2026-11-11T10:10:00Z')));
+		self::assertSame(
+			['old'],
+			array_map(
+				static fn (Attachment $attachment): string => $attachment->id,
+				$repository->unattachedBefore(Time::parse('2026-11-11T10:10:00Z'), 1),
+			),
+		);
+
+		self::assertTrue($repository->deleteIfUnattached('old'));
+		self::assertFalse($repository->deleteIfUnattached('old'));
+		self::assertSame(1, $repository->countUnattachedBefore(Time::parse('2026-11-11T10:10:00Z')));
+		self::assertSame([], $repository->unattachedBefore(Time::parse('2026-11-11T10:00:00Z'), 10));
+	}
+
 	public function testADuplicateIdIsRefused(): void
 	{
 		$repository = $this->repository();
@@ -117,6 +139,22 @@ abstract class AttachmentRepositoryTestCase extends TestCase
 		$this->expectException(DatabaseException::class);
 
 		$repository->insert($this->attachment('a1', 'bob'));
+	}
+
+	protected function attachmentAt(string $id, string $createdAt): Attachment
+	{
+		return new Attachment(
+			id: $id,
+			ownerId: 'alice',
+			storageKey: 'media/' . $id . '/original.png',
+			thumbnailKey: 'media/' . $id . '/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 1234,
+			altText: null,
+			createdAt: Time::parse($createdAt),
+		);
 	}
 
 	protected function attachment(

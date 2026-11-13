@@ -98,15 +98,20 @@ abstract class RemoteThreadRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->children('https://remote.example/notes/missing', 10));
 	}
 
-	public function testDeleteFetchedBeforeExpiresOnlyOlderNodes(): void
+	public function testDeleteFetchedBeforeExpiresOnlyOlderNodesAndHonoursTheLimit(): void
 	{
 		$repository = $this->repository();
-		$repository->upsert($this->post('https://remote.example/notes/old', 'alice', 'old', '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z'));
+		$repository->upsert($this->post('https://remote.example/notes/old-a', 'alice', 'old', '2026-11-11T10:00:00Z', '2026-11-11T10:00:00Z'));
+		$repository->upsert($this->post('https://remote.example/notes/old-b', 'alice', 'old', '2026-11-11T10:00:00Z', '2026-11-11T10:01:00Z'));
 		$repository->upsert($this->post('https://remote.example/notes/new', 'alice', 'new', '2026-11-11T10:01:00Z', '2026-11-11T10:10:00Z'));
 
-		self::assertSame(1, $repository->deleteFetchedBefore(Time::parse('2026-11-11T10:05:00Z')));
-		self::assertNull($repository->find('https://remote.example/notes/old'));
+		self::assertSame(2, $repository->countFetchedBefore(Time::parse('2026-11-11T10:05:00Z')));
+		self::assertSame(1, $repository->deleteFetchedBefore(Time::parse('2026-11-11T10:05:00Z'), 1));
+		self::assertNull($repository->find('https://remote.example/notes/old-a'));
+		self::assertNotNull($repository->find('https://remote.example/notes/old-b'));
 		self::assertNotNull($repository->find('https://remote.example/notes/new'));
+		self::assertSame(1, $repository->deleteFetchedBefore(Time::parse('2026-11-11T10:05:00Z')));
+		self::assertNull($repository->find('https://remote.example/notes/old-b'));
 		self::assertSame(0, $repository->deleteFetchedBefore(Time::parse('2026-11-11T10:00:00Z')));
 	}
 

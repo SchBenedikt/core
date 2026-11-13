@@ -174,6 +174,8 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 			['post-1' => ['attachment-b', 'attachment-a']],
 			$repository->attachmentIdsFor(['post-1', 'missing']),
 		);
+		self::assertTrue($repository->isAttachmentLinked('attachment-b'));
+		self::assertFalse($repository->isAttachmentLinked('missing'));
 
 		$repository->linkAttachments('post-1', ['attachment-c']);
 
@@ -181,10 +183,13 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 			['post-1' => ['attachment-c']],
 			$repository->attachmentIdsFor(['post-1']),
 		);
+		self::assertTrue($repository->isAttachmentLinked('attachment-c'));
+		self::assertFalse($repository->isAttachmentLinked('attachment-b'));
 
 		$repository->linkAttachments('post-1', []);
 
 		self::assertSame([], $repository->attachmentIdsFor(['post-1']));
+		self::assertFalse($repository->isAttachmentLinked('attachment-c'));
 
 		$this->expectException(DatabaseException::class);
 

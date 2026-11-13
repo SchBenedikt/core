@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentSchema;
+use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use PDO;
@@ -23,6 +25,8 @@ final class PdoAttachmentRepositoryTest extends AttachmentRepositoryTestCase
 	{
 		$connection = new PdoConnection(new PDO('sqlite::memory:'));
 		AttachmentSchema::create($connection);
+		PostSchema::create($connection);
+		RemotePostSchema::create($connection);
 
 		$this->repository = new PdoAttachmentRepository($connection);
 	}

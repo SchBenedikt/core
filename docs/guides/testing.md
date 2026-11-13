@@ -23,6 +23,7 @@ that prints or skips is a failure.
 | `tests/Contract` | the route manifest and the documentation consistency check |
 | `tests/Contract/DocumentationTest.php` | the route reference lists every manifest route exactly once, the advertised route counts in the reference, roadmap and README match the manifest, and every `*Schema` class appears in the database guide |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |
+| `tests/Service/Cleanup/CleanupServiceTest.php` | dry run and real run, linked local/remote media, fresh and unread rows, per-kind limits, idempotence, a missing blob store and a terminal invalid payload; `CleanupOptionsTest` covers defaults and every payload reason; `tests/ApplicationHostTest.php` runs the job through the SQL assembly |
 | `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared`, the stored shared inbox and the remote-follow notification read back through the Mastodon route |
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |
 | `tests/Api/BlockApiTest.php` | authenticated per-user block create, list, idempotence, ownership and removal |

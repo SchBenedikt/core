@@ -92,4 +92,12 @@ interface RemotePostRepository
 	 *                                       in stored order
 	 */
 	public function attachmentIdsFor(array $activityIds): array;
+
+	/**
+	 * Whether any remote post or boost still links this attachment.
+	 *
+	 * Cleanup uses this together with the local post link so a shared remote
+	 * image is never deleted just because no local post references it.
+	 */
+	public function isAttachmentLinked(string $attachmentId): bool;
 }
