@@ -20,7 +20,7 @@ change. `fields` appears only when an error belongs to specific input.
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
 | `forbidden` | 403 | The user is known but may not do this (deleting somebody else's post) |
 | `insufficient_scope` | 403 | A Mastodon-compatible route requires a token scope the caller does not hold |
-| `not_found` | 404 | Missing — or private and therefore indistinguishable from missing; also an unknown Mastodon status cursor or local account |
+| `not_found` | 404 | Missing — or private and therefore indistinguishable from missing; also an unknown Mastodon status cursor, local account or list |
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off; every compatibility route answers this before auth |
 | `unknown_actor` | 404 | An inbox request signed with a key id that does not resolve to an actor |
 | `unknown_object` | 404 | An inbox activity does not address an actor on this instance |

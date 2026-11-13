@@ -39,16 +39,23 @@ use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAddListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarksHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDismissNotificationHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListAccountsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMutesHandler;
@@ -58,6 +65,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
@@ -66,6 +74,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnmuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
@@ -482,6 +491,96 @@ final class Routes
 				rateLimit: '60/60',
 				requiredScopes: ['read:bookmarks'],
 				summary: 'List the signed-in account\'s private bookmarks, newest first.',
+			),
+			new Route(
+				name: 'mastodon.lists.list',
+				method: 'GET',
+				path: $mastodon . '/lists',
+				handler: MastodonListsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:lists'],
+				summary: 'List the signed-in account\'s private lists, newest first.',
+			),
+			new Route(
+				name: 'mastodon.lists.create',
+				method: 'POST',
+				path: $mastodon . '/lists',
+				handler: MastodonCreateListHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:lists'],
+				summary: 'Create a private named list of local accounts.',
+			),
+			new Route(
+				name: 'mastodon.lists.show',
+				method: 'GET',
+				path: $mastodon . '/lists/{id}',
+				handler: MastodonListHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:lists'],
+				summary: 'Read one list owned by the signed-in account.',
+			),
+			new Route(
+				name: 'mastodon.lists.update',
+				method: 'PUT',
+				path: $mastodon . '/lists/{id}',
+				handler: MastodonUpdateListHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:lists'],
+				summary: 'Update the title, replies policy or exclusive flag of one owned list.',
+			),
+			new Route(
+				name: 'mastodon.lists.delete',
+				method: 'DELETE',
+				path: $mastodon . '/lists/{id}',
+				handler: MastodonDeleteListHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:lists'],
+				summary: 'Delete one owned list and its membership.',
+			),
+			new Route(
+				name: 'mastodon.lists.accounts',
+				method: 'GET',
+				path: $mastodon . '/lists/{id}/accounts',
+				handler: MastodonListAccountsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:lists'],
+				summary: 'List the local accounts in one owned list, newest first.',
+			),
+			new Route(
+				name: 'mastodon.lists.accounts.add',
+				method: 'POST',
+				path: $mastodon . '/lists/{id}/accounts',
+				handler: MastodonAddListAccountsHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:lists'],
+				summary: 'Add local accounts to one owned list; existing membership is idempotent.',
+			),
+			new Route(
+				name: 'mastodon.lists.accounts.remove',
+				method: 'DELETE',
+				path: $mastodon . '/lists/{id}/accounts',
+				handler: MastodonRemoveListAccountsHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:lists'],
+				summary: 'Remove local accounts from one owned list; absent membership is a no-op.',
+			),
+			new Route(
+				name: 'mastodon.timelines.list',
+				method: 'GET',
+				path: $mastodon . '/timelines/list/{list_id}',
+				handler: MastodonListTimelineHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:lists'],
+				summary: 'Statuses from the local accounts in one owned list, newest first.',
 			),
 			new Route(
 				name: 'mastodon.polls.show',

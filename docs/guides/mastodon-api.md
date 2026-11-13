@@ -33,6 +33,15 @@ Locally implemented (core):
 - `POST /accounts/{id}/mute`
 - `POST /accounts/{id}/unmute`
 - `GET /mutes`
+- `GET /lists`
+- `POST /lists`
+- `GET /lists/{id}`
+- `PUT /lists/{id}`
+- `DELETE /lists/{id}`
+- `GET /lists/{id}/accounts`
+- `POST /lists/{id}/accounts`
+- `DELETE /lists/{id}/accounts`
+- `GET /timelines/list/{list_id}`
 - `POST /media`
 - `PUT /media/{id}`
 - `DELETE /media/{id}`
@@ -50,7 +59,8 @@ Locally implemented (core):
 
 The local subset covers public/unlisted/followers-only text posts, local poll
 creation on an own status, local favourite/unfavourite, private bookmark and
-mute bookkeeping, boost/reblog bookkeeping, reply context, local
+mute bookkeeping, private list bookkeeping with list timelines and the
+exclusive home filter, boost/reblog bookkeeping, reply context, local
 follow/unfollow and relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
@@ -58,9 +68,10 @@ does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), remote boost federation, remote notifications,
 streaming, voting on or fetching remote polls, scheduled posts,
-filters, followed tags, lists, OAuth authorization/token endpoints, remote
+filters, followed tags, OAuth authorization/token endpoints, remote
 search, remote profile fetching, admin APIs or the full account management
-surface.
+surface. Lists are limited to known local account ids; remote list membership
+is external.
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. Some of the remaining pieces are
 locally implementable and remain on the roadmap; only the parts that need a
@@ -71,7 +82,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all thirty-four routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all forty-three routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -122,6 +133,15 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `POST {prefix}/accounts/{id}/mute` | yes | `write:mutes` | 30 / 900 s |
 | `POST {prefix}/accounts/{id}/unmute` | yes | `write:mutes` | 30 / 900 s |
 | `GET {prefix}/mutes` | yes | `read:mutes` | 60 / 60 s |
+| `GET {prefix}/lists` | yes | `read:lists` | 60 / 60 s |
+| `POST {prefix}/lists` | yes | `write:lists` | 30 / 900 s |
+| `GET {prefix}/lists/{id}` | yes | `read:lists` | 60 / 60 s |
+| `PUT {prefix}/lists/{id}` | yes | `write:lists` | 30 / 900 s |
+| `DELETE {prefix}/lists/{id}` | yes | `write:lists` | 30 / 900 s |
+| `GET {prefix}/lists/{id}/accounts` | yes | `read:lists` | 60 / 60 s |
+| `POST {prefix}/lists/{id}/accounts` | yes | `write:lists` | 30 / 900 s |
+| `DELETE {prefix}/lists/{id}/accounts` | yes | `write:lists` | 30 / 900 s |
+| `GET {prefix}/timelines/list/{list_id}` | yes | `read:lists` | 60 / 60 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/{id}` | no | — | 120 / 60 s |
 | `GET {prefix}/accounts/{id}/followers` | no | — | 60 / 60 s |
@@ -134,10 +154,10 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/search` | yes | `read:search` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`,
-`read:follows`, `read:bookmarks`, `read:mutes`, `read:notifications` and
-`read:search`, `write` grants `write:favourites`, `write:bookmarks`,
-`write:mutes`, `write:follows`, `write:media` and `write:notifications`);
-a granular scope does
+`read:follows`, `read:bookmarks`, `read:mutes`, `read:lists`,
+`read:notifications` and `read:search`, `write` grants `write:favourites`,
+`write:bookmarks`, `write:mutes`, `write:lists`, `write:follows`,
+`write:media` and `write:notifications`); a granular scope does
 not grant its parent.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
@@ -147,8 +167,8 @@ the budget, exactly like the rest of the core API.
 The local-account directory, when supplied, is checked for
 `verify_credentials`, status creation, favourite/unfavourite,
 bookmark/unbookmark, follow/unfollow, relationships, notifications, media
-management, account profiles, follower and following lists, account statuses
-and account search. Without a directory the
+management, account profiles, follower and following lists, list membership,
+account statuses and account search. Without a directory the
 core cannot distinguish local from remote
 account ids; a host that enables this API should always pass one.
 
@@ -234,6 +254,77 @@ authenticated viewer boosted the status. A reblog is projected as the outer
 status with the booster as `account`, the boost id/timestamp, and the original
 status nested under `reblog`; fetching that boost id through `GET /statuses/{id}`
 returns the same wrapper.
+
+## Private lists and the list timeline
+
+Lists are private to the signed-in local account. They contain local account
+ids only; the core does not fetch a remote list or store a remote membership.
+All nine routes require a local account and are gated by `read:lists` or
+`write:lists`.
+
+```http
+POST {prefix}/lists
+Content-Type: application/x-www-form-urlencoded
+
+title=Close%20friends&replies_policy=list&exclusive=true
+GET {prefix}/lists
+GET {prefix}/lists/list-abc
+PUT {prefix}/lists/list-abc
+Content-Type: application/x-www-form-urlencoded
+
+title=Family&replies_policy=none&exclusive=false
+DELETE {prefix}/lists/list-abc
+```
+
+A list object is `{id, title, replies_policy, exclusive}`. `title` is required
+on create, trimmed and limited to 255 characters. `replies_policy` is
+`followed` (the default), `list` or `none`; `exclusive` defaults to `false`.
+`PUT` changes only the supplied fields and an empty update leaves the list
+unchanged. `GET /lists` returns all lists of the caller, newest first, without
+pagination. An id that exists for another user is indistinguishable from a
+missing one and answers `404 not_found`.
+
+```http
+GET {prefix}/lists/list-abc/accounts?limit=40&max_id=bob
+Link: <https://social.example/api/mastodon/v1/lists/list-abc/accounts?limit=40&max_id=bob>; rel="next"
+POST {prefix}/lists/list-abc/accounts
+Content-Type: application/x-www-form-urlencoded
+
+account_ids[]=bob&account_ids[]=carol
+DELETE {prefix}/lists/list-abc/accounts
+Content-Type: application/x-www-form-urlencoded
+
+account_ids[]=bob
+```
+
+The membership routes accept one to 100 `account_ids[]` values. Every id must
+be a known local account; an unknown or remote id is `404 not_found` and the
+whole write is refused. Adding an existing member or removing an absent one is
+idempotent, and both writes answer `200 {}`. The accounts page defaults to 40
+and is clamped to 1–80; `max_id`, `since_id`/`min_id` are
+ownership-checked account cursors, combining the two directions is `422`, and
+a non-empty page carries the usual `Link`.
+
+```http
+GET {prefix}/timelines/list/list-abc?limit=20&max_id=status-id
+```
+
+`GET /timelines/list/{list_id}` merges the members' local posts and boosts,
+newest first, and applies the same visibility, block and mute rules as the
+home timeline. Direct posts are always omitted; a followers-only post appears
+only when the viewer follows its author. Replies are filtered by the list's
+`replies_policy`: `none` removes every reply, `list` keeps replies to members,
+and `followed` keeps replies to accounts the viewer follows or to the viewer.
+The page uses the first-list argument as its cursor, defaults to 20, is clamped
+to 1–40 and returns the usual status `Link`; the cursor must resolve to a
+stored status or boost. A host without `AccountListRepository` answers `503
+lists_not_configured`.
+
+An `exclusive` list hides its members from `GET /api/v1/timelines/home` for
+its owner. The local-follow decorator applies the same filter to their posts
+and to boosts authored by them or of their posts. The membership table is not
+a second follow graph and does not affect followers/following counts or the
+ActivityPub collections.
 
 ## Reading local profiles and follow lists
 
@@ -823,6 +914,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
 | `bookmarks_not_configured` | 503 | The assembly has no `BookmarkRepository` |
 | `mutes_not_configured` | 503 | The assembly has no `MuteService` |
+| `lists_not_configured` | 503 | The assembly has no `AccountListRepository` |
 | `notifications_not_configured` | 503 | The assembly has no `NotificationRepository` |
 | `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
@@ -909,6 +1001,29 @@ CREATE TABLE social_mute (
 CREATE INDEX social_mute_user ON social_mute (user_id, created_at, actor_id);
 CREATE INDEX social_mute_actor ON social_mute (actor_id);
 
+CREATE TABLE social_account_list (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  user_id VARCHAR(255) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  replies_policy VARCHAR(16) NOT NULL,
+  exclusive SMALLINT NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  updated_at VARCHAR(20) NOT NULL
+);
+CREATE INDEX social_account_list_user
+  ON social_account_list (user_id, created_at, id);
+
+CREATE TABLE social_account_list_member (
+  list_id VARCHAR(64) NOT NULL,
+  account_id VARCHAR(255) NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  PRIMARY KEY (list_id, account_id)
+);
+CREATE INDEX social_account_list_member_account
+  ON social_account_list_member (account_id);
+CREATE INDEX social_account_list_member_list
+  ON social_account_list_member (list_id, created_at, account_id);
+
 CREATE TABLE social_boost (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   user_id VARCHAR(255) NOT NULL,
@@ -981,7 +1096,11 @@ and notification filtering need `social_mute` from `MuteSchema::create()`;
 its composite primary key is the upsert boundary, its
 `(user_id, created_at, actor_id)` index serves the list cursor and its
 `expires_at` is compared with `now` on read. There is no backfill and no public
-count; an expired row can be pruned by the host at any time. Boost/reblog routes and status counts need `social_boost` from
+count; an expired row can be pruned by the host at any time. List routes and
+the exclusive home filter need both tables from `AccountListSchema::create()`;
+membership is keyed by `(list_id, account_id)`, so a repeated add is
+idempotent, and deleting a list removes its membership rows. There is no
+backfill and no remote membership. Boost/reblog routes and status counts need `social_boost` from
 `BoostSchema::create()` for the same reason; a boost row survives a post
 soft-delete for the host's cleanup policy. An existing host
 must likewise create
@@ -1026,7 +1145,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The thirty-four routes are in the manifest with auth, scope and rate-limit metadata.
+The forty-three routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -1046,7 +1165,10 @@ viewer flag, newest-first list, cursor pages, auth/scope/disabled, invisible
 and deleted statuses), local mutes (pair/upsert idempotency, notification flag,
 duration/expiry, `muting`/`muted` projection, home-timeline and notification
 filtering, remote actor list projection, cursor, self/unknown/invalid
-settings, auth/scope/disabled), local follow/unfollow (relationship flags,
+settings, auth/scope/disabled), private lists (CRUD, defaults and trimming,
+ownership, membership add/remove idempotency, account and status cursors,
+list timeline visibility, replies policies, boosts, mutes and the exclusive
+home filter, auth/scope/disabled), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
 disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
@@ -1065,8 +1187,8 @@ profile lists; the follower contract also covers local edges, their exclusion
 from delivery inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
-three relationship routes, the three mute routes, the four notification routes
-and search. The post
+three relationship routes, the three mute routes, the nine list routes, the
+four notification routes and search. The post
 repository contract still covers the id-aware cursor used by the API, and now
 also the `PostSearchRepository` match, visibility, author-filter and offset
 contract for both the in-memory and PDO implementations; the in-memory
@@ -1082,15 +1204,16 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   `Like`/`Undo` and remote counts), remote boost federation, remote
   notifications, streaming and remote search need remote data the core does
   not fetch for this surface. Local boosts/reblogs, private bookmarks, local
-  mutes, notification listing and local status/actor search are done above.
+  mutes, private lists, notification listing and local status/actor search are
+  done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
   Remote profile fetching, remote relationship APIs, remote polls (fetching,
   voting or federating a `Question`), domain blocks that would need a remote
   moderation feed, and remote search remain external; the local
   follow/unfollow, relationship, profile, follower/following list,
-  bookmark, mute, notification, search, poll-creation/voting and instance
-  views above are done.
+  bookmark, mute, list, notification, search, poll-creation/voting and
+  instance views above are done.
 - Following a remote actor through the compatibility prefix is not part of
   this slice. The public profile lists project remote follow edges that are
   already stored locally, but they never fetch a remote collection; moderation

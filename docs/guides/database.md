@@ -29,6 +29,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
 - `src/Domain/Federation/MuteSchema.php` → `social_mute` (private per-user mutes of local accounts or remote actor URLs, with a nullable expiry)
+- `src/Domain/Timeline/AccountListSchema.php` → `social_account_list` and `social_account_list_member` (private lists and their local account membership)
 - `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
@@ -127,7 +128,16 @@ remote actor URL, and stores the notification flag plus a nullable
 `expires_at`. Reads filter expired rows with `expires_at > now`, so a short
 mute stops hiding content without a cleanup job; the home query and the
 notification count both use the same table. There is no public count and no
-federation activity.
+federation activity. `social_account_list` stores a private list per local
+user with its title, replies policy and exclusive flag; the
+`(user_id, created_at, id)` index serves the owner's newest-first list.
+`social_account_list_member` stores ordered `(list_id, account_id,
+created_at)` rows with a composite primary key, so adding an existing member
+is idempotent and membership is shared across renames. It contains only known
+local account ids; deleting a list deletes its member rows, while an account
+deletion is a host cleanup concern. The exclusive flag is read by the
+local-follow home timeline to hide members' posts and boosts, not by a second
+follow table.
 
 Search has no table of its own: `PdoPostRepository` implements
 `PostSearchRepository` over the existing `social_post` rows, and the host's

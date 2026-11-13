@@ -29,6 +29,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Private Mastodon-compatible lists: `POST/GET {mastodon.prefix}/lists`
+  create and list the caller's private lists, and `GET`/`PUT`/`DELETE
+  {mastodon.prefix}/lists/{id}` read, update and delete one. A list carries a
+  trimmed title, a `replies_policy` of `followed`, `list` or `none` and an
+  `exclusive` flag. `GET`/`POST`/`DELETE
+  {mastodon.prefix}/lists/{id}/accounts` page, add and remove known local
+  account ids idempotently, with ownership-checked cursors, a `Link` header and
+  at most 100 ids per write. `GET
+  {mastodon.prefix}/timelines/list/{list_id}` merges the members' local posts
+  and boosts with the normal visibility, block and mute filters, applies the
+  replies policy, and uses the usual status cursor. An exclusive list hides
+  its members from the local-follow home timeline. The routes require
+  `write:lists`/`read:lists`. `AccountList`/`AccountListRepository`,
+  `ListRepliesPolicy`, in-memory and PDO adapters, `AccountListSchema`,
+  `AccountListService`, HTTP/domain/host/timeline tests and the host migration
+  documentation are included.
 - Local Mastodon-compatible mutes: `POST
   {mastodon.prefix}/accounts/{id}/mute` stores one private mute per local
   account and local account id or remote actor URL, with an optional

@@ -567,6 +567,46 @@ notification pagination uses the id-aware cursor on `PostRepository` or
 `NotificationRepository`; search uses a clamped `offset`. See
 [Mastodon-compatible API](guides/mastodon-api.md).
 
+Private lists reuse the same post, follow, block and mute stores:
+
+```
+POST {mastodon.prefix}/lists
+  └─ AccountListService::create
+      └─ AccountListRepository::insert    social_account_list
+
+POST {mastodon.prefix}/lists/{id}/accounts
+  └─ AccountListService::addMembers
+      └─ AccountListRepository::addMembers
+          └─ membership rows               social_account_list_member
+
+GET {mastodon.prefix}/timelines/list/{list_id}
+  └─ MastodonService::listTimeline
+      ├─ AccountListRepository::memberIds      owned list only
+      ├─ PostRepository::timelineForAuthors    public/unlisted, viewer-visible followers-only
+      ├─ BoostRepository::timelineForUsers     member boosts
+      ├─ MuteService / BlockRepository         viewer filters
+      └─ replies_policy                       none / list / followed
+
+GET /api/v1/timelines/home
+  └─ LocalFollowHomeTimelineRepository
+      └─ AccountListRepository::exclusiveActorIds
+          └─ excludes members and their boosts from followed local authors
+```
+
+A list belongs to exactly one local user; every read, update, delete and
+membership query takes the owner id, so a foreign id is `404`. Membership is
+keyed by `(list_id, account_id)` and only accepts known local account ids; it
+is not a follow edge and never federates. The list timeline is a read-time
+merge, not a materialized timeline: member posts and boosts are fetched with
+the same cursor as the public timeline, counted once per entry, then filtered
+for direct visibility, followers-only access, mutes, blocks, replies policy and
+the requested cursor. `replies_policy` is evaluated against the parent author:
+`none` drops every reply, `list` keeps replies to a member, and `followed`
+keeps replies to a followed local account or the viewer. The exclusive flag
+is consulted by the local-follow home decorator for the owner only; it hides
+posts authored by members and boosts authored by them or of their posts while
+leaving the follow graph and the ActivityPub collections unchanged.
+
 ## Following an actor
 
 ```
@@ -756,7 +796,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local boosts/reblogs, reply context, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, private lists, local boosts/reblogs, reply context, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screen; the package under `ui/` is now extracted |

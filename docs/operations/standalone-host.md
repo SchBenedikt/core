@@ -15,14 +15,15 @@ This document is the checklist that host is built against.
    statements (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
    `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
-   `JobSchema`, `ActivityLogSchema`) from the migration step.
+   `AccountListSchema`, `JobSchema`, `ActivityLogSchema`) from the migration step.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because
    `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_bookmark`, `social_boost` and
    `social_notification` are needed only when favourite/unfavourite,
    bookmark/unbookmark and its list, boost/reblog and notification listing,
    dismiss/clear and unread counts are
-   exposed. There is
+   exposed. `social_account_list` and `social_account_list_member` are needed
+   only for the Mastodon list routes and the exclusive home filter. There is
    no backfill. Existing listing-only `social_notification` tables need the
    nullable `read_at` column and the unread index from
    `NotificationSchema`; old rows remain unread. Local search needs
@@ -51,8 +52,9 @@ This document is the checklist that host is built against.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
    `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`,
-   `PdoBookmarkRepository`, `PdoMuteRepository` and `PdoNotificationRepository` when local
-   favourites, bookmarks, mutes and notifications
+   `PdoBookmarkRepository`, `PdoMuteRepository`, `PdoAccountListRepository` and
+   `PdoNotificationRepository` when local
+   favourites, bookmarks, mutes, lists and notifications
    are exposed, and the combined `PdoHomeTimelineRepository`. The PDO post and
    remote-post repositories already implement `PostCount` and
    `RemoteDomainCount`; a custom local directory should implement
@@ -60,8 +62,8 @@ This document is the checklist that host is built against.
    otherwise `user_count` stays `0`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery
-   handler, `BlockService`, and `MediaService` with a `BlobStore` and an
-   `ImageProcessor`.
+   handler, `BlockService`, `AccountListService` for private lists, and
+   `MediaService` with a `BlobStore` and an `ImageProcessor`.
 8. **Inbound** — `HttpActorResolver` over the HTTP client, `PdoActivityLog`,
    `InboxService` and, when `social_remote_post` exists, a `RemotePostRepository`
    for signed Create/Delete/Announce. Both `/inbox` and `/inbox/shared` use

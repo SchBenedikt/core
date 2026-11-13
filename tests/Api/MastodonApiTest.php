@@ -1496,6 +1496,282 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(404, $this->mutes($disabled)->status);
 	}
 
+	public function testListsCanBeCreatedReadUpdatedAndDeleted(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+
+		$created = $this->listRequest($app, 'POST', '/lists', [
+			'title' => '  Friends  ',
+			'replies_policy' => 'list',
+			'exclusive' => 'true',
+		], scopes: ['write:lists']);
+		self::assertSame(200, $created->status);
+		$list = $created->decodedBody();
+		self::assertSame('Friends', $list['title']);
+		self::assertSame('list', $list['replies_policy']);
+		self::assertTrue($list['exclusive']);
+		self::assertNotSame('', $list['id']);
+
+		$defaults = $this->listRequest($app, 'POST', '/lists', [
+			'title' => 'Later',
+		], scopes: ['write:lists'])->decodedBody();
+		self::assertSame('followed', $defaults['replies_policy']);
+		self::assertFalse($defaults['exclusive']);
+
+		$all = $this->listRequest($app, 'GET', '/lists');
+		self::assertSame(200, $all->status);
+		self::assertCount(2, $all->decodedBody());
+		self::assertContains($list['id'], array_column($all->decodedBody(), 'id'));
+
+		$show = $this->listRequest($app, 'GET', '/lists/' . $list['id']);
+		self::assertSame(200, $show->status);
+		self::assertSame('Friends', $show->decodedBody()['title']);
+
+		$updated = $this->listRequest($app, 'PUT', '/lists/' . $list['id'], [
+			'title' => 'Close friends',
+			'replies_policy' => 'none',
+			'exclusive' => '0',
+		], scopes: ['write:lists']);
+		self::assertSame(200, $updated->status);
+		self::assertSame('Close friends', $updated->decodedBody()['title']);
+		self::assertSame('none', $updated->decodedBody()['replies_policy']);
+		self::assertFalse($updated->decodedBody()['exclusive']);
+
+		$added = $this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob', 'carol', 'bob'],
+		], scopes: ['write:lists']);
+		self::assertSame(200, $added->status);
+
+		$accounts = $this->listRequest($app, 'GET', '/lists/' . $list['id'] . '/accounts', query: ['limit' => '1']);
+		self::assertSame(200, $accounts->status);
+		self::assertCount(1, $accounts->decodedBody());
+		self::assertSame('carol', $accounts->decodedBody()[0]['id']);
+		self::assertStringContainsString('max_id=carol', $accounts->headers['Link']);
+
+		$next = $this->listRequest($app, 'GET', '/lists/' . $list['id'] . '/accounts', query: [
+			'limit' => '1',
+			'max_id' => 'carol',
+		]);
+		self::assertSame(200, $next->status);
+		self::assertSame('bob', $next->decodedBody()[0]['id']);
+
+		$removed = $this->listRequest($app, 'DELETE', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob'],
+		], scopes: ['write:lists']);
+		self::assertSame(200, $removed->status);
+		self::assertSame(
+			['carol'],
+			array_column($this->listRequest($app, 'GET', '/lists/' . $list['id'] . '/accounts')->decodedBody(), 'id'),
+		);
+
+		self::assertSame(404, $this->listRequest($app, 'GET', '/lists/' . $list['id'], userId: 'bob')->status);
+		self::assertSame(404, $this->listRequest($app, 'PUT', '/lists/' . $list['id'], [
+			'title' => 'Stolen',
+		], scopes: ['write:lists'], userId: 'bob')->status);
+
+		$deleted = $this->listRequest($app, 'DELETE', '/lists/' . $list['id'], scopes: ['write:lists']);
+		self::assertSame(200, $deleted->status);
+		self::assertSame([], $deleted->decodedBody());
+		self::assertSame(404, $this->listRequest($app, 'GET', '/lists/' . $list['id'])->status);
+	}
+
+	public function testListTimelinePagesMembersAndAppliesRepliesVisibilityAndMutes(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol', 'dave']);
+		$bobRoot = $this->createStatus($app, ['status' => 'bob root'], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+		$carolReply = $this->createStatus($app, [
+			'status' => 'carol replies to bob',
+			'in_reply_to_id' => $bobRoot['id'],
+		], userId: 'carol')->decodedBody();
+		$this->clock->advance(1);
+		$bobFollowers = $this->createStatus($app, [
+			'status' => 'bob followers only',
+			'visibility' => 'private',
+		], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+		$carolFollowers = $this->createStatus($app, [
+			'status' => 'carol followers only',
+			'visibility' => 'private',
+		], userId: 'carol')->decodedBody();
+		$this->clock->advance(1);
+		$daveRoot = $this->createStatus($app, ['status' => 'dave root'], userId: 'dave')->decodedBody();
+		$this->clock->advance(1);
+		$bobToDave = $this->createStatus($app, [
+			'status' => 'bob replies to dave',
+			'in_reply_to_id' => $daveRoot['id'],
+		], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+		$carolPublic = $this->createStatus($app, ['status' => 'carol public'], userId: 'carol')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$list = $this->listRequest($app, 'POST', '/lists', ['title' => 'Friends'], scopes: ['write:lists'])->decodedBody();
+		$this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob', 'carol'],
+		], scopes: ['write:lists']);
+
+		$timeline = $this->listRequest($app, 'GET', '/timelines/list/' . $list['id']);
+		self::assertSame(200, $timeline->status);
+		$ids = array_column($timeline->decodedBody(), 'id');
+		self::assertContains($bobRoot['id'], $ids);
+		self::assertContains($carolReply['id'], $ids);
+		self::assertContains($bobFollowers['id'], $ids);
+		self::assertNotContains($carolFollowers['id'], $ids, 'A followers-only post from an unfollowed member must stay hidden.');
+		self::assertNotContains($daveRoot['id'], $ids);
+		self::assertNotContains($bobToDave['id'], $ids);
+
+		$this->listRequest($app, 'PUT', '/lists/' . $list['id'], [
+			'replies_policy' => 'list',
+		], scopes: ['write:lists']);
+		$ids = array_column($this->listRequest($app, 'GET', '/timelines/list/' . $list['id'])->decodedBody(), 'id');
+		self::assertContains($carolReply['id'], $ids);
+		self::assertNotContains($bobToDave['id'], $ids);
+
+		$this->listRequest($app, 'PUT', '/lists/' . $list['id'], [
+			'replies_policy' => 'none',
+		], scopes: ['write:lists']);
+		$ids = array_column($this->listRequest($app, 'GET', '/timelines/list/' . $list['id'])->decodedBody(), 'id');
+		self::assertContains($bobRoot['id'], $ids);
+		self::assertContains($bobFollowers['id'], $ids);
+		self::assertNotContains($carolReply['id'], $ids);
+
+		$this->muteAccount($app, 'bob');
+		$ids = array_column($this->listRequest($app, 'GET', '/timelines/list/' . $list['id'])->decodedBody(), 'id');
+		self::assertNotContains($bobRoot['id'], $ids);
+		self::assertNotContains($bobFollowers['id'], $ids);
+		self::assertContains($carolPublic['id'], $ids, 'Muting bob must not hide carol.');
+		self::assertNotContains($carolFollowers['id'], $ids);
+	}
+
+	public function testListTimelinePagesWithItsOwnLinkAndRejectsCombinedCursors(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$first = $this->createStatus($app, ['status' => 'old'], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+		$second = $this->createStatus($app, ['status' => 'new'], userId: 'bob')->decodedBody();
+
+		$list = $this->listRequest($app, 'POST', '/lists', ['title' => 'Paged'], scopes: ['write:lists'])->decodedBody();
+		$this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob'],
+		], scopes: ['write:lists']);
+
+		$page = $this->listRequest($app, 'GET', '/timelines/list/' . $list['id'], query: ['limit' => '1']);
+		self::assertSame(200, $page->status);
+		self::assertSame($second['id'], $page->decodedBody()[0]['id']);
+		self::assertStringContainsString('max_id=' . $second['id'], $page->headers['Link']);
+
+		$next = $this->listRequest($app, 'GET', '/timelines/list/' . $list['id'], query: [
+			'limit' => '1',
+			'max_id' => $second['id'],
+		]);
+		self::assertSame(200, $next->status);
+		self::assertSame($first['id'], $next->decodedBody()[0]['id']);
+
+		$combined = $this->listRequest($app, 'GET', '/timelines/list/' . $list['id'], query: [
+			'max_id' => $second['id'],
+			'since_id' => $first['id'],
+		]);
+		self::assertSame(422, $combined->status);
+
+		$missing = $this->listRequest($app, 'GET', '/timelines/list/ghost');
+		self::assertSame(404, $missing->status);
+	}
+
+	public function testListTimelineIncludesBoostsByListMembers(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'dave']);
+		$daveStatus = $this->createStatus($app, ['status' => 'boosted by bob'], userId: 'dave')->decodedBody();
+		$boosted = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $daveStatus['id'] . '/reblog',
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $boosted->status);
+
+		$list = $this->listRequest($app, 'POST', '/lists', ['title' => 'Boosters'], scopes: ['write:lists'])->decodedBody();
+		$this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob'],
+		], scopes: ['write:lists']);
+
+		$timeline = $this->listRequest($app, 'GET', '/timelines/list/' . $list['id']);
+		self::assertSame(200, $timeline->status);
+		self::assertCount(1, $timeline->decodedBody());
+		self::assertSame($boosted->decodedBody()['id'], $timeline->decodedBody()[0]['id']);
+		self::assertSame($daveStatus['id'], $timeline->decodedBody()[0]['reblog']['id']);
+		self::assertSame('bob', $timeline->decodedBody()[0]['account']['id']);
+	}
+
+	public function testExclusiveListsHideTheirMembersFromTheHomeTimeline(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$bobStatus = $this->createStatus($app, ['status' => 'from bob'], userId: 'bob')->decodedBody();
+		$this->followAccount($app, 'bob');
+		self::assertContains($bobStatus['id'], array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id'));
+
+		$list = $this->listRequest($app, 'POST', '/lists', [
+			'title' => 'Quiet',
+			'exclusive' => 'true',
+		], scopes: ['write:lists'])->decodedBody();
+		$this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob'],
+		], scopes: ['write:lists']);
+
+		self::assertNotContains($bobStatus['id'], array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id'));
+
+		$this->listRequest($app, 'PUT', '/lists/' . $list['id'], [
+			'exclusive' => 'false',
+		], scopes: ['write:lists']);
+		self::assertContains($bobStatus['id'], array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id'));
+	}
+
+	public function testListRoutesEnforceAuthScopesValidationAndDisabledFeature(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+
+		self::assertSame(401, $this->listRequest($app, 'GET', '/lists', userId: null)->status);
+		self::assertSame(403, $this->listRequest($app, 'GET', '/lists', scopes: ['write:lists'])->status);
+		self::assertSame(403, $this->listRequest($app, 'POST', '/lists', [
+			'title' => 'Nope',
+		], scopes: ['read:lists'])->status);
+
+		$missingTitle = $this->listRequest($app, 'POST', '/lists', [], scopes: ['write:lists']);
+		self::assertSame(422, $missingTitle->status);
+		self::assertArrayHasKey('title', $missingTitle->decodedBody()['error']['fields']);
+
+		$badPolicy = $this->listRequest($app, 'POST', '/lists', [
+			'title' => 'Bad',
+			'replies_policy' => 'everyone',
+		], scopes: ['write:lists']);
+		self::assertSame(422, $badPolicy->status);
+		self::assertArrayHasKey('replies_policy', $badPolicy->decodedBody()['error']['fields']);
+
+		$list = $this->listRequest($app, 'POST', '/lists', ['title' => 'Valid'], scopes: ['write:lists'])->decodedBody();
+		self::assertSame(404, $this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['ghost'],
+		], scopes: ['write:lists'])->status);
+		self::assertSame(422, $this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [], scopes: ['write:lists'])->status);
+		self::assertSame(404, $this->listRequest($app, 'POST', '/lists/' . $list['id'] . '/accounts', [
+			'account_ids' => ['bob'],
+		], scopes: ['write:lists'], userId: 'bob')->status);
+
+		$disabled = $this->app(enabled: false, actors: ['alice']);
+		self::assertSame(404, $this->listRequest($disabled, 'GET', '/lists')->status);
+		self::assertSame(404, $this->listRequest($disabled, 'POST', '/lists', ['title' => 'Hidden'], scopes: ['write:lists'])->status);
+	}
+
 	public function testLocalFollowUnfollowAndRelationshipsAreIdempotent(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -2795,6 +3071,31 @@ final class MastodonApiTest extends TestCase
 		return $app->handle(new Request(
 			method: 'GET',
 			path: $prefix . '/polls/' . rawurlencode($pollId),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, mixed> $fields
+	 * @param array<string, mixed> $query
+	 * @param list<string>         $scopes
+	 */
+	private function listRequest(
+		Application $app,
+		string $method,
+		string $path,
+		array $fields = [],
+		array $query = [],
+		array $scopes = ['read:lists'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: $method,
+			path: MastodonApiConfig::DEFAULT_PREFIX . $path,
+			query: $query,
+			headers: $fields === [] ? [] : ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: $fields === [] ? '' : http_build_query($fields),
 			userId: $userId,
 			scopes: $scopes,
 		));

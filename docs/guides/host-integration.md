@@ -89,6 +89,7 @@ $app = Application::forHost(
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
     hostResolver: $dns,          // optional; default is DnsHostResolver
+    accountListRepository: null,  // optional; default is PdoAccountListRepository($database)
     atprotoAccounts: $atprotoAccounts, // optional; enables AT Protocol publishing
     atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http)
     atprotoPublications: null,   // optional; default is PdoAtprotoPublicationRepository($database)
@@ -110,7 +111,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
-| `$app->mastodon` | Mastodon compatibility service, including status creation with an optional poll, media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, local notification listing/dismiss/clear/unread state through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
+| `$app->mastodon` | Mastodon compatibility service, including status creation with an optional poll, media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, private lists and list timelines through `AccountListService`, local notification listing/dismiss/clear/unread state through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
 deliveries on restart, and an in-memory replay guard accepts the same activity
@@ -202,6 +203,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `BookmarkSchema` → `social_bookmark` (private per-user bookmarks; `(user_id, post_id)` primary key, newest-first cursor index)
 - `MuteSchema` → `social_mute` (private per-user mutes of local accounts or remote actor URLs; `(user_id, actor_id)` primary key, nullable `expires_at`, newest-first cursor index)
+- `AccountListSchema` → `social_account_list` and `social_account_list_member` (private per-user lists and their known-local-account membership; `(list_id, account_id)` primary key)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
@@ -245,7 +247,11 @@ soft-deleted post leaves its bookmark row for the host's cleanup policy. For
 local mutes, create `social_mute` from `MuteSchema::statements()` before
 exposing the mute routes, home-timeline filtering or notification filtering;
 active rows are filtered on read, an expired row is ignored without a cleanup
-job, and there is no backfill. For
+job, and there is no backfill. For private lists and their list timeline,
+create `social_account_list` and `social_account_list_member` from
+`AccountListSchema::statements()` before exposing the list routes or the
+exclusive home-timeline filter; deleting a list removes its member rows and
+there is no backfill or remote membership. For
 local boosts/reblogs, create `social_boost`
 from `BoostSchema::statements()` before exposing the reblog routes or status
 counts; the unique pair is the idempotency boundary, and a soft-deleted post

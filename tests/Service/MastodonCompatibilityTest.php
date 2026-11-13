@@ -238,4 +238,44 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame('30/900', $vote->rateLimit);
 		self::assertSame('/api/mastodon/v1/polls/{id}/votes', $vote->path);
 	}
+
+	public function testTheListRoutesCarryAuthScopesAndRateLimits(): void
+	{
+		$manifest = Routes::manifest();
+		$read = [
+			'mastodon.lists.list' => '/api/mastodon/v1/lists',
+			'mastodon.lists.show' => '/api/mastodon/v1/lists/{id}',
+			'mastodon.lists.accounts' => '/api/mastodon/v1/lists/{id}/accounts',
+			'mastodon.timelines.list' => '/api/mastodon/v1/timelines/list/{list_id}',
+		];
+
+		foreach ($read as $name => $path) {
+			$route = $manifest->find($name);
+
+			self::assertNotNull($route, $name);
+			self::assertTrue($route->requiresAuth);
+			self::assertSame(['read:lists'], $route->requiredScopes);
+			self::assertSame('60/60', $route->rateLimit);
+			self::assertSame($path, $route->path);
+		}
+
+		$write = [
+			'mastodon.lists.create' => ['/api/mastodon/v1/lists', 'POST'],
+			'mastodon.lists.update' => ['/api/mastodon/v1/lists/{id}', 'PUT'],
+			'mastodon.lists.delete' => ['/api/mastodon/v1/lists/{id}', 'DELETE'],
+			'mastodon.lists.accounts.add' => ['/api/mastodon/v1/lists/{id}/accounts', 'POST'],
+			'mastodon.lists.accounts.remove' => ['/api/mastodon/v1/lists/{id}/accounts', 'DELETE'],
+		];
+
+		foreach ($write as $name => [$path, $method]) {
+			$route = $manifest->find($name);
+
+			self::assertNotNull($route, $name);
+			self::assertTrue($route->requiresAuth);
+			self::assertSame(['write:lists'], $route->requiredScopes);
+			self::assertSame('30/900', $route->rateLimit);
+			self::assertSame($path, $route->path);
+			self::assertSame($method, $route->method);
+		}
+	}
 }

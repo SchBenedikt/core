@@ -1,0 +1,50 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Api\Mastodon;
+
+use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Service\Mastodon\MastodonService;
+
+/**
+ * `GET {mastodon.prefix}/timelines/list/{list_id}`
+ */
+final class MastodonListTimelineHandler extends MastodonHandler
+{
+	public function handle(Request $request): Response
+	{
+		$limit = $this->mastodon->clamp($request->queryInt(
+			'limit',
+			MastodonService::DEFAULT_LIMIT,
+			1,
+			MastodonService::MAX_LIMIT,
+		));
+
+		$statuses = $this->mastodon->listTimeline(
+			(string) $request->userId,
+			(string) $request->attribute('list_id', ''),
+			$limit,
+			$request->queryParam('max_id'),
+			$request->queryParam('since_id'),
+			$request->queryParam('min_id'),
+		);
+
+		$response = Response::json($statuses);
+		if ($statuses === []) {
+			return $response;
+		}
+
+		return $response->withHeader('Link', $this->nextLink(
+			$request,
+			(string) $statuses[array_key_last($statuses)]['id'],
+			$limit,
+		));
+	}
+}

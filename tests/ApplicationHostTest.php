@@ -28,6 +28,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
+use AlohaSocial\Core\Domain\Timeline\AccountListSchema;
 use AlohaSocial\Core\Domain\Post\BookmarkSchema;
 use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
@@ -85,7 +86,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(62, $app->routes->routes());
+		self::assertCount(71, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -359,6 +360,89 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(0, (int) $database->fetchValue(
 			'SELECT COUNT(*) FROM ' . MuteSchema::TABLE,
 		));
+	}
+
+	public function testForHostStoresListsAndUsesThemForListAndHomeTimelines(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true, actors: ['alice', 'bob']);
+
+		$bobStatus = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['status' => 'from bob']),
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $bobStatus->status);
+
+		$follow = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/accounts/bob/follow',
+			userId: 'alice',
+			scopes: ['write:follows'],
+		));
+		self::assertSame(200, $follow->status);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/lists',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['title' => 'SQL list', 'exclusive' => 'false']),
+			userId: 'alice',
+			scopes: ['write:lists'],
+		));
+		self::assertSame(200, $created->status);
+		$listId = $created->decodedBody()['id'];
+
+		$added = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/lists/' . $listId . '/accounts',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['account_ids' => ['bob']]),
+			userId: 'alice',
+			scopes: ['write:lists'],
+		));
+		self::assertSame(200, $added->status);
+
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . AccountListSchema::TABLE));
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . AccountListSchema::MEMBER_TABLE));
+
+		$listTimeline = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/timelines/list/' . $listId,
+			userId: 'alice',
+			scopes: ['read:lists'],
+		));
+		self::assertSame(200, $listTimeline->status);
+		self::assertSame([$bobStatus->decodedBody()['id']], array_column($listTimeline->decodedBody(), 'id'));
+
+		$home = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'));
+		self::assertContains($bobStatus->decodedBody()['id'], array_column($home->decodedBody()['posts'], 'id'));
+
+		$exclusive = $app->handle(new Request(
+			method: 'PUT',
+			path: '/api/mastodon/v1/lists/' . $listId,
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['exclusive' => 'true']),
+			userId: 'alice',
+			scopes: ['write:lists'],
+		));
+		self::assertSame(200, $exclusive->status);
+
+		$home = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'));
+		self::assertNotContains($bobStatus->decodedBody()['id'], array_column($home->decodedBody()['posts'], 'id'));
+
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/mastodon/v1/lists/' . $listId,
+			userId: 'alice',
+			scopes: ['write:lists'],
+		));
+		self::assertSame(200, $deleted->status);
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . AccountListSchema::TABLE));
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . AccountListSchema::MEMBER_TABLE));
 	}
 
 	public function testForHostStoresAPollWithItsStatusOverSql(): void
@@ -707,6 +791,7 @@ final class ApplicationHostTest extends TestCase
 		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
 		MuteSchema::create($database);
+		AccountListSchema::create($database);
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);
 		AtprotoPublicationSchema::create($database);
@@ -721,6 +806,7 @@ final class ApplicationHostTest extends TestCase
 		bool $mastodon = false,
 		bool $atproto = false,
 		?AtprotoAccountResolver $atprotoAccounts = null,
+		array $actors = ['alice'],
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
@@ -734,7 +820,7 @@ final class ApplicationHostTest extends TestCase
 			database: $database,
 			httpClient: $http,
 			signingKey: self::$key,
-			localActors: new InMemoryActorDirectory(['alice']),
+			localActors: new InMemoryActorDirectory($actors),
 			queue: new PdoJobQueue($database, $this->clock, new RandomIdGenerator()),
 			activityLog: new PdoActivityLog($database),
 			actorResolver: $actorResolver,

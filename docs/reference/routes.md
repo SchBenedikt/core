@@ -6,7 +6,8 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`).
+defaults to `/api/mastodon/v1`). There are 71 routes in total; 43 use the
+compatibility prefix.
 
 | Name | Method | Path | Auth | Rate limit |
 | --- | --- | --- | --- | --- |
@@ -56,6 +57,15 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.mute` | `POST` | `/api/mastodon/v1/accounts/{id}/mute` | yes, `write:mutes` | 30 / 900 s |
 | `mastodon.accounts.unmute` | `POST` | `/api/mastodon/v1/accounts/{id}/unmute` | yes, `write:mutes` | 30 / 900 s |
 | `mastodon.mutes` | `GET` | `/api/mastodon/v1/mutes` | yes, `read:mutes` | 60 / 60 s |
+| `mastodon.lists.list` | `GET` | `/api/mastodon/v1/lists` | yes, `read:lists` | 60 / 60 s |
+| `mastodon.lists.create` | `POST` | `/api/mastodon/v1/lists` | yes, `write:lists` | 30 / 900 s |
+| `mastodon.lists.show` | `GET` | `/api/mastodon/v1/lists/{id}` | yes, `read:lists` | 60 / 60 s |
+| `mastodon.lists.update` | `PUT` | `/api/mastodon/v1/lists/{id}` | yes, `write:lists` | 30 / 900 s |
+| `mastodon.lists.delete` | `DELETE` | `/api/mastodon/v1/lists/{id}` | yes, `write:lists` | 30 / 900 s |
+| `mastodon.lists.accounts` | `GET` | `/api/mastodon/v1/lists/{id}/accounts` | yes, `read:lists` | 60 / 60 s |
+| `mastodon.lists.accounts.add` | `POST` | `/api/mastodon/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
+| `mastodon.lists.accounts.remove` | `DELETE` | `/api/mastodon/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
+| `mastodon.timelines.list` | `GET` | `/api/mastodon/v1/timelines/list/{list_id}` | yes, `read:lists` | 60 / 60 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no; an optional token adds viewer-scoped rows | 60 / 60 s |
 | `mastodon.accounts.show` | `GET` | `/api/mastodon/v1/accounts/{id}` | no | 120 / 60 s |
 | `mastodon.accounts.followers` | `GET` | `/api/mastodon/v1/accounts/{id}/followers` | no | 60 / 60 s |
@@ -526,7 +536,7 @@ boost, queues `Undo(Announce)`, and answers `204` even when no boost existed.
 
 ## Mastodon-compatible API
 
-The thirty-four routes above are additive and disabled by default. Their paths use
+The forty-three routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -558,6 +568,27 @@ Content-Type: application/x-www-form-urlencoded
 notifications=1&duration=86400
 POST /api/mastodon/v1/accounts/bob/unmute
 GET /api/mastodon/v1/mutes?limit=40&max_id=bob
+GET /api/mastodon/v1/lists
+POST /api/mastodon/v1/lists
+Content-Type: application/x-www-form-urlencoded
+
+title=Close%20friends&replies_policy=list&exclusive=true
+GET /api/mastodon/v1/lists/list-abc
+PUT /api/mastodon/v1/lists/list-abc
+Content-Type: application/x-www-form-urlencoded
+
+title=Family&replies_policy=none&exclusive=false
+DELETE /api/mastodon/v1/lists/list-abc
+GET /api/mastodon/v1/lists/list-abc/accounts?limit=40&max_id=carol
+POST /api/mastodon/v1/lists/list-abc/accounts
+Content-Type: application/x-www-form-urlencoded
+
+account_ids[]=bob&account_ids[]=carol
+DELETE /api/mastodon/v1/lists/list-abc/accounts
+Content-Type: application/x-www-form-urlencoded
+
+account_ids[]=bob
+GET /api/mastodon/v1/timelines/list/list-abc?limit=20&max_id=status-id
 GET /api/mastodon/v1/accounts/bob/statuses?limit=20
 GET /api/mastodon/v1/accounts/bob
 GET /api/mastodon/v1/accounts/bob/followers
@@ -622,6 +653,22 @@ the cursor is an account id owned by the caller. Active mutes hide the target
 from the home timeline and, with `notifications`, from the notification list
 and unread count. Expired rows are ignored on read. An assembly without a
 `MuteService` answers `503 mutes_not_configured`.
+
+`GET /api/mastodon/v1/lists` returns the caller's private lists newest-first;
+`POST` creates one with a required `title` (trimmed, 255 characters),
+`replies_policy` (`followed` by default, `list` or `none`) and `exclusive`
+(`false` by default). `GET`/`PUT`/`DELETE /lists/{id}` read, partially update
+and delete an owned list; an id owned by another account is `404 not_found`.
+Membership is written through `POST`/`DELETE /lists/{id}/accounts` with one to
+100 `account_ids[]` values, all known local account ids; unknown ids refuse
+the whole write, and repeats are idempotent. `GET /lists/{id}/accounts`
+pages 1–80 local accounts with ownership-checked `max_id`/`since_id`/`min_id`
+and the usual `Link`. `GET /timelines/list/{list_id}` merges member posts and
+boosts with visibility, block and mute filtering. Its `replies_policy`
+controls replies: `none` omits them, `list` keeps replies to members and
+`followed` keeps replies to followed accounts or the viewer. An exclusive
+list hides its members from the local-follow home timeline. An assembly
+without `AccountListRepository` answers `503 lists_not_configured`.
 
 `POST /api/mastodon/v1/statuses/{id}/reblog` returns the Mastodon reblog
 wrapper: the outer status carries the boost id, time and booster account, and

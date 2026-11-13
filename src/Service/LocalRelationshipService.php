@@ -231,6 +231,29 @@ final class LocalRelationshipService
 	 *
 	 * @return list<string>
 	 */
+	/**
+	 * Local accounts the viewer blocks, with the actor URL mapped back to the
+	 * stable local id. Remote blocks stay out of this local read model.
+	 *
+	 * @return list<string>
+	 */
+	public function blockedAccountIds(string $userId): array
+	{
+		if ($this->blocks === null) {
+			return [];
+		}
+
+		$ids = [];
+		foreach ($this->blocks->actorIds($userId) as $actorId) {
+			$accountId = $this->accountIdForActor($actorId);
+			if ($this->actors->has($accountId)) {
+				$ids[$accountId] = $accountId;
+			}
+		}
+
+		return array_values($ids);
+	}
+
 	public function localFollowingUserIds(string $userId): array
 	{
 		// A local read model may still serve an account that left the host's

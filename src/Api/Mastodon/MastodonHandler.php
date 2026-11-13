@@ -19,8 +19,12 @@ use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\ValidationException;
 use stdClass;
 
+use function array_key_exists;
+use function in_array;
 use function is_array;
+use function is_int;
 use function is_string;
+use function strtolower;
 use function trim;
 
 /**
@@ -125,6 +129,100 @@ abstract class MastodonHandler implements Handler
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Reads a repeatable body field such as `account_ids[]`.
+	 *
+	 * Mastodon clients send the same field as a JSON array or as a form value
+	 * with brackets. A missing or empty list is a validation error, not an
+	 * empty successful write.
+	 *
+	 * @return list<string>
+	 */
+	protected function payloadIds(Request $request, string $name): array
+	{
+		$raw = $request->payload()[$name] ?? null;
+		if (!is_array($raw) || $raw === []) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				$name . ' must be a non-empty list of ids.',
+			);
+		}
+
+		$ids = [];
+		foreach ($raw as $value) {
+			if (!is_string($value) || trim($value) === '') {
+				throw new MastodonRequestException(
+					422,
+					'validation_failed',
+					$name . ' must contain non-empty strings.',
+				);
+			}
+
+			$ids[] = trim($value);
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * An optional string body field. `null` means the field was absent.
+	 */
+	protected function optionalPayloadString(Request $request, string $name): ?string
+	{
+		$body = $request->payload();
+		if (!array_key_exists($name, $body) || $body[$name] === null) {
+			return null;
+		}
+
+		if (!is_string($body[$name])) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				$name . ' must be a string.',
+			);
+		}
+
+		return $body[$name];
+	}
+
+	/**
+	 * An optional boolean body field. `null` means the field was absent.
+	 */
+	protected function optionalPayloadBoolean(Request $request, string $name): ?bool
+	{
+		$body = $request->payload();
+		if (!array_key_exists($name, $body) || $body[$name] === null) {
+			return null;
+		}
+
+		$value = $body[$name];
+		if (is_bool($value)) {
+			return $value;
+		}
+
+		if (is_int($value) && ($value === 0 || $value === 1)) {
+			return $value === 1;
+		}
+
+		if (is_string($value)) {
+			$normalized = strtolower(trim($value));
+			if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+				return true;
+			}
+
+			if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+				return false;
+			}
+		}
+
+		throw new MastodonRequestException(
+			422,
+			'validation_failed',
+			$name . ' must be a boolean.',
+		);
 	}
 
 	/**

@@ -29,16 +29,23 @@ use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAddListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarksHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDismissNotificationHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListAccountsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonListTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMutesHandler;
@@ -48,6 +55,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
@@ -56,6 +64,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnmuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
@@ -130,9 +139,12 @@ use AlohaSocial\Core\Domain\Post\PollVoteCounter;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
+use AlohaSocial\Core\Domain\Timeline\AccountListRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\InMemoryAccountListRepository;
 use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\LocalFollowHomeTimelineRepository;
+use AlohaSocial\Core\Domain\Timeline\PdoAccountListRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
@@ -165,6 +177,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
@@ -263,6 +276,7 @@ final readonly class Application
 		?BoostRepository $boostRepository = null,
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
+		?AccountListRepository $accountListRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -292,6 +306,7 @@ final readonly class Application
 		$boostRepository ??= new InMemoryBoostRepository();
 		$bookmarkRepository ??= new InMemoryBookmarkRepository();
 		$muteRepository ??= new InMemoryMuteRepository();
+		$accountListRepository ??= new InMemoryAccountListRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -330,6 +345,7 @@ final readonly class Application
 			boostRepository: $boostRepository,
 			bookmarkRepository: $bookmarkRepository,
 			muteRepository: $muteRepository,
+			accountListRepository: $accountListRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -390,6 +406,7 @@ final readonly class Application
 		?BoostRepository $boostRepository = null,
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
+		?AccountListRepository $accountListRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -400,6 +417,7 @@ final readonly class Application
 		$remotePosts = new PdoRemotePostRepository($database);
 		$blockRepository ??= new PdoBlockRepository($database);
 		$muteRepository ??= new PdoMuteRepository($database);
+		$accountListRepository ??= new PdoAccountListRepository($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -420,6 +438,7 @@ final readonly class Application
 			boostRepository: $boostRepository ?? new PdoBoostRepository($database),
 			bookmarkRepository: $bookmarkRepository ?? new PdoBookmarkRepository($database),
 			muteRepository: $muteRepository,
+			accountListRepository: $accountListRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -463,6 +482,7 @@ final readonly class Application
 		BoostRepository $boostRepository,
 		BookmarkRepository $bookmarkRepository,
 		MuteRepository $muteRepository,
+		AccountListRepository $accountListRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -493,6 +513,7 @@ final readonly class Application
 		$activities = new ActivityFactory($config);
 		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
 		$muteService = new MuteService($muteRepository, $clock);
+		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
 		$remotePostFactory = new RemotePostFactory($clock);
 
 		$mediaService = $blobStore === null
@@ -580,6 +601,7 @@ final readonly class Application
 				$boostRepository,
 				$muteRepository,
 				$clock,
+				$accountListRepository,
 			);
 		}
 		$timelines = new TimelineService($posts, $homeTimeline);
@@ -601,6 +623,7 @@ final readonly class Application
 			$boostService,
 			$bookmarkRepository,
 			$muteService,
+			$accountListService,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -747,6 +770,15 @@ final readonly class Application
 			->with(MastodonMuteAccountHandler::class, static fn (): MastodonMuteAccountHandler => new MastodonMuteAccountHandler($mastodonService))
 			->with(MastodonUnmuteAccountHandler::class, static fn (): MastodonUnmuteAccountHandler => new MastodonUnmuteAccountHandler($mastodonService))
 			->with(MastodonMutesHandler::class, static fn (): MastodonMutesHandler => new MastodonMutesHandler($mastodonService))
+			->with(MastodonListsHandler::class, static fn (): MastodonListsHandler => new MastodonListsHandler($mastodonService))
+			->with(MastodonCreateListHandler::class, static fn (): MastodonCreateListHandler => new MastodonCreateListHandler($mastodonService))
+			->with(MastodonListHandler::class, static fn (): MastodonListHandler => new MastodonListHandler($mastodonService))
+			->with(MastodonUpdateListHandler::class, static fn (): MastodonUpdateListHandler => new MastodonUpdateListHandler($mastodonService))
+			->with(MastodonDeleteListHandler::class, static fn (): MastodonDeleteListHandler => new MastodonDeleteListHandler($mastodonService))
+			->with(MastodonListAccountsHandler::class, static fn (): MastodonListAccountsHandler => new MastodonListAccountsHandler($mastodonService))
+			->with(MastodonAddListAccountsHandler::class, static fn (): MastodonAddListAccountsHandler => new MastodonAddListAccountsHandler($mastodonService))
+			->with(MastodonRemoveListAccountsHandler::class, static fn (): MastodonRemoveListAccountsHandler => new MastodonRemoveListAccountsHandler($mastodonService))
+			->with(MastodonListTimelineHandler::class, static fn (): MastodonListTimelineHandler => new MastodonListTimelineHandler($mastodonService))
 			->with(MastodonUpdateMediaHandler::class, static fn (): MastodonUpdateMediaHandler => new MastodonUpdateMediaHandler($mastodonService))
 			->with(MastodonDeleteMediaHandler::class, static fn (): MastodonDeleteMediaHandler => new MastodonDeleteMediaHandler($mastodonService))
 			->with(MastodonFavouriteStatusHandler::class, static fn (): MastodonFavouriteStatusHandler => new MastodonFavouriteStatusHandler($mastodonService))

@@ -30,11 +30,16 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Timeline\AccountList;
+use AlohaSocial\Core\Domain\Timeline\AccountListNotFoundException;
+use AlohaSocial\Core\Domain\Timeline\ListRepliesPolicy;
+use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
+use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\LocalRelationshipService;
@@ -95,6 +100,7 @@ final class MastodonService
 		private readonly ?BoostService $boostService = null,
 		private readonly ?BookmarkRepository $bookmarks = null,
 		private readonly ?MuteService $mutes = null,
+		private readonly ?AccountListService $lists = null,
 	) {
 	}
 
@@ -667,6 +673,183 @@ final class MastodonService
 		}
 
 		return $this->presenter->statuses($posts, $userId);
+	}
+
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	public function lists(string $userId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		return array_map(
+			static fn (AccountList $list): array => $list->toArray(),
+			$this->requireLists()->lists($userId),
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function list(string $userId, string $listId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		return $this->listEntity($this->ownedList($userId, $listId));
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function createList(
+		string $userId,
+		?string $title,
+		?string $repliesPolicy = null,
+		?bool $exclusive = null,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		return $this->listEntity($this->requireLists()->create(
+			$userId,
+			$title,
+			$repliesPolicy,
+			$exclusive,
+		));
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function updateList(
+		string $userId,
+		string $listId,
+		?string $title = null,
+		?string $repliesPolicy = null,
+		?bool $exclusive = null,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		try {
+			return $this->listEntity($this->requireLists()->update(
+				$userId,
+				$listId,
+				$title,
+				$repliesPolicy,
+				$exclusive,
+			));
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+	}
+
+	public function deleteList(string $userId, string $listId): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		try {
+			$this->requireLists()->delete($userId, $listId);
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+	}
+
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	public function listAccounts(
+		string $userId,
+		string $listId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		try {
+			$memberIds = $this->requireLists()->memberIds($userId, $listId);
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+
+		return $this->accountPage(
+			$memberIds,
+			$limit,
+			$maxId,
+			$sinceId,
+			$minId,
+		);
+	}
+
+	/**
+	 * @param list<string> $accountIds
+	 */
+	public function addListAccounts(string $userId, string $listId, array $accountIds): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		foreach ($accountIds as $accountId) {
+			$this->requireLocalAccount($accountId);
+		}
+
+		try {
+			$this->requireLists()->addMembers($userId, $listId, $accountIds);
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+	}
+
+	/**
+	 * @param list<string> $accountIds
+	 */
+	public function removeListAccounts(string $userId, string $listId, array $accountIds): void
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		foreach ($accountIds as $accountId) {
+			$this->requireLocalAccount($accountId);
+		}
+
+		try {
+			$this->requireLists()->removeMembers($userId, $listId, $accountIds);
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+	}
+
+	/**
+	 * The caller's private list timeline.
+	 *
+	 * A list only contains local accounts in this slice. Its timeline merges
+	 * member posts and boosts, applies the same mute/block and visibility
+	 * rules as the home timeline, and filters replies according to the list's
+	 * `replies_policy`.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function listTimeline(
+		string $userId,
+		string $listId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$list = $this->ownedList($userId, $listId);
+		[$before, $after] = $this->listCursor($maxId, $sinceId ?? $minId);
+
+		return $this->listStatuses(
+			$this->listEntries($list, $userId, $this->clamp($limit), $before, $after),
+			$userId,
+		);
 	}
 
 	/**
@@ -1400,6 +1583,230 @@ final class MastodonService
 		}
 
 		return $notification;
+	}
+
+	private function requireLists(): AccountListService
+	{
+		if ($this->lists === null) {
+			throw new MastodonRequestException(
+				503,
+				'lists_not_configured',
+				'List storage is not configured.',
+			);
+		}
+
+		return $this->lists;
+	}
+
+	private function ownedList(string $userId, string $listId): AccountList
+	{
+		try {
+			return $this->requireLists()->find($userId, $listId);
+		} catch (AccountListNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'List not found.');
+		}
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function listEntity(AccountList $list): array
+	{
+		return $list->toArray();
+	}
+
+	/**
+	 * @return list<TimelineEntry>
+	 */
+	private function listEntries(
+		AccountList $list,
+		string $viewerId,
+		int $limit,
+		?DateTimeImmutable $before,
+		?DateTimeImmutable $after,
+	): array {
+		$members = $this->requireLists()->memberIds($viewerId, $list->id);
+		if ($members === []) {
+			return [];
+		}
+
+		$memberSet = array_fill_keys($members, true);
+		$muted = array_fill_keys($this->mutes?->actorIds($viewerId) ?? [], true);
+		$blocked = array_fill_keys($this->relationships?->blockedAccountIds($viewerId) ?? [], true);
+		$following = $this->relationships === null
+			? []
+			: array_fill_keys($this->relationships->localFollowingUserIds($viewerId), true);
+		$scan = max(100, $limit * 4);
+		$entries = [];
+		$parents = [];
+
+		foreach ($this->posts->timelineForAuthors($members, $scan, $before) as $post) {
+			if ($post->visibility === Visibility::Direct
+				|| ($post->visibility === Visibility::Followers && !isset($following[$post->authorId]))
+			) {
+				continue;
+			}
+
+			if (isset($muted[$post->authorId]) || isset($blocked[$post->authorId])) {
+				continue;
+			}
+
+			if (!$this->includeListReply($post, $list, $viewerId, $memberSet, $following, $parents)) {
+				continue;
+			}
+
+			if ($after !== null && $post->publishedAt <= $after) {
+				continue;
+			}
+
+			$entries[] = TimelineEntry::fromPost($post);
+		}
+
+		foreach ($this->boosts?->timelineForUsers($members, $scan, $before) ?? [] as $boost) {
+			$post = $this->posts->find($boost->postId);
+			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
+				continue;
+			}
+
+			if (isset($muted[$boost->userId]) || isset($blocked[$boost->userId])) {
+				continue;
+			}
+
+			if (isset($muted[$post->authorId]) || isset($blocked[$post->authorId])) {
+				continue;
+			}
+
+			if (!$this->includeListReply($post, $list, $viewerId, $memberSet, $following, $parents)) {
+				continue;
+			}
+
+			if ($after !== null && $boost->createdAt <= $after) {
+				continue;
+			}
+
+			$entries[] = new TimelineEntry(
+				id: $boost->id,
+				authorId: $boost->userId,
+				objectId: $post->id,
+				objectAuthorId: $post->authorId,
+				content: $post->content,
+				contentWarning: $post->contentWarning,
+				publishedAt: $boost->createdAt,
+				visibility: $post->visibility,
+				boostedBy: $boost->userId,
+			);
+		}
+
+		usort($entries, static function (TimelineEntry $a, TimelineEntry $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($entries, 0, max(1, $limit));
+	}
+
+	/**
+	 * @param array<string, bool>       $members
+	 * @param array<string, bool>       $following
+	 * @param array<string, Post|null>  $parents
+	 */
+	private function includeListReply(
+		Post $post,
+		AccountList $list,
+		string $viewerId,
+		array $members,
+		array $following,
+		array &$parents,
+	): bool {
+		if ($post->inReplyToId === null) {
+			return true;
+		}
+
+		if ($list->repliesPolicy === ListRepliesPolicy::None) {
+			return false;
+		}
+
+		if (!array_key_exists($post->inReplyToId, $parents)) {
+			$parents[$post->inReplyToId] = $this->posts->find($post->inReplyToId);
+		}
+
+		$parent = $parents[$post->inReplyToId];
+		if ($parent === null || $parent->isDeleted()) {
+			return false;
+		}
+
+		return match ($list->repliesPolicy) {
+			ListRepliesPolicy::Members => isset($members[$parent->authorId]),
+			ListRepliesPolicy::Followed => $parent->authorId === $viewerId
+				|| isset($following[$parent->authorId]),
+			ListRepliesPolicy::None => false,
+		};
+	}
+
+	/**
+	 * @param list<TimelineEntry> $entries
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private function listStatuses(array $entries, string $viewerId): array
+	{
+		$statuses = [];
+		foreach ($entries as $entry) {
+			if ($entry->isBoost()) {
+				$boost = $this->boosts?->find($entry->id);
+				$post = $this->posts->find($entry->objectId);
+				if ($boost === null || $post === null || $post->isDeleted()) {
+					continue;
+				}
+
+				$statuses[] = $this->presenter->boostStatus($boost, $post, $viewerId);
+				continue;
+			}
+
+			$post = $this->posts->find($entry->id);
+			if ($post === null || $post->isDeleted()) {
+				continue;
+			}
+
+			$statuses[] = $this->presenter->status($post, $viewerId);
+		}
+
+		return $statuses;
+	}
+
+	/**
+	 * @return array{0: ?DateTimeImmutable, 1: ?DateTimeImmutable}
+	 */
+	private function listCursor(?string $maxId, ?string $sinceId): array
+	{
+		if ($maxId !== null && $maxId !== '' && $sinceId !== null && $sinceId !== '') {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'max_id and since_id/min_id cannot be combined.',
+			);
+		}
+
+		return [
+			$maxId === null || $maxId === '' ? null : $this->listCursorPoint($maxId),
+			$sinceId === null || $sinceId === '' ? null : $this->listCursorPoint($sinceId),
+		];
+	}
+
+	private function listCursorPoint(string $id): DateTimeImmutable
+	{
+		$post = $this->posts->find($id);
+		if ($post !== null && !$post->isDeleted()) {
+			return $post->publishedAt;
+		}
+
+		$boost = $this->boosts?->find($id);
+		if ($boost !== null) {
+			return $boost->createdAt;
+		}
+
+		throw new MastodonRequestException(404, 'not_found', 'Status cursor not found.');
 	}
 
 	private function requireRelationships(): LocalRelationshipService
