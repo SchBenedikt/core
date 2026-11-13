@@ -89,10 +89,14 @@ a PDS, `Domain\Atproto\AtprotoDeleter` removes a record this core published, and
 `Domain\Atproto\AtprotoSessionStore` persists the host-owned OAuth session.
 `XrpcAtprotoPublisher` is the production record adapter over the existing
 `HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
-OAuth refresh collaborators. Tests use fakes for the network and a fake proof
-provider where cryptography is not the subject. Account linking and the real
-credential store stay in the host; `InMemoryAtprotoSessionStore` is only the
-test/tool adapter. See [AT Protocol publishing](atproto.md).
+OAuth refresh collaborators. `AtprotoOAuthMetadataResolver` and
+`XrpcAtprotoOAuthClient` perform discovery, PAR, code exchange and revocation
+over the same `HttpClient`; `DpopKeyThumbprint` is an optional capability on
+the existing proof port for `dpop_jkt`. Tests use fakes for the network and a
+fake proof provider where cryptography is not the subject. The account-linking
+UI/callback, flow store, PDS selection and the real credential store stay in
+the host; `InMemoryAtprotoSessionStore` is only the test/tool adapter. See
+[AT Protocol publishing](atproto.md).
 
 ## Optional count capabilities
 

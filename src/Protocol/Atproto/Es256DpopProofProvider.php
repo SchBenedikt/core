@@ -38,7 +38,7 @@ use function trim;
  * signature is converted from OpenSSL's DER form to the raw R||S form JWS
  * requires.
  */
-final class Es256DpopProofProvider implements DpopProofProvider
+final class Es256DpopProofProvider implements DpopProofProvider, DpopKeyThumbprint
 {
 	private const CURVE = 'prime256v1';
 
@@ -82,6 +82,22 @@ final class Es256DpopProofProvider implements DpopProofProvider
 			'x' => $this->base64Url($this->coordinate($details['ec']['x'] ?? '')),
 			'y' => $this->base64Url($this->coordinate($details['ec']['y'] ?? '')),
 		];
+	}
+
+	/**
+	 * RFC 7638 thumbprint of the public JWK. AT Protocol PAR binds the
+	 * authorization request to this key with `dpop_jkt`.
+	 */
+	public function thumbprint(): string
+	{
+		$canonical = json_encode([
+			'crv' => $this->jwk['crv'],
+			'kty' => $this->jwk['kty'],
+			'x' => $this->jwk['x'],
+			'y' => $this->jwk['y'],
+		], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+		return $this->base64Url(hash('sha256', $canonical, true));
 	}
 
 	public function proof(string $method, string $url, ?string $nonce = null): string

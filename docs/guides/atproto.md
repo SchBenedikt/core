@@ -2,8 +2,9 @@
 
 The core owns a deliberately small, public, text-only AT Protocol publishing
 foundation. It owns deterministic record writes, the matching remote record
-delete for mirrored posts and the OAuth refresh exchange for a host-owned
-session. It does not own account linking, the credential store, the AppView or
+delete for mirrored posts, the OAuth refresh exchange for a host-owned session
+and the authorization-code/PAR/revocation protocol client. It does not own the
+account-linking UI/callback, the credential store, PDS selection, the AppView or
 a full repository client; those remain in the host or in a future standalone
 client. This guide describes the implemented seam, its limits and what a host
 must provide.
@@ -45,6 +46,23 @@ must provide.
   a session inside a 60-second expiry leeway and saves the rotated pair through
   the host-owned `AtprotoSessionStore`. `InMemoryAtprotoSessionStore` is the
   test/tool fake; the host keeps the real tokens in its secret store.
+- `Protocol\Atproto\AtprotoOAuthMetadataResolver` fetches the PDS
+  `/.well-known/oauth-protected-resource` document, follows its exactly one
+  `authorization_servers` entry, and validates the authorization-server
+  metadata: issuer binding, PAR, issuer response parameter, client metadata,
+  authorization code, refresh token, S256 PKCE, `none` client authentication,
+  ES256 DPoP and the mandatory `atproto` scope. It only follows the PDS URL
+  chosen by the host and that PDS's single advertised authorization server;
+  the browser cannot supply either endpoint.
+- `Protocol\Atproto\XrpcAtprotoOAuthClient` starts a flow with a PAR request
+  (`response_type=code`, PKCE S256, `dpop_jkt`, client id, redirect URI, scope,
+  state and optional `login_hint`), returns the browser authorization URL and
+  the state/verifier/DPoP nonce, exchanges the code after checking the callback
+  `iss` and the token `sub`, and revokes the refresh token at the advertised
+  revocation endpoint. Every token request carries a fresh DPoP proof and
+  retries exactly one `use_dpop_nonce` challenge. `DpopKeyThumbprint` is the
+  optional proof-provider capability used for `dpop_jkt`;
+  `Es256DpopProofProvider` implements it with the RFC 7638 thumbprint.
 
 ## What is deliberately not here
 
@@ -56,11 +74,13 @@ thread/reply, facet/link detection, AppView read, firehose consumer or CAR/MST
 repository implementation in this slice. Remote delete is implemented for
 records the core itself published; deleting arbitrary PDS records is not.
 
-OAuth session refresh is implemented; the authorization-code/PAR flow,
-account linking, the account/token store, refresh-token revocation and PDS
-selection stay in the host. The core's `AtprotoAccountResolver` is intentionally
-a port, not a credential table. A host that has no resolver still serves the
-route, but it answers `503 atproto_not_configured`.
+OAuth session refresh and the authorization-code/PAR/revocation protocol are
+implemented. The browser redirect, the short-lived flow store keyed by state,
+the linked-account UI, the account/token store and PDS selection stay in the
+host. The core's `AtprotoAccountResolver` is intentionally a port, not a
+credential table, and it creates no linked-account or OAuth-flow row. A host
+that has no resolver still serves the publish route, but it answers `503
+atproto_not_configured`.
 
 ## Configuration
 
@@ -171,6 +191,41 @@ No `social` config key and no route is added. The session store is a host port
 because tokens are credentials; the core deliberately ships no
 `social_atproto_session` table or migration.
 
+## Authorization-code flow
+
+The OAuth client is a host-called protocol operation; there is no core route
+and no core flow or session table. The host must keep the returned request by
+its `state`, compare the callback state, and keep the PKCE verifier and DPoP
+nonce out of the browser.
+
+```php
+use AlohaSocial\Core\Protocol\Atproto\AtprotoOAuthMetadataResolver;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoOAuthClient;
+
+$server = (new AtprotoOAuthMetadataResolver($httpClient))->resolve($pdsUrl);
+$request = $oauthClient->begin($server, $did, $pdsUrl, $handle);
+// Redirect the browser to $request->authorizationUrl after saving $request
+// under $request->state. On the callback, verify state and pass the `iss`.
+$session = $oauthClient->complete($request, $code, $iss);
+// Save $session in the host's credential store, then link the DID locally.
+```
+
+`AtprotoOAuthMetadataResolver` requires exactly one authorization server and
+rejects metadata that does not bind to the discovered issuer or does not
+advertise the AT Protocol requirements. `begin()` requires a proof provider
+that implements `DpopKeyThumbprint`; a refresh-only provider without it fails
+with `oauth_client_not_configured` instead of sending a PAR without the key
+binding. `complete()` requires the callback `iss` to equal the discovered
+issuer and the token `sub` to equal the requested DID, so a response for
+another account or server cannot be stored. `revoke()` uses the refresh token
+and the advertised revocation endpoint; a server without that endpoint is
+`oauth_unsupported` rather than a silent success.
+
+`AtprotoOAuthException` is the stable failure type: it never includes tokens,
+codes or the response body. `transport_error` and `invalid_response` are
+retryable; OAuth refusals expose a safe `errorCode` and are retryable only for
+`429`/`5xx`; `dpop_nonce_missing` and `oauth_client_not_configured` are not.
+
 ## Flow
 
 1. `PostService::create()` stores the post, then calls
@@ -272,16 +327,21 @@ responses; `TidTest` and the repository contract cover the protocol and
 persistence primitives. `AtprotoOAuthSessionTest` covers session validation and
 the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
 rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
-`Es256DpopProofProviderTest` verifies the JWS signature and unique `jti`;
-`AtprotoSessionServiceTest` covers refresh-on-expiry, persistence and a failed
-refresh that leaves the old session untouched.
+`Es256DpopProofProviderTest` verifies the JWS signature, the RFC 7638
+thumbprint and unique `jti`; `AtprotoSessionServiceTest` covers refresh-on-expiry,
+persistence and a failed refresh that leaves the old session untouched.
+`AtprotoOAuthMetadataResolverTest` covers discovery, issuer binding and invalid
+metadata; `XrpcAtprotoOAuthClientTest` covers the PAR form, PKCE/`dpop_jkt`,
+nonce retries, code exchange, issuer/DID rejection and revocation against fake
+HTTP and DPoP adapters.
 
 ## Remaining external work
 
 The full AT Protocol stack is still host/app work:
 
-- account linking UI and authorization-code/PAR callback, the credential store,
-  refresh-token revocation and per-account PDS discovery;
+- account-linking UI and browser callback, the short-lived flow store, the
+  credential store and per-account PDS selection (the protocol client and
+  authorization-server discovery are implemented locally);
 - a full repository client (CAR/MST, arbitrary record listing/update),
   AppView reads, firehose consumption and blob upload;
 - media embeds and image processing for AT Protocol;
@@ -289,8 +349,9 @@ The full AT Protocol stack is still host/app work:
 - migrating the existing AT Protocol implementation out of the Nextcloud app.
 
 Remote delete for records published by this core is implemented locally, and
-the OAuth token-refresh exchange is implemented locally. Deleting records that
-were created outside this core, account linking and full account/AppView
+the OAuth token-refresh exchange, authorization-code/PAR flow and revocation
+are implemented locally. Deleting records created outside this core, the
+account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
 Those are tracked in the [roadmap](../roadmap.md) as the remaining part of the

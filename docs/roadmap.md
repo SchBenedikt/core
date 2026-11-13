@@ -231,13 +231,20 @@ Status of the core, not a promise about dates.
   and a failed delete stays retryable. OAuth session refresh is also local:
   `AtprotoSessionService`, `XrpcAtprotoSessionRefresher` and the ES256 DPoP
   proof adapter rotate a host-owned session at the authorization server, with
-  one nonce retry and no core credential table. See
+  one nonce retry and no core credential table. The authorization-code/PAR flow
+  and refresh-token revocation are local too: `AtprotoOAuthMetadataResolver`
+  validates the PDS protected-resource and authorization-server documents,
+  `XrpcAtprotoOAuthClient` sends the PAR request with PKCE S256 and `dpop_jkt`,
+  exchanges the code after checking `iss` and the token `sub`, and revokes the
+  refresh token; `DpopKeyThumbprint` is the optional proof-provider capability
+  needed for PAR. The host still owns the browser redirect, the short-lived
+  state/verifier flow store, credential storage and PDS selection. See
   [AT Protocol publishing](guides/atproto.md). The full stack is **not** done:
-  account linking, the authorization-code/PAR flow and token revocation, a full
-  repository/AppView client, CAR/MST, blob uploads, firehose and the extraction
-  from the Nextcloud app remain external. Remote delete for core-published
-  records and OAuth session refresh are done locally. The remaining parts are
-  tracked in the Next table below, not as a completed item.
+  account-linking UI/callback, a full repository/AppView client, CAR/MST, blob
+  uploads, firehose and the extraction from the Nextcloud app remain external.
+  Remote delete for core-published records, OAuth session refresh,
+  authorization-code/PAR and revocation are done locally. The remaining parts
+  are tracked in the Next table below, not as a completed item.
 
 ## Next
 
@@ -254,7 +261,7 @@ above.
 | Item | Seam |
 | --- | --- |
 | Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, boosts, remote notifications, streaming infrastructure, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation are done, and the `social_follower.is_local`, `social_notification` read-marker plus `social_poll` migrations remain host steps |
-| AT Protocol account linking, authorization-code/PAR/revocation and full client/AppView extraction (OAuth session refresh is local) | `AlohaSocial/social` host and a future standalone AT Protocol client, using the new ports |
+| AT Protocol account-linking UI/callback and full client/AppView extraction (authorization-code/PAR/revocation and OAuth session refresh are local) | `AlohaSocial/social` host and a future standalone AT Protocol client; the host owns credential storage, PDS selection and the browser flow store, while the core owns the protocol client and metadata validation |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
 | `@alohasocial/ui` extraction and the Nextcloud `HostBridge` | `ui/`, then `AlohaSocial/social` |

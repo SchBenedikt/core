@@ -111,6 +111,16 @@ secret store: the core ships only `InMemoryAtprotoSessionStore` for tests and
 no session table or migration. See
 [AT Protocol publishing](../guides/atproto.md#oauth-session-refresh).
 
+The authorization-code/PAR/revocation client also has no `social` key and no
+route. A host that offers account linking calls
+`AtprotoOAuthMetadataResolver` and `XrpcAtprotoOAuthClient` directly, stores
+the returned authorization request by state between the browser redirect and
+the callback, and saves the resulting `AtprotoOAuthSession` in its own
+credential store. Disabling publishing does not disable account linking; the
+host decides whether to expose it. There is no core flow/session table, so
+there is no cleanup job for flow rows: the host expires its own flow store.
+See [AT Protocol publishing](../guides/atproto.md#authorization-code-flow).
+
 Shared inboxes have no configuration key. Both inbox routes are controlled by
 the same prerequisites as the normal inbox: without an actor resolver, an
 HTTP client and a signing key they answer `503 inbox_not_configured`. Outbound

@@ -17,7 +17,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
-| ATProto record/TID publishing, remote delete and OAuth session refresh through the `AtprotoAccountResolver`, `AtprotoPublisher`, `AtprotoDeleter` and `AtprotoSessionStore` ports | Account linking, the authorization-code/PAR flow, credential storage, refresh-token revocation and PDS discovery |
+| ATProto record/TID publishing, remote delete, OAuth session refresh and the authorization-code/PAR/revocation client through the `AtprotoAccountResolver`, `AtprotoPublisher`, `AtprotoDeleter` and `AtprotoSessionStore` ports | Account-linking UI/browser callback, the short-lived flow store, credential storage and PDS selection; the core provides metadata discovery and the OAuth protocol client |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -478,9 +478,10 @@ The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It contains local image upload, validation and thumbnails, and remote
 image ingestion for incoming `Create`/`Announce` posts with SSRF, size,
 timeout and redirect guards. It does not contain an admin UI, the full Mastodon server API or an
-object-storage adapter. The local Mastodon subset, AT Protocol remote delete
-and the OAuth session-refresh exchange are implemented; account linking and
-the credential store remain host work. It does provide a
+object-storage adapter. The local Mastodon subset, AT Protocol remote delete,
+the OAuth session-refresh exchange and the authorization-code/PAR/revocation
+protocol client are implemented; the account-linking UI/callback, flow store
+and the credential store remain host work. It does provide a
 bounded outbox backfill for missed `Create`/`Announce` activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the

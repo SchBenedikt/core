@@ -603,9 +603,14 @@ AT Protocol has four domain-level host ports instead of new platform methods:
 one record, `AtprotoDeleter` removes it again and `AtprotoSessionStore` holds
 the host-owned OAuth session. `XrpcAtprotoPublisher` is the default adapter for
 both record transports over `HttpClient`; fakes cover the network in tests.
-Account linking, authorization-code/PAR, refresh-token revocation and PDS
-credentials remain host-owned, so remote delete can only act on an account the
-host resolves.
+Account linking UI/callback, credential storage and PDS selection remain
+host-owned, so remote delete can only act on an account the host resolves. The
+protocol side of linking is local: `AtprotoOAuthMetadataResolver` fetches and
+validates the PDS protected-resource and authorization-server metadata, and
+`XrpcAtprotoOAuthClient` performs PAR with PKCE S256 and `dpop_jkt`, the
+authorization-code exchange with issuer/DID checks, and refresh-token
+revocation. `DpopKeyThumbprint` is an optional proof-provider capability; the
+ES256 adapter implements it.
 
 OAuth session refresh is a protocol operation, not a route:
 
@@ -627,6 +632,26 @@ or response body. The existing `XrpcAtprotoPublisher` still uses its bearer
 account token; OAuth-bound resource requests remain part of the external
 account-linking/client work.
 
+Linking has the same protocol/service split, with no route and no core flow
+table:
+
+```
+Host (browser redirect, flow store)
+  └─ AtprotoOAuthMetadataResolver::resolve(pdsUrl)
+      └─ XrpcAtprotoOAuthClient::begin(server, did, pdsUrl, loginHint)
+          └─ PAR + PKCE + dpop_jkt ──> authorizationUrl + state/verifier/nonce
+  └─ callback ?code&state&iss
+      └─ XrpcAtprotoOAuthClient::complete(request, code, iss)
+          ├─ checks iss and sub
+          └─ AtprotoOAuthSession ──> AtprotoSessionStore::save
+      └─ XrpcAtprotoOAuthClient::revoke(server, session)
+```
+
+The host must persist the returned request by state between the two browser
+requests, compare the callback state, and keep the verifier out of the browser.
+The core validates metadata and token responses but does not create a login
+session, a linked-account row or a credential store.
+
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
 
@@ -635,7 +660,7 @@ genuinely owns the capability.
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
-| AT Protocol account linking, authorization-code/PAR/revocation, full repository/AppView client, media and firehose | host/app; the core already owns the publishing foundation and OAuth session refresh in `Protocol\Atproto` and `Domain\Atproto` |
+| AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
@@ -668,7 +693,9 @@ genuinely owns the capability.
   sends `deleteRecord`, removes the row and retries after a PDS failure. OAuth
   refresh is tested at the protocol boundary with a real ES256 DPoP proof and a
   fake HTTP token endpoint, plus a service test that rotates only an expiring
-  session. `InboundTimelineTest` delivers a signed Create, Announce
+  session. The authorization-code client is tested against fake metadata and
+  token endpoints for PAR, PKCE, `dpop_jkt`, nonce retries, issuer/DID checks
+  and revocation. `InboundTimelineTest` delivers a signed Create, Announce
   and Delete through the real inbox and reads the result through the
   authenticated home timeline. `ApplicationTest` proves that two followers on
   one server sharing an advertised inbox produce one signed job to the shared

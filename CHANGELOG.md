@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- AT Protocol authorization-code/PAR/revocation client:
+  `AtprotoOAuthMetadataResolver` discovers the PDS protected-resource document
+  and validates the authorization-server metadata (issuer binding, exactly one
+  authorization server, PAR, issuer response parameter, client metadata,
+  authorization code, refresh token, S256 PKCE, `none` client authentication,
+  ES256 DPoP and the `atproto` scope). `XrpcAtprotoOAuthClient` sends the PAR
+  request with PKCE S256 and `dpop_jkt`, returns the authorization URL plus the
+  state/verifier/DPoP nonce the host must persist by state, exchanges the code
+  after checking the callback `iss` and the token `sub`, and revokes the
+  refresh token. Both token operations retry one `use_dpop_nonce` challenge
+  and never put tokens, codes or response bodies in an exception.
+  `DpopKeyThumbprint` is an optional proof-provider capability;
+  `Es256DpopProofProvider` implements it with the RFC 7638 thumbprint. The
+  browser callback, flow store, credential storage, PDS selection and
+  account-linking UI remain host-owned; there is no core route, table or
+  migration. Tests cover metadata discovery/issuer binding, the PAR form,
+  PKCE/`dpop_jkt`, nonce retries, code exchange, issuer/DID rejection and
+  revocation against fake HTTP and DPoP adapters. See
+  `docs/guides/atproto.md`.
 - Mastodon-compatible local account profiles and follow lists:
   `GET {mastodon.prefix}/accounts/{id}` returns the minimal account shape for
   one local id (`120/60`), while `GET {mastodon.prefix}/accounts/{id}/followers`

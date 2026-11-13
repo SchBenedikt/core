@@ -48,6 +48,26 @@ final class Es256DpopProofProviderTest extends TestCase
 		));
 	}
 
+	public function testTheThumbprintIsTheRfc7638ThumbprintOfTheProofKey(): void
+	{
+		[$privateKey] = $this->keyPair();
+		$provider = new Es256DpopProofProvider($privateKey);
+		$parts = explode('.', $provider->proof('POST', 'https://auth.example/oauth/par'));
+		$header = json_decode($this->base64UrlDecode($parts[0]), true, 64, JSON_THROW_ON_ERROR);
+		$jwk = $header['jwk'];
+		$canonical = json_encode([
+			'crv' => $jwk['crv'],
+			'kty' => $jwk['kty'],
+			'x' => $jwk['x'],
+			'y' => $jwk['y'],
+		], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+		self::assertSame(
+			rtrim(strtr(base64_encode(hash('sha256', $canonical, true)), '+/', '-_'), '='),
+			$provider->thumbprint(),
+		);
+	}
+
 	public function testEveryProofHasAFreshJti(): void
 	{
 		[$privateKey] = $this->keyPair();

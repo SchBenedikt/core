@@ -90,8 +90,9 @@ signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
 follow-based home timeline, per-user blocks and their timeline filter, the
 public text-only AT Protocol publishing foundation (account/publisher ports,
 deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
-rows, remote delete for published posts, OAuth session refresh with ES256 DPoP
-proofs and a disabled-by-default route), the optional disabled-by-default Mastodon
+rows, remote delete for published posts, OAuth session refresh and the
+authorization-code/PAR/revocation protocol client with ES256 DPoP proofs and a
+disabled-by-default publish route), the optional disabled-by-default Mastodon
 compatibility subset (instance metadata/statistics, public timeline, status
 read/create/delete with local poll creation, local favourite/unfavourite,
 local follow/unfollow and relationship reads, local notification listing with
@@ -113,8 +114,9 @@ plus the read-only cutover validator for the neutral migration export.
 The migration, repository-owner and shared-UI contracts are accepted in ADR
 0004/0005; the actual Nextcloud data import and `@alohasocial/ui` extraction
 happen in their host workflows.
-Not implemented in the core: AT Protocol account linking, the
-authorization-code/PAR flow and token revocation, the full
+Not implemented in the core: the AT Protocol account-linking UI/browser
+callback, credential store and PDS selection (the authorization-code/PAR flow
+and token revocation are implemented), the full
 repository/AppView/media/firehose stack, the external Mastodon server
 remainder (OAuth/token issuance and app registration, remote timelines and
 delivery, favourite federation, boosts, remote notifications, streaming,

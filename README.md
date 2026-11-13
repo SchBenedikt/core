@@ -27,7 +27,7 @@ Implemented and tested here:
 | Inbound federation | signed `POST /inbox` and `/inbox/shared`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up with historical media repair, bounded on-demand thread/context fetching and per-user timeline blocking |
 | Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
 | Services | write/read/delete a post, public and follow-based home timelines, followers, following, configurable instance description and local statistics, local favourite/follow notification recording, listing and dismiss/unread state, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
-| AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route, an idempotent remote delete for core-published records and an OAuth session-refresh exchange with ES256 DPoP proofs; account linking, the credential store and the full AppView/repository stack are still external (see the [guide](docs/guides/atproto.md)) |
+| AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route, an idempotent remote delete for core-published records, an OAuth session-refresh exchange and an authorization-code/PAR/revocation client with ES256 DPoP proofs; the account-linking UI/callback, credential store and the full AppView/repository stack are still external (see the [guide](docs/guides/atproto.md)) |
 | Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 49 routes and its JSON export |
 | Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance metadata/statistics, public timeline, status read/write/delete with local poll creation, local favourite/unfavourite, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, local status/actor search, media upload/update/delete, local account profiles, paged local follower/following lists, account statuses, verify credentials) over the same posts, media service, follower graph, notification repository and local account directory, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `write:notifications`, `read:accounts`, `read:follows`, `read:notifications`, `read:search`), id-aware and offset pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
@@ -36,8 +36,9 @@ Implemented and tested here:
 | Shared UI contract | [ADR 0005](docs/adr/0005-shared-ui.md) defines `@alohasocial/ui` and its `HostBridge`; the package extraction is still pending |
 | Security | AES-256-GCM secret box for private keys at rest |
 
-Deliberately not here yet: the rest of the AT Protocol stack (account linking,
-the credential store, full repository/AppView, media and firehose), the full
+Deliberately not here yet: the rest of the AT Protocol stack (account-linking
+UI/callback, the credential store, full repository/AppView, media and firehose),
+the full
 Mastodon server API (the local compatibility subset is in
 `docs/guides/mastodon-api.md`), an
 admin UI, a migration runner, the Vue UI
@@ -157,7 +158,10 @@ repositories have their own tests. Remote delete is covered through the real
 post-delete route, the queued job, the XRPC `deleteRecord` request, retry after
 a PDS failure and the no-publication/no-duplicate cases. OAuth session refresh
 is covered with a real ES256 DPoP proof, a fake token endpoint including the
-nonce retry, token rotation and terminal/retryable failures. `MastodonApiTest` drives the optional
+nonce retry, token rotation and terminal/retryable failures. The
+authorization-code client is covered with fake metadata and token endpoints for
+PAR, PKCE/`dpop_jkt`, nonce retries, issuer/DID checks and revocation.
+`MastodonApiTest` drives the optional
 compatibility routes through the real kernel: instance metadata and local
 stats, public timeline, media upload (including description, media-in-status, scopes, disabled,
 invalid input and idempotency), media update/delete (form, JSON, multipart,

@@ -29,7 +29,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
-| [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, limits and the external rest |
+| [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
 | [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
 | [Shared inboxes](guides/shared-inboxes.md) | Actor-document discovery, the shared route, stored peer shared inboxes, delivery batching, fallback and migration |

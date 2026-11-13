@@ -9,17 +9,32 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Support;
 
+use AlohaSocial\Core\Protocol\Atproto\DpopKeyThumbprint;
 use AlohaSocial\Core\Protocol\Atproto\DpopProofProvider;
 
 /**
  * Records proof inputs without doing any cryptography.
  */
-final class RecordingDpopProofProvider implements DpopProofProvider
+final class RecordingDpopProofProvider implements DpopProofProvider, DpopKeyThumbprint
 {
 	/**
 	 * @var list<array{method: string, url: string, nonce: ?string}>
 	 */
 	public array $calls = [];
+
+	public int $thumbprintCalls = 0;
+
+	public function __construct(
+		private readonly string $thumbprint = 'test-thumbprint',
+	) {
+	}
+
+	public function thumbprint(): string
+	{
+		++$this->thumbprintCalls;
+
+		return $this->thumbprint;
+	}
 
 	public function proof(string $method, string $url, ?string $nonce = null): string
 	{
