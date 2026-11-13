@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Mastodon;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
@@ -52,6 +53,7 @@ final class MastodonPresenter
 		private readonly ?PollVoteRepository $pollVotes = null,
 		private readonly ?PostRepository $posts = null,
 		private readonly ?BoostRepository $boosts = null,
+		private readonly ?BookmarkRepository $bookmarks = null,
 	) {
 	}
 
@@ -105,6 +107,7 @@ final class MastodonPresenter
 		?int $repliesCount = null,
 		?int $reblogsCount = null,
 		?bool $reblogged = null,
+		?bool $bookmarked = null,
 	): array {
 		$attachments = [];
 		$presented = $this->media === null ? [] : ($this->media->presentPost($post)['attachments'] ?? []);
@@ -149,7 +152,8 @@ final class MastodonPresenter
 			'reblogged' => $reblogged
 				?? ($viewerId !== null && ($this->boosts?->exists($viewerId, $post->id) ?? false)),
 			'muted' => false,
-			'bookmarked' => false,
+			'bookmarked' => $bookmarked
+				?? ($viewerId !== null && ($this->bookmarks?->exists($viewerId, $post->id) ?? false)),
 			'pinned' => false,
 		];
 	}
@@ -219,6 +223,9 @@ final class MastodonPresenter
 		$reblogged = $viewerId === null
 			? []
 			: ($this->boosts?->existsForPosts($viewerId, $postIds) ?? []);
+		$bookmarked = $viewerId === null
+			? []
+			: ($this->bookmarks?->existsForPosts($viewerId, $postIds) ?? []);
 		$pollVotes = [];
 		if ($viewerId !== null) {
 			try {
@@ -240,6 +247,7 @@ final class MastodonPresenter
 				$replies[$post->id] ?? 0,
 				$reblogs[$post->id] ?? 0,
 				$reblogged[$post->id] ?? false,
+				$bookmarked[$post->id] ?? false,
 			),
 			$posts,
 		);
@@ -280,6 +288,7 @@ final class MastodonPresenter
 			'poll' => null,
 			'favourited' => false,
 			'reblogged' => false,
+			'bookmarked' => false,
 		]);
 	}
 

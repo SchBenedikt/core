@@ -39,6 +39,8 @@ use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonBookmarksHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
@@ -59,6 +61,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
@@ -446,6 +449,36 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:favourites'],
 				summary: 'Remove the signed-in account\'s favourite from a visible local status.',
+			),
+			new Route(
+				name: 'mastodon.statuses.bookmark',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/bookmark',
+				handler: MastodonBookmarkStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:bookmarks'],
+				summary: 'Bookmark a visible local status privately; idempotent per account and status.',
+			),
+			new Route(
+				name: 'mastodon.statuses.unbookmark',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/unbookmark',
+				handler: MastodonUnbookmarkStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:bookmarks'],
+				summary: 'Remove the signed-in account\'s bookmark from a visible local status.',
+			),
+			new Route(
+				name: 'mastodon.bookmarks',
+				method: 'GET',
+				path: $mastodon . '/bookmarks',
+				handler: MastodonBookmarksHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:bookmarks'],
+				summary: 'List the signed-in account\'s private bookmarks, newest first.',
 			),
 			new Route(
 				name: 'mastodon.polls.show',

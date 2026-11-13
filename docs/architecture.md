@@ -363,8 +363,25 @@ GET {mastodon.prefix}/timelines/public
 `favourites_count` is public; `favourited` is only true for the authenticated
 viewer and is false on the unauthenticated timeline. A repeat favourite is
 idempotent through the composite primary key, and unfavourite removes only the
-caller's row and is a successful no-op when absent. Local boosts follow the
-same pattern but also queue a federation activity:
+caller's row and is a successful no-op when absent. Private bookmarks reuse the
+same pair identity but expose no count and record no notification:
+
+```
+POST {mastodon.prefix}/statuses/{id}/bookmark
+  └─ MastodonBookmarkStatusHandler
+      └─ MastodonService::bookmarkStatus   visible post + local account check
+          └─ BookmarkRepository::insert     social_bookmark (user, post) primary key
+
+GET {mastodon.prefix}/bookmarks
+  └─ MastodonBookmarksHandler
+      ├─ BookmarkRepository::forUser       newest-first (created_at, post_id) cursor
+      └─ PostService::getVisible           skip deleted/invisible rows
+```
+
+`bookmarked` is viewer-specific in both the single-status and batched
+projections. The list cursor is a status id owned by the caller, so an unknown
+or foreign id is `404` rather than a probe of another private list. Local
+boosts follow the same pattern but also queue a federation activity:
 
 ```
 POST {mastodon.prefix}/statuses/{id}/reblog
@@ -616,10 +633,11 @@ maximum is 40, and generated links carry a non-default limit.
   features, not a second status model.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post,
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
-  `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
-  `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` do the same
-  for favourites, notifications, media metadata, remote content, per-user
-  blocks, AT Protocol publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
+  `BookmarkSchema`, `BoostSchema`, `NotificationSchema`, `AttachmentSchema`,
+  `RemotePostSchema`, `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema`
+  and `ActivityLogSchema` do the same for favourites, bookmarks,
+  notifications, media metadata, remote content, per-user blocks, AT Protocol
+  publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
   the same columns through its schema API. A dump can therefore move between
   the two.
 - **Media metadata and bytes are separate.** A row points at one original and

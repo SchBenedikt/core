@@ -29,6 +29,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Private Mastodon-compatible bookmarks: `POST
+  {mastodon.prefix}/statuses/{id}/bookmark` and `.../unbookmark` store one
+  `social_bookmark` row per local account and visible status, expose the
+  viewer-specific `bookmarked` flag without a public count or notification, and
+  are idempotent through the composite key. `GET {mastodon.prefix}/bookmarks`
+  lists live bookmarks newest-first with `max_id`/`since_id`/`min_id`, an
+  ownership-checked status cursor and the usual `Link`; `write:bookmarks` and
+  `read:bookmarks` gate the routes. `Bookmark`/`BookmarkRepository`,
+  in-memory and PDO adapters, `BookmarkSchema`, HTTP/domain/host tests and the
+  host migration documentation are included.
 - Direct posts and replies: `CreatePost` and `Post` carry `recipient_ids` and
   `in_reply_to_id`. `PostService` validates known local recipients, enforces
   the parent visibility rules, inherits participants for a direct reply and

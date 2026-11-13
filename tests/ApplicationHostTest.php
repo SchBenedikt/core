@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
+use AlohaSocial\Core\Domain\Post\BookmarkSchema;
 use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PollSchema;
@@ -83,7 +84,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(56, $app->routes->routes());
+		self::assertCount(59, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -258,6 +259,57 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(1, $repeat->decodedBody()['favourites_count']);
 		self::assertSame(1, (int) $database->fetchValue(
 			'SELECT COUNT(*) FROM ' . FavouriteSchema::TABLE,
+		));
+	}
+
+	public function testForHostStoresAPrivateBookmarkOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+
+		$created = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['status' => 'bookmark over sql']),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		$id = $created->decodedBody()['id'];
+
+		$bookmark = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $id . '/bookmark',
+			userId: 'alice',
+			scopes: ['write:bookmarks'],
+		));
+		self::assertSame(200, $bookmark->status);
+		self::assertTrue($bookmark->decodedBody()['bookmarked']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . BookmarkSchema::TABLE,
+		));
+
+		$list = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/bookmarks',
+			userId: 'alice',
+			scopes: ['read:bookmarks'],
+		));
+		self::assertSame(200, $list->status);
+		self::assertCount(1, $list->decodedBody());
+		self::assertSame($id, $list->decodedBody()[0]['id']);
+		self::assertTrue($list->decodedBody()[0]['bookmarked']);
+
+		$unbookmark = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $id . '/unbookmark',
+			userId: 'alice',
+			scopes: ['write:bookmarks'],
+		));
+		self::assertSame(200, $unbookmark->status);
+		self::assertFalse($unbookmark->decodedBody()['bookmarked']);
+		self::assertSame(0, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . BookmarkSchema::TABLE,
 		));
 	}
 
@@ -597,6 +649,7 @@ final class ApplicationHostTest extends TestCase
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
 		PollSchema::create($database);
+		BookmarkSchema::create($database);
 		BoostSchema::create($database);
 		FavouriteSchema::create($database);
 		NotificationSchema::create($database);

@@ -85,6 +85,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$mediaDelete = $manifest->find('mastodon.media.delete');
 		$favourite = $manifest->find('mastodon.statuses.favourite');
 		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
+		$bookmark = $manifest->find('mastodon.statuses.bookmark');
+		$unbookmark = $manifest->find('mastodon.statuses.unbookmark');
+		$bookmarks = $manifest->find('mastodon.bookmarks');
 		$reblog = $manifest->find('mastodon.statuses.reblog');
 		$unreblog = $manifest->find('mastodon.statuses.unreblog');
 		$context = $manifest->find('mastodon.statuses.context');
@@ -111,6 +114,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($mediaDelete);
 		self::assertNotNull($favourite);
 		self::assertNotNull($unfavourite);
+		self::assertNotNull($bookmark);
+		self::assertNotNull($unbookmark);
+		self::assertNotNull($bookmarks);
 		self::assertNotNull($reblog);
 		self::assertNotNull($unreblog);
 		self::assertNotNull($context);
@@ -152,6 +158,17 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame('/api/mastodon/v1/statuses/{id}/favourite', $favourite->path);
 		self::assertSame(['write:favourites'], $unfavourite->requiredScopes);
 		self::assertSame('/api/mastodon/v1/statuses/{id}/unfavourite', $unfavourite->path);
+		self::assertTrue($bookmark->requiresAuth);
+		self::assertSame(['write:bookmarks'], $bookmark->requiredScopes);
+		self::assertSame('30/900', $bookmark->rateLimit);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/bookmark', $bookmark->path);
+		self::assertTrue($unbookmark->requiresAuth);
+		self::assertSame(['write:bookmarks'], $unbookmark->requiredScopes);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/unbookmark', $unbookmark->path);
+		self::assertTrue($bookmarks->requiresAuth);
+		self::assertSame(['read:bookmarks'], $bookmarks->requiredScopes);
+		self::assertSame('60/60', $bookmarks->rateLimit);
+		self::assertSame('/api/mastodon/v1/bookmarks', $bookmarks->path);
 		self::assertTrue($reblog->requiresAuth);
 		self::assertSame(['write:statuses'], $reblog->requiredScopes);
 		self::assertSame('/api/mastodon/v1/statuses/{id}/reblog', $reblog->path);

@@ -160,6 +160,16 @@ Status of the core, not a promise about dates.
   replies. Replies and direct recipients record `mention` notifications, and
   boosts record `reblog` notifications, through the existing deterministic
   notification ids.
+- Local Mastodon bookmarks: `POST {mastodon.prefix}/statuses/{id}/bookmark`
+  and `POST .../unbookmark` write one private `social_bookmark` row per local
+  account and visible status. The composite `(user_id, post_id)` key makes a
+  repeat idempotent; `bookmarked` is viewer-specific and creates no public
+  count or notification. `GET {mastodon.prefix}/bookmarks` lists the caller's
+  live bookmarks newest-first with `limit`, `max_id`, `since_id`/`min_id` and
+  the usual `Link`; a cursor must belong to the caller and disappeared
+  statuses are skipped. `write:bookmarks`/`read:bookmarks` gate the writes and
+  the list. Existing hosts add `social_bookmark` through `BookmarkSchema`;
+  there is no backfill.
 - Local Mastodon instance metadata: `GET {mastodon.prefix}/instance` and the
   core `GET /api/v1/instance` now expose configurable description, version,
   contact email/account, registration/approval/invite flags, languages,
@@ -193,8 +203,9 @@ Status of the core, not a promise about dates.
   disabled-by-default compatibility subset under `social/mastodon.prefix`
   (default `/api/mastodon/v1`): instance metadata and statistics, public timeline, status
   read/create/delete including local poll creation and voting on an own or
-  visible local status, local favourite/unfavourite, local follow/unfollow and relationship reads, local
-  notification listing with dismiss/unread state, media upload/update/delete,
+  visible local status, local favourite/unfavourite, private bookmark/unbookmark and list, local
+  follow/unfollow and relationship reads, local notification listing with
+dismiss/unread state, media upload/update/delete,
   local account statuses and verify credentials. It maps
   to the existing posts, `PostService`, `MediaService` and repositories rather
   than a second status or media store, carries auth and scope metadata
@@ -206,7 +217,10 @@ Status of the core, not a promise about dates.
   idempotent through a deterministic post id or media source key. Local favourites live in `social_favourite` behind
   `FavouriteRepository`; counts and the viewer flag are projected without a
   second status model, and unfavourite is an idempotent no-op when the row is
-  already absent. Local boosts live in `social_boost` behind
+  already absent. Private bookmarks live in `social_bookmark` behind
+  `BookmarkRepository`; the pair is idempotent, the viewer flag is projected
+  without a public count, and the list uses the same id-aware cursor with an
+  ownership check. Local boosts live in `social_boost` behind
   `BoostRepository`; the unique pair is the idempotency boundary, a new row
   queues `Announce` and a removal queues `Undo(Announce)`, and the presenter
   exposes the nested `reblog` wrapper plus `reblogs_count`/`reblogged`. Reply
@@ -252,7 +266,7 @@ Status of the core, not a promise about dates.
   migrations in an existing host database.
   Local account profiles and paged follower/following lists are complete
   locally too, not host prerequisites. Media upload/update/delete, local
-  favourite bookkeeping, local follow/unfollow/relationship reads, local
+  favourite and private bookmark bookkeeping, local follow/unfollow/relationship reads, local
   notification listing with dismiss/unread state, local status/actor search,
   local poll creation/voting, local boosts/reblogs, reply context/counts,
   account profiles/lists and instance metadata/statistics are complete locally. The
@@ -260,8 +274,9 @@ Status of the core, not a promise about dates.
   `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
   `social_notification` from `NotificationSchema` before exposing the
   notification routes, or add `read_at` and the unread index to an existing
-  table as documented; add `social_boost` from `BoostSchema` before exposing
-  boost/reblog routes or status reblog counts; add
+  table as documented; add `social_bookmark` from `BookmarkSchema` before
+  exposing the bookmark routes; add `social_boost` from `BoostSchema` before
+  exposing boost/reblog routes or status reblog counts; add
   `social_poll`/`social_poll_option` from `PollSchema` before accepting a
   `poll` parameter. The remaining parts are
   tracked in the Next table, not as a completed item.
@@ -299,14 +314,14 @@ external parts of the two partially done stacks, and explicitly listed
 core-side follow-ups. There is no unlisted local vertical slice hiding in this
 table: the local media catch-up, thread/context, AT Protocol publishing and
 Mastodon compatibility (including instance metadata/statistics, media
-management, local favourites, local boosts/reblogs, reply context, local
-follow/relationships, local account profiles and follower/following lists,
-notification listing with dismiss/unread state, local search and poll
-creation/voting) slices are recorded above.
+management, local favourites, private bookmarks, local boosts/reblogs, reply
+context, local follow/relationships, local account profiles and
+follower/following lists, notification listing with dismiss/unread state,
+local search and poll creation/voting) slices are recorded above.
 
 | Item | Seam |
 | --- | --- |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, remote boost federation, remote notifications, streaming infrastructure, remote poll fetching/voting/federation, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, boosts/reblogs, reply context, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation/voting are done, and the `social_follower.is_local`, `social_boost`, `social_notification` read-marker plus `social_poll`/`social_poll_vote` migrations remain host steps |
+| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, remote boost federation, remote notifications, streaming infrastructure, remote poll fetching/voting/federation, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, private bookmarks, boosts/reblogs, reply context, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation/voting are done, and the `social_follower.is_local`, `social_bookmark`, `social_boost`, `social_notification` read-marker plus `social_poll`/`social_poll_vote` migrations remain host steps |
 | AT Protocol account-linking UI/callback and full client/AppView extraction (authorization-code/PAR/revocation and OAuth session refresh are local) | `AlohaSocial/social` host and a future standalone AT Protocol client; the host owns credential storage, PDS selection and the browser flow store, while the core owns the protocol client and metadata validation |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |

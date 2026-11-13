@@ -199,6 +199,7 @@ Create the core tables with the schema classes from the host's migration:
 
 - `social_post` — `PostSchema`
 - `social_favourite` — `FavouriteSchema` (local Mastodon-compatible favourites; no legacy import)
+- `social_bookmark` — `BookmarkSchema` (private local Mastodon-compatible bookmarks; no legacy import)
 - `social_boost` — `BoostSchema` (local Mastodon-compatible reblogs; no legacy import)
 - `social_notification` — `NotificationSchema` (local favourite/follow/mention/reblog notifications; no legacy import)
 - `social_follower` — `FollowerSchema`

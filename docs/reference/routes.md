@@ -523,7 +523,7 @@ boost, queues `Undo(Announce)`, and answers `204` even when no boost existed.
 
 ## Mastodon-compatible API
 
-The twenty-eight routes above are additive and disabled by default. Their paths use
+The thirty-one routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -541,6 +541,9 @@ Content-Type: application/x-www-form-urlencoded
 choices[]=0
 POST /api/mastodon/v1/statuses/{id}/favourite
 POST /api/mastodon/v1/statuses/{id}/unfavourite
+POST /api/mastodon/v1/statuses/{id}/bookmark
+POST /api/mastodon/v1/statuses/{id}/unbookmark
+GET /api/mastodon/v1/bookmarks?limit=20&max_id=…
 POST /api/mastodon/v1/statuses/{id}/reblog
 POST /api/mastodon/v1/statuses/{id}/unreblog
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
@@ -584,6 +587,18 @@ both idempotent. The public count is visible to every reader, while
 `favourited` is true only for the authenticated viewer. Missing, deleted or
 invisible statuses answer `404 not_found`; an assembly without a
 `FavouriteRepository` answers `503 favourites_not_configured`.
+
+`POST /api/mastodon/v1/statuses/{id}/bookmark` and
+`POST /api/mastodon/v1/statuses/{id}/unbookmark` require `write:bookmarks` and
+write only the caller's row in `social_bookmark`. A bookmark is private: it
+has no public count and creates no notification. `GET /api/mastodon/v1/bookmarks`
+requires `read:bookmarks` and returns the caller's statuses newest-first with
+`limit` (1–40), `max_id`, `since_id`/`min_id` and a `Link` header. The cursor
+must be one of the caller's bookmarked status ids; an unknown or foreign id is
+`404 not_found`, and combining `max_id` with a newer cursor is `422
+validation_failed`. Deleted or newly invisible statuses are omitted. Repeating
+a bookmark, or unbookmarking an absent one, is idempotent. An assembly without
+`BookmarkRepository` answers `503 bookmarks_not_configured`.
 
 `POST /api/mastodon/v1/statuses/{id}/reblog` returns the Mastodon reblog
 wrapper: the outer status carries the boost id, time and booster account, and
@@ -669,7 +684,8 @@ The routes declare scopes in the manifest and OpenAPI (`x-required-scopes`);
 the host maps tokens to `Request::$scopes` and enforces the declared rate
 limits. Errors: `404 mastodon_api_disabled`, `403 insufficient_scope`, `422
 validation_failed`, `422 unsupported_parameter`, `404 not_found`, `503
-favourites_not_configured`, `503 notifications_not_configured`, `503
+favourites_not_configured`, `503 bookmarks_not_configured`, `503
+notifications_not_configured`, `503
 notifications_unavailable` (missing or unreadable notification table, or a
 table without `read_at`).
 

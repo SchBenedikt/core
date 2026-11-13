@@ -17,8 +17,10 @@ use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryBookmarkRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Http\Request;
@@ -1146,6 +1148,136 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(404, $this->favourite($app, $status['id'])->status);
 	}
 
+	public function testBookmarkAndUnbookmarkArePrivateIdempotentAndPaged(): void
+	{
+		$bookmarks = new InMemoryBookmarkRepository();
+		$app = $this->app(actors: ['alice', 'bob'], bookmarks: $bookmarks);
+		$first = $this->createStatus($app, ['status' => 'bookmark one'], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+		$second = $this->createStatus($app, ['status' => 'bookmark two'], userId: 'bob')->decodedBody();
+		$this->clock->advance(1);
+
+		$stored = $this->bookmark($app, $first['id']);
+		self::assertSame(200, $stored->status);
+		self::assertTrue($stored->decodedBody()['bookmarked']);
+		self::assertSame(0, $stored->decodedBody()['favourites_count']);
+		self::assertSame(0, $stored->decodedBody()['reblogs_count']);
+
+		$again = $this->bookmark($app, $first['id']);
+		self::assertSame(200, $again->status);
+		self::assertTrue($again->decodedBody()['bookmarked']);
+		self::assertTrue($bookmarks->exists('alice', $first['id']));
+
+		$this->clock->advance(1);
+		$this->bookmark($app, $second['id']);
+		self::assertTrue($bookmarks->exists('alice', $second['id']));
+
+		$list = $this->bookmarks($app);
+		self::assertSame(200, $list->status);
+		self::assertCount(2, $list->decodedBody());
+		self::assertSame([$second['id'], $first['id']], array_column($list->decodedBody(), 'id'));
+		self::assertTrue($list->decodedBody()[0]['bookmarked']);
+		self::assertTrue($list->decodedBody()[1]['bookmarked']);
+		self::assertStringContainsString('limit=20&max_id=', (string) $list->header('Link'));
+
+		$page = $this->bookmarks($app, ['limit' => '1']);
+		self::assertCount(1, $page->decodedBody());
+		self::assertSame($second['id'], $page->decodedBody()[0]['id']);
+		self::assertStringContainsString('max_id=' . $second['id'], (string) $page->header('Link'));
+
+		$next = $this->bookmarks($app, ['limit' => '1', 'max_id' => $second['id']]);
+		self::assertCount(1, $next->decodedBody());
+		self::assertSame($first['id'], $next->decodedBody()[0]['id']);
+
+		$newer = $this->bookmarks($app, ['since_id' => $first['id']]);
+		self::assertCount(1, $newer->decodedBody());
+		self::assertSame($second['id'], $newer->decodedBody()[0]['id']);
+
+		$ownerView = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $first['id'],
+			userId: 'alice',
+		));
+		self::assertTrue($ownerView->decodedBody()['bookmarked']);
+
+		$otherView = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $first['id'],
+			userId: 'bob',
+		));
+		self::assertFalse($otherView->decodedBody()['bookmarked']);
+		self::assertSame([], $this->bookmarks($app, userId: 'bob')->decodedBody());
+
+		// A bookmark is private and never creates a notification for the author.
+		self::assertSame([], $this->notifications($app, userId: 'bob')->decodedBody());
+
+		$removed = $this->bookmark($app, $first['id'], 'unbookmark');
+		self::assertSame(200, $removed->status);
+		self::assertFalse($removed->decodedBody()['bookmarked']);
+		self::assertFalse($bookmarks->exists('alice', $first['id']));
+		self::assertSame([$second['id']], array_column($this->bookmarks($app)->decodedBody(), 'id'));
+
+		$removedAgain = $this->bookmark($app, $first['id'], 'unbookmark');
+		self::assertSame(200, $removedAgain->status);
+		self::assertFalse($removedAgain->decodedBody()['bookmarked']);
+
+		// A bookmark survives the post becoming invisible, but is omitted from
+		// the owner's list rather than leaking a deleted post.
+		$this->bookmark($app, $first['id']);
+		$deleted = $app->handle(new Request(
+			method: 'DELETE',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $first['id'],
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(204, $deleted->status);
+		self::assertSame([$second['id']], array_column($this->bookmarks($app)->decodedBody(), 'id'));
+	}
+
+	public function testBookmarkRequiresAuthScopeAndEnabledApiAndRejectsInvisibleStatuses(): void
+	{
+		$bookmarks = new InMemoryBookmarkRepository();
+		$app = $this->app(actors: ['alice', 'bob'], bookmarks: $bookmarks);
+		$status = $this->createStatus($app, ['status' => 'bookmark scope'])->decodedBody();
+
+		self::assertSame(401, $this->bookmark($app, $status['id'], userId: null)->status);
+		self::assertSame(403, $this->bookmark($app, $status['id'], scopes: ['write:favourites'])->status);
+		self::assertFalse($bookmarks->exists('alice', $status['id']));
+
+		$parentScope = $this->bookmark($app, $status['id'], scopes: ['write']);
+		self::assertSame(200, $parentScope->status);
+		self::assertTrue($bookmarks->exists('alice', $status['id']));
+
+		self::assertSame(401, $this->bookmarks($app, userId: null)->status);
+		self::assertSame(403, $this->bookmarks($app, scopes: ['read:favourites'])->status);
+		self::assertSame(200, $this->bookmarks($app, scopes: ['read'])->status);
+
+		$private = $this->createStatus($app, [
+			'status' => 'followers only',
+			'visibility' => 'private',
+		])->decodedBody();
+		$invisible = $this->bookmark($app, $private['id'], userId: 'bob');
+		self::assertSame(404, $invisible->status);
+		self::assertFalse($bookmarks->exists('bob', $private['id']));
+
+		$missing = $this->bookmark($app, 'does-not-exist');
+		self::assertSame(404, $missing->status);
+
+		$missingCursor = $this->bookmarks($app, ['max_id' => 'does-not-exist']);
+		self::assertSame(404, $missingCursor->status);
+		self::assertSame('not_found', $missingCursor->decodedBody()['error']['code']);
+
+		$combined = $this->bookmarks($app, [
+			'max_id' => $status['id'],
+			'since_id' => $status['id'],
+		]);
+		self::assertSame(422, $combined->status);
+
+		$disabled = $this->app(enabled: false);
+		self::assertSame(404, $this->bookmark($disabled, 'anything', userId: null)->status);
+		self::assertSame(404, $this->bookmarks($disabled, userId: null)->status);
+	}
+
 	public function testLocalFollowUnfollowAndRelationshipsAreIdempotent(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -2083,6 +2215,7 @@ final class MastodonApiTest extends TestCase
 		?InMemoryBlobStore $blobs = null,
 		?FavouriteRepository $favourites = null,
 		?BoostRepository $boosts = null,
+		?BookmarkRepository $bookmarks = null,
 		?NotificationRepository $notificationRepository = null,
 		?array $actors = ['alice'],
 		?string $instanceUrl = 'https://social.example',
@@ -2104,6 +2237,7 @@ final class MastodonApiTest extends TestCase
 			attachmentRepository: $attachments,
 			favouriteRepository: $favourites,
 			boostRepository: $boosts,
+			bookmarkRepository: $bookmarks,
 			notificationRepository: $notificationRepository,
 			blobStore: $blobs,
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
@@ -2278,6 +2412,40 @@ final class MastodonApiTest extends TestCase
 	 * @param list<string>          $scopes
 	 * @param string                $prefix  compatibility prefix to target
 	 */
+	private function bookmark(
+		Application $app,
+		string $postId,
+		string $action = 'bookmark',
+		array $scopes = ['write:bookmarks'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . rawurlencode($postId) . '/' . $action,
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, string> $query
+	 * @param list<string>          $scopes
+	 */
+	private function bookmarks(
+		Application $app,
+		array $query = [],
+		array $scopes = ['read:bookmarks'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/bookmarks',
+			query: $query,
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
 	private function upload(
 		Application $app,
 		?string $bytes,

@@ -14,6 +14,8 @@ use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Domain\Post\Bookmark;
+use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
@@ -89,6 +91,7 @@ final class MastodonService
 		private readonly ?PollVoteRepository $pollVotes = null,
 		private readonly ?BoostRepository $boosts = null,
 		private readonly ?BoostService $boostService = null,
+		private readonly ?BookmarkRepository $bookmarks = null,
 	) {
 	}
 
@@ -563,6 +566,104 @@ final class MastodonService
 		$this->requireFavourites()->remove($userId, $post->id);
 
 		return $this->presenter->status($post, $userId);
+	}
+
+	/**
+	 * Adds a private bookmark for the caller.
+	 *
+	 * Bookmarks are not reactions: they have no public count and never create
+	 * a notification. A repeated call is idempotent through the (user, post)
+	 * key and returns the current status projection.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function bookmarkStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$post = $this->visiblePost($postId, $userId);
+		$bookmarks = $this->requireBookmarks();
+
+		if (!$bookmarks->exists($userId, $post->id)) {
+			try {
+				$bookmarks->insert(new Bookmark(
+					userId: $userId,
+					postId: $post->id,
+					createdAt: $this->now(),
+				));
+			} catch (DatabaseException $exception) {
+				if (!$bookmarks->exists($userId, $post->id)) {
+					throw $exception;
+				}
+			}
+		}
+
+		return $this->presenter->status($post, $userId);
+	}
+
+	/**
+	 * Removes the caller's bookmark; an absent bookmark is a successful no-op.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function unbookmarkStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$post = $this->visiblePost($postId, $userId);
+		$this->requireBookmarks()->remove($userId, $post->id);
+
+		return $this->presenter->status($post, $userId);
+	}
+
+	/**
+	 * The caller's private bookmark timeline, newest first.
+	 *
+	 * Statuses that are no longer visible or were soft-deleted are omitted.
+	 * The cursor is a status id that must belong to this caller's bookmarks,
+	 * so it cannot be used to probe another account's private list.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function bookmarks(
+		string $userId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$bookmarks = $this->requireBookmarks();
+
+		[$before, $beforePostId, $after, $afterPostId] = $this->bookmarkCursor(
+			$bookmarks,
+			$userId,
+			$maxId,
+			$sinceId ?? $minId,
+		);
+
+		$posts = [];
+		foreach ($bookmarks->forUser(
+			$userId,
+			$this->clamp($limit),
+			$before,
+			$beforePostId,
+			$after,
+			$afterPostId,
+		) as $bookmark) {
+			try {
+				$post = $this->postService->getVisible($bookmark->postId, $userId);
+			} catch (PostNotFoundException) {
+				continue;
+			}
+
+			$posts[] = $post;
+		}
+
+		return $this->presenter->statuses($posts, $userId);
 	}
 
 	/**
@@ -1264,6 +1365,70 @@ final class MastodonService
 		}
 
 		return $this->boostService;
+	}
+
+	private function requireBookmarks(): BookmarkRepository
+	{
+		if ($this->bookmarks === null) {
+			throw new MastodonRequestException(
+				503,
+				'bookmarks_not_configured',
+				'Bookmark storage is not configured.',
+			);
+		}
+
+		return $this->bookmarks;
+	}
+
+	/**
+	 * Resolves one status-id cursor to the caller's bookmark timestamp.
+	 *
+	 * @return array{0: ?\DateTimeImmutable, 1: ?string, 2: ?\DateTimeImmutable, 3: ?string}
+	 */
+	private function bookmarkCursor(
+		BookmarkRepository $bookmarks,
+		string $userId,
+		?string $maxId,
+		?string $sinceId,
+	): array {
+		if ($maxId !== null && $maxId !== '' && $sinceId !== null && $sinceId !== '') {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'max_id and since_id/min_id cannot be combined.',
+			);
+		}
+
+		$before = null;
+		$beforePostId = null;
+		if ($maxId !== null && $maxId !== '') {
+			$bookmark = $this->bookmarkCursorBookmark($bookmarks, $userId, $maxId);
+			$before = $bookmark->createdAt;
+			$beforePostId = $bookmark->postId;
+		}
+
+		$after = null;
+		$afterPostId = null;
+		if ($sinceId !== null && $sinceId !== '') {
+			$bookmark = $this->bookmarkCursorBookmark($bookmarks, $userId, $sinceId);
+			$after = $bookmark->createdAt;
+			$afterPostId = $bookmark->postId;
+		}
+
+		return [$before, $beforePostId, $after, $afterPostId];
+	}
+
+	private function bookmarkCursorBookmark(
+		BookmarkRepository $bookmarks,
+		string $userId,
+		string $postId,
+	): Bookmark {
+		$bookmark = $bookmarks->find($userId, $postId);
+		if ($bookmark === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Status cursor not found.');
+		}
+
+		return $bookmark;
 	}
 
 	/**

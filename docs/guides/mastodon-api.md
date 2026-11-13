@@ -22,6 +22,9 @@ Locally implemented (core):
 - `POST /statuses`
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
+- `POST /statuses/{id}/bookmark`
+- `POST /statuses/{id}/unbookmark`
+- `GET /bookmarks`
 - `POST /statuses/{id}/reblog`
 - `POST /statuses/{id}/unreblog`
 - `GET /accounts/relationships`
@@ -43,8 +46,9 @@ Locally implemented (core):
 - `GET /search`
 
 The local subset covers public/unlisted/followers-only text posts, local poll
-creation on an own status, local favourite/unfavourite and boost/reblog
-bookkeeping, reply context, local follow/unfollow and relationship bookkeeping,
+creation on an own status, local favourite/unfavourite, private bookmark
+bookkeeping and boost/reblog bookkeeping, reply context, local follow/unfollow
+and relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
@@ -64,7 +68,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-eight routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all thirty-one routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -104,6 +108,9 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/unfavourite` | yes | `write:favourites` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/bookmark` | yes | `write:bookmarks` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/unbookmark` | yes | `write:bookmarks` | 30 / 900 s |
+| `GET {prefix}/bookmarks` | yes | `read:bookmarks` | 60 / 60 s |
 | `POST {prefix}/statuses/{id}/reblog` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/unreblog` | yes | `write:statuses` | 30 / 900 s |
 | `GET {prefix}/accounts/relationships` | yes | `read:follows` | 60 / 60 s |
@@ -121,9 +128,9 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/search` | yes | `read:search` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`,
-`read:follows`, `read:notifications` and `read:search`, `write` grants
-`write:favourites`, `write:follows`, `write:media` and
-`write:notifications`); a granular scope does
+`read:follows`, `read:bookmarks`, `read:notifications` and `read:search`,
+`write` grants `write:favourites`, `write:bookmarks`, `write:follows`,
+`write:media` and `write:notifications`); a granular scope does
 not grant its parent.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
@@ -131,9 +138,10 @@ expiry/revocation and the actual rate limiter; the route manifest only declares
 the budget, exactly like the rest of the core API.
 
 The local-account directory, when supplied, is checked for
-`verify_credentials`, status creation, favourite/unfavourite, follow/unfollow,
-relationships, notifications, media management, account profiles, follower and
-following lists, account statuses and account search. Without a directory the
+`verify_credentials`, status creation, favourite/unfavourite,
+bookmark/unbookmark, follow/unfollow, relationships, notifications, media
+management, account profiles, follower and following lists, account statuses
+and account search. Without a directory the
 core cannot distinguish local from remote
 account ids; a host that enables this API should always pass one.
 
@@ -366,6 +374,30 @@ An assembly without a `FavouriteRepository` answers `503
 favourites_not_configured` instead of silently dropping the write. The normal
 `Application::inMemory()`/`Application::forHost()` assemblies always supply
 one.
+
+### Bookmarking statuses
+
+`POST /statuses/{id}/bookmark` stores the signed-in local account's private
+bookmark and returns the same Mastodon status shape with `bookmarked: true`.
+`POST /statuses/{id}/unbookmark` removes only that account's bookmark and
+returns `bookmarked: false`. Both require `write:bookmarks`, declare a
+`30/900` rate limit, and are idempotent through the composite
+`(user_id, post_id)` primary key in `social_bookmark`.
+
+A bookmark is not a reaction: it has no public count, is never shown to
+another account and records no notification. The same local-account directory
+and visibility rule as status reads apply; missing, deleted, private or
+otherwise invisible statuses answer `404 not_found`. An assembly without a
+`BookmarkRepository` answers `503 bookmarks_not_configured`.
+
+`GET /bookmarks` returns the caller's private statuses newest-first. The
+cursor is the status id of a bookmark owned by the caller: `limit` accepts
+1–40 (default 20), `max_id` selects older bookmarks, `since_id`/`min_id`
+select newer ones, and combining `max_id` with either newer cursor is `422
+validation_failed`. An unknown or foreign cursor is `404 not_found`, so it
+cannot probe another account's list. Statuses that have since been deleted or
+become invisible are skipped. A non-empty page carries the usual `Link` with
+`rel="next"`. The list requires `read:bookmarks` and declares `60/60`.
 
 ### Reblogging and reply context
 
@@ -727,6 +759,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `mastodon_api_disabled` | 404 | `social/mastodon.api` is off |
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
+| `bookmarks_not_configured` | 503 | The assembly has no `BookmarkRepository` |
 | `notifications_not_configured` | 503 | The assembly has no `NotificationRepository` |
 | `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
@@ -793,6 +826,15 @@ CREATE TABLE social_favourite (
 CREATE INDEX social_favourite_post ON social_favourite (post_id);
 CREATE INDEX social_favourite_user ON social_favourite (user_id, created_at);
 
+CREATE TABLE social_bookmark (
+  user_id VARCHAR(255) NOT NULL,
+  post_id VARCHAR(64) NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  PRIMARY KEY (user_id, post_id)
+);
+CREATE INDEX social_bookmark_post ON social_bookmark (post_id);
+CREATE INDEX social_bookmark_user ON social_bookmark (user_id, created_at, post_id);
+
 CREATE TABLE social_boost (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   user_id VARCHAR(255) NOT NULL,
@@ -856,9 +898,13 @@ CREATE INDEX social_notification_unread
 
 An existing host must create `social_favourite` through its migration path
 before exposing the two favourite routes; there is no data backfill. A fresh
-host can run `FavouriteSchema::create()`. Boost/reblog routes and status counts
-need `social_boost` from `BoostSchema::create()` for the same reason; a boost
-row survives a post soft-delete for the host's cleanup policy. An existing host
+host can run `FavouriteSchema::create()`. The private bookmark routes and list
+need the `social_bookmark` table from `BookmarkSchema::create()`; its
+composite primary key is the idempotency boundary and its
+`(user_id, created_at)` index serves the cursor. There is no backfill and no
+public count. Boost/reblog routes and status counts need `social_boost` from
+`BoostSchema::create()` for the same reason; a boost row survives a post
+soft-delete for the host's cleanup policy. An existing host
 must likewise create
 `social_notification` with `NotificationSchema::statements()` or
 `NotificationSchema::create()` before enabling the notification routes; the
@@ -901,7 +947,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The twenty-eight routes are in the manifest with auth, scope and rate-limit metadata.
+The thirty-one routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -916,7 +962,9 @@ rows, idempotent retry, instance limits), poll read/voting (viewer state,
 multiple choices, idempotent retry, changed-vote rejection, expiry, private
 visibility, missing ids, auth/scope/disabled and SQL counters), read, local favourite/unfavourite (counts,
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
-deleted status and custom prefix), local follow/unfollow (relationship flags,
+deleted status and custom prefix), private bookmarks (pair idempotency,
+viewer flag, newest-first list, cursor pages, auth/scope/disabled, invisible
+and deleted statuses), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
 disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
@@ -948,17 +996,18 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - OAuth authorization, token issuance/refresh/revocation and app registration
   belong to the host or a dedicated identity service.
 - Remote statuses, public/remote timelines, favourite federation (outbound
-  `Like`/`Undo` and remote counts), remote boost federation, bookmarks, remote
+  `Like`/`Undo` and remote counts), remote boost federation, remote
   notifications, streaming and remote search need remote data the core does
-  not fetch for this surface. Local boosts/reblogs, notification listing and
-  local status/actor search are done above.
+  not fetch for this surface. Local boosts/reblogs, private bookmarks,
+  notification listing and local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
   Remote profile fetching, remote relationship APIs, remote polls (fetching,
   voting or federating a `Question`), domain blocks that would need a remote
   moderation feed, and remote search remain external; the local
   follow/unfollow, relationship, profile, follower/following list,
-  notification, search, poll-creation/voting and instance views above are done.
+  bookmark, notification, search, poll-creation/voting and instance views above
+  are done.
 - Following a remote actor through the compatibility prefix is not part of
   this slice. The public profile lists project remote follow edges that are
   already stored locally, but they never fetch a remote collection; moderation

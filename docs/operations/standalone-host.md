@@ -12,15 +12,16 @@ This document is the checklist that host is built against.
    `social/instance.*` metadata keys feed both instance endpoints; unset keys
    use their documented defaults, and no instance row or migration is needed.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BoostSchema`,
-   `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
+   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
+   `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
    `JobSchema`, `ActivityLogSchema`) from the migration step.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because
-   `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_boost` and
+   `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_bookmark`, `social_boost` and
    `social_notification` are needed only when favourite/unfavourite,
-   boost/reblog and notification listing, dismiss/clear and unread counts are
+   bookmark/unbookmark and its list, boost/reblog and notification listing,
+   dismiss/clear and unread counts are
    exposed. There is
    no backfill. Existing listing-only `social_notification` tables need the
    nullable `read_at` column and the unread index from
@@ -49,8 +50,9 @@ This document is the checklist that host is built against.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
-   `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`
-   and `PdoNotificationRepository` when local favourites and notifications
+   `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`,
+   `PdoBookmarkRepository` and `PdoNotificationRepository` when local
+   favourites, bookmarks and notifications
    are exposed, and the combined `PdoHomeTimelineRepository`. The PDO post and
    remote-post repositories already implement `PostCount` and
    `RemoteDomainCount`; a custom local directory should implement
