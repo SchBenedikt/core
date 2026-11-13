@@ -16,11 +16,14 @@ Locally implemented (core):
 - `GET /instance`
 - `GET /timelines/public`
 - `GET /statuses/{id}`
+- `GET /statuses/{id}/context`
 - `GET /polls/{id}`
 - `POST /polls/{id}/votes`
 - `POST /statuses`
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
+- `POST /statuses/{id}/reblog`
+- `POST /statuses/{id}/unreblog`
 - `GET /accounts/relationships`
 - `POST /accounts/{id}/follow`
 - `POST /accounts/{id}/unfollow`
@@ -40,13 +43,14 @@ Locally implemented (core):
 - `GET /search`
 
 The local subset covers public/unlisted/followers-only text posts, local poll
-creation on an own status, local favourite/unfavourite bookkeeping, local
-follow/unfollow and relationship bookkeeping, local notifications with
-dismiss/unread state, media upload, metadata update/delete and local media
-attachments. It deliberately
+creation on an own status, local favourite/unfavourite and boost/reblog
+bookkeeping, reply context, local follow/unfollow and relationship bookkeeping,
+local notifications with dismiss/unread state, media upload, metadata
+update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
-remote favourite counts), boosts, remote notifications, streaming, voting on or fetching remote polls, scheduled posts,
+remote favourite counts), remote boost federation, remote notifications,
+streaming, voting on or fetching remote polls, scheduled posts,
 filters, followed tags, lists, OAuth authorization/token endpoints, remote
 search, remote profile fetching, admin APIs or the full account management
 surface.
@@ -60,7 +64,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-five routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all twenty-eight routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -93,12 +97,15 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `DELETE {prefix}/media/{id}` | yes | `write:media` | 30 / 900 s |
 | `GET {prefix}/timelines/public` | no | — | 60 / 60 s |
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
+| `GET {prefix}/statuses/{id}/context` | no | — | 60 / 60 s |
 | `GET {prefix}/polls/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/polls/{id}/votes` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/unfavourite` | yes | `write:favourites` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/reblog` | yes | `write:statuses` | 30 / 900 s |
+| `POST {prefix}/statuses/{id}/unreblog` | yes | `write:statuses` | 30 / 900 s |
 | `GET {prefix}/accounts/relationships` | yes | `read:follows` | 60 / 60 s |
 | `POST {prefix}/accounts/{id}/follow` | yes | `write:follows` | 30 / 900 s |
 | `POST {prefix}/accounts/{id}/unfollow` | yes | `write:follows` | 30 / 900 s |
@@ -206,7 +213,12 @@ local follower; direct posts and other viewers see no followers-only rows.
 For an authenticated viewer the projected statuses also carry that viewer's
 `favourited` and poll-vote state. `in_reply_to_id` is the parent post id,
 `in_reply_to_account_id` its author (when the parent is still stored), and
-`mentions` lists direct recipients.
+`mentions` lists direct recipients. `replies_count` counts live direct replies,
+`reblogs_count` counts local boosts, and `reblogged` reports whether the
+authenticated viewer boosted the status. A reblog is projected as the outer
+status with the booster as `account`, the boost id/timestamp, and the original
+status nested under `reblog`; fetching that boost id through `GET /statuses/{id}`
+returns the same wrapper.
 
 ## Reading local profiles and follow lists
 
@@ -355,6 +367,46 @@ favourites_not_configured` instead of silently dropping the write. The normal
 `Application::inMemory()`/`Application::forHost()` assemblies always supply
 one.
 
+### Reblogging and reply context
+
+`POST /statuses/{id}/reblog` shares a visible local public or unlisted status
+and returns the Mastodon wrapper: the outer object uses the boost id and time,
+carries the booster as `account`, and nests the original status under
+`reblog`. Repeating the call returns the same wrapper and does not create a
+second row. Only public and unlisted posts can be boosted; a followers-only or
+direct post is a `422 validation_failed`, because announcing it to the
+booster's followers would create a new audience. `POST
+/statuses/{id}/unreblog` removes only the caller's boost and is a successful
+no-op when absent. Both require `write:statuses` and declare a `30/900` rate
+limit.
+
+The local `(user_id, post_id)` unique key in `social_boost` is the idempotency
+boundary. A boost writes one `Announce` addressed to the public collection and
+queues it to the booster's followers through the existing delivery queue; an
+unboost queues an `Undo` that embeds the original `Announce`. The local row is
+committed first, so a queue or configuration failure cannot fail the request or
+roll the boost back. A boost notification is recorded for the post author
+(never for a self-boost) and is exposed as `reblog`. `reblogs_count` and
+`reblogged` are projected from the same table.
+
+`GET /statuses/{id}/context` returns
+`{"ancestors": [...], "descendants": [...]}`. Ancestors walk the
+`in_reply_to_id` chain oldest-first and stop at the first post the viewer
+cannot see; descendants breadth-first through visible direct replies, oldest
+first, capped at 40. A private ancestor therefore never leaks through a public
+reply. The route is public and rate-limited at `60/60`; an authenticated
+viewer's visibility applies to every row.
+
+Status payloads now expose `replies_count`, `reblogs_count` and `reblogged`.
+The reply count is the number of live direct replies; deleted replies are
+excluded. A reblog is also readable by its boost id through `GET
+/statuses/{id}`, which returns the same nested wrapper.
+
+In the core API the same write is `POST /api/v1/posts/{id}/boost` (201 on a new
+boost, 200 on a repeat) and `DELETE /api/v1/posts/{id}/boost` (204, idempotent).
+An assembly without a `BoostRepository`/`BoostService` answers `503
+boosts_not_configured` instead of silently dropping the write.
+
 ### Following accounts and relationships
 
 `POST /accounts/{id}/follow` follows a **local** account from the signed-in
@@ -423,8 +475,10 @@ follows_not_configured` rather than returning an empty relationship.
 `GET {prefix}/notifications` returns the signed-in local account's unread
 notifications, newest first. A local favourite by another account creates one
 `favourite` notification for the post author; a local or remote follow creates
-one `follow` notification for the local target. Repeating the same favourite,
-follow or Follow activity does not create a second row. The API does not
+one `follow` notification for the local target; a reply or direct post creates
+one `mention` notification for its parent author/recipients; and a local boost
+creates one `reblog` notification for the post author. Repeating the same
+favourite, follow, reply or boost does not create a second row. The API does not
 notify an account about its own actions and does not create a notification for
 a post the caller cannot see.
 
@@ -453,14 +507,14 @@ favourite or follow, and the absolute actor URL for a remote follower. A
 remote account is projected with the URL path as `username`, `username@host`
 as `acct`, the actor URL as `url`, and zero counts; the core does not fetch a
 remote profile just to render a notification. `status` is present for a
-favourite and omitted for a follow. It is also omitted if the post was deleted
+favourite, mention and reblog and omitted for a follow. It is also omitted if the post was deleted
 or is no longer visible to the recipient, so a notification never exposes a
 tombstone. The id is derived from recipient, type, actor and post, which is the
 idempotency boundary; no random notification id is generated. `unread` is true
 for every row the list returns; the list never includes read rows.
 
 The endpoint accepts `types[]` and `exclude_types[]`, each repeatable. Known
-local types are `favourite` and `follow`; unknown names are ignored for
+local types are `favourite`, `follow`, `mention` and `reblog`; unknown names are ignored for
 forward compatibility. If a non-empty `types[]` contains no known type, the
 result is an empty array. The filters apply before the page limit.
 
@@ -738,6 +792,17 @@ CREATE TABLE social_favourite (
 );
 CREATE INDEX social_favourite_post ON social_favourite (post_id);
 CREATE INDEX social_favourite_user ON social_favourite (user_id, created_at);
+
+CREATE TABLE social_boost (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  user_id VARCHAR(255) NOT NULL,
+  post_id VARCHAR(64) NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  UNIQUE (user_id, post_id)
+);
+CREATE INDEX social_boost_post ON social_boost (post_id);
+CREATE INDEX social_boost_user ON social_boost (user_id, created_at);
+CREATE INDEX social_boost_timeline ON social_boost (created_at, id);
 ```
 
 ```sql
@@ -791,7 +856,10 @@ CREATE INDEX social_notification_unread
 
 An existing host must create `social_favourite` through its migration path
 before exposing the two favourite routes; there is no data backfill. A fresh
-host can run `FavouriteSchema::create()`. An existing host must likewise create
+host can run `FavouriteSchema::create()`. Boost/reblog routes and status counts
+need `social_boost` from `BoostSchema::create()` for the same reason; a boost
+row survives a post soft-delete for the host's cleanup policy. An existing host
+must likewise create
 `social_notification` with `NotificationSchema::statements()` or
 `NotificationSchema::create()` before enabling the notification routes; the
 standard `forHost()` assembly constructs the SQL repository, but it does not
@@ -833,7 +901,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The twenty-five routes are in the manifest with auth, scope and rate-limit metadata.
+The twenty-eight routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -880,10 +948,10 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - OAuth authorization, token issuance/refresh/revocation and app registration
   belong to the host or a dedicated identity service.
 - Remote statuses, public/remote timelines, favourite federation (outbound
-  `Like`/`Undo` and remote counts), boosts, bookmarks, remote notifications,
-  streaming and remote search need remote data the core does not fetch for
-  this surface. Local notification listing and local status/actor search are
-  done above.
+  `Like`/`Undo` and remote counts), remote boost federation, bookmarks, remote
+  notifications, streaming and remote search need remote data the core does
+  not fetch for this surface. Local boosts/reblogs, notification listing and
+  local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
   Remote profile fetching, remote relationship APIs, remote polls (fetching,

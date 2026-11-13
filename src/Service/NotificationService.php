@@ -54,6 +54,16 @@ final class NotificationService
 		$this->record($recipientId, $actorId, NotificationType::Follow, null);
 	}
 
+	public function recordMention(string $recipientId, string $actorId, string $postId): void
+	{
+		$this->record($recipientId, $actorId, NotificationType::Mention, $postId);
+	}
+
+	public function recordReblog(string $recipientId, string $actorId, string $postId): void
+	{
+		$this->record($recipientId, $actorId, NotificationType::Reblog, $postId);
+	}
+
 	public function find(string $id): ?Notification
 	{
 		return $this->notifications->find($id);

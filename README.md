@@ -17,14 +17,14 @@ in [ADR 0001](docs/adr/0001-shared-core-two-hosts.md) and
 | Area | Implemented here |
 | --- | --- |
 | Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public and home timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
-| Social interactions | local favourites and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
+| Social interactions | local favourites, boosts/reblogs and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
 | Follow graph | incoming and outgoing edges, individual and shared inboxes, batched delivery, optional follow policy, local-to-local follows and local-follow home timeline |
-| Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` |
+| Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` and local `Announce`/`Undo(Announce)` |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
 | AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
-| Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), poll creation/voting, favourites, local follow/unfollow and relationships, notifications with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (51 routes; 25 under the compatibility prefix) |
+| Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (56 routes; 28 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
@@ -55,7 +55,7 @@ These are real host or deployment responsibilities, not missing local routes:
   [migrating a Nextcloud installation](docs/guides/migration-from-nextcloud.md).
 - **The full Mastodon server API:** OAuth authorization/token issuance and app
   registration; real remote timelines and remote delivery; favourite
-  federation; boosts; remote notifications; streaming infrastructure; remote
+  federation; remote notifications; streaming infrastructure; remote
   poll fetching/voting/federation; remote search; and remote
   relationship/admin APIs. The local subset and the exact external list are in
   [Mastodon-compatible API](docs/guides/mastodon-api.md#what-remains-external).
@@ -120,7 +120,7 @@ and services. See [architecture](docs/architecture.md) and
 composer install
 composer check          # lint, core boundary, attribution, links, PHP tests
 php bin/core-demo       # real HTTP requests through the in-memory assembly
-php bin/export-routes   # the HTTP contract as JSON (51 routes)
+php bin/export-routes   # the HTTP contract as JSON (56 routes)
 php bin/export-openapi  # the same contract as OpenAPI 3.1
 
 cd ui
@@ -153,11 +153,12 @@ WebFinger. It needs no database and no network.
    `src/Platform/`. The core imports no host code; the boundary check fails the
    build otherwise.
 3. **Data** — each table's schema lives next to its repository or adapter.
-   `PostSchema`, `PollSchema`, `FavouriteSchema`, `NotificationSchema`,
-   `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
-   `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema` and
-   `ActivityLogSchema` are shared by the in-memory contract tests and the PDO
-   adapters, so a database dump can move between hosts.
+   `PostSchema`, `PollSchema`, `FavouriteSchema`, `BoostSchema`,
+   `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `BlockSchema`,
+   `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` are shared
+   by the in-memory contract tests and the PDO adapters, so a database dump can
+   move between hosts.
 
 ## Layout
 

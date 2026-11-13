@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use DateTimeImmutable;
 
 use function array_slice;
+use function array_unique;
+use function array_values;
 use function usort;
 
 /**
@@ -35,6 +38,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		private HomeTimelineRepository $base,
 		private PostRepository $posts,
 		private LocalRelationshipService $relationships,
+		private ?BoostRepository $boosts = null,
 	) {
 	}
 
@@ -44,13 +48,35 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		?DateTimeImmutable $before = null,
 	): array {
 		$authors = $this->relationships->localFollowingUserIds($localUserId);
-		if ($authors === []) {
-			return $this->base->forUser($localUserId, $limit, $before);
+		$entries = $this->base->forUser($localUserId, $limit, $before);
+
+		if ($authors !== []) {
+			foreach ($this->posts->timelineForAuthors($authors, $limit, $before) as $post) {
+				$entries[] = TimelineEntry::fromPost($post);
+			}
 		}
 
-		$entries = $this->base->forUser($localUserId, $limit, $before);
-		foreach ($this->posts->timelineForAuthors($authors, $limit, $before) as $post) {
-			$entries[] = TimelineEntry::fromPost($post);
+		// The reader's own boosts belong on their home timeline even when
+		// they do not follow another local account yet.
+		$boostAuthors = $authors;
+		$boostAuthors[] = $localUserId;
+		foreach ($this->boosts?->timelineForUsers(array_values(array_unique($boostAuthors)), $limit, $before) ?? [] as $boost) {
+			$post = $this->posts->find($boost->postId);
+			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
+				continue;
+			}
+
+			$entries[] = new TimelineEntry(
+				id: $boost->id,
+				authorId: $boost->userId,
+				objectId: $post->id,
+				objectAuthorId: $post->authorId,
+				content: $post->content,
+				contentWarning: $post->contentWarning,
+				publishedAt: $boost->createdAt,
+				visibility: $post->visibility,
+				boostedBy: $boost->userId,
+			);
 		}
 
 		usort($entries, static function (TimelineEntry $a, TimelineEntry $b): int {

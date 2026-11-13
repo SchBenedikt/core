@@ -12,6 +12,8 @@ namespace AlohaSocial\Core\Service\Mastodon;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Post\Boost;
+use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Poll;
 use AlohaSocial\Core\Domain\Post\PollOption;
@@ -49,6 +51,7 @@ final class MastodonPresenter
 		private readonly ?Clock $clock = null,
 		private readonly ?PollVoteRepository $pollVotes = null,
 		private readonly ?PostRepository $posts = null,
+		private readonly ?BoostRepository $boosts = null,
 	) {
 	}
 
@@ -99,6 +102,9 @@ final class MastodonPresenter
 		?bool $favourited = null,
 		?PollVote $viewerVote = null,
 		bool $viewerVoteLoaded = false,
+		?int $repliesCount = null,
+		?int $reblogsCount = null,
+		?bool $reblogged = null,
 	): array {
 		$attachments = [];
 		$presented = $this->media === null ? [] : ($this->media->presentPost($post)['attachments'] ?? []);
@@ -124,8 +130,8 @@ final class MastodonPresenter
 			'language' => null,
 			'uri' => $url,
 			'url' => $url,
-			'replies_count' => 0,
-			'reblogs_count' => 0,
+			'replies_count' => $repliesCount ?? ($this->posts?->replyCount($post->id) ?? 0),
+			'reblogs_count' => $reblogsCount ?? ($this->boosts?->countForPost($post->id) ?? 0),
 			'favourites_count' => $favouritesCount ?? ($this->favourites?->countForPost($post->id) ?? 0),
 			'edited_at' => null,
 			'content' => $this->html($post->content),
@@ -140,7 +146,8 @@ final class MastodonPresenter
 			'poll' => $this->poll($post, $viewerId, $viewerVote, $viewerVoteLoaded),
 			'favourited' => $favourited
 				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
-			'reblogged' => false,
+			'reblogged' => $reblogged
+				?? ($viewerId !== null && ($this->boosts?->exists($viewerId, $post->id) ?? false)),
 			'muted' => false,
 			'bookmarked' => false,
 			'pinned' => false,
@@ -207,6 +214,11 @@ final class MastodonPresenter
 		$favourited = $viewerId === null
 			? []
 			: ($this->favourites?->existsForPosts($viewerId, $postIds) ?? []);
+		$replies = $this->posts?->replyCountsForPosts($postIds) ?? [];
+		$reblogs = $this->boosts?->countsForPosts($postIds) ?? [];
+		$reblogged = $viewerId === null
+			? []
+			: ($this->boosts?->existsForPosts($viewerId, $postIds) ?? []);
 		$pollVotes = [];
 		if ($viewerId !== null) {
 			try {
@@ -225,9 +237,50 @@ final class MastodonPresenter
 				$favourited[$post->id] ?? false,
 				$pollVotes[$post->id] ?? null,
 				true,
+				$replies[$post->id] ?? 0,
+				$reblogs[$post->id] ?? 0,
+				$reblogged[$post->id] ?? false,
 			),
 			$posts,
 		);
+	}
+
+	/**
+	 * The wrapper status Mastodon returns for a reblog.
+	 *
+	 * The boost is the outer status: its id and timestamp are the Announced
+	 * activity, its account is the booster, and the original post is nested
+	 * under `reblog`. Counts on the wrapper are zero, exactly as Mastodon's
+	 * own projection reports them.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function boostStatus(Boost $boost, Post $post, ?string $viewerId = null): array
+	{
+		$original = $this->status($post, $viewerId);
+
+		return array_merge($original, [
+			'id' => $boost->id,
+			'created_at' => $boost->createdAt->format('Y-m-d\TH:i:s.000\Z'),
+			'in_reply_to_id' => null,
+			'in_reply_to_account_id' => null,
+			'sensitive' => $original['sensitive'],
+			'spoiler_text' => $original['spoiler_text'],
+			'visibility' => $original['visibility'],
+			'uri' => $this->activities->boostId($boost),
+			'url' => $original['url'],
+			'replies_count' => 0,
+			'reblogs_count' => 0,
+			'favourites_count' => 0,
+			'content' => '',
+			'reblog' => $original,
+			'account' => $this->account($boost->userId),
+			'media_attachments' => [],
+			'mentions' => [],
+			'poll' => null,
+			'favourited' => false,
+			'reblogged' => false,
+		]);
 	}
 
 	/**

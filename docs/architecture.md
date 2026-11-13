@@ -363,7 +363,34 @@ GET {mastodon.prefix}/timelines/public
 `favourites_count` is public; `favourited` is only true for the authenticated
 viewer and is false on the unauthenticated timeline. A repeat favourite is
 idempotent through the composite primary key, and unfavourite removes only the
-caller's row and is a successful no-op when absent. Notifications are recorded
+caller's row and is a successful no-op when absent. Local boosts follow the
+same pattern but also queue a federation activity:
+
+```
+POST {mastodon.prefix}/statuses/{id}/reblog
+  └─ MastodonReblogStatusHandler
+      └─ MastodonService::reblogStatus   visible public/unlisted post + local account
+          └─ BoostService::boost
+              ├─ BoostRepository::insert       social_boost (user, post) unique
+              ├─ NotificationService::recordReblog(author, booster, post)
+              └─ JobQueue::push                one Announce per follower inbox
+POST {mastodon.prefix}/statuses/{id}/unreblog
+  └─ BoostService::unboost → JobQueue::push Undo(Announce)
+
+GET {mastodon.prefix}/statuses/{id}/context
+  └─ MastodonService::context
+      ├─ PostRepository::find              visible ancestor chain, oldest first
+      └─ PostRepository::repliesTo         breadth-first visible descendants, capped
+```
+
+The row is committed before delivery is queued, so a queue failure never
+undoes a local action. `reblogs_count`, `reblogged`, the nested `reblog`
+wrapper and the `reblog` notification read the same row; a boost of a
+followers-only or direct post is refused because announcing it would create a
+new audience. `replies_count` counts live direct replies through the existing
+`in_reply_to_id` index. Reply context stops at the first invisible ancestor
+and applies the viewer's visibility to every descendant, so a public reply
+cannot disclose a private parent. Notifications are recorded
 next to the interaction, not derived at read time:
 
 ```
@@ -589,7 +616,7 @@ maximum is 40, and generated links carry a non-default limit.
   features, not a second status model.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post,
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
-  `NotificationSchema`, `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
+  `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
   `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` do the same
   for favourites, notifications, media metadata, remote content, per-user
   blocks, AT Protocol publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
@@ -679,7 +706,7 @@ genuinely owns the capability.
 | --- | --- |
 | accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
 | AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, boosts, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, local boosts/reblogs, reply context, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
 | Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screen; the package under `ui/` is now extracted |
@@ -695,7 +722,7 @@ genuinely owns the capability.
   `FollowerRepositoryTestCase`, `FollowingRepositoryTestCase`,
   `RemotePostRepositoryTestCase`, `RemoteThreadRepositoryTestCase`,
   `BlockRepositoryTestCase`, `HomeTimelineRepositoryTestCase`,
-  `NotificationRepositoryTestCase`, `PollVoteRepositoryTestCase`,
+  `NotificationRepositoryTestCase`, `BoostRepositoryTestCase`, `PollVoteRepositoryTestCase`,
   `AtprotoPublicationRepositoryTestCase`,
   `AtprotoSessionStoreTestCase`,
   `JobQueueTestCase`, `ActivityLogTestCase`). A new adapter is only done when
@@ -746,9 +773,11 @@ genuinely owns the capability.
   forms, expiry flip, validation with no partial rows, idempotent retry),
   poll read/voting (viewer state, multiple choices, idempotent retry,
   changed-vote rejection, expiry, private visibility, auth/scope/disabled),
-  media upload/update/delete, local follow/unfollow and relationship reads,
-  local search, scopes, disabled-before-auth, cursor/offset pagination,
-  idempotency and media projection; `ApplicationHostTest` repeats the
+  reblog/unreblog and their counts/flags/wrapper, reply context and counts,
+  mention/reblog notifications, media upload/update/delete, local
+  follow/unfollow and relationship reads, local search, scopes,
+  disabled-before-auth, cursor/offset pagination, idempotency and media
+  projection; `ApplicationHostTest` repeats the
   idempotent write, poll persistence and a SQL search over SQL repositories.
   `MastodonCompatibilityTest` covers the prefix, scope and route metadata;
   `PollVoteRepositoryTestCase` covers the in-memory and SQL vote stores and

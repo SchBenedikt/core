@@ -50,6 +50,7 @@ final class PostService
 		private readonly IdGenerator $ids,
 		private readonly ?AtprotoPublishService $atproto = null,
 		private readonly ?LocalRelationshipService $relationships = null,
+		private readonly ?NotificationService $notifications = null,
 	) {
 	}
 
@@ -86,6 +87,7 @@ final class PostService
 
 		$this->posts->insert($post);
 		$this->atproto?->schedule($post);
+		$this->recordMentions($post, $parent);
 		$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
 
 		return $post;
@@ -330,6 +332,28 @@ final class PostService
 
 		if ($errors !== []) {
 			throw new ValidationException($errors);
+		}
+	}
+
+	/**
+	 * A reply notifies its parent author; a direct post notifies every other
+	 * recipient. The notification service uses a deterministic id, so the
+	 * parent author appearing in both sets is still one row.
+	 */
+	private function recordMentions(Post $post, ?Post $parent): void
+	{
+		if ($this->notifications === null) {
+			return;
+		}
+
+		if ($parent !== null && $parent->authorId !== $post->authorId) {
+			$this->notifications->recordMention($parent->authorId, $post->authorId, $post->id);
+		}
+
+		foreach ($post->recipientIds as $recipientId) {
+			if ($recipientId !== $post->authorId) {
+				$this->notifications->recordMention($recipientId, $post->authorId, $post->id);
+			}
 		}
 	}
 

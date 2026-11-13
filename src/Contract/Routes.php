@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Contract;
 use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
+use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\FollowHandler;
@@ -30,6 +31,7 @@ use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
+use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
@@ -50,10 +52,13 @@ use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
@@ -137,6 +142,24 @@ final class Routes
 				handler: DeletePostHandler::class,
 				requiresAuth: true,
 				summary: 'Delete a post you wrote.',
+			),
+			new Route(
+				name: 'posts.boost',
+				method: 'POST',
+				path: $base . '/posts/{id}/boost',
+				handler: BoostPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Share a visible public or unlisted post; idempotent per account and post.',
+			),
+			new Route(
+				name: 'posts.unboost',
+				method: 'DELETE',
+				path: $base . '/posts/{id}/boost',
+				handler: UnboostPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove the signed-in account\'s share of a post.',
 			),
 			new Route(
 				name: 'media.upload',
@@ -356,6 +379,15 @@ final class Routes
 				summary: 'Read one local status in the Mastodon shape.',
 			),
 			new Route(
+				name: 'mastodon.statuses.context',
+				method: 'GET',
+				path: $mastodon . '/statuses/{id}/context',
+				handler: MastodonStatusContextHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Visible ancestors and direct replies of one local status.',
+			),
+			new Route(
 				name: 'mastodon.statuses.create',
 				method: 'POST',
 				path: $mastodon . '/statuses',
@@ -374,6 +406,26 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Delete one of the signed-in account\'s statuses.',
+			),
+			new Route(
+				name: 'mastodon.statuses.reblog',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/reblog',
+				handler: MastodonReblogStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Reblog a visible local status; idempotent per account and status.',
+			),
+			new Route(
+				name: 'mastodon.statuses.unreblog',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/unreblog',
+				handler: MastodonUnreblogStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Remove the signed-in account\'s reblog of a visible local status.',
 			),
 			new Route(
 				name: 'mastodon.statuses.favourite',

@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\Favourite;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\Poll;
@@ -31,9 +32,11 @@ use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
+use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
+use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Support\Time;
@@ -45,11 +48,12 @@ use InvalidArgumentException;
  *
  * It reuses the existing post service for writes and the existing repositories
  * for reads. There is no second status table: a Mastodon status is a core
- * post with an API-shaped projection. Remote posts, boosts and streaming are
- * intentionally outside this local slice. Favourites, follow edges and
- * notifications are local bookkeeping; notifications are recorded from local
- * favourites/follows and verified inbound Follows, and read from the
- * notification repository without a second account or post model.
+ * post with an API-shaped projection. Remote posts, remote boosts and
+ * streaming are intentionally outside this local slice. Favourites, local
+ * boosts, follow edges and notifications are local bookkeeping; notifications
+ * are recorded from local favourites/follows/replies/boosts and verified
+ * inbound Follows, and read from the notification repository without a second
+ * account or post model.
  */
 final class MastodonService
 {
@@ -83,6 +87,8 @@ final class MastodonService
 		private readonly ?PostSearchRepository $searchPosts = null,
 		private readonly ?LocalActorSearch $searchActors = null,
 		private readonly ?PollVoteRepository $pollVotes = null,
+		private readonly ?BoostRepository $boosts = null,
+		private readonly ?BoostService $boostService = null,
 	) {
 	}
 
@@ -225,7 +231,118 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 
+		$boost = $this->boosts?->find($postId);
+		if ($boost !== null) {
+			return $this->presenter->boostStatus(
+				$boost,
+				$this->visiblePost($boost->postId, $viewerId),
+				$viewerId,
+			);
+		}
+
 		return $this->presenter->status($this->visiblePost($postId, $viewerId), $viewerId);
+	}
+
+	/**
+	 * Both statuses and their direct replies, visible to the caller.
+	 *
+	 * The parent chain stops at the first post the viewer cannot see, so a
+	 * public reply does not disclose a private ancestor. The descendant walk
+	 * uses the same visibility check and a hard bound, so a long thread cannot
+	 * turn one request into an unbounded traversal.
+	 *
+	 * @return array{ancestors: list<array<string, mixed>>, descendants: list<array<string, mixed>>}
+	 */
+	public function context(string $postId, ?string $viewerId): array
+	{
+		$this->requireEnabled();
+		$post = $this->visiblePost($postId, $viewerId);
+
+		$ancestors = [];
+		$parentId = $post->inReplyToId;
+		$seen = [$post->id => true];
+		while ($parentId !== null && count($ancestors) < 20 && !isset($seen[$parentId])) {
+			$parent = $this->posts->find($parentId);
+			if ($parent === null || $parent->isDeleted()) {
+				break;
+			}
+
+			try {
+				$parent = $this->visiblePost($parentId, $viewerId);
+			} catch (MastodonRequestException) {
+				break;
+			}
+
+			$seen[$parentId] = true;
+			array_unshift($ancestors, $parent);
+			$parentId = $parent->inReplyToId;
+		}
+
+		$descendants = [];
+		$queue = [$post->id];
+		while ($queue !== [] && count($descendants) < 40) {
+			$parentId = array_shift($queue);
+			foreach (array_reverse($this->posts->repliesTo($parentId, 40)) as $reply) {
+				if (isset($seen[$reply->id])) {
+					continue;
+				}
+
+				try {
+					$reply = $this->visiblePost($reply->id, $viewerId);
+				} catch (MastodonRequestException) {
+					continue;
+				}
+
+				$seen[$reply->id] = true;
+				$descendants[] = $reply;
+				$queue[] = $reply->id;
+				if (count($descendants) >= 40) {
+					break;
+				}
+			}
+		}
+
+		return [
+			'ancestors' => $this->presenter->statuses($ancestors, $viewerId),
+			'descendants' => $this->presenter->statuses($descendants, $viewerId),
+		];
+	}
+
+	/**
+	 * Reblogs a visible local status; a repeat is idempotent.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function reblogStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$post = $this->visiblePost($postId, $userId);
+
+		try {
+			$result = $this->requireBoostService()->boost($userId, $post->id);
+		} catch (ValidationException $exception) {
+			throw new MastodonRequestException(422, 'validation_failed', $exception->getMessage());
+		} catch (PostNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		}
+
+		return $this->presenter->boostStatus($result->boost, $post, $userId);
+	}
+
+	/**
+	 * Removes the caller's reblog; an absent reblog is a successful no-op.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function unreblogStatus(string $userId, string $postId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$post = $this->visiblePost($postId, $userId);
+		$this->requireBoostService()->unboost($userId, $post->id);
+
+		return $this->presenter->status($post, $userId);
 	}
 
 	/**
@@ -1134,6 +1251,19 @@ final class MastodonService
 		}
 
 		return $this->favourites;
+	}
+
+	private function requireBoostService(): BoostService
+	{
+		if ($this->boostService === null) {
+			throw new MastodonRequestException(
+				503,
+				'boosts_not_configured',
+				'Boost storage is not configured.',
+			);
+		}
+
+		return $this->boostService;
 	}
 
 	/**

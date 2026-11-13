@@ -12,15 +12,16 @@ This document is the checklist that host is built against.
    `social/instance.*` metadata keys feed both instance endpoints; unset keys
    use their documented defaults, and no instance row or migration is needed.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`,
+   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BoostSchema`,
    `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
    `JobSchema`, `ActivityLogSchema`) from the migration step.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because
-   `PdoPostRepository` reads polls for every status; `social_favourite` and
-   `social_notification` are needed only when favourite/unfavourite and
-   notification listing, dismiss/clear and unread counts are exposed. There is
+   `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_boost` and
+   `social_notification` are needed only when favourite/unfavourite,
+   boost/reblog and notification listing, dismiss/clear and unread counts are
+   exposed. There is
    no backfill. Existing listing-only `social_notification` tables need the
    nullable `read_at` column and the unread index from
    `NotificationSchema`; old rows remain unread. Local search needs

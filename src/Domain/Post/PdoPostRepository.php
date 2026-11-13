@@ -307,6 +307,63 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
 
+	public function repliesTo(string $postId, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND in_reply_to_id = :post_id';
+		$parameters = ['post_id' => $postId];
+
+		if ($before !== null) {
+			$sql .= ' AND published_at < :before';
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	public function replyCount(string $postId): int
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND in_reply_to_id = :post_id',
+			['post_id' => $postId],
+		);
+	}
+
+	public function replyCountsForPosts(array $postIds): array
+	{
+		$counts = array_fill_keys(array_values($postIds), 0);
+		if ($postIds === []) {
+			return $counts;
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach (array_values($postIds) as $index => $postId) {
+			$name = 'post_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $postId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT in_reply_to_id, COUNT(*) AS total FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND in_reply_to_id IN (' . implode(', ', $placeholders) . ')'
+			. ' GROUP BY in_reply_to_id',
+			$parameters,
+		);
+
+		foreach ($rows as $row) {
+			$postId = (string) $row['in_reply_to_id'];
+			if (isset($counts[$postId])) {
+				$counts[$postId] = (int) $row['total'];
+			}
+		}
+
+		return $counts;
+	}
+
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'

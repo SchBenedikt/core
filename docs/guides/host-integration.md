@@ -200,7 +200,8 @@ The core owns the schema classes, not the migration mechanism:
 - `PostSchema` → `social_post` and `social_post_attachment`
 - `PollSchema` → `social_poll`, ordered `social_poll_option` and one `social_poll_vote` row per voter and poll
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
-- `NotificationSchema` → `social_notification` (local favourite/follow notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
+- `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
+- `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox plus `is_local` for local-to-local follows)
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
@@ -235,7 +236,10 @@ For thread/context fetching, create `social_remote_thread_post` from
 the route. For local Mastodon favourites, create `social_favourite` from
 `FavouriteSchema::statements()` before exposing the favourite/unfavourite
 routes; existing posts need no backfill, and deleting a post leaves the row for
-the host's cleanup policy. For local polls, create `social_poll` and
+the host's cleanup policy. For local boosts/reblogs, create `social_boost`
+from `BoostSchema::statements()` before exposing the reblog routes or status
+counts; the unique pair is the idempotency boundary, and a soft-deleted post
+leaves its boost for the host's cleanup policy. For local polls, create `social_poll` and
 `social_poll_option` from `PollSchema::statements()` before accepting a `poll`
 parameter or serving a status whose repository reads the poll tables. Create
 `social_poll_vote` before enabling the vote route; without it, status and poll

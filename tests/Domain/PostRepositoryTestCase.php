@@ -432,6 +432,28 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertNotNull($repository->find('p1')?->poll);
 	}
 
+	public function testRepliesArePagedAndCountedWithoutDeletedPosts(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('parent', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('r1', 'bob', Visibility::Public, '2026-11-11T10:01:00Z', inReplyToId: 'parent'));
+		$repository->insert($this->post('r2', 'carol', Visibility::Public, '2026-11-11T10:02:00Z', inReplyToId: 'parent'));
+		$repository->insert($this->post('other', 'bob', Visibility::Public, '2026-11-11T10:03:00Z'));
+
+		self::assertSame(['r2', 'r1'], array_column($repository->repliesTo('parent', 10), 'id'));
+		self::assertSame(['r1'], array_column($repository->repliesTo('parent', 1, Time::parse('2026-11-11T10:02:00Z')), 'id'));
+		self::assertSame(2, $repository->replyCount('parent'));
+		self::assertSame(
+			['parent' => 2, 'other' => 0, 'missing' => 0],
+			$repository->replyCountsForPosts(['parent', 'other', 'missing']),
+		);
+		self::assertSame([], $repository->replyCountsForPosts([]));
+
+		$repository->softDelete('r1', Time::parse('2026-11-11T11:00:00Z'));
+		self::assertSame(['r2'], array_column($repository->repliesTo('parent', 10), 'id'));
+		self::assertSame(1, $repository->replyCount('parent'));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();

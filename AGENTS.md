@@ -96,8 +96,9 @@ authorization-code/PAR/revocation protocol client with ES256 DPoP proofs and a
 disabled-by-default publish route), the optional disabled-by-default Mastodon
 compatibility subset (instance metadata/statistics, public timeline, status
 read/create/delete with local poll creation/voting, local favourite/unfavourite,
-local follow/unfollow and relationship reads, local notification listing with
-dismiss/unread state, local status/actor search, media upload/update/delete,
+local boost/reblog, reply context and counts, local follow/unfollow and
+relationship reads, local notification listing with dismiss/unread state,
+local status/actor search, media upload/update/delete,
 local account profiles, paged local follower/following lists, account statuses,
 verify credentials; `write:statuses`,
 `write:favourites`, `write:follows`, `write:media`, `write:notifications`,
@@ -121,14 +122,14 @@ callback, credential store and PDS selection (the authorization-code/PAR flow
 and token revocation are implemented), the full
 repository/AppView/media/firehose stack, the external Mastodon server
 remainder (OAuth/token issuance and app registration, remote timelines and
-delivery, favourite federation, boosts, remote notifications, streaming,
-remote poll fetching/voting/federation, remote search, account/admin and
-remote relationship APIs), and an
+delivery, favourite federation, remote boost federation, remote notifications,
+streaming, remote poll fetching/voting/federation, remote search, account/admin
+and remote relationship APIs), and an
 object-storage adapter. Local Mastodon notification listing with
 dismiss/unread state, local status/actor search, local poll creation/voting,
-instance metadata/statistics, local account profiles and paged local
-follower/following lists are done; no locally implementable Mastodon profile
-follow-up remains. The local AT Protocol publishing slice is
+local boosts/reblogs, reply context/counts, instance metadata/statistics, local
+account profiles and paged local follower/following lists are done; no locally
+implementable Mastodon profile follow-up remains. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility
 subset is in `docs/guides/mastodon-api.md`; the rest is in
 `docs/roadmap.md`. Local

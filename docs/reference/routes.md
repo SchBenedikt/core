@@ -16,6 +16,8 @@ defaults to `/api/mastodon/v1`).
 | `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
+| `posts.boost` | `POST` | `/api/v1/posts/{id}/boost` | yes | 30 / 900 s |
+| `posts.unboost` | `DELETE` | `/api/v1/posts/{id}/boost` | yes | 60 / 900 s |
 | `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
@@ -503,9 +505,25 @@ under. See [WebFinger](../guides/webfinger.md). A missing or malformed
 `404 actor_not_found`; an instance without a key or directory is
 `503 actor_not_configured`.
 
+## Boost and unboost a post
+
+```http
+POST /api/v1/posts/{id}/boost
+Authorization: Bearer …
+```
+
+Shares a visible public or unlisted post. `201` returns
+`{"boost": {"id", "user_id", "post_id", "created_at"}}`; repeating the call
+returns the existing boost with `200`. A followers-only or direct post is `422
+validation_failed`, and a post the caller cannot see is `404 not_found`. The
+local row is written before one `Announce` per follower inbox is queued, so a
+queue outage does not undo the share; a `reblog` notification is recorded for
+the author unless the booster is the author. `DELETE` removes only the caller's
+boost, queues `Undo(Announce)`, and answers `204` even when no boost existed.
+
 ## Mastodon-compatible API
 
-The twenty-five routes above are additive and disabled by default. Their paths use
+The twenty-eight routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -515,6 +533,7 @@ mastodon_api_disabled` before auth and scope checks. They never shadow
 GET /api/mastodon/v1/instance
 GET /api/mastodon/v1/timelines/public?limit=20&max_id=…
 GET /api/mastodon/v1/statuses/{id}
+GET /api/mastodon/v1/statuses/{id}/context
 GET /api/mastodon/v1/polls/poll-{postId}
 POST /api/mastodon/v1/polls/poll-{postId}/votes
 Content-Type: application/x-www-form-urlencoded
@@ -522,6 +541,8 @@ Content-Type: application/x-www-form-urlencoded
 choices[]=0
 POST /api/mastodon/v1/statuses/{id}/favourite
 POST /api/mastodon/v1/statuses/{id}/unfavourite
+POST /api/mastodon/v1/statuses/{id}/reblog
+POST /api/mastodon/v1/statuses/{id}/unreblog
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
 POST /api/mastodon/v1/accounts/bob/follow
 POST /api/mastodon/v1/accounts/bob/unfollow
@@ -563,6 +584,18 @@ both idempotent. The public count is visible to every reader, while
 `favourited` is true only for the authenticated viewer. Missing, deleted or
 invisible statuses answer `404 not_found`; an assembly without a
 `FavouriteRepository` answers `503 favourites_not_configured`.
+
+`POST /api/mastodon/v1/statuses/{id}/reblog` returns the Mastodon reblog
+wrapper: the outer status carries the boost id, time and booster account, and
+the original status is nested under `reblog`. Repeating it returns the same
+wrapper; `unreblog` removes only the caller's row. Both require
+`write:statuses`, and only public/unlisted posts can be boosted. The same rows
+provide `reblogs_count` and `reblogged`; `GET /statuses/{id}` accepts the boost
+id as well. `GET /statuses/{id}/context` returns visible `ancestors` and
+`descendants`, walking only rows the viewer may read. A reply or direct
+recipient records a `mention` notification and a boost records a `reblog`
+notification. `social_boost` from `BoostSchema` is the only new table; a host
+without it must not expose these routes.
 
 To upload an image first, send the same multipart envelope as
 `/api/v1/media`:
@@ -609,10 +642,11 @@ routes require `write:media` and declare a `30/900` rate limit; no new table or
 migration is involved.
 
 `GET /api/mastodon/v1/notifications` returns the signed-in account's unread
-local favourite and follow events, newest first. The `account` is the local
-actor id or, for a remote follower, the actor URL projected with a minimal
-profile. A favourite notification carries the status; a follow notification
-and a favourite whose post no longer exists omit `status`. Every returned row
+local favourite, follow, mention and reblog events, newest first. The `account`
+is the local actor id or, for a remote follower, the actor URL projected with a
+minimal profile. A favourite, mention and reblog notification carries the
+status; a follow notification and a favourite whose post no longer exists omit
+`status`. Every returned row
 has `"unread": true`. Repeat events use a deterministic id and cannot
 duplicate. `types[]`/`exclude_types[]` filter known local types before the
 page limit. Pagination accepts `limit` (1–40), `max_id`, `since_id` and

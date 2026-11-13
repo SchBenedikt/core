@@ -27,7 +27,8 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment` and ordered `social_post_recipient`
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
-- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id, with a nullable `read_at` marker)
+- `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
+- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following`

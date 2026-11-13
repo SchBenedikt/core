@@ -41,7 +41,7 @@ it in the local-follow home timeline.
 
 The mechanism differs per host: Nextcloud has its own schema API, the standalone
 server will use Doctrine Migrations. The core shares the *schema*
-(`PostSchema`, `FavouriteSchema`, `NotificationSchema`, `AttachmentSchema`,
+(`PostSchema`, `FavouriteSchema`, `BoostSchema`, `NotificationSchema`, `AttachmentSchema`,
 `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`,
 `BlockSchema`, `JobSchema`, `ActivityLogSchema`), not the runner.
 

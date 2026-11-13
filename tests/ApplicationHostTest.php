@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
+use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
@@ -82,7 +83,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(51, $app->routes->routes());
+		self::assertCount(56, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -596,6 +597,7 @@ final class ApplicationHostTest extends TestCase
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
 		PollSchema::create($database);
+		BoostSchema::create($database);
 		FavouriteSchema::create($database);
 		NotificationSchema::create($database);
 		FollowerSchema::create($database);

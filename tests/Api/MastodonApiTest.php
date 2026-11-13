@@ -17,7 +17,9 @@ use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
@@ -1975,12 +1977,112 @@ final class MastodonApiTest extends TestCase
 		));
 	}
 
+	public function testReblogAndUnreblogAreIdempotentAndProjected(): void
+	{
+		$boosts = new InMemoryBoostRepository();
+		$app = $this->app(actors: ['alice', 'bob'], boosts: $boosts);
+		$status = $this->createStatus($app, ['status' => 'boost me'])->decodedBody();
+
+		$first = $app->handle(new Request(
+			'POST',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'] . '/reblog',
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $first->status);
+		$boost = $first->decodedBody();
+		self::assertSame('bob', $boost['account']['id']);
+		self::assertSame($status['id'], $boost['reblog']['id']);
+		self::assertSame(0, $boost['reblogs_count']);
+		self::assertSame(1, $boosts->countForPost($status['id']));
+
+		$again = $app->handle(new Request(
+			'POST',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'] . '/reblog',
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame($boost['id'], $again->decodedBody()['id']);
+		self::assertSame(1, $boosts->countForPost($status['id']));
+
+		$original = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'],
+			userId: 'bob',
+		));
+		self::assertTrue($original->decodedBody()['reblogged']);
+		self::assertSame(1, $original->decodedBody()['reblogs_count']);
+
+		$byBoostId = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . rawurlencode($boost['id']),
+		));
+		self::assertSame(200, $byBoostId->status);
+		self::assertSame($status['id'], $byBoostId->decodedBody()['reblog']['id']);
+
+		$notification = $this->notifications($app, ['types' => ['reblog']]);
+		self::assertSame(200, $notification->status);
+		self::assertSame('reblog', $notification->decodedBody()[0]['type']);
+		self::assertSame('bob', $notification->decodedBody()[0]['account']['id']);
+
+		$unreblog = $app->handle(new Request(
+			'POST',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'] . '/unreblog',
+			userId: 'bob',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $unreblog->status);
+		self::assertFalse($unreblog->decodedBody()['reblogged']);
+		self::assertSame(0, $unreblog->decodedBody()['reblogs_count']);
+		self::assertSame(0, $boosts->countForPost($status['id']));
+	}
+
+	public function testStatusContextProjectsAncestorsRepliesAndCounts(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$parent = $this->createStatus($app, ['status' => 'parent'])->decodedBody();
+		$reply = $this->createStatus($app, [
+			'status' => 'reply',
+			'in_reply_to_id' => $parent['id'],
+		], userId: 'bob')->decodedBody();
+		$child = $this->createStatus($app, [
+			'status' => 'child',
+			'in_reply_to_id' => $reply['id'],
+		], userId: 'carol')->decodedBody();
+
+		$context = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $parent['id'] . '/context',
+		));
+		self::assertSame(200, $context->status);
+		self::assertSame([], $context->decodedBody()['ancestors']);
+		self::assertSame([$reply['id'], $child['id']], array_column($context->decodedBody()['descendants'], 'id'));
+
+		$childContext = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $child['id'] . '/context',
+		));
+		self::assertSame([$parent['id'], $reply['id']], array_column($childContext->decodedBody()['ancestors'], 'id'));
+		self::assertSame([], $childContext->decodedBody()['descendants']);
+
+		$parentView = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $parent['id'],
+		));
+		self::assertSame(1, $parentView->decodedBody()['replies_count']);
+
+		$notification = $this->notifications($app, ['types' => ['mention']]);
+		self::assertSame('mention', $notification->decodedBody()[0]['type']);
+		self::assertSame($reply['id'], $notification->decodedBody()[0]['status']['id']);
+	}
+
 	private function app(
 		bool $enabled = true,
 		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
 		?InMemoryAttachmentRepository $attachments = null,
 		?InMemoryBlobStore $blobs = null,
 		?FavouriteRepository $favourites = null,
+		?BoostRepository $boosts = null,
 		?NotificationRepository $notificationRepository = null,
 		?array $actors = ['alice'],
 		?string $instanceUrl = 'https://social.example',
@@ -2001,6 +2103,7 @@ final class MastodonApiTest extends TestCase
 			config: new ArrayConfig([InstanceInfo::CONFIG_APP => $config]),
 			attachmentRepository: $attachments,
 			favouriteRepository: $favourites,
+			boostRepository: $boosts,
 			notificationRepository: $notificationRepository,
 			blobStore: $blobs,
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),

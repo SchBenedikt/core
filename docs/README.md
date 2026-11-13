@@ -24,13 +24,13 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
 | [Shared UI and HostBridge](guides/shared-ui.md) | The extracted Vue package, bridge contract, package layout, read-only screens and host wiring |
-| [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, own and remote posts in the home timeline, boosts and deletes |
+| [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, replies, local/remote posts and boosts in the home timeline, and deletes |
 | [Media](guides/media.md) | Image upload, local originals and thumbnails, guarded remote attachments from federated posts, limits, failure reasons and cleanup |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
 | [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
-| [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
+| [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, local boosts/reblogs, reply context, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
 | [Shared inboxes](guides/shared-inboxes.md) | Actor-document discovery, the shared route, stored peer shared inboxes, delivery batching, fallback and migration |
 | [Remote outbox backfill](guides/remote-backfill.md) | Bounded catch-up of a followed actor's public `Create`/`Announce` outbox, including historical media |

@@ -12,12 +12,15 @@ namespace AlohaSocial\Core\Domain\Notification;
 /**
  * The notification kinds the local compatibility surface can produce.
  *
- * Remote mentions, boosts, poll results and moderation notifications require
- * data models the core does not have yet; they are not accepted as local
- * types until those events exist.
+ * The values are the names Mastodon clients already understand. A reply and
+ * every direct recipient are a mention; a local boost is a reblog. Poll
+ * results and moderation notifications need events the core does not model
+ * yet and are therefore not accepted here.
  */
 enum NotificationType: string
 {
 	case Favourite = 'favourite';
 	case Follow = 'follow';
+	case Mention = 'mention';
+	case Reblog = 'reblog';
 }

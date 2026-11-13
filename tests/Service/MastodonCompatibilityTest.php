@@ -85,6 +85,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$mediaDelete = $manifest->find('mastodon.media.delete');
 		$favourite = $manifest->find('mastodon.statuses.favourite');
 		$unfavourite = $manifest->find('mastodon.statuses.unfavourite');
+		$reblog = $manifest->find('mastodon.statuses.reblog');
+		$unreblog = $manifest->find('mastodon.statuses.unreblog');
+		$context = $manifest->find('mastodon.statuses.context');
 		$relationships = $manifest->find('mastodon.accounts.relationships');
 		$account = $manifest->find('mastodon.accounts.show');
 		$followers = $manifest->find('mastodon.accounts.followers');
@@ -108,6 +111,9 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertNotNull($mediaDelete);
 		self::assertNotNull($favourite);
 		self::assertNotNull($unfavourite);
+		self::assertNotNull($reblog);
+		self::assertNotNull($unreblog);
+		self::assertNotNull($context);
 		self::assertNotNull($relationships);
 		self::assertNotNull($account);
 		self::assertNotNull($followers);
@@ -146,6 +152,14 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame('/api/mastodon/v1/statuses/{id}/favourite', $favourite->path);
 		self::assertSame(['write:favourites'], $unfavourite->requiredScopes);
 		self::assertSame('/api/mastodon/v1/statuses/{id}/unfavourite', $unfavourite->path);
+		self::assertTrue($reblog->requiresAuth);
+		self::assertSame(['write:statuses'], $reblog->requiredScopes);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/reblog', $reblog->path);
+		self::assertSame(['write:statuses'], $unreblog->requiredScopes);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/unreblog', $unreblog->path);
+		self::assertFalse($context->requiresAuth);
+		self::assertSame('60/60', $context->rateLimit);
+		self::assertSame('/api/mastodon/v1/statuses/{id}/context', $context->path);
 		self::assertTrue($relationships->requiresAuth);
 		self::assertSame(['read:follows'], $relationships->requiredScopes);
 		self::assertSame('60/60', $relationships->rateLimit);

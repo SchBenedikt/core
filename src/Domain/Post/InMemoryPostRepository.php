@@ -178,6 +178,50 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return array_slice($posts, 0, max(1, $limit));
 	}
 
+	public function repliesTo(string $postId, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		$replies = array_values(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted()
+				&& $post->inReplyToId === $postId
+				&& ($before === null || $post->publishedAt < $before),
+		));
+
+		usort($replies, static function (Post $a, Post $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($replies, 0, max(1, $limit));
+	}
+
+	public function replyCount(string $postId): int
+	{
+		$count = 0;
+		foreach ($this->posts as $post) {
+			if (!$post->isDeleted() && $post->inReplyToId === $postId) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
+	public function replyCountsForPosts(array $postIds): array
+	{
+		$counts = array_fill_keys(array_values($postIds), 0);
+		foreach ($this->posts as $post) {
+			if ($post->isDeleted() || $post->inReplyToId === null || !isset($counts[$post->inReplyToId])) {
+				continue;
+			}
+
+			$counts[$post->inReplyToId]++;
+		}
+
+		return $counts;
+	}
+
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		return $this->slice(

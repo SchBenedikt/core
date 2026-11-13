@@ -496,7 +496,7 @@ one owner, or a peer will see two different answers for the same account.
   upload/update/delete, account profiles and follower/following lists,
   account statuses and verify credentials). The app can
   delegate those routes instead of keeping a second implementation;
-  OAuth/token issuance, remote timelines, favourite federation, boosts,
+  OAuth/token issuance, remote timelines, favourite federation, remote boost federation,
   remote notifications, streaming and the remote account/admin surface stay
   host-specific. Local search, notification dismiss/unread state and local
   account profiles/follow lists are done in the core; no locally implementable

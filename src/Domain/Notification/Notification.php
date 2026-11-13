@@ -17,8 +17,8 @@ use InvalidArgumentException;
  * One event addressed to a local account.
  *
  * `actorId` is a local user id for local interactions and an absolute actor
- * URL for a remote follower. `postId` is set only for a favourite, because a
- * follow notification has no status to show. `readAt` is null while the event
+ * URL for a remote follower. `postId` is set for every event about a status
+ * and absent only for a follow. `readAt` is null while the event
  * is unread and is set by a dismiss or clear action; the row itself stays for
  * the host's retention policy.
  */
@@ -37,12 +37,12 @@ final readonly class Notification
 			throw new InvalidArgumentException('A notification needs an id, a recipient and an actor.');
 		}
 
-		if ($type === NotificationType::Favourite && $postId === null) {
-			throw new InvalidArgumentException('A favourite notification needs a post.');
-		}
-
 		if ($type === NotificationType::Follow && $postId !== null) {
 			throw new InvalidArgumentException('A follow notification cannot point at a post.');
+		}
+
+		if ($type !== NotificationType::Follow && $postId === null) {
+			throw new InvalidArgumentException('This notification needs a post.');
 		}
 	}
 

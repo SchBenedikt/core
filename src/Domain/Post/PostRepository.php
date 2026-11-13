@@ -114,6 +114,27 @@ interface PostRepository
 	 */
 	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array;
 
+	/**
+	 * Live direct replies to one post, newest first.
+	 *
+	 * Visibility is not filtered here: the caller has a viewer context and
+	 * must apply the same check as the detail route before returning a row.
+	 *
+	 * @return list<Post>
+	 */
+	public function repliesTo(string $postId, int $limit, ?DateTimeImmutable $before = null): array;
+
+	/**
+	 * Number of live direct replies to one post.
+	 */
+	public function replyCount(string $postId): int;
+
+	/**
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, int> every requested id, with zero for no replies
+	 */
+	public function replyCountsForPosts(array $postIds): array;
 
 	/**
 	 * Attachment ids for a set of posts, in their stored order.

@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Protocol\ActivityPub;
 
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -149,7 +150,12 @@ final class ActivityFactory
 
 	public function noteId(Post $post): string
 	{
-		return $this->baseUrl() . '/api/v1/posts/' . rawurlencode($post->id);
+		return $this->noteIdFor($post->id);
+	}
+
+	public function noteIdFor(string $postId): string
+	{
+		return $this->baseUrl() . '/api/v1/posts/' . rawurlencode($postId);
 	}
 
 	/**
@@ -272,6 +278,52 @@ final class ActivityFactory
 				'cc' => [],
 			],
 		};
+	}
+
+	public function boostId(Boost $boost): string
+	{
+		return $this->baseUrl() . '/api/v1/boosts/' . rawurlencode($boost->id);
+	}
+
+	/**
+	 * The Announce that shares a public or unlisted post.
+	 *
+	 * A boost is always addressed to the public collection: boosting a post
+	 * whose audience is narrower would turn the booster into a new audience
+	 * member and leak it to the booster's followers.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function announce(Boost $boost): array
+	{
+		$actor = $this->actorId($boost->userId);
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->boostId($boost) . '/activity',
+			'type' => 'Announce',
+			'actor' => $actor,
+			'published' => Time::format($boost->createdAt),
+			'object' => $this->noteIdFor($boost->postId),
+			'to' => [self::PUBLIC_COLLECTION],
+			'cc' => [$this->followersId($boost->userId)],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function undoAnnounce(Boost $boost): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->boostId($boost) . '/activity/undo',
+			'type' => 'Undo',
+			'actor' => $this->actorId($boost->userId),
+			'object' => $this->announce($boost),
+			'to' => [self::PUBLIC_COLLECTION],
+			'cc' => [$this->followersId($boost->userId)],
+		];
 	}
 
 	public function blockId(Block $block): string
