@@ -16,6 +16,7 @@ change. `fields` appears only when an error belongs to specific input.
 | `invalid_media_variant` | 400 | `variant` is neither absent, `original` nor `thumbnail` |
 | `payload_too_large` | 413 | The multipart request is larger than the file limit plus framing |
 | `invalid_cursor` | 400 | `before` is not a canonical timestamp |
+| `invalid_tag` | 400 | A hashtag path value is empty or contains anything except letters, digits and underscores |
 | `invalid_resource` | 400 | WebFinger `resource` is missing or not a usable `acct:` URI |
 | `authentication_required` | 401 | The route needs a user and the request has none; carries `WWW-Authenticate: Bearer` |
 | `forbidden` | 403 | The user is known but may not do this (deleting somebody else's post) |

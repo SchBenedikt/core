@@ -71,7 +71,23 @@ call(
 	),
 );
 
-call($app, 'GET /api/v1/timelines/public', new Request('GET', '/api/v1/timelines/public?limit=10'));
+call(
+	$app,
+	'POST /api/v1/posts (hashtag)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/posts',
+		headers: ['Content-Type' => 'application/json'],
+		body: json_encode([
+			'content' => 'A post for #demo and #release.',
+			'visibility' => 'public',
+		], JSON_THROW_ON_ERROR),
+		userId: 'alice',
+	),
+);
+
+call($app, 'GET /api/v1/timelines/public', new Request('GET', '/api/v1/timelines/public'));
+call($app, 'GET /api/v1/timelines/tag/demo', new Request('GET', '/api/v1/timelines/tag/demo'));
 
 call($app, 'GET /api/v1/timelines/home (bob)', new Request('GET', '/api/v1/timelines/home', userId: 'bob'));
 

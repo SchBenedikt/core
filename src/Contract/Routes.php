@@ -24,6 +24,7 @@ use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
+use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
@@ -218,6 +219,14 @@ final class Routes
 				handler: PublicTimelineHandler::class,
 				requiresAuth: false,
 				summary: 'Public timeline, newest first.',
+			),
+			new Route(
+				name: 'timelines.tag',
+				method: 'GET',
+				path: $base . '/timelines/tag/{tag}',
+				handler: HashtagTimelineHandler::class,
+				requiresAuth: false,
+				summary: 'Public posts carrying a hashtag, newest first.',
 			),
 			new Route(
 				name: 'timelines.home',

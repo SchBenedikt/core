@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 79 routes in total; 43 use the
+defaults to `/api/mastodon/v1`). There are 80 routes in total; 43 use the
 compatibility prefix.
 
 | Name | Method | Path | Auth | Rate limit |
@@ -24,6 +24,7 @@ compatibility prefix.
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
+| `timelines.tag` | `GET` | `/api/v1/timelines/tag/{tag}` | no | — |
 | `timelines.home` | `GET` | `/api/v1/timelines/home` | yes | — |
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
@@ -328,7 +329,13 @@ GET /api/v1/timelines/home
 ```
 
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. A cursor
-that is not a canonical timestamp is `400 invalid_cursor`. The public timeline
+that is not a canonical timestamp is `400 invalid_cursor`. `GET
+/api/v1/timelines/tag/{tag}` uses the same limit and cursor rules, normalizes
+the tag by stripping one leading `#` and lowercasing it, and returns
+`{"tag": "devops", "posts": […]}`. Tags are extracted from post content when
+the post is stored; matching is exact, so `#devops` does not match `#devops_extra`.
+Only public and unlisted posts appear. A tag that is empty or contains anything
+other than letters, digits or underscores is `400 invalid_tag`. The public timeline
 contains local posts; the home timeline contains the caller's own local posts,
 remote posts and boosts from followed remote actors, and live local posts from
 followed local accounts, with `kind`, `object_id`, `object_author_id` and

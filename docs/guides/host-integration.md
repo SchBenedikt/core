@@ -198,7 +198,7 @@ host must strip it before passing the request to the kernel.
 
 The core owns the schema classes, not the migration mechanism:
 
-- `PostSchema` → `social_post` and `social_post_attachment`
+- `PostSchema` → `social_post`, `social_post_attachment` and `social_post_hashtag`
 - `PollSchema` → `social_poll`, ordered `social_poll_option` and one `social_poll_vote` row per voter and poll
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `BookmarkSchema` → `social_bookmark` (private per-user bookmarks; `(user_id, post_id)` primary key, newest-first cursor index)
@@ -211,7 +211,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
-- `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`
+- `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`, `social_post_hashtag`
 - `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`

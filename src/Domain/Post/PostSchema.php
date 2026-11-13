@@ -27,6 +27,8 @@ final class PostSchema
 
 	public const RECIPIENT_TABLE = 'social_post_recipient';
 
+	public const HASHTAG_TABLE = 'social_post_hashtag';
+
 	/**
 	 * @return list<string>
 	 */
@@ -61,6 +63,13 @@ final class PostSchema
 			. ')',
 			'CREATE INDEX ' . self::RECIPIENT_TABLE . '_post ON ' . self::RECIPIENT_TABLE . ' (post_id, position)',
 			'CREATE INDEX ' . self::RECIPIENT_TABLE . '_recipient ON ' . self::RECIPIENT_TABLE . ' (recipient_id, post_id)',
+			'CREATE TABLE ' . self::HASHTAG_TABLE . ' ('
+			. ' post_id VARCHAR(64) NOT NULL,'
+			. ' hashtag VARCHAR(100) NOT NULL,'
+			. ' position INTEGER NOT NULL,'
+			. ' PRIMARY KEY (post_id, hashtag)'
+			. ')',
+			'CREATE INDEX ' . self::HASHTAG_TABLE . '_tag ON ' . self::HASHTAG_TABLE . ' (hashtag, post_id)',
 		];
 	}
 

@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Public hashtag timelines: `GET /api/v1/timelines/tag/{tag}` returns local
+  public and unlisted posts carrying an exact, normalized hashtag. Tags are
+  extracted from post content on insert, stored in `social_post_hashtag` and
+  matched case-insensitively without prefix matches; followers-only, direct
+  and deleted posts never appear. The route uses the existing limit and
+  `before` cursor, accepts an optional leading `#`, and rejects an empty or
+  malformed tag with `400 invalid_tag`. `PublicTimeline` accepts an optional
+  `tag` and renders the same screen against the new route; the UI has no
+  separate hashtag component.
+
 ## [0.3.0] - 2026-11-13
 
 ### Added

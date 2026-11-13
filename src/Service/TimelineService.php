@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Post\Hashtags;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
@@ -54,6 +55,24 @@ final class TimelineService
 	public function public(int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
 	{
 		return $this->posts->publicTimeline($this->clamp($limit), $this->cursor($before));
+	}
+
+	/**
+	 * Public posts carrying exactly one hashtag, newest first.
+	 *
+	 * @return list<Post>
+	 *
+	 * @throws InvalidHashtagException when the tag is empty or malformed
+	 * @throws InvalidCursorException  when `before` is not a timestamp
+	 */
+	public function tag(string $tag, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	{
+		$normalized = Hashtags::normalize($tag);
+		if ($normalized === null) {
+			throw new InvalidHashtagException($tag);
+		}
+
+		return $this->posts->hashtagTimeline($normalized, $this->clamp($limit), $this->cursor($before));
 	}
 
 	public function clamp(int $limit): int

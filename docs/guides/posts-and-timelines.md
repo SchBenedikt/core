@@ -92,6 +92,14 @@ is publicly readable by design — it is only hidden from timelines.
 newest first, with the id as the tie-break. Remote posts are not copied into
 the public timeline.
 
+`GET /api/v1/timelines/tag/{tag}` returns the same public/unlisted posts whose
+content carries that exact hashtag. Tags are extracted when a post is stored,
+normalized to lower case and deduplicated; the route accepts an optional
+leading `#` and returns the normalized tag next to the page. Matching is
+exact (`#devops` does not match `#devops_extra`), and followers-only, direct
+and deleted posts never appear. It uses the same `limit` and `before` rules as
+the other timelines; an empty or malformed tag is `400 invalid_tag`.
+
 `GET /api/v1/timelines/home` is the combined repository page: the caller's own
 local posts and boosts plus live remote posts/boosts from followed remote
 actors, plus posts and boosts from followed local actors, minus actors the

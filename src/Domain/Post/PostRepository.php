@@ -47,6 +47,21 @@ interface PostRepository
 	): array;
 
 	/**
+	 * Publicly visible posts carrying exactly one hashtag, newest first.
+	 *
+	 * The tag is already normalized by the caller. Followers-only and direct
+	 * posts are never returned: a tag timeline is a public surface.
+	 *
+	 * @return list<Post>
+	 */
+	public function hashtagTimeline(
+		string $hashtag,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array;
+
+	/**
 	 * Live posts of one author, with the same id-aware cursor as
 	 * {@see publicTimeline()}.
 	 *

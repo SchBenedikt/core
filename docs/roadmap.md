@@ -47,9 +47,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 79 routes, 43 of them under the Mastodon prefix |
+| HTTP contract | 80 routes, 43 of them under the Mastodon prefix |
 | Persistence | 17 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 111 PHP test files (1029 tests, 4665 assertions) and 8 UI test files (59 tests) |
+| Tests | 112 PHP test files (1036 tests, 4708 assertions) and 8 UI test files (63 tests) |
 | Release | `0.3.0` (2026-11-13) is cut; `0.2.0` is tagged; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
@@ -57,9 +57,9 @@ the host that serves it. See
 ### Implemented in the core
 
 - **Posts and timelines** — create, read, soft-delete, visibility, replies,
-  local direct posts with `recipient_ids`, public and follow-based home
-  timelines with stable cursors, blocks, mutes, exclusive lists and boosts.
-  See [posts and timelines](guides/posts-and-timelines.md).
+  local direct posts with `recipient_ids`, public, follow-based home and
+  hashtag timelines with stable cursors, blocks, mutes, exclusive lists and
+  boosts. See [posts and timelines](guides/posts-and-timelines.md).
 - **Social interactions** — local favourites, private bookmarks, local mutes,
   private account lists and list timelines, notifications (favourite, follow,
   mention, reblog) with dismiss/unread state, polls with local voting, local
@@ -112,8 +112,9 @@ the host that serves it. See
   follow graph and notification table.
 - **Shared UI** — `@alohasocial/ui` with the typed `HostBridge`, Vue plugin,
   typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only
-  `PublicTimeline`/`PostDetail`, and the write screens `ActorHeader` (follow
-  control), `PostComposer` and `NotificationList` (dismiss, clear, paging).
+  `PublicTimeline` (public or hashtag timeline), `PostDetail`, and the write
+  screens `ActorHeader` (follow control), `PostComposer` and
+  `NotificationList` (dismiss, clear, paging).
   See [shared UI](guides/shared-ui.md).
 
 ### Not in this repository
@@ -184,9 +185,9 @@ server or a product decision.
 
 ## Later
 
-- **Locally implementable Mastodon remainder:** hashtags and hashtag search,
-  filters, followed tags, scheduled posts, follow requests/locked accounts and
-  the wider account-management surface. These are product decisions, not
+- **Locally implementable Mastodon remainder:** filters, followed tags,
+  scheduled posts, follow requests/locked accounts and the wider
+  account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
 - **AT Protocol after account linking:** facets, mentions, link cards, media
   embeds, reply/thread mapping and the full repository/AppView client.

@@ -10,9 +10,14 @@ import {
 } from '../src/index.js';
 import { errorResponse, post, timelineResponse } from './support.js';
 
-function mountTimeline(bridge: FakeHostBridge, limit = 20) {
+function mountTimeline(bridge: FakeHostBridge, limit = 20, tag?: string) {
+	const props: { limit: number; tag?: string } = { limit };
+	if (tag !== undefined) {
+		props.tag = tag;
+	}
+
 	return mount(PublicTimeline, {
-		props: { limit },
+		props,
 		global: { plugins: [createAlohaUi({ bridge })] },
 	});
 }
@@ -171,6 +176,20 @@ describe('PublicTimeline', () => {
 
 		expect(wrapper.findAll('article')).toHaveLength(2);
 		expect(wrapper.find('button').exists()).toBe(false);
+	});
+
+	it('loads a hashtag timeline and labels the empty state', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'GET /api/v1/timelines/tag/devops': timelineResponse([]),
+			},
+		});
+		const wrapper = mountTimeline(bridge, 20, '#devops');
+		await flushPromises();
+
+		expect(wrapper.get('section').attributes('aria-label')).toBe('Hashtag #devops timeline');
+		expect(wrapper.get('[role="status"]').text()).toContain('No posts for #devops yet.');
+		expect(bridge.calls[0]?.path).toBe('/api/v1/timelines/tag/devops');
 	});
 
 	it('does not load a page when the first page is shorter than the limit', async () => {

@@ -93,6 +93,25 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		);
 	}
 
+	public function hashtagTimeline(
+		string $hashtag,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		return $this->slice(
+			array_values(array_filter(
+				$this->posts,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& $post->visibility->isPubliclyVisible()
+					&& in_array($hashtag, Hashtags::extract($post->content), true),
+			)),
+			$limit,
+			$before,
+			$beforeId,
+		);
+	}
+
 	public function authorTimeline(
 		string $userId,
 		int $limit,

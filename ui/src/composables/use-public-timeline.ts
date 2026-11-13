@@ -17,7 +17,7 @@ export interface PublicTimelineState {
 	reload(): Promise<void>;
 }
 
-export function usePublicTimeline(limit?: number): PublicTimelineState {
+export function usePublicTimeline(limit?: number, tag?: string): PublicTimelineState {
 	const api = useCoreApi();
 	const pageLimit = normalizeTimelineLimit(limit);
 	const posts = ref<Post[]>([]);
@@ -49,9 +49,10 @@ export function usePublicTimeline(limit?: number): PublicTimelineState {
 		error.value = null;
 
 		try {
-			const page = await api.publicTimeline(
-				before === undefined ? { limit: pageLimit } : { limit: pageLimit, before },
-			);
+			const options = before === undefined ? { limit: pageLimit } : { limit: pageLimit, before };
+			const page = tag === undefined || tag.trim() === ''
+				? await api.publicTimeline(options)
+				: await api.hashtagTimeline(tag, options);
 
 			if (disposed) {
 				return;

@@ -49,7 +49,7 @@ The full mapping, guarantees and the path to a real bridge are in
 
 | Area | Implemented here |
 | --- | --- |
-| Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public and home timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
+| Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public, home and hashtag timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
 | Social interactions | local favourites, private bookmarks, local mutes, private account lists and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
 | Follow graph | incoming and outgoing edges, individual and shared inboxes, batched delivery, optional follow policy, local-to-local follows and local-follow home timeline |
 | Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` and local `Announce`/`Undo(Announce)` |
@@ -57,16 +57,16 @@ The full mapping, guarantees and the path to a real bridge are in
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
 | AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (79 routes; 43 under the compatibility prefix) |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (80 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
-| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline`/`PostDetail`, and the write screens `ActorHeader` (with follow toggle), `PostComposer` and `NotificationList` |
+| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` (public or hashtag timeline)/`PostDetail`, and the write screens `ActorHeader` (with follow toggle), `PostComposer` and `NotificationList` |
 
 `/api/v1` now exposes a host-neutral local interaction surface: public
 account profiles with the viewer relationship, idempotent local
-follow/unfollow, and the caller's notification page, unread count, dismiss and
-clear. The richer interaction set (favourites, bookmarks, mutes, lists, polls
+follow/unfollow, the caller's notification page, unread count, dismiss and
+clear, and public hashtag timelines derived from post content. The richer interaction set (favourites, bookmarks, mutes, lists, polls
 and the Mastodon-shaped variants) remains part of the optional
 Mastodon-compatible subset under its configurable prefix; both project the
 same local posts, follow graph and notification rows.
@@ -77,7 +77,8 @@ account directory as `/api/v1`; it is not a second status store. See
 [the compatibility guide](docs/guides/mastodon-api.md).
 
 The shared UI consumes existing core routes only. `PublicTimeline` reads
-`GET /api/v1/timelines/public`; `PostDetail` reads
+`GET /api/v1/timelines/public`, or `GET /api/v1/timelines/tag/{tag}` when it
+is given a `tag`; `PostDetail` reads
 `GET /api/v1/posts/{id}`; `ActorHeader` reads `GET /api/v1/accounts/{id}` and
 writes the follow edge; `PostComposer` writes `POST /api/v1/posts`;
 `NotificationList` reads the notification page and writes dismiss/clear. Each
@@ -180,7 +181,7 @@ The canonical status, milestone table and open decisions are in the
 composer install
 composer check          # lint, core boundary, attribution, links, PHP tests
 php bin/core-demo       # real HTTP requests through the in-memory assembly
-php bin/export-routes   # the HTTP contract as JSON (79 routes)
+php bin/export-routes   # the HTTP contract as JSON (80 routes)
 php bin/export-openapi  # the same contract as OpenAPI 3.1
 
 cd ui

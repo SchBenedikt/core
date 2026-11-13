@@ -1,18 +1,30 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { usePublicTimeline } from '../composables/use-public-timeline.js';
 import PostCard from './PostCard.vue';
 
-const props = withDefaults(defineProps<{ limit?: number }>(), {
+const props = withDefaults(defineProps<{ limit?: number; tag?: string }>(), {
 	limit: 20,
 });
 
-const { posts, loading, error, hasMore, loadMore, reload } = usePublicTimeline(props.limit);
+const normalizedTag = computed(() => props.tag?.trim().replace(/^#/, '') ?? '');
+const label = computed(() => normalizedTag.value === ''
+	? 'Public timeline'
+	: `Hashtag #${normalizedTag.value} timeline`);
+const loadingMessage = computed(() => normalizedTag.value === ''
+	? 'Loading public timeline…'
+	: `Loading hashtag #${normalizedTag.value}…`);
+const emptyMessage = computed(() => normalizedTag.value === ''
+	? 'No posts yet.'
+	: `No posts for #${normalizedTag.value} yet.`);
+
+const { posts, loading, error, hasMore, loadMore, reload } = usePublicTimeline(props.limit, props.tag);
 </script>
 
 <template>
-	<section class="aloha-timeline" aria-label="Public timeline" :aria-busy="loading">
+	<section class="aloha-timeline" :aria-label="label" :aria-busy="loading">
 		<p v-if="loading && posts.length === 0" class="aloha-timeline__status" role="status" aria-live="polite">
-			Loading public timeline…
+			{{ loadingMessage }}
 		</p>
 
 		<div v-else-if="error && posts.length === 0" class="aloha-timeline__error" role="alert">
@@ -21,7 +33,7 @@ const { posts, loading, error, hasMore, loadMore, reload } = usePublicTimeline(p
 		</div>
 
 		<p v-else-if="posts.length === 0" class="aloha-timeline__status" role="status" aria-live="polite">
-			No posts yet.
+			{{ emptyMessage }}
 		</p>
 
 		<template v-else>

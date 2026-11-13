@@ -40,6 +40,34 @@ describe('CoreApi', () => {
 		});
 	});
 
+	it('reads a hashtag timeline with the same bounded options', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'GET /api/v1/timelines/tag/devops': timelineResponse([post('tagged')]),
+			},
+		});
+		const api = new CoreApi(bridge);
+
+		const posts = await api.hashtagTimeline('#devops', { limit: 99 });
+
+		expect(posts.map((item) => item.id)).toEqual(['tagged']);
+		expect(bridge.calls[0]).toEqual({
+			method: 'GET',
+			path: '/api/v1/timelines/tag/devops',
+			query: { limit: '40' },
+		});
+	});
+
+	it('rejects an empty hashtag before asking the bridge', async () => {
+		const bridge = new FakeHostBridge();
+
+		await expect(new CoreApi(bridge).hashtagTimeline('#')).rejects.toMatchObject({
+			status: 400,
+			code: 'invalid_tag',
+		});
+		expect(bridge.calls).toHaveLength(0);
+	});
+
 	it('encodes a post id as one path segment', async () => {
 		const bridge = new FakeHostBridge({
 			responses: {

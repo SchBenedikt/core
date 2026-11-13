@@ -86,7 +86,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(79, $app->routes->routes());
+		self::assertCount(80, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',

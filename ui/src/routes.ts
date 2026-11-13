@@ -9,6 +9,8 @@
  */
 export const coreRoutes = {
 	publicTimeline: '/api/v1/timelines/public',
+	hashtagTimelinePattern: '/api/v1/timelines/tag/{tag}',
+	hashtagTimeline: (tag: string): string => `/api/v1/timelines/tag/${encodeURIComponent(tag)}`,
 	posts: '/api/v1/posts',
 	postPattern: '/api/v1/posts/{id}',
 	post: (id: string): string => `/api/v1/posts/${encodeURIComponent(id)}`,

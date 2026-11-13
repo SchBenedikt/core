@@ -63,25 +63,16 @@ export class CoreApi {
 	constructor(private readonly bridge: HostBridge) {}
 
 	async publicTimeline(options: PublicTimelineOptions = {}): Promise<Post[]> {
-		const query: Record<string, string> = {
-			limit: String(normalizeTimelineLimit(options.limit)),
-		};
+		return this.timeline(coreRoutes.publicTimeline, options);
+	}
 
-		if (options.before !== undefined && options.before !== '') {
-			query.before = options.before;
+	async hashtagTimeline(tag: string, options: PublicTimelineOptions = {}): Promise<Post[]> {
+		const normalized = tag.trim().replace(/^#/, '');
+		if (normalized === '') {
+			throw new UiApiError(400, 'invalid_tag', 'A hashtag is required.');
 		}
 
-		const data = await this.request<{ posts?: unknown }>({
-			method: 'GET',
-			path: coreRoutes.publicTimeline,
-			query,
-		});
-
-		if (!data || !Array.isArray(data.posts)) {
-			throw new UiApiError(502, 'invalid_response', 'The timeline response has no posts array.');
-		}
-
-		return data.posts as Post[];
+		return this.timeline(coreRoutes.hashtagTimeline(normalized), options);
 	}
 
 	async getPost(id: string): Promise<Post> {
@@ -250,6 +241,28 @@ export class CoreApi {
 		}
 
 		return data.post as unknown as Post;
+	}
+
+	private async timeline(path: string, options: PublicTimelineOptions): Promise<Post[]> {
+		const query: Record<string, string> = {
+			limit: String(normalizeTimelineLimit(options.limit)),
+		};
+
+		if (options.before !== undefined && options.before !== '') {
+			query.before = options.before;
+		}
+
+		const data = await this.request<{ posts?: unknown }>({
+			method: 'GET',
+			path,
+			query,
+		});
+
+		if (!data || !Array.isArray(data.posts)) {
+			throw new UiApiError(502, 'invalid_response', 'The timeline response has no posts array.');
+		}
+
+		return data.posts as Post[];
 	}
 
 	private async request<T>(request: {

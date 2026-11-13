@@ -75,6 +75,18 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 					);
 				}
 
+				foreach (Hashtags::extract($post->content) as $position => $hashtag) {
+					$this->db->execute(
+						'INSERT INTO ' . PostSchema::HASHTAG_TABLE
+						. ' (post_id, hashtag, position) VALUES (:post_id, :hashtag, :position)',
+						[
+							'post_id' => $post->id,
+							'hashtag' => $hashtag,
+							'position' => $position,
+						],
+					);
+				}
+
 				if ($post->poll !== null) {
 					$this->db->execute(
 						'INSERT INTO ' . PollSchema::TABLE
@@ -172,6 +184,37 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		}
 
 		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	public function hashtagTimeline(
+		string $hashtag,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
+			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
+			. ' WHERE p.deleted_at IS NULL AND p.visibility IN (:public, :unlisted)'
+			. ' AND h.hashtag = :hashtag';
+		$parameters = [
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+			'hashtag' => $hashtag,
+		];
+
+		if ($before !== null) {
+			if ($beforeId === null) {
+				$sql .= ' AND p.published_at < :before';
+			} else {
+				$sql .= ' AND (p.published_at < :before OR (p.published_at = :before AND p.id < :before_id))';
+				$parameters['before_id'] = $beforeId;
+			}
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY p.published_at DESC, p.id DESC LIMIT ' . $this->limit($limit);
 
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}

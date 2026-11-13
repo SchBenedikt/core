@@ -24,6 +24,7 @@ use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\HealthHandler;
+use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
@@ -749,6 +750,7 @@ final readonly class Application
 			->with(BoostPostHandler::class, static fn (): BoostPostHandler => new BoostPostHandler($boostService))
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
 			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService))
+			->with(HashtagTimelineHandler::class, static fn (): HashtagTimelineHandler => new HashtagTimelineHandler($timelines, $mediaService))
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))

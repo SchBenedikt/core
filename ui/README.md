@@ -18,7 +18,7 @@ See [ADR 0005](../docs/adr/0005-shared-ui.md) and the
 - `CoreApi`: typed reads and writes over the core HTTP contract, including the
   documented JSON error shape, the public-timeline `before`/`limit` cursor and
   the notification id cursor.
-- `PublicTimeline`, `PostDetail` and `PostCard`: the read-only shared screens.
+- `PublicTimeline` (public or `tag`-scoped), `PostDetail` and `PostCard`: the read-only shared screens.
   The timeline covers loading, empty, error, retry and load-more states; the
   detail screen reads one existing post by id and covers loading, not-found,
   error and retry states.

@@ -454,6 +454,30 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame(1, $repository->replyCount('parent'));
 	}
 
+	public function testHashtagTimelineIsExactPublicAndCursorAware(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('t1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: 'Hello #DevOps and #php'));
+		$repository->insert($this->post('t2', 'bob', Visibility::Unlisted, '2026-11-11T10:01:00Z', content: 'another #devops'));
+		$repository->insert($this->post('t3', 'carol', Visibility::Followers, '2026-11-11T10:02:00Z', content: '#devops for followers'));
+		$repository->insert($this->post('t4', 'dave', Visibility::Direct, '2026-11-11T10:03:00Z', content: '#devops direct', recipientIds: ['alice']));
+		$repository->insert($this->post('t5', 'alice', Visibility::Public, '2026-11-11T10:04:00Z', content: '#devops gone'));
+		$repository->insert($this->post('t6', 'alice', Visibility::Public, '2026-11-11T10:05:00Z', content: '#development'));
+		$repository->insert($this->post('t7', 'alice', Visibility::Public, '2026-11-11T10:06:00Z', content: '#devops_extra'));
+		$repository->softDelete('t5', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['t2', 't1'],
+			array_column($repository->hashtagTimeline('devops', 10), 'id'),
+		);
+		self::assertSame(
+			['t1'],
+			array_column($repository->hashtagTimeline('devops', 10, Time::parse('2026-11-11T10:01:00Z'), 't2'), 'id'),
+		);
+		self::assertSame(['t2'], array_column($repository->hashtagTimeline('devops', 1), 'id'));
+		self::assertSame([], $repository->hashtagTimeline('missing', 10));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();

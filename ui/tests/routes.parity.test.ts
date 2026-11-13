@@ -35,6 +35,15 @@ describe('route parity', () => {
 		expect(route?.requires_auth).toBe(false);
 	});
 
+	it('uses the manifest path for hashtag timelines', () => {
+		const route = manifest().routes.find((candidate) => candidate.name === 'timelines.tag');
+
+		expect(route).toBeDefined();
+		expect(route?.method).toBe('GET');
+		expect(route?.path).toBe(coreRoutes.hashtagTimelinePattern);
+		expect(route?.requires_auth).toBe(false);
+	});
+
 	it('uses the manifest path for a single post', () => {
 		const route = manifest().routes.find((candidate) => candidate.name === 'posts.get');
 
