@@ -50,7 +50,7 @@ the host that serves it. See
 | HTTP contract | 80 routes, 43 of them under the Mastodon prefix |
 | Persistence | 17 schema classes, in-memory and PDO adapters behind shared contract tests |
 | Tests | 112 PHP test files (1036 tests, 4708 assertions) and 8 UI test files (63 tests) |
-| Release | `0.3.0` (2026-11-13) is cut; `0.2.0` is tagged; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
+| Release | `0.4.0` (2026-11-13) is released together with `0.2.0` and `0.3.0`; `0.1.0` exists only as a CHANGELOG entry; none is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
 
@@ -140,7 +140,7 @@ server or a product decision.
 | --- | --- | --- | --- | --- |
 | M0 | Core foundation | done (`0.1.0`) | core | Ports, posts, HTTP signatures, delivery queue, kernel and boundary guard are green |
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
-| M2 | Release and documentation consistency | done (`0.2.0` tagged, `0.3.0` cut; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0` tagged |
+| M2 | Release and documentation consistency | done (`0.2.0`/`0.3.0`/`0.4.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`, `0.3.0` and `0.4.0` released |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
 | M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
@@ -155,7 +155,7 @@ server or a product decision.
    counts in the README and this page, and verifies that every `*Schema` class
    appears in the database guide. Add the configuration reference to the same
    guard when it drifts again.
-2. **Publish the registries.** `0.3.0` is cut and tagged; Packagist and the npm
+2. **Publish the registries.** `0.4.0` is cut and tagged; Packagist and the npm
    registry still need maintainer credentials. A host should be able to install
    a version instead of `dev-main`.
 3. **Close the identity decision.** [ADR 0006](adr/0006-host-owned-accounts.md)
@@ -181,7 +181,7 @@ server or a product decision.
 | Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
 | Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
-| Registry publication: Packagist and npm | core | core | A host installs `0.3.0` instead of `dev-main` |
+| Registry publication: Packagist and npm | core | core | A host installs `0.4.0` instead of `dev-main` |
 
 ## Later
 
@@ -236,7 +236,8 @@ local gaps. The detailed lists live in the guides.
 | `0.1.0` | 2026-11-11 | Foundation: ports, posts, timelines, ActivityPub, delivery queue, HTTP kernel, route manifest, boundary guard |
 | `0.2.0` | 2026-11-13 | The local social slice: media, remote content, blocks, direct posts, interactions, Mastodon compatibility, AT Protocol foundation and publication-state read, dual-protocol guide, shared UI reads, migration validator |
 | `0.3.0` | 2026-11-13 | Neutral profile/follow/notification API, shared `ActorHeader`/`PostComposer`/`NotificationList` write screens, host-level SQL coverage and release documentation |
+| `0.4.0` | 2026-11-13 | Public hashtag timelines with normalized storage, cursor paging, `timelines.tag` and a tag-scoped `PublicTimeline` |
 
-`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0` and `0.3.0` are tagged
-and recorded in the [changelog](../CHANGELOG.md); registry publication is the
-remaining M2 step.
+`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0`, `0.3.0` and `0.4.0` are
+released and recorded in the [changelog](../CHANGELOG.md); registry publication
+is the remaining M2 step.

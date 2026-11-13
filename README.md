@@ -159,6 +159,7 @@ timeline
     2026-11-11 : 0.1.0 foundation
     2026-11-13 : 0.2.0 local social slice
     2026-11-13 : 0.3.0 neutral interactions
+    2026-11-13 : 0.4.0 hashtag timelines
     next : Nextcloud cutover
          : standalone host
 ```
