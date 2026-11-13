@@ -30,6 +30,7 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
+use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FailingNotificationRepository;
 use PHPUnit\Framework\TestCase;
@@ -1278,6 +1279,223 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(404, $this->bookmarks($disabled, userId: null)->status);
 	}
 
+	public function testMuteUnmuteAndMuteListArePrivateIdempotentAndPaged(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+
+		$muted = $this->muteAccount($app, 'bob', fields: [
+			'notifications' => '1',
+			'duration' => '3600',
+		]);
+		self::assertSame(200, $muted->status);
+		self::assertSame('bob', $muted->decodedBody()['id']);
+		self::assertTrue($muted->decodedBody()['muting']);
+		self::assertTrue($muted->decodedBody()['muting_notifications']);
+		self::assertFalse($muted->decodedBody()['following']);
+
+		$repeated = $this->muteAccount($app, 'bob', fields: ['notifications' => '0']);
+		self::assertSame(200, $repeated->status);
+		self::assertTrue($repeated->decodedBody()['muting']);
+		self::assertFalse($repeated->decodedBody()['muting_notifications']);
+
+		$relationship = $this->relationships($app, ['bob']);
+		self::assertTrue($relationship->decodedBody()[0]['muting']);
+		self::assertFalse($relationship->decodedBody()[0]['muting_notifications']);
+
+		self::assertSame(['bob'], array_column($this->mutes($app)->decodedBody(), 'id'));
+
+		$this->muteAccount($app, 'carol');
+		self::assertSame(
+			['carol', 'bob'],
+			array_column($this->mutes($app)->decodedBody(), 'id'),
+		);
+		self::assertSame(
+			[],
+			$this->mutes($app, userId: 'bob')->decodedBody(),
+		);
+
+		$firstPage = $this->mutes($app, ['limit' => '1']);
+		self::assertSame(['carol'], array_column($firstPage->decodedBody(), 'id'));
+		self::assertStringContainsString('limit=1&max_id=carol', (string) $firstPage->header('Link'));
+
+		$secondPage = $this->mutes($app, [
+			'limit' => '1',
+			'max_id' => 'carol',
+		]);
+		self::assertSame(['bob'], array_column($secondPage->decodedBody(), 'id'));
+
+		$combined = $this->mutes($app, [
+			'max_id' => 'carol',
+			'since_id' => 'bob',
+		]);
+		self::assertSame(422, $combined->status);
+
+		$unknownCursor = $this->mutes($app, ['max_id' => 'ghost']);
+		self::assertSame(404, $unknownCursor->status);
+
+		$unmuted = $this->muteAccount($app, 'bob', 'unmute');
+		self::assertSame(200, $unmuted->status);
+		self::assertFalse($unmuted->decodedBody()['muting']);
+		self::assertFalse($unmuted->decodedBody()['muting_notifications']);
+		self::assertSame(['carol'], array_column($this->mutes($app)->decodedBody(), 'id'));
+
+		$repeatedUnmute = $this->muteAccount($app, 'bob', 'unmute');
+		self::assertSame(200, $repeatedUnmute->status);
+		self::assertFalse($repeatedUnmute->decodedBody()['muting']);
+	}
+
+	public function testMuteHidesHomeTimelineAndNotificationsUntilUnmute(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$bobStatus = $this->createStatus($app, ['status' => 'from bob'], userId: 'bob')->decodedBody();
+		$aliceStatus = $this->createStatus($app, ['status' => 'notify me'])->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$before = array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id');
+		self::assertContains($bobStatus['id'], $before);
+		self::assertContains($aliceStatus['id'], $before);
+
+		$this->muteAccount($app, 'bob', fields: ['notifications' => 'true']);
+
+		$hidden = array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id');
+		self::assertNotContains($bobStatus['id'], $hidden);
+		self::assertContains($aliceStatus['id'], $hidden);
+
+		$shown = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $bobStatus['id'],
+			userId: 'alice',
+		));
+		self::assertTrue($shown->decodedBody()['muted']);
+
+		$this->favourite($app, $aliceStatus['id'], userId: 'bob');
+		self::assertSame([], $this->notifications($app)->decodedBody());
+		self::assertSame(0, $this->unreadCount($app)->decodedBody()['count']);
+
+		$this->muteAccount($app, 'bob', 'unmute');
+		$secondAliceStatus = $this->createStatus($app, ['status' => 'notify me again'])->decodedBody();
+		$this->favourite($app, $secondAliceStatus['id'], userId: 'bob');
+
+		// The event recorded while muted was hidden, not deleted; unmuting
+		// makes it visible together with the new one.
+		self::assertCount(2, $this->notifications($app)->decodedBody());
+		self::assertSame(2, $this->unreadCount($app)->decodedBody()['count']);
+		$restored = array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id');
+		self::assertContains($bobStatus['id'], $restored);
+		self::assertContains($secondAliceStatus['id'], $restored);
+	}
+
+	public function testAMutedLocalAuthorDoesNotConsumeTheHomeTimelineLimit(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$this->createStatus($app, ['status' => 'older from bob'], userId: 'bob');
+		$this->clock->advance(1);
+		$carolStatus = $this->createStatus($app, ['status' => 'newer from carol'], userId: 'carol')->decodedBody();
+
+		$this->followAccount($app, 'bob');
+		$this->followAccount($app, 'carol');
+		$this->muteAccount($app, 'bob');
+
+		$home = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			query: ['limit' => '1'],
+			userId: 'alice',
+		));
+		self::assertSame(200, $home->status);
+		self::assertSame([$carolStatus['id']], array_column($home->decodedBody()['posts'], 'id'));
+	}
+
+	public function testAnExpiredMuteNoLongerHidesTimelineOrNotifications(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$bobStatus = $this->createStatus($app, ['status' => 'temporary'], userId: 'bob')->decodedBody();
+		$this->followAccount($app, 'bob');
+
+		$this->muteAccount($app, 'bob', fields: [
+			'notifications' => '1',
+			'duration' => '1',
+		]);
+		self::assertSame([], $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts']);
+
+		$this->clock->advance(1);
+
+		self::assertSame([$bobStatus['id']], array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id'));
+		self::assertSame([], $this->mutes($app)->decodedBody());
+
+		$shown = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $bobStatus['id'],
+			userId: 'alice',
+		));
+		self::assertFalse($shown->decodedBody()['muted']);
+	}
+
+	public function testARemoteActorCanBeMutedAndAppearsInTheMuteList(): void
+	{
+		$app = $this->app(actors: ['alice']);
+		$remote = 'https://remote.example/users/bob';
+
+		$muted = $this->muteAccount($app, $remote);
+		self::assertSame(200, $muted->status);
+		self::assertSame($remote, $muted->decodedBody()['id']);
+		self::assertTrue($muted->decodedBody()['muting']);
+
+		$list = $this->mutes($app)->decodedBody();
+		self::assertCount(1, $list);
+		self::assertSame($remote, $list[0]['id']);
+		self::assertSame('bob@remote.example', $list[0]['acct']);
+
+		$unmuted = $this->muteAccount($app, $remote, 'unmute');
+		self::assertFalse($unmuted->decodedBody()['muting']);
+		self::assertSame([], $this->mutes($app)->decodedBody());
+	}
+
+	public function testMuteRejectsSelfUnknownTargetsAndInvalidSettings(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+
+		self::assertSame(422, $this->muteAccount($app, 'alice')->status);
+		self::assertSame(404, $this->muteAccount($app, 'ghost')->status);
+		self::assertSame(404, $this->muteAccount($app, 'https://')->status);
+
+		foreach (['abc', '-1', (string) (MuteService::MAX_DURATION_SECONDS + 1)] as $duration) {
+			$response = $this->muteAccount($app, 'bob', fields: ['duration' => $duration]);
+			self::assertSame(422, $response->status);
+		}
+
+		$badNotifications = $this->muteAccount($app, 'bob', fields: ['notifications' => 'maybe']);
+		self::assertSame(422, $badNotifications->status);
+
+		self::assertSame(401, $this->muteAccount($app, 'bob', userId: null)->status);
+		self::assertSame(403, $this->muteAccount($app, 'bob', scopes: ['read:mutes'])->status);
+		self::assertSame(403, $this->mutes($app, scopes: ['write:mutes'])->status);
+
+		$disabled = $this->app(enabled: false, actors: ['alice', 'bob']);
+		self::assertSame(404, $this->muteAccount($disabled, 'bob')->status);
+		self::assertSame(404, $this->mutes($disabled)->status);
+	}
+
 	public function testLocalFollowUnfollowAndRelationshipsAreIdempotent(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -2243,6 +2461,47 @@ final class MastodonApiTest extends TestCase
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
 			followingRepository: $followingRepository,
 		);
+	}
+
+	/**
+	 * @param array<string, string> $fields
+	 * @param list<string>          $scopes
+	 */
+	private function muteAccount(
+		Application $app,
+		string $targetId,
+		string $action = 'mute',
+		array $fields = [],
+		array $scopes = ['write:mutes'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/accounts/' . rawurlencode($targetId) . '/' . $action,
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query($fields),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, string> $query
+	 * @param list<string>          $scopes
+	 */
+	private function mutes(
+		Application $app,
+		array $query = [],
+		array $scopes = ['read:mutes'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/mutes',
+			query: $query,
+			userId: $userId,
+			scopes: $scopes,
+		));
 	}
 
 	private function followAccount(

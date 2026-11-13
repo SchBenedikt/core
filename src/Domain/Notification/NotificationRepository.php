@@ -35,8 +35,9 @@ interface NotificationRepository
 	 * removes them from the client view. The read rows stay stored so a repeat
 	 * dismiss can remain idempotent and the host can prune them later.
 	 *
-	 * @param list<NotificationType> $types        only these types when non-empty
-	 * @param list<NotificationType> $excludeTypes omit these types
+	 * @param list<NotificationType> $types           only these types when non-empty
+	 * @param list<NotificationType> $excludeTypes    omit these types
+	 * @param list<string>           $excludeActorIds omit events caused by these actors
 	 *
 	 * @return list<Notification>
 	 */
@@ -50,6 +51,7 @@ interface NotificationRepository
 		array $types = [],
 		array $excludeTypes = [],
 		bool $includeRead = false,
+		array $excludeActorIds = [],
 	): array;
 
 	/**
@@ -73,13 +75,15 @@ interface NotificationRepository
 	 * The service caps the returned number; the repository returns the uncapped
 	 * count so a caller can decide on its own limit without loading rows.
 	 *
-	 * @param list<NotificationType> $types        only these types when non-empty
-	 * @param list<NotificationType> $excludeTypes omit these types
+	 * @param list<NotificationType> $types           only these types when non-empty
+	 * @param list<NotificationType> $excludeTypes    omit these types
+	 * @param list<string>           $excludeActorIds omit events caused by these actors
 	 */
 	public function countUnread(
 		string $recipientId,
 		?string $accountId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): int;
 }

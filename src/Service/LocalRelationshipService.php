@@ -50,6 +50,7 @@ final class LocalRelationshipService
 		private readonly ActivityFactory $activities,
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?NotificationService $notifications = null,
+		private readonly ?MuteService $mutes = null,
 	) {
 	}
 
@@ -98,6 +99,7 @@ final class LocalRelationshipService
 
 		$viewerActor = $this->activities->actorId($viewerId);
 		$targetActor = $this->activities->actorId($targetId);
+		$mute = $this->mutes?->find($viewerId, $targetId);
 
 		return [
 			'id' => $targetId,
@@ -108,8 +110,8 @@ final class LocalRelationshipService
 			'followed_by' => $this->followers->findByActor($viewerId, $targetActor)?->local === true,
 			'blocking' => $this->blocks?->findByActor($viewerId, $targetActor) !== null,
 			'blocked_by' => false,
-			'muting' => false,
-			'muting_notifications' => false,
+			'muting' => $mute !== null,
+			'muting_notifications' => $mute?->notifications ?? false,
 			'requested' => false,
 			'domain_blocking' => false,
 			'endorsed' => false,

@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
+use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
@@ -40,6 +41,7 @@ use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Service\MediaService;
+use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -92,6 +94,7 @@ final class MastodonService
 		private readonly ?BoostRepository $boosts = null,
 		private readonly ?BoostService $boostService = null,
 		private readonly ?BookmarkRepository $bookmarks = null,
+		private readonly ?MuteService $mutes = null,
 	) {
 	}
 
@@ -800,6 +803,101 @@ final class MastodonService
 	}
 
 	/**
+	 * Mutes a local account or a remote actor URL and returns the relationship.
+	 *
+	 * The mute hides the target from the caller's home timeline. With
+	 * `notifications` it also hides events caused by the target from the
+	 * notification list and unread count. Repeating the call updates the same
+	 * row; a duration of null means indefinite.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function muteAccount(
+		string $userId,
+		string $targetId,
+		bool $notifications = false,
+		?int $duration = null,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$targetId = trim($targetId);
+		$this->requireMuteTarget($targetId);
+
+		if ($targetId === $userId) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'You cannot mute yourself.',
+			);
+		}
+
+		try {
+			$this->requireMutes()->mute($userId, $targetId, $notifications, $duration);
+		} catch (InvalidArgumentException $exception) {
+			throw new MastodonRequestException(422, 'validation_failed', $exception->getMessage());
+		}
+
+		return $this->muteRelationship($userId, $targetId);
+	}
+
+	/**
+	 * Removes a mute and returns the resulting relationship.
+	 *
+	 * Removing an absent or expired mute is a successful no-op, matching the
+	 * idempotent Mastodon unmute response.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function unmuteAccount(string $userId, string $targetId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$targetId = trim($targetId);
+		$this->requireMuteTarget($targetId);
+		$this->requireMutes()->unmute($userId, $targetId);
+
+		return $this->muteRelationship($userId, $targetId);
+	}
+
+	/**
+	 * The caller's active mutes as Mastodon accounts, newest first.
+	 *
+	 * The cursor is the account id of a mute; because Mastodon has no mute
+	 * entity id, the account id is the only stable cursor a client can send.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function mutes(
+		string $userId,
+		int $limit,
+		?string $maxId,
+		?string $sinceId,
+		?string $minId,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$mutes = $this->requireMutes();
+		[$before, $beforeActorId, $after, $afterActorId] = $this->muteCursor(
+			$mutes,
+			$userId,
+			$maxId,
+			$sinceId ?? $minId,
+		);
+
+		return array_map(
+			fn (Mute $mute): array => $this->presenter->actorAccount($mute->actorId),
+			$mutes->forUser(
+				$userId,
+				$this->clampAccountList($limit),
+				$before,
+				$beforeActorId,
+				$after,
+				$afterActorId,
+			),
+		);
+	}
+
+	/**
 	 * @param list<string> $targetIds
 	 *
 	 * @return list<array<string, mixed>>
@@ -863,6 +961,7 @@ final class MastodonService
 				$afterId,
 				$include,
 				$this->notificationTypes($excludeTypes),
+				$this->mutes?->notificationActorIds($userId) ?? [],
 			);
 		} catch (DatabaseException) {
 			throw new MastodonRequestException(
@@ -963,6 +1062,7 @@ final class MastodonService
 				$accountId === '' ? null : $accountId,
 				$include,
 				$this->notificationTypes($excludeTypes),
+				$this->mutes?->notificationActorIds($userId) ?? [],
 			);
 		} catch (DatabaseException) {
 			throw new MastodonRequestException(
@@ -1365,6 +1465,133 @@ final class MastodonService
 		}
 
 		return $this->boostService;
+	}
+
+	private function requireMutes(): MuteService
+	{
+		if ($this->mutes === null) {
+			throw new MastodonRequestException(
+				503,
+				'mutes_not_configured',
+				'Mute storage is not configured.',
+			);
+		}
+
+		return $this->mutes;
+	}
+
+	/**
+	 * Accepts a local account id or an absolute remote actor URL.
+	 *
+	 * With no local directory the host has opted out of distinguishing local
+	 * from remote ids, so any non-empty id is accepted, matching the account
+	 * endpoints. Otherwise an unknown bare id is a 404 and a malformed URL is
+	 * rejected instead of being stored as an unusable target.
+	 */
+	private function requireMuteTarget(string $targetId): void
+	{
+		if ($targetId === '' || mb_strlen($targetId) > Mute::MAX_ACTOR_LENGTH) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+
+		if ($this->localActors?->has($targetId) === true || $this->isRemoteActorId($targetId)) {
+			return;
+		}
+
+		if ($this->localActors !== null) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+	}
+
+	private function isRemoteActorId(string $targetId): bool
+	{
+		$parts = parse_url($targetId);
+
+		return is_array($parts)
+			&& isset($parts['scheme'], $parts['host'])
+			&& in_array(strtolower((string) $parts['scheme']), ['http', 'https'], true)
+			&& (string) $parts['host'] !== '';
+	}
+
+	/**
+	 * A local target uses the full relationship projection; a remote target is
+	 * not in the local follow graph, so its relationship is the documented
+	 * defaults with the mute flags filled in.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function muteRelationship(string $userId, string $targetId): array
+	{
+		if ($this->localActors?->has($targetId) === true) {
+			return $this->requireRelationships()->relationship($userId, $targetId);
+		}
+
+		$mute = $this->requireMutes()->find($userId, $targetId);
+
+		return [
+			'id' => $targetId,
+			'following' => false,
+			'showing_reblogs' => true,
+			'notifying' => false,
+			'languages' => [],
+			'followed_by' => false,
+			'blocking' => false,
+			'blocked_by' => false,
+			'muting' => $mute !== null,
+			'muting_notifications' => $mute?->notifications ?? false,
+			'requested' => false,
+			'domain_blocking' => false,
+			'endorsed' => false,
+			'note' => '',
+		];
+	}
+
+	/**
+	 * Resolves one account-id cursor to the caller's mute timestamp.
+	 *
+	 * @return array{0: ?\DateTimeImmutable, 1: ?string, 2: ?\DateTimeImmutable, 3: ?string}
+	 */
+	private function muteCursor(
+		MuteService $mutes,
+		string $userId,
+		?string $maxId,
+		?string $sinceId,
+	): array {
+		if ($maxId !== null && $maxId !== '' && $sinceId !== null && $sinceId !== '') {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'max_id and since_id/min_id cannot be combined.',
+			);
+		}
+
+		$before = null;
+		$beforeActorId = null;
+		if ($maxId !== null && $maxId !== '') {
+			$mute = $this->muteCursorMute($mutes, $userId, $maxId);
+			$before = $mute->createdAt;
+			$beforeActorId = $mute->actorId;
+		}
+
+		$after = null;
+		$afterActorId = null;
+		if ($sinceId !== null && $sinceId !== '') {
+			$mute = $this->muteCursorMute($mutes, $userId, $sinceId);
+			$after = $mute->createdAt;
+			$afterActorId = $mute->actorId;
+		}
+
+		return [$before, $beforeActorId, $after, $afterActorId];
+	}
+
+	private function muteCursorMute(MuteService $mutes, string $userId, string $actorId): Mute
+	{
+		$mute = $mutes->find($userId, $actorId);
+		if ($mute === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Mute cursor not found.');
+		}
+
+		return $mute;
 	}
 
 	private function requireBookmarks(): BookmarkRepository

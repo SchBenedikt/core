@@ -148,6 +148,39 @@ abstract class NotificationRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testExcludedActorsAreFilteredFromListsAndUnreadCounts(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->notification('b1', 'alice', 'bob', NotificationType::Follow, null, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->notification('b2', 'alice', 'bob', NotificationType::Favourite, 'p1', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->notification('c1', 'alice', 'carol', NotificationType::Follow, null, '2026-11-11T10:02:00Z'));
+
+		self::assertSame(
+			['c1'],
+			array_map(
+				static fn (Notification $notification): string => $notification->id,
+				$repository->listFor(
+					'alice',
+					10,
+					excludeActorIds: ['bob'],
+				),
+			),
+		);
+		self::assertSame(
+			['c1'],
+			array_map(
+				static fn (Notification $notification): string => $notification->id,
+				$repository->listFor(
+					'alice',
+					1,
+					excludeActorIds: ['bob'],
+				),
+			),
+		);
+		self::assertSame(1, $repository->countUnread('alice', excludeActorIds: ['bob']));
+		self::assertSame(0, $repository->countUnread('alice', excludeActorIds: ['bob', 'carol']));
+	}
+
 	public function testReadMarkerIsScopedIdempotentAndHidesByDefault(): void
 	{
 		$repository = $this->repository();

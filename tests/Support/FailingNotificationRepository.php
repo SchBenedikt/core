@@ -42,6 +42,7 @@ final class FailingNotificationRepository implements NotificationRepository
 		array $types = [],
 		array $excludeTypes = [],
 		bool $includeRead = false,
+		array $excludeActorIds = [],
 	): array {
 		throw new DatabaseException('The notification table is unavailable.');
 	}
@@ -61,6 +62,7 @@ final class FailingNotificationRepository implements NotificationRepository
 		?string $accountId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): int {
 		throw new DatabaseException('The notification table is unavailable.');
 	}

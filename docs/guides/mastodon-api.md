@@ -30,6 +30,9 @@ Locally implemented (core):
 - `GET /accounts/relationships`
 - `POST /accounts/{id}/follow`
 - `POST /accounts/{id}/unfollow`
+- `POST /accounts/{id}/mute`
+- `POST /accounts/{id}/unmute`
+- `GET /mutes`
 - `POST /media`
 - `PUT /media/{id}`
 - `DELETE /media/{id}`
@@ -46,9 +49,9 @@ Locally implemented (core):
 - `GET /search`
 
 The local subset covers public/unlisted/followers-only text posts, local poll
-creation on an own status, local favourite/unfavourite, private bookmark
-bookkeeping and boost/reblog bookkeeping, reply context, local follow/unfollow
-and relationship bookkeeping,
+creation on an own status, local favourite/unfavourite, private bookmark and
+mute bookkeeping, boost/reblog bookkeeping, reply context, local
+follow/unfollow and relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
@@ -68,7 +71,7 @@ host or remote data are external. See the section at the end.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all thirty-one routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all thirty-four routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
@@ -116,6 +119,9 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/accounts/relationships` | yes | `read:follows` | 60 / 60 s |
 | `POST {prefix}/accounts/{id}/follow` | yes | `write:follows` | 30 / 900 s |
 | `POST {prefix}/accounts/{id}/unfollow` | yes | `write:follows` | 30 / 900 s |
+| `POST {prefix}/accounts/{id}/mute` | yes | `write:mutes` | 30 / 900 s |
+| `POST {prefix}/accounts/{id}/unmute` | yes | `write:mutes` | 30 / 900 s |
+| `GET {prefix}/mutes` | yes | `read:mutes` | 60 / 60 s |
 | `GET {prefix}/accounts/{id}/statuses` | no | — | 60 / 60 s |
 | `GET {prefix}/accounts/{id}` | no | — | 120 / 60 s |
 | `GET {prefix}/accounts/{id}/followers` | no | — | 60 / 60 s |
@@ -128,9 +134,10 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/search` | yes | `read:search` | 60 / 60 s |
 
 A parent scope grants its children (`read` grants `read:accounts`,
-`read:follows`, `read:bookmarks`, `read:notifications` and `read:search`,
-`write` grants `write:favourites`, `write:bookmarks`, `write:follows`,
-`write:media` and `write:notifications`); a granular scope does
+`read:follows`, `read:bookmarks`, `read:mutes`, `read:notifications` and
+`read:search`, `write` grants `write:favourites`, `write:bookmarks`,
+`write:mutes`, `write:follows`, `write:media` and `write:notifications`);
+a granular scope does
 not grant its parent.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
@@ -399,6 +406,56 @@ cannot probe another account's list. Statuses that have since been deleted or
 become invisible are skipped. A non-empty page carries the usual `Link` with
 `rel="next"`. The list requires `read:bookmarks` and declares `60/60`.
 
+### Muting accounts
+
+`POST /accounts/{id}/mute` stores one private mute for the signed-in local
+account. The target is either a local account id or an absolute remote actor
+URL; an unknown bare id is `404 not_found` and muting yourself is `422
+validation_failed`. The response is the Mastodon relationship with
+`muting: true` and `muting_notifications` reflecting the stored setting:
+
+```json
+{
+  "id": "bob",
+  "following": false,
+  "muting": true,
+  "muting_notifications": true,
+  "…": "the usual relationship fields"
+}
+```
+
+Both `notifications` and `duration` are optional. `notifications` defaults to
+false: every mute hides the target from the caller's home timeline, while a
+true value additionally hides events caused by that target from
+`GET /notifications` and `GET /notifications/unread_count`. `duration` is a
+positive integer number of seconds; absent, empty or `0` means indefinite, and
+values above one year are `422 validation_failed`. Repeating the call updates
+the same row and restarts the expiry from the current request time. The
+composite `(user_id, actor_id)` primary key in `social_mute` is the
+idempotency boundary, so no client key is needed.
+
+Active mutes hide the target's posts and boosts from the home timeline,
+including a boost whose object author is muted. They do not remove the post
+from its own account route and do not affect other accounts. Expiry is
+evaluated on read: an expired row stays stored but no longer hides anything,
+and re-muting replaces it. `muting` and `muting_notifications` are also
+returned by `GET /accounts/relationships` for local accounts, and `muted` is
+set on statuses for the authenticated viewer.
+
+`POST /accounts/{id}/unmute` removes only the caller's row, answers with
+`muting: false`, and is a successful no-op when the mute is already absent or
+expired. Both writes require `write:mutes` and declare a `30/900` rate limit.
+An assembly without a `MuteService` answers `503 mutes_not_configured`.
+
+`GET /mutes` returns the caller's active mutes as Mastodon accounts,
+newest-first. `limit` accepts 1–80 (default 40), `max_id` selects older mutes,
+`since_id`/`min_id` select newer ones, and combining `max_id` with either
+newer cursor is `422 validation_failed`. Because Mastodon has no separate mute
+id, the cursor is the target account id (a local id or the remote actor URL)
+of one of the caller's active mutes; an unknown, expired or foreign target is
+`404 not_found`. A non-empty page carries the usual `Link` with `rel="next"`.
+The list requires `read:mutes` and declares `60/60`.
+
 ### Reblogging and reply context
 
 `POST /statuses/{id}/reblog` shares a visible local public or unlisted status
@@ -549,6 +606,11 @@ The endpoint accepts `types[]` and `exclude_types[]`, each repeatable. Known
 local types are `favourite`, `follow`, `mention` and `reblog`; unknown names are ignored for
 forward compatibility. If a non-empty `types[]` contains no known type, the
 result is an empty array. The filters apply before the page limit.
+
+Events caused by an account whose mute has `notifications: true` are omitted
+from both the list and the unread count. The rows themselves are not deleted,
+so unmuting makes historical events visible again; this is the same read-time
+filter as the home timeline.
 
 `limit` defaults to 20 and is clamped to 1–40. `max_id` returns notifications
 older than the cursor, `since_id` (or `min_id`) returns newer ones, and a
@@ -760,6 +822,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `insufficient_scope` | 403 | The token lacks the route's required scope |
 | `favourites_not_configured` | 503 | The assembly has no `FavouriteRepository` |
 | `bookmarks_not_configured` | 503 | The assembly has no `BookmarkRepository` |
+| `mutes_not_configured` | 503 | The assembly has no `MuteService` |
 | `notifications_not_configured` | 503 | The assembly has no `NotificationRepository` |
 | `notifications_unavailable` | 503 | The notification table is missing or cannot be read; run the schema migration |
 | `follows_not_configured` | 503 | The assembly has no local account directory or `LocalRelationshipService` |
@@ -771,8 +834,8 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `unsupported_parameter` | 422 | Replacing media bytes (`file`/`thumbnail`) in this slice |
-| `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry/choices, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
-| `not_found` | 404 | Missing/private status or poll, unknown cursor, unknown local account or unknown relationship target |
+| `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry/choices, media ids, relationship ids, search `q`/`type`, mute duration/notification values or a self-follow/self-mute; see `error.fields` |
+| `not_found` | 404 | Missing/private status or poll, unknown cursor, unknown local account, unknown relationship target or invalid mute target |
 
 Authentication failures use the existing `401 authentication_required`; the
 host's limiter should use `429` with its own retry metadata. The core does not
@@ -834,6 +897,17 @@ CREATE TABLE social_bookmark (
 );
 CREATE INDEX social_bookmark_post ON social_bookmark (post_id);
 CREATE INDEX social_bookmark_user ON social_bookmark (user_id, created_at, post_id);
+
+CREATE TABLE social_mute (
+  user_id VARCHAR(255) NOT NULL,
+  actor_id VARCHAR(512) NOT NULL,
+  notifications SMALLINT NOT NULL,
+  created_at VARCHAR(20) NOT NULL,
+  expires_at VARCHAR(20) NULL,
+  PRIMARY KEY (user_id, actor_id)
+);
+CREATE INDEX social_mute_user ON social_mute (user_id, created_at, actor_id);
+CREATE INDEX social_mute_actor ON social_mute (actor_id);
 
 CREATE TABLE social_boost (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -902,7 +976,12 @@ host can run `FavouriteSchema::create()`. The private bookmark routes and list
 need the `social_bookmark` table from `BookmarkSchema::create()`; its
 composite primary key is the idempotency boundary and its
 `(user_id, created_at)` index serves the cursor. There is no backfill and no
-public count. Boost/reblog routes and status counts need `social_boost` from
+public count. Mute routes, relationship/status flags, home-timeline filtering
+and notification filtering need `social_mute` from `MuteSchema::create()`;
+its composite primary key is the upsert boundary, its
+`(user_id, created_at, actor_id)` index serves the list cursor and its
+`expires_at` is compared with `now` on read. There is no backfill and no public
+count; an expired row can be pruned by the host at any time. Boost/reblog routes and status counts need `social_boost` from
 `BoostSchema::create()` for the same reason; a boost row survives a post
 soft-delete for the host's cleanup policy. An existing host
 must likewise create
@@ -947,7 +1026,7 @@ cleanup policy, not duplicated here.
 
 ## OpenAPI and tests
 
-The thirty-one routes are in the manifest with auth, scope and rate-limit metadata.
+The thirty-four routes are in the manifest with auth, scope and rate-limit metadata.
 `bin/export-openapi` includes them with the `mastodon` tag and
 `x-required-scopes`. `MastodonApiTest` drives the real kernel through instance metadata,
 configured contact/registration fields and local stats (including stale contact
@@ -964,7 +1043,10 @@ visibility, missing ids, auth/scope/disabled and SQL counters), read, local favo
 viewer flags, repeat idempotency, absent-unfavourite no-op, auth, scope,
 deleted status and custom prefix), private bookmarks (pair idempotency,
 viewer flag, newest-first list, cursor pages, auth/scope/disabled, invisible
-and deleted statuses), local follow/unfollow (relationship flags,
+and deleted statuses), local mutes (pair/upsert idempotency, notification flag,
+duration/expiry, `muting`/`muted` projection, home-timeline and notification
+filtering, remote actor list projection, cursor, self/unknown/invalid
+settings, auth/scope/disabled), local follow/unfollow (relationship flags,
 idempotency, self-follow, unknown target, home-timeline visibility, scopes,
 disabled feature), and
 relationship reads (scalar and `id[]`, deduplication, missing/empty input,
@@ -983,7 +1065,8 @@ profile lists; the follower contract also covers local edges, their exclusion
 from delivery inboxes and their follower counts. `FavouriteRepositoryTestCase` covers pair
 uniqueness, ownership, batch counts and removal. `MastodonCompatibilityTest`
 covers prefix validation, scope matching and route metadata, including the
-three relationship routes, the four notification routes and search. The post
+three relationship routes, the three mute routes, the four notification routes
+and search. The post
 repository contract still covers the id-aware cursor used by the API, and now
 also the `PostSearchRepository` match, visibility, author-filter and offset
 contract for both the in-memory and PDO implementations; the in-memory
@@ -998,16 +1081,16 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - Remote statuses, public/remote timelines, favourite federation (outbound
   `Like`/`Undo` and remote counts), remote boost federation, remote
   notifications, streaming and remote search need remote data the core does
-  not fetch for this surface. Local boosts/reblogs, private bookmarks,
-  notification listing and local status/actor search are done above.
+  not fetch for this surface. Local boosts/reblogs, private bookmarks, local
+  mutes, notification listing and local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
   Remote profile fetching, remote relationship APIs, remote polls (fetching,
   voting or federating a `Question`), domain blocks that would need a remote
   moderation feed, and remote search remain external; the local
   follow/unfollow, relationship, profile, follower/following list,
-  bookmark, notification, search, poll-creation/voting and instance views above
-  are done.
+  bookmark, mute, notification, search, poll-creation/voting and instance
+  views above are done.
 - Following a remote actor through the compatibility prefix is not part of
   this slice. The public profile lists project remote follow edges that are
   already stored locally, but they never fetch a remote collection; moderation

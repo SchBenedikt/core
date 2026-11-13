@@ -96,15 +96,16 @@ authorization-code/PAR/revocation protocol client with ES256 DPoP proofs and a
 disabled-by-default publish route), the optional disabled-by-default Mastodon
 compatibility subset (instance metadata/statistics, public timeline, status
 read/create/delete with local poll creation/voting, local favourite/unfavourite,
-private local bookmarks, local boost/reblog, reply context and counts, local
+private local bookmarks, local mutes with optional notification filtering,
+local boost/reblog, reply context and counts, local
 follow/unfollow and relationship reads, local notification listing with
 dismiss/unread state,
 local status/actor search, media upload/update/delete,
 local account profiles, paged local follower/following lists, account statuses,
 verify credentials; `write:statuses`,
-`write:favourites`, `write:bookmarks`, `write:follows`, `write:media`,
-`write:notifications`, `read:accounts`, `read:follows`, `read:bookmarks`,
-`read:notifications` and `read:search`
+`write:favourites`, `write:bookmarks`, `write:mutes`, `write:follows`,
+`write:media`, `write:notifications`, `read:accounts`, `read:follows`,
+`read:bookmarks`, `read:mutes`, `read:notifications` and `read:search`
 scopes, id-aware and offset pagination and `Idempotency-Key`), the
 actor document, followers and following collections, outbox and WebFinger, a
 bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
@@ -129,9 +130,9 @@ streaming, remote poll fetching/voting/federation, remote search, account/admin
 and remote relationship APIs), and an
 object-storage adapter. Local Mastodon notification listing with
 dismiss/unread state, local status/actor search, local poll creation/voting,
-local boosts/reblogs, private bookmarks, reply context/counts, instance
-metadata/statistics, local account profiles and paged local follower/following
-lists are done. Local mutes and lists remain future local slices; the rest is
+local boosts/reblogs, private bookmarks, local mutes, reply context/counts,
+instance metadata/statistics, local account profiles and paged local
+follower/following lists are done. Lists remain a future local slice; the rest is
 host migration or external federation work. The local AT Protocol publishing slice is
 documented in `docs/guides/atproto.md`; the local Mastodon compatibility
 subset is in `docs/guides/mastodon-api.md`; the rest is in

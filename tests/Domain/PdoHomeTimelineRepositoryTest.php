@@ -13,8 +13,11 @@ use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\Mute;
+use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
@@ -38,6 +41,8 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 
 	private PdoBlockRepository $blocks;
 
+	private PdoMuteRepository $mutes;
+
 	private HomeTimelineRepository $repository;
 
 	private int $followCounter = 0;
@@ -52,11 +57,13 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 		FollowingSchema::create($connection);
 		RemotePostSchema::create($connection);
 		BlockSchema::create($connection);
+		MuteSchema::create($connection);
 
 		$this->posts = new PdoPostRepository($connection);
 		$this->remotePosts = new PdoRemotePostRepository($connection);
 		$this->following = new PdoFollowingRepository($connection);
 		$this->blocks = new PdoBlockRepository($connection);
+		$this->mutes = new PdoMuteRepository($connection);
 		$this->repository = new PdoHomeTimelineRepository($connection);
 	}
 
@@ -93,6 +100,17 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 			$localUserId,
 			$actorId,
 			Time::parse('2026-11-11T09:30:00Z'),
+		));
+	}
+
+	protected function mute(string $localUserId, string $actorId, ?string $expiresAt = null): void
+	{
+		$this->mutes->save(new Mute(
+			userId: $localUserId,
+			actorId: $actorId,
+			notifications: false,
+			createdAt: Time::parse('2026-11-11T09:45:00Z'),
+			expiresAt: $expiresAt === null ? null : Time::parse($expiresAt),
 		));
 	}
 

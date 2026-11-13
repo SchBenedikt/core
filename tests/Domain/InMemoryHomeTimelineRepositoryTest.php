@@ -13,7 +13,9 @@ use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -31,11 +33,15 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 
 	private InMemoryBlockRepository $blocks;
 
+	private InMemoryMuteRepository $mutes;
+
 	private HomeTimelineRepository $repository;
 
 	private int $followCounter = 0;
 
 	private int $blockCounter = 0;
+
+	private int $muteCounter = 0;
 
 	protected function setUp(): void
 	{
@@ -43,11 +49,13 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->following = new InMemoryFollowingRepository();
 		$this->blocks = new InMemoryBlockRepository();
+		$this->mutes = new InMemoryMuteRepository();
 		$this->repository = new InMemoryHomeTimelineRepository(
 			$this->posts,
 			$this->remotePosts,
 			$this->following,
 			$this->blocks,
+			$this->mutes,
 		);
 	}
 
@@ -84,6 +92,17 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 			$localUserId,
 			$actorId,
 			Time::parse('2026-11-11T09:30:00Z'),
+		));
+	}
+
+	protected function mute(string $localUserId, string $actorId, ?string $expiresAt = null): void
+	{
+		$this->mutes->save(new Mute(
+			userId: $localUserId,
+			actorId: $actorId,
+			notifications: false,
+			createdAt: Time::parse('2026-11-11T09:45:00Z'),
+			expiresAt: $expiresAt === null ? null : Time::parse($expiresAt),
 		));
 	}
 

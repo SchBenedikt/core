@@ -201,6 +201,7 @@ The core owns the schema classes, not the migration mechanism:
 - `PollSchema` → `social_poll`, ordered `social_poll_option` and one `social_poll_vote` row per voter and poll
 - `FavouriteSchema` → `social_favourite` (per-user post favourites; `(user_id, post_id)` primary key)
 - `BookmarkSchema` → `social_bookmark` (private per-user bookmarks; `(user_id, post_id)` primary key, newest-first cursor index)
+- `MuteSchema` → `social_mute` (private per-user mutes of local accounts or remote actor URLs; `(user_id, actor_id)` primary key, nullable `expires_at`, newest-first cursor index)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
@@ -241,6 +242,10 @@ the host's cleanup policy. For private bookmarks, create `social_bookmark`
 from `BookmarkSchema::statements()` before exposing the bookmark routes or
 list; it has no public count, no notification and no backfill, and a
 soft-deleted post leaves its bookmark row for the host's cleanup policy. For
+local mutes, create `social_mute` from `MuteSchema::statements()` before
+exposing the mute routes, home-timeline filtering or notification filtering;
+active rows are filtered on read, an expired row is ignored without a cleanup
+job, and there is no backfill. For
 local boosts/reblogs, create `social_boost`
 from `BoostSchema::statements()` before exposing the reblog routes or status
 counts; the unique pair is the idempotency boundary, and a soft-deleted post

@@ -9,11 +9,15 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use DateTimeImmutable;
 
+use function array_filter;
 use function array_slice;
 use function array_unique;
 use function array_values;
@@ -39,6 +43,8 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		private PostRepository $posts,
 		private LocalRelationshipService $relationships,
 		private ?BoostRepository $boosts = null,
+		private ?MuteRepository $mutes = null,
+		private ?Clock $clock = null,
 	) {
 	}
 
@@ -47,11 +53,22 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		int $limit,
 		?DateTimeImmutable $before = null,
 	): array {
-		$authors = $this->relationships->localFollowingUserIds($localUserId);
 		$entries = $this->base->forUser($localUserId, $limit, $before);
+		$muted = array_fill_keys(
+			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
+			true,
+		);
+		$authors = array_values(array_filter(
+			$this->relationships->localFollowingUserIds($localUserId),
+			static fn (string $authorId): bool => !isset($muted[$authorId]),
+		));
 
 		if ($authors !== []) {
 			foreach ($this->posts->timelineForAuthors($authors, $limit, $before) as $post) {
+				if (isset($muted[$post->authorId])) {
+					continue;
+				}
+
 				$entries[] = TimelineEntry::fromPost($post);
 			}
 		}
@@ -60,9 +77,17 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		// they do not follow another local account yet.
 		$boostAuthors = $authors;
 		$boostAuthors[] = $localUserId;
-		foreach ($this->boosts?->timelineForUsers(array_values(array_unique($boostAuthors)), $limit, $before) ?? [] as $boost) {
+		$boostAuthors = array_values(array_filter(
+			array_unique($boostAuthors),
+			static fn (string $authorId): bool => !isset($muted[$authorId]),
+		));
+		foreach ($this->boosts?->timelineForUsers($boostAuthors, $limit, $before) ?? [] as $boost) {
 			$post = $this->posts->find($boost->postId);
 			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
+				continue;
+			}
+
+			if (isset($muted[$boost->userId]) || isset($muted[$post->authorId])) {
 				continue;
 			}
 

@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
@@ -84,7 +85,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(59, $app->routes->routes());
+		self::assertCount(62, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -310,6 +311,53 @@ final class ApplicationHostTest extends TestCase
 		self::assertFalse($unbookmark->decodedBody()['bookmarked']);
 		self::assertSame(0, (int) $database->fetchValue(
 			'SELECT COUNT(*) FROM ' . BookmarkSchema::TABLE,
+		));
+	}
+
+	public function testForHostStoresAMuteAndListsItOverSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true);
+
+		$mute = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/accounts/' . rawurlencode(self::BOB) . '/mute',
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query(['notifications' => '1']),
+			userId: 'alice',
+			scopes: ['write:mutes'],
+		));
+		self::assertSame(200, $mute->status);
+		self::assertTrue($mute->decodedBody()['muting']);
+		self::assertTrue($mute->decodedBody()['muting_notifications']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . MuteSchema::TABLE,
+		));
+		self::assertSame(self::BOB, $database->fetchValue(
+			'SELECT actor_id FROM ' . MuteSchema::TABLE . ' WHERE user_id = :user_id',
+			['user_id' => 'alice'],
+		));
+
+		$list = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/mutes',
+			userId: 'alice',
+			scopes: ['read:mutes'],
+		));
+		self::assertSame(200, $list->status);
+		self::assertCount(1, $list->decodedBody());
+		self::assertSame(self::BOB, $list->decodedBody()[0]['id']);
+
+		$unmute = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/accounts/' . rawurlencode(self::BOB) . '/unmute',
+			userId: 'alice',
+			scopes: ['write:mutes'],
+		));
+		self::assertSame(200, $unmute->status);
+		self::assertFalse($unmute->decodedBody()['muting']);
+		self::assertSame(0, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . MuteSchema::TABLE,
 		));
 	}
 
@@ -658,6 +706,7 @@ final class ApplicationHostTest extends TestCase
 		RemotePostSchema::create($database);
 		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
+		MuteSchema::create($database);
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);
 		AtprotoPublicationSchema::create($database);

@@ -30,6 +30,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\MediaService;
+use AlohaSocial\Core\Service\MuteService;
 use DateTimeImmutable;
 
 /**
@@ -54,6 +55,7 @@ final class MastodonPresenter
 		private readonly ?PostRepository $posts = null,
 		private readonly ?BoostRepository $boosts = null,
 		private readonly ?BookmarkRepository $bookmarks = null,
+		private readonly ?MuteService $mutes = null,
 	) {
 	}
 
@@ -108,6 +110,7 @@ final class MastodonPresenter
 		?int $reblogsCount = null,
 		?bool $reblogged = null,
 		?bool $bookmarked = null,
+		?bool $muted = null,
 	): array {
 		$attachments = [];
 		$presented = $this->media === null ? [] : ($this->media->presentPost($post)['attachments'] ?? []);
@@ -151,7 +154,8 @@ final class MastodonPresenter
 				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
 			'reblogged' => $reblogged
 				?? ($viewerId !== null && ($this->boosts?->exists($viewerId, $post->id) ?? false)),
-			'muted' => false,
+			'muted' => $muted
+				?? ($viewerId !== null && ($this->mutes?->isMuted($viewerId, $post->authorId) ?? false)),
 			'bookmarked' => $bookmarked
 				?? ($viewerId !== null && ($this->bookmarks?->exists($viewerId, $post->id) ?? false)),
 			'pinned' => false,
@@ -226,6 +230,9 @@ final class MastodonPresenter
 		$bookmarked = $viewerId === null
 			? []
 			: ($this->bookmarks?->existsForPosts($viewerId, $postIds) ?? []);
+		$muted = $viewerId === null
+			? []
+			: array_fill_keys($this->mutes?->actorIds($viewerId) ?? [], true);
 		$pollVotes = [];
 		if ($viewerId !== null) {
 			try {
@@ -248,6 +255,7 @@ final class MastodonPresenter
 				$reblogs[$post->id] ?? 0,
 				$reblogged[$post->id] ?? false,
 				$bookmarked[$post->id] ?? false,
+				isset($muted[$post->authorId]),
 			),
 			$posts,
 		);
@@ -289,6 +297,8 @@ final class MastodonPresenter
 			'favourited' => false,
 			'reblogged' => false,
 			'bookmarked' => false,
+			'muted' => $viewerId !== null
+				&& ($this->mutes?->isMuted($viewerId, $boost->userId) ?? false),
 		]);
 	}
 

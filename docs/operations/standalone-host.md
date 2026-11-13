@@ -51,8 +51,8 @@ This document is the checklist that host is built against.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
    `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`,
-   `PdoBookmarkRepository` and `PdoNotificationRepository` when local
-   favourites, bookmarks and notifications
+   `PdoBookmarkRepository`, `PdoMuteRepository` and `PdoNotificationRepository` when local
+   favourites, bookmarks, mutes and notifications
    are exposed, and the combined `PdoHomeTimelineRepository`. The PDO post and
    remote-post repositories already implement `PostCount` and
    `RemoteDomainCount`; a custom local directory should implement

@@ -11,10 +11,13 @@ namespace AlohaSocial\Core\Domain\Timeline;
 
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -36,6 +39,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 {
 	public function __construct(
 		private readonly Connection $db,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -58,7 +62,12 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' WHERE p.deleted_at IS NULL AND (p.author_id = :local_user'
 			. ' OR (p.visibility = :local_direct AND EXISTS ('
 			. ' SELECT 1 FROM ' . PostSchema::RECIPIENT_TABLE . ' pr'
-			. ' WHERE pr.post_id = p.id AND pr.recipient_id = :local_recipient)))' . $localCursor
+			. ' WHERE pr.post_id = p.id AND pr.recipient_id = :local_recipient)))'
+			. ' AND NOT EXISTS ('
+			. ' SELECT 1 FROM ' . MuteSchema::TABLE . ' pm'
+			. ' WHERE pm.user_id = :local_mute_user AND pm.actor_id = p.author_id'
+			. ' AND (pm.expires_at IS NULL OR pm.expires_at > :local_mute_now)'
+			. ')' . $localCursor
 			. ' UNION ALL'
 			. ' SELECT r.activity_id AS item_id, r.actor_id AS author_id, r.object_id AS object_id,'
 			. ' r.object_author_id AS object_author_id, r.content AS content,'
@@ -72,18 +81,29 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' SELECT 1 FROM ' . BlockSchema::TABLE . ' b'
 			. ' WHERE b.local_user_id = :block_user'
 			. ' AND (b.actor_id = r.actor_id OR b.actor_id = r.object_author_id)'
+			. ')'
+			. ' AND NOT EXISTS ('
+			. ' SELECT 1 FROM ' . MuteSchema::TABLE . ' rm'
+			. ' WHERE rm.user_id = :remote_mute_user'
+			. ' AND (rm.actor_id = r.actor_id OR rm.actor_id = r.object_author_id)'
+			. ' AND (rm.expires_at IS NULL OR rm.expires_at > :remote_mute_now)'
 			. ')' . $remoteCursor
 			. ') timeline'
 			. ' ORDER BY published_at DESC, item_id DESC'
 			. ' LIMIT ' . max(1, $limit);
 
+		$muteNow = Time::format(($this->clock ?? new SystemClock())->now());
 		$parameters = [
 			'local_user' => $localUserId,
 			'local_recipient' => $localUserId,
 			'local_direct' => Visibility::Direct->value,
+			'local_mute_user' => $localUserId,
 			'remote_user' => $localUserId,
+			'remote_mute_user' => $localUserId,
 			'block_user' => $localUserId,
 			'boost_kind' => RemotePostKind::Boost->value,
+			'local_mute_now' => $muteNow,
+			'remote_mute_now' => $muteNow,
 		];
 
 		if ($before !== null) {

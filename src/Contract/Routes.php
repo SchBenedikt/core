@@ -50,6 +50,8 @@ use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonInstanceHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonMediaUploadHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonMuteAccountHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonMutesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
@@ -60,6 +62,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUnmuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
@@ -528,6 +531,36 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:follows'],
 				summary: 'Unfollow one local account; idempotent per relationship.',
+			),
+			new Route(
+				name: 'mastodon.accounts.mute',
+				method: 'POST',
+				path: $mastodon . '/accounts/{id}/mute',
+				handler: MastodonMuteAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:mutes'],
+				summary: 'Mute a local account or remote actor, optionally including its notifications.',
+			),
+			new Route(
+				name: 'mastodon.accounts.unmute',
+				method: 'POST',
+				path: $mastodon . '/accounts/{id}/unmute',
+				handler: MastodonUnmuteAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:mutes'],
+				summary: 'Remove the signed-in account\'s mute; idempotent.',
+			),
+			new Route(
+				name: 'mastodon.mutes',
+				method: 'GET',
+				path: $mastodon . '/mutes',
+				handler: MastodonMutesHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:mutes'],
+				summary: 'List the signed-in account\'s active mutes, newest first.',
 			),
 			new Route(
 				name: 'mastodon.accounts.statuses',

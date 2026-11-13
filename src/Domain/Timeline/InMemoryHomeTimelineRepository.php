@@ -11,10 +11,13 @@ namespace AlohaSocial\Core\Domain\Timeline;
 
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use DateTimeImmutable;
 
 /**
@@ -32,6 +35,8 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		private readonly RemotePostRepository $remotePosts,
 		private readonly FollowingRepository $following,
 		private readonly BlockRepository $blocks,
+		private readonly ?MuteRepository $mutes = null,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -41,8 +46,16 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		?DateTimeImmutable $before = null,
 	): array {
 		$entries = [];
+		$muted = array_fill_keys(
+			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
+			true,
+		);
 
 		foreach ($this->posts->ownTimeline($localUserId, self::UNBOUNDED, $before) as $post) {
+			if (isset($muted[$post->authorId])) {
+				continue;
+			}
+
 			$entries[] = TimelineEntry::fromPost($post);
 		}
 
@@ -53,13 +66,15 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 			self::UNBOUNDED,
 			$before,
 		) as $post) {
-			if (isset($blocked[$post->actorId])) {
+			if (isset($blocked[$post->actorId]) || isset($muted[$post->actorId])) {
 				continue;
 			}
 
 			// A boost can carry content by somebody other than the booster;
-			// blocking that author must hide the boosted content too.
-			if ($post->objectAuthorId !== null && isset($blocked[$post->objectAuthorId])) {
+			// blocking or muting that author must hide the boosted content too.
+			if ($post->objectAuthorId !== null
+				&& (isset($blocked[$post->objectAuthorId]) || isset($muted[$post->objectAuthorId]))
+			) {
 				continue;
 			}
 

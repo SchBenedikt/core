@@ -28,6 +28,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
+- `src/Domain/Federation/MuteSchema.php` → `social_mute` (private per-user mutes of local accounts or remote actor URLs, with a nullable expiry)
 - `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
@@ -117,10 +118,16 @@ the `(user, created_at)` index supports a future favourites timeline. A post
 deletion is a soft delete and does not cascade here; the host may remove
 orphaned favourites on its own cleanup schedule. `social_bookmark` uses the
 same composite key and also stores `created_at`; it is private, so there is no
-public count. Its `(user_id, created_at, post_id)` ordering supports the
+	public count. Its `(user_id, created_at, post_id)` ordering supports the
 newest-first bookmark list and its exclusive cursor. Bookmarks are not
 notifications and do not federate; a host may prune rows for soft-deleted
-posts on the same schedule as favourites.
+posts on the same schedule as favourites. `social_mute` is unique by
+(local user, actor), where the actor is a local account id or an absolute
+remote actor URL, and stores the notification flag plus a nullable
+`expires_at`. Reads filter expired rows with `expires_at > now`, so a short
+mute stops hiding content without a cleanup job; the home query and the
+notification count both use the same table. There is no public count and no
+federation activity.
 
 Search has no table of its own: `PdoPostRepository` implements
 `PostSearchRepository` over the existing `social_post` rows, and the host's

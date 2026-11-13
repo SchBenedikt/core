@@ -41,6 +41,8 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 
 	abstract protected function block(string $localUserId, string $actorId): void;
 
+	abstract protected function mute(string $localUserId, string $actorId, ?string $expiresAt = null): void;
+
 	abstract protected function deleteRemote(string $activityId, string $actorId): void;
 
 	public function testOwnAndFollowedRemoteEntriesAreMergedInTimeOrder(): void
@@ -134,6 +136,45 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 
 		self::assertNotContains('remote-boost', $ids);
 		self::assertContains('remote-post', $ids);
+	}
+
+	public function testAMutedActorIsHiddenOnlyForTheReaderWhoMutedIt(): void
+	{
+		$this->seed();
+		$this->mute('alice', self::BOB);
+
+		$alice = $this->repository()->forUser('alice', 10);
+		self::assertNotContains('remote-post', $this->ids($alice));
+		self::assertNotContains('remote-boost', $this->ids($alice));
+		self::assertContains('own-public', $this->ids($alice));
+
+		$this->follow('carol', self::BOB);
+
+		$carol = $this->repository()->forUser('carol', 10);
+		self::assertContains('remote-post', $this->ids($carol));
+		self::assertContains('remote-boost', $this->ids($carol));
+	}
+
+	public function testAMutedObjectAuthorHidesABoostEvenWhenTheBoosterIsNotMuted(): void
+	{
+		$this->seed();
+		$this->mute('alice', self::DAVE);
+
+		$ids = $this->ids($this->repository()->forUser('alice', 10));
+
+		self::assertNotContains('remote-boost', $ids);
+		self::assertContains('remote-post', $ids);
+	}
+
+	public function testAnExpiredMuteDoesNotHideAnything(): void
+	{
+		$this->seed();
+		$this->mute('alice', self::BOB, '2000-01-01T00:00:00Z');
+
+		$ids = $this->ids($this->repository()->forUser('alice', 10));
+
+		self::assertContains('remote-post', $ids);
+		self::assertContains('remote-boost', $ids);
 	}
 
 	public function testTheTimelineIsScopedToTheReader(): void

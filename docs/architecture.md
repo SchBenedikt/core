@@ -381,6 +381,32 @@ GET {mastodon.prefix}/bookmarks
 `bookmarked` is viewer-specific in both the single-status and batched
 projections. The list cursor is a status id owned by the caller, so an unknown
 or foreign id is `404` rather than a probe of another private list. Local
+mutes reuse the same private pair identity, but target either a local account
+id or a remote actor URL and carry an optional expiry:
+
+```
+POST {mastodon.prefix}/accounts/{id}/mute
+  └─ MastodonMuteAccountHandler
+      └─ MastodonService::muteAccount   local/remote target check + self refusal
+          └─ MuteService::mute          social_mute (user, actor) upsert
+
+GET {mastodon.prefix}/mutes
+  └─ MastodonMutesHandler
+      └─ MuteRepository::forUser        active rows, newest-first (created_at, actor_id)
+
+GET {mastodon.prefix}/timelines/home
+  └─ HomeTimelineRepository::forUser    NOT EXISTS social_mute for actor/object author
+
+GET {mastodon.prefix}/notifications
+  └─ NotificationRepository::listFor    actor NOT IN active notification mutes
+```
+
+`muting`/`muting_notifications` are viewer-specific in relationships;
+`muted` is the viewer-specific status flag. A mute never deletes a shared
+remote row and never changes another account's follow graph. The list cursor
+is the account id of one of the caller's active mutes, so an unknown, expired
+or foreign target is `404`. Expired rows stay stored but are filtered by every
+read; the host may prune them on its own schedule. Local
 boosts follow the same pattern but also queue a federation activity:
 
 ```
@@ -625,6 +651,11 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph. The local write stays
   committed even when the outbound `Block`/`Undo(Block)` cannot be queued.
+- **Private mutes.** `social_mute` is unique by (local user, actor) and is
+  applied only to that user's home query and notification reads. A mute never
+  deletes a shared remote row or changes another account's graph. An optional
+  `expires_at` is evaluated on read; an expired row is ignored without a
+  cleanup job.
 - **Local direct posts and replies.** A direct post has an ordered recipient
   list (`social_post_recipient`) of known local ids; it is read by its author
   and recipients and is never delivered to followers or remote inboxes. A
@@ -633,8 +664,9 @@ maximum is 40, and generated links carry a non-default limit.
   features, not a second status model.
 - **Schema next to the repository or adapter.** `PostSchema` defines the post,
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
-  `BookmarkSchema`, `BoostSchema`, `NotificationSchema`, `AttachmentSchema`,
-  `RemotePostSchema`, `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema`
+  `BookmarkSchema`, `MuteSchema`, `BoostSchema`, `NotificationSchema`,
+  `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
+  `AtprotoPublicationSchema`, `JobSchema`
   and `ActivityLogSchema` do the same for favourites, bookmarks,
   notifications, media metadata, remote content, per-user blocks, AT Protocol
   publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates

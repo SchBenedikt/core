@@ -56,6 +56,7 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		array $types = [],
 		array $excludeTypes = [],
 		bool $includeRead = false,
+		array $excludeActorIds = [],
 	): array {
 		$notifications = array_values(array_filter(
 			$this->notifications,
@@ -68,8 +69,13 @@ final class InMemoryNotificationRepository implements NotificationRepository
 				$types,
 				$excludeTypes,
 				$includeRead,
+				$excludeActorIds,
 			): bool {
 				if ($notification->recipientId !== $recipientId) {
+					return false;
+				}
+
+				if (in_array($notification->actorId, $excludeActorIds, true)) {
 					return false;
 				}
 
@@ -157,10 +163,15 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		?string $accountId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): int {
 		$count = 0;
 		foreach ($this->notifications as $notification) {
 			if ($notification->recipientId !== $recipientId || $notification->isRead()) {
+				continue;
+			}
+
+			if (in_array($notification->actorId, $excludeActorIds, true)) {
 				continue;
 			}
 

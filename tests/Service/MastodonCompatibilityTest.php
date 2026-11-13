@@ -97,6 +97,9 @@ final class MastodonCompatibilityTest extends TestCase
 		$following = $manifest->find('mastodon.accounts.following');
 		$follow = $manifest->find('mastodon.accounts.follow');
 		$unfollow = $manifest->find('mastodon.accounts.unfollow');
+		$mute = $manifest->find('mastodon.accounts.mute');
+		$unmute = $manifest->find('mastodon.accounts.unmute');
+		$mutes = $manifest->find('mastodon.mutes');
 		$notifications = $manifest->find('mastodon.notifications.list');
 		$unread = $manifest->find('mastodon.notifications.unread_count');
 		$dismiss = $manifest->find('mastodon.notifications.dismiss');
@@ -198,6 +201,15 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['write:follows'], $unfollow->requiredScopes);
 		self::assertSame('30/900', $unfollow->rateLimit);
 		self::assertSame('/api/mastodon/v1/accounts/{id}/unfollow', $unfollow->path);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/mute', $mute->path);
+		self::assertSame('POST', $mute->method);
+		self::assertSame(['write:mutes'], $mute->requiredScopes);
+		self::assertSame('/api/mastodon/v1/accounts/{id}/unmute', $unmute->path);
+		self::assertSame('POST', $unmute->method);
+		self::assertSame(['write:mutes'], $unmute->requiredScopes);
+		self::assertSame('/api/mastodon/v1/mutes', $mutes->path);
+		self::assertSame('GET', $mutes->method);
+		self::assertSame(['read:mutes'], $mutes->requiredScopes);
 		self::assertTrue($notifications->requiresAuth);
 		self::assertSame(['read:notifications'], $notifications->requiredScopes);
 		self::assertSame('60/60', $notifications->rateLimit);

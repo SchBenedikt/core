@@ -98,19 +98,28 @@ final class NotificationService
 	/**
 	 * @param list<NotificationType> $types
 	 * @param list<NotificationType> $excludeTypes
+	 * @param list<string>           $excludeActorIds
 	 */
 	public function unreadCount(
 		string $recipientId,
 		?string $accountId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): int {
-		return $this->notifications->countUnread($recipientId, $accountId, $types, $excludeTypes);
+		return $this->notifications->countUnread(
+			$recipientId,
+			$accountId,
+			$types,
+			$excludeTypes,
+			$excludeActorIds,
+		);
 	}
 
 	/**
 	 * @param list<NotificationType> $types
 	 * @param list<NotificationType> $excludeTypes
+	 * @param list<string>           $excludeActorIds
 	 *
 	 * @return list<Notification>
 	 */
@@ -123,6 +132,7 @@ final class NotificationService
 		?string $afterId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): array {
 		return $this->notifications->listFor(
 			$recipientId,
@@ -133,6 +143,8 @@ final class NotificationService
 			$afterId,
 			$types,
 			$excludeTypes,
+			false,
+			$excludeActorIds,
 		);
 	}
 

@@ -53,6 +53,9 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.relationships` | `GET` | `/api/mastodon/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
 | `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
+| `mastodon.accounts.mute` | `POST` | `/api/mastodon/v1/accounts/{id}/mute` | yes, `write:mutes` | 30 / 900 s |
+| `mastodon.accounts.unmute` | `POST` | `/api/mastodon/v1/accounts/{id}/unmute` | yes, `write:mutes` | 30 / 900 s |
+| `mastodon.mutes` | `GET` | `/api/mastodon/v1/mutes` | yes, `read:mutes` | 60 / 60 s |
 | `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no; an optional token adds viewer-scoped rows | 60 / 60 s |
 | `mastodon.accounts.show` | `GET` | `/api/mastodon/v1/accounts/{id}` | no | 120 / 60 s |
 | `mastodon.accounts.followers` | `GET` | `/api/mastodon/v1/accounts/{id}/followers` | no | 60 / 60 s |
@@ -523,7 +526,7 @@ boost, queues `Undo(Announce)`, and answers `204` even when no boost existed.
 
 ## Mastodon-compatible API
 
-The thirty-one routes above are additive and disabled by default. Their paths use
+The thirty-four routes above are additive and disabled by default. Their paths use
 `social/mastodon.prefix` (default `/api/mastodon/v1`); the table shows the
 default. With `social/mastodon.api` off, every one answers `404
 mastodon_api_disabled` before auth and scope checks. They never shadow
@@ -549,6 +552,12 @@ POST /api/mastodon/v1/statuses/{id}/unreblog
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
 POST /api/mastodon/v1/accounts/bob/follow
 POST /api/mastodon/v1/accounts/bob/unfollow
+POST /api/mastodon/v1/accounts/bob/mute
+Content-Type: application/x-www-form-urlencoded
+
+notifications=1&duration=86400
+POST /api/mastodon/v1/accounts/bob/unmute
+GET /api/mastodon/v1/mutes?limit=40&max_id=bob
 GET /api/mastodon/v1/accounts/bob/statuses?limit=20
 GET /api/mastodon/v1/accounts/bob
 GET /api/mastodon/v1/accounts/bob/followers
@@ -599,6 +608,20 @@ must be one of the caller's bookmarked status ids; an unknown or foreign id is
 validation_failed`. Deleted or newly invisible statuses are omitted. Repeating
 a bookmark, or unbookmarking an absent one, is idempotent. An assembly without
 `BookmarkRepository` answers `503 bookmarks_not_configured`.
+
+`POST /api/mastodon/v1/accounts/{id}/mute` stores one private mute for a local
+account id or remote actor URL and returns the relationship with
+`muting: true`. `notifications` defaults to false and additionally filters the
+target's notification events; `duration` is a positive seconds value, with
+absent/`0` meaning indefinite. Both writes require `write:mutes` and are
+idempotent through the `(user_id, actor_id)` key in `social_mute`; a self-mute
+is `422` and an unknown bare target is `404`. `GET
+/api/mastodon/v1/mutes` requires `read:mutes` and lists active mutes
+newest-first with `limit` (1–80), `max_id`, `since_id`/`min_id` and a `Link`;
+the cursor is an account id owned by the caller. Active mutes hide the target
+from the home timeline and, with `notifications`, from the notification list
+and unread count. Expired rows are ignored on read. An assembly without a
+`MuteService` answers `503 mutes_not_configured`.
 
 `POST /api/mastodon/v1/statuses/{id}/reblog` returns the Mastodon reblog
 wrapper: the outer status carries the boost id, time and booster account, and
@@ -685,7 +708,7 @@ the host maps tokens to `Request::$scopes` and enforces the declared rate
 limits. Errors: `404 mastodon_api_disabled`, `403 insufficient_scope`, `422
 validation_failed`, `422 unsupported_parameter`, `404 not_found`, `503
 favourites_not_configured`, `503 bookmarks_not_configured`, `503
-notifications_not_configured`, `503
+mutes_not_configured`, `503 notifications_not_configured`, `503
 notifications_unavailable` (missing or unreadable notification table, or a
 table without `read_at`).
 

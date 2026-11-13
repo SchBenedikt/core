@@ -81,12 +81,13 @@ final class PdoNotificationRepository implements NotificationRepository
 		array $types = [],
 		array $excludeTypes = [],
 		bool $includeRead = false,
+		array $excludeActorIds = [],
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . NotificationSchema::TABLE
 			. ' WHERE recipient_id = :recipient_id';
 		$parameters = ['recipient_id' => $recipientId];
 
-		$this->appendFilters($sql, $parameters, $types, $excludeTypes, null, !$includeRead);
+		$this->appendFilters($sql, $parameters, $types, $excludeTypes, null, !$includeRead, $excludeActorIds);
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -172,12 +173,13 @@ final class PdoNotificationRepository implements NotificationRepository
 		?string $accountId = null,
 		array $types = [],
 		array $excludeTypes = [],
+		array $excludeActorIds = [],
 	): int {
 		$sql = 'SELECT COUNT(*) FROM ' . NotificationSchema::TABLE
 			. ' WHERE recipient_id = :recipient_id';
 		$parameters = ['recipient_id' => $recipientId];
 
-		$this->appendFilters($sql, $parameters, $types, $excludeTypes, $accountId, true);
+		$this->appendFilters($sql, $parameters, $types, $excludeTypes, $accountId, true, $excludeActorIds);
 
 		try {
 			return (int) $this->db->fetchValue($sql, $parameters);
@@ -192,6 +194,7 @@ final class PdoNotificationRepository implements NotificationRepository
 	 * @param array<string, mixed>   $parameters
 	 * @param list<NotificationType> $types
 	 * @param list<NotificationType> $excludeTypes
+	 * @param list<string>           $excludeActorIds
 	 */
 	private function appendFilters(
 		string &$sql,
@@ -200,6 +203,7 @@ final class PdoNotificationRepository implements NotificationRepository
 		array $excludeTypes,
 		?string $accountId,
 		bool $unreadOnly,
+		array $excludeActorIds = [],
 	): void {
 		if ($unreadOnly) {
 			$sql .= ' AND read_at IS NULL';
@@ -208,6 +212,16 @@ final class PdoNotificationRepository implements NotificationRepository
 		if ($accountId !== null) {
 			$sql .= ' AND actor_id = :account_id';
 			$parameters['account_id'] = $accountId;
+		}
+
+		if ($excludeActorIds !== []) {
+			$placeholders = [];
+			foreach (array_values($excludeActorIds) as $index => $actorId) {
+				$name = 'exclude_actor_' . $index;
+				$placeholders[] = ':' . $name;
+				$parameters[$name] = $actorId;
+			}
+			$sql .= ' AND actor_id NOT IN (' . implode(', ', $placeholders) . ')';
 		}
 
 		if ($types !== []) {

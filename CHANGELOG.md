@@ -29,6 +29,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Local Mastodon-compatible mutes: `POST
+  {mastodon.prefix}/accounts/{id}/mute` stores one private mute per local
+  account and local account id or remote actor URL, with an optional
+  `notifications` flag and a seconds-based `duration` that expires without a
+  cleanup job. `POST .../unmute` removes it and `GET {mastodon.prefix}/mutes`
+  lists active mutes newest-first with `max_id`/`since_id`/`min_id`, an
+  ownership-checked account cursor and the usual `Link`. Active mutes hide the
+  target from the home timeline (including boosted object authors);
+  notification mutes also filter the list and unread count. Relationships and
+  statuses expose `muting`, `muting_notifications` and `muted`. The routes
+  require `write:mutes`/`read:mutes`. `Mute`/`MuteRepository`, in-memory and
+  PDO adapters, `MuteSchema`, HTTP/domain/host/timeline/notification tests and
+  the host migration documentation are included.
 - Private Mastodon-compatible bookmarks: `POST
   {mastodon.prefix}/statuses/{id}/bookmark` and `.../unbookmark` store one
   `social_bookmark` row per local account and visible status, expose the
