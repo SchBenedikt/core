@@ -98,8 +98,9 @@ in [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
 The shared Vue front end is `@alohasocial/ui`, with a `HostBridge` per host.
 It is a separate npm artifact under `ui/`, not a fourth backend and not a place
 for OCP or server code. The package now owns the contract, the Vue plugin,
-typed core reads, a fake bridge and the first read-only public timeline;
-host-specific bridges, mount pages and navigation remain in the hosts. See
+typed core reads, a fake bridge and the read-only public timeline and post
+detail screens; host-specific bridges, mount pages and navigation remain in
+the hosts. See
 [ADR 0005](adr/0005-shared-ui.md) and [shared UI](guides/shared-ui.md).
 
 ## Writing a post (the implemented vertical slice)

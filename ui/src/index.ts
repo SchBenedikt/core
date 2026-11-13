@@ -25,8 +25,10 @@ export {
 } from './core-api.js';
 export { UiApiError, UiTransportError, isUiFailure, type UiErrorFields, type UiFailure } from './api-error.js';
 export { useCoreApi } from './composables/use-core-api.js';
+export { usePostDetail, type PostDetailState } from './composables/use-post-detail.js';
 export { usePublicTimeline, type PublicTimelineState } from './composables/use-public-timeline.js';
 export { default as PostCard } from './components/PostCard.vue';
+export { default as PostDetail } from './components/PostDetail.vue';
 export { default as PublicTimeline } from './components/PublicTimeline.vue';
 export {
 	FakeHostBridge,

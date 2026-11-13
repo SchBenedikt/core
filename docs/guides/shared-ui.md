@@ -6,7 +6,7 @@ contract for that package; [ADR 0005](../adr/0005-shared-ui.md) explains why
 the boundary is drawn this way.
 
 The package now exists under [`ui/`](../../ui/README.md). This guide defines
-what it exposes, which first screen was moved and what remains in the hosts.
+what it exposes, which read-only screens were moved and what remains in the hosts.
 The Nextcloud bridge and mount page are still host work; the package does not
 contain either host's session or CSRF implementation.
 
@@ -112,8 +112,8 @@ ui/
     plugin.ts           createAlohaUi() and useHostBridge()
     core-api.ts         typed core reads and JSON error mapping
     routes.ts           core paths checked against the route manifest
-    components/         PostCard and PublicTimeline
-    composables/        data loading and cursor state
+    components/         PostCard, PublicTimeline and PostDetail
+    composables/        data loading, cursor and single-post state
     testing/            FakeHostBridge and fixtures
     index.ts            public exports
   tests/                contract, component and route-parity tests
@@ -134,12 +134,16 @@ host pins both versions.
 - accessible focus, keyboard and label behaviour;
 - a fake bridge for component tests.
 
-The first extracted screen is `PublicTimeline` plus `PostCard`. It reads
-`GET /api/v1/timelines/public`, uses the core's `limit`/`before` cursor, and
-covers loading, empty, error, retry and load-more states. `CoreApi` maps the
-documented JSON error shape to `UiApiError`; it never retains the raw response
-body. `FakeHostBridge` answers from a fixture and records every request, so a
-component test does not need a server or a browser network.
+The extracted read-only screens are `PublicTimeline` plus `PostCard` and
+`PostDetail`. The timeline reads `GET /api/v1/timelines/public`, uses the core's
+`limit`/`before` cursor, and covers loading, empty, error, retry and load-more
+states. `PostDetail` reads the existing `GET /api/v1/posts/{id}` route through
+`CoreApi.getPost()`, renders the same `PostCard`, and covers loading, not-found,
+error and retry states. A late response for a previous post id is ignored when
+the host changes the id. `CoreApi` maps the documented JSON error shape to
+`UiApiError`; it never retains the raw response body. `FakeHostBridge` answers
+from a fixture and records every request, so a component test does not need a
+server or a browser network.
 
 ## What stays in the host
 
@@ -269,7 +273,7 @@ A host smoke test is not a replacement for the package tests.
 ## Rollout
 
 1. **Done:** the package, bridge contract, fake bridge and the read-only public
-   timeline with component tests live under `ui/`.
+   timeline and post-detail screens with component tests live under `ui/`.
 2. Add the Nextcloud bridge behind a feature flag.
 3. Verify login, request, 401 and logout in the real page.
 4. Add the standalone bridge when its auth flow exists.

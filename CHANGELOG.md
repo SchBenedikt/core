@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Shared UI post detail: `@alohasocial/ui` now exports `PostDetail` and
+  `usePostDetail()`. The second read-only screen consumes the existing core
+  `GET /api/v1/posts/{id}` route through `CoreApi.getPost()`, renders the same
+  `PostCard`, and covers loading, not-found, error, retry and 401 states. A
+  changed post id cancels the previous view logically, so a late response
+  cannot overwrite the new detail. The screen has no new core route, table,
+  migration or host contract; `FakeHostBridge` component tests exercise the
+  existing path. See `ui/README.md` and `docs/guides/shared-ui.md`.
 - Mastodon-compatible local poll voting: `POST
   {mastodon.prefix}/polls/{id}/votes` accepts JSON or form `choices[]`
   positions, requires `write:statuses`, declares `30/900` and remains behind

@@ -17,15 +17,18 @@ See [ADR 0005](../docs/adr/0005-shared-ui.md) and the
   host page boundary through Vue dependency injection.
 - `CoreApi`: typed reads over the core HTTP contract, including the documented
   JSON error shape and the `before`/`limit` public-timeline cursor.
-- `PublicTimeline` and `PostCard`: the first read-only shared screen, with
-  loading, empty, error, retry and load-more states.
+- `PublicTimeline`, `PostDetail` and `PostCard`: the read-only shared screens.
+  The timeline covers loading, empty, error, retry and load-more states; the
+  detail screen reads one existing post by id and covers loading, not-found,
+  error and retry states.
 - `FakeHostBridge`: a deterministic, network-free bridge for component tests.
 
-This first extraction intentionally does not add a host page, a Nextcloud
-bridge, a standalone bridge or a new core route. Those stay in the host
-repositories; the shared package only consumes existing manifest paths. It
-also has no persistence layer, schema or migration: `PublicTimeline` keeps its
-page state in the component and reads the existing public-timeline route.
+This extraction intentionally does not add a host page, a Nextcloud bridge, a
+standalone bridge or a new core route. Those stay in the host repositories;
+the shared package only consumes existing manifest paths. It also has no
+persistence layer, schema or migration: `PublicTimeline` keeps its page state
+in the component, and `PostDetail` keeps its single-post request state in its
+composable, both through existing core routes.
 
 ## Development
 

@@ -154,9 +154,10 @@ Status of the core, not a promise about dates.
   contract in [ADR 0005](adr/0005-shared-ui.md).
 - Shared UI package: `@alohasocial/ui` now exists under `ui/` with the typed
   `HostBridge`, Vue dependency-injection plugin, typed `CoreApi`, a network-free
-  `FakeHostBridge`, `PostCard` and the first read-only `PublicTimeline` screen.
-  The package covers loading, empty, error, retry and cursor pagination states,
-  has its own typecheck/test/build commands and a route-parity test against
+  `FakeHostBridge`, `PostCard`, the read-only `PublicTimeline` and the second
+  read-only `PostDetail` screen over the existing single-post route. The
+  package covers loading, empty, not-found, error, retry and cursor pagination
+  states, has its own typecheck/test/build commands and a route-parity test against
   `bin/export-routes`. Host bridges, mount pages and Nextcloud/standalone
   navigation remain host work.
 
@@ -274,7 +275,7 @@ above.
 | AT Protocol account-linking UI/callback and full client/AppView extraction (authorization-code/PAR/revocation and OAuth session refresh are local) | `AlohaSocial/social` host and a future standalone AT Protocol client; the host owns credential storage, PDS selection and the browser flow store, while the core owns the protocol client and metadata validation |
 | Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
 | Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
-| Nextcloud `HostBridge` integration and rollout of the shared screens | `AlohaSocial/social` host; the package, contract, FakeBridge and first read-only screen are done under `ui/` |
+| Nextcloud `HostBridge` integration and rollout of the shared screens | `AlohaSocial/social` host; the package, contract, FakeBridge and read-only timeline/post-detail screens are done under `ui/` |
 | Migration runner for the standalone | host concern, schemas already exist |
 
 ## Later
