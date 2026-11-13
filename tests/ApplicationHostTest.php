@@ -86,7 +86,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(72, $app->routes->routes());
+		self::assertCount(79, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -118,6 +118,59 @@ final class ApplicationHostTest extends TestCase
 
 		$timeline = $app->handle(new Request('GET', '/api/v1/timelines/public'))->decodedBody();
 		self::assertSame(1, count($timeline['posts']));
+	}
+
+	public function testForHostServesProfilesFollowsAndNotificationsFromSql(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), actors: ['alice', 'bob']);
+
+		$profile = $app->handle(new Request('GET', '/api/v1/accounts/bob'));
+		self::assertSame(200, $profile->status);
+		self::assertNull($profile->decodedBody()['account']['relationship']);
+
+		$follow = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/accounts/bob/follow',
+			userId: 'alice',
+		));
+		self::assertSame(200, $follow->status);
+		self::assertTrue($follow->decodedBody()['relationship']['following']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . FollowerSchema::TABLE . ' WHERE is_local = 1',
+		));
+
+		$viewed = $app->handle(new Request('GET', '/api/v1/accounts/bob', userId: 'alice'));
+		self::assertSame(1, $viewed->decodedBody()['account']['followers_count']);
+		self::assertTrue($viewed->decodedBody()['account']['relationship']['following']);
+
+		$page = $app->handle(new Request('GET', '/api/v1/notifications', userId: 'bob'));
+		self::assertSame(200, $page->status);
+		self::assertSame(1, $page->decodedBody()['unread_count']);
+		self::assertSame('follow', $page->decodedBody()['notifications'][0]['type']);
+		$id = $page->decodedBody()['notifications'][0]['id'];
+
+		$dismiss = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/notifications/' . rawurlencode($id) . '/dismiss',
+			userId: 'bob',
+		));
+		self::assertSame(200, $dismiss->status);
+		self::assertSame(0, $app->handle(
+			new Request('GET', '/api/v1/notifications/unread_count', userId: 'bob'),
+		)->decodedBody()['count']);
+		self::assertNotNull($database->fetchValue(
+			'SELECT read_at FROM ' . NotificationSchema::TABLE . ' WHERE id = ?',
+			[$id],
+		));
+
+		$unfollow = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/accounts/bob/follow',
+			userId: 'alice',
+		));
+		self::assertSame(200, $unfollow->status);
+		self::assertFalse($unfollow->decodedBody()['relationship']['following']);
 	}
 
 	public function testForHostPersistsASignedCreateAndServesItInTheHomeTimeline(): void

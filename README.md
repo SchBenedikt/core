@@ -57,16 +57,19 @@ The full mapping, guarantees and the path to a real bridge are in
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
 | AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (72 routes; 43 under the compatibility prefix) |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (79 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
-| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` and read-only `PostDetail` |
+| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline`/`PostDetail`, and the write screens `ActorHeader` (with follow toggle), `PostComposer` and `NotificationList` |
 
-The interaction routes (favourites, bookmarks, mutes, lists, notifications,
-polls and local follow/unfollow) are part of the optional Mastodon-compatible
-subset and are only served under its configurable prefix. `/api/v1` exposes
-posts, timelines, blocks, follows, media and remote threads.
+`/api/v1` now exposes a host-neutral local interaction surface: public
+account profiles with the viewer relationship, idempotent local
+follow/unfollow, and the caller's notification page, unread count, dismiss and
+clear. The richer interaction set (favourites, bookmarks, mutes, lists, polls
+and the Mastodon-shaped variants) remains part of the optional
+Mastodon-compatible subset under its configurable prefix; both project the
+same local posts, follow graph and notification rows.
 
 The Mastodon-compatible surface is additive and disabled by default. It reuses
 the same posts, media service, follow graph, notification repository and local
@@ -75,9 +78,12 @@ account directory as `/api/v1`; it is not a second status store. See
 
 The shared UI consumes existing core routes only. `PublicTimeline` reads
 `GET /api/v1/timelines/public`; `PostDetail` reads
-`GET /api/v1/posts/{id}`. Both cover loading, error and 401 states, and the
-timeline covers empty and cursor paging as well. Host bridges and mount pages
-are deliberately not in this repository.
+`GET /api/v1/posts/{id}`; `ActorHeader` reads `GET /api/v1/accounts/{id}` and
+writes the follow edge; `PostComposer` writes `POST /api/v1/posts`;
+`NotificationList` reads the notification page and writes dismiss/clear. Each
+covers loading, empty where applicable, error and 401 states, and the list
+screens cover cursor paging. Host bridges and mount pages are deliberately not
+in this repository.
 
 ## What remains outside this repository
 
@@ -173,7 +179,7 @@ The canonical status, milestone table and open decisions are in the
 composer install
 composer check          # lint, core boundary, attribution, links, PHP tests
 php bin/core-demo       # real HTTP requests through the in-memory assembly
-php bin/export-routes   # the HTTP contract as JSON (71 routes)
+php bin/export-routes   # the HTTP contract as JSON (79 routes)
 php bin/export-openapi  # the same contract as OpenAPI 3.1
 
 cd ui

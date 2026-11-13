@@ -98,9 +98,9 @@ in [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
 The shared Vue front end is `@alohasocial/ui`, with a `HostBridge` per host.
 It is a separate npm artifact under `ui/`, not a fourth backend and not a place
 for OCP or server code. The package now owns the contract, the Vue plugin,
-typed core reads, a fake bridge and the read-only public timeline and post
-detail screens; host-specific bridges, mount pages and navigation remain in
-the hosts. See
+typed core reads, a fake bridge, the read-only public timeline and post detail
+screens, and the shared actor header, composer and notification list;
+host-specific bridges, mount pages and navigation remain in the hosts. See
 [ADR 0005](adr/0005-shared-ui.md) and [shared UI](guides/shared-ui.md).
 
 ## Writing a post (the implemented vertical slice)
@@ -799,7 +799,7 @@ genuinely owns the capability.
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset; the locally implementable remainder (hashtags, filters, followed tags, scheduled posts, follow requests and account management) is listed as Later in the [roadmap](roadmap.md); see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
-| Host UI bridges, write screens and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screens; the package under `ui/` is extracted, the bridges and mount pages are host work (M5) |
+| Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared read/write screens; the package under `ui/` is extracted, the bridges and mount pages are host work (M5) |
 | Host route parity test | each host compares its registered routes with `bin/export-routes`; required before a cutover (M3) |
 | Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
 | Nextcloud data import | the `social` host, following the [migration guide](guides/migration-from-nextcloud.md) |

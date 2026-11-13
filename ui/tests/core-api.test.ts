@@ -9,7 +9,17 @@ import {
 	UiTransportError,
 	normalizeTimelineLimit,
 } from '../src/index.js';
-import { errorResponse, post, timelineResponse } from './support.js';
+import {
+	account,
+	accountResponse,
+	errorResponse,
+	notification,
+	notificationPageResponse,
+	post,
+	relationship,
+	relationshipResponse,
+	timelineResponse,
+} from './support.js';
 
 describe('CoreApi', () => {
 	it('reads the public timeline with a bounded limit and cursor', async () => {
@@ -177,6 +187,154 @@ describe('CoreApi', () => {
 		await expect(new CoreApi(bridge).getPost('missing')).rejects.toMatchObject({
 			status: 404,
 			code: 'not_found',
+		});
+	});
+});
+
+describe('CoreApi local interactions', () => {
+	it('encodes an account id and parses the viewer relationship', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'GET /api/v1/accounts/a%2Fb': accountResponse(account('a/b', {
+					followers_count: 7,
+					relationship: relationship({ following: true, followed_by: true }),
+				})),
+			},
+		});
+
+		const result = await new CoreApi(bridge).getAccount('a/b');
+
+		expect(result).toMatchObject({
+			id: 'a/b',
+			followers_count: 7,
+			relationship: { following: true, followed_by: true },
+		});
+		expect(bridge.calls[0]?.path).toBe('/api/v1/accounts/a%2Fb');
+	});
+
+	it('follows and unfollows through the local relationship route', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'POST /api/v1/accounts/bob/follow': relationshipResponse(relationship({ following: true })),
+				'DELETE /api/v1/accounts/bob/follow': relationshipResponse(relationship({ following: false })),
+			},
+		});
+		const api = new CoreApi(bridge);
+
+		expect(await api.followAccount('bob')).toMatchObject({ following: true });
+		expect(await api.unfollowAccount('bob')).toMatchObject({ following: false });
+		expect(bridge.calls.map((call) => call.method)).toEqual(['POST', 'DELETE']);
+	});
+
+	it('reads a notification page with the normalized limit and cursor', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'GET /api/v1/notifications?before=n1&limit=40': notificationPageResponse(
+					[notification('n2')],
+					4,
+				),
+			},
+		});
+
+		const page = await new CoreApi(bridge).notifications({ limit: 99, before: 'n1' });
+
+		expect(page.notifications).toHaveLength(1);
+		expect(page.unreadCount).toBe(4);
+		expect(bridge.calls[0]?.query).toEqual({ limit: '40', before: 'n1' });
+	});
+
+	it('dismisses, clears and counts notifications', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'POST /api/v1/notifications/n1/dismiss': { status: 200, body: '{"dismissed":true}' },
+				'POST /api/v1/notifications/clear': { status: 200, body: '{"cleared":3}' },
+				'GET /api/v1/notifications/unread_count': { status: 200, body: '{"count":3}' },
+			},
+		});
+		const api = new CoreApi(bridge);
+
+		await api.dismissNotification('n1');
+		expect(await api.clearNotifications()).toBe(3);
+		expect(await api.notificationUnreadCount()).toBe(3);
+		expect(bridge.calls.map((call) => call.path)).toEqual([
+			'/api/v1/notifications/n1/dismiss',
+			'/api/v1/notifications/clear',
+			'/api/v1/notifications/unread_count',
+		]);
+	});
+
+	it('creates a post and omits an empty warning', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'POST /api/v1/posts': { status: 201, body: JSON.stringify({ post: post('new') }) },
+			},
+		});
+
+		const result = await new CoreApi(bridge).createPost({
+			content: ' Hello ',
+			visibility: 'unlisted',
+			contentWarning: '   ',
+		});
+
+		expect(result.id).toBe('new');
+		expect(bridge.calls[0]?.body).toEqual({
+			content: ' Hello ',
+			visibility: 'unlisted',
+		});
+	});
+
+	it('sends a reply target and a content warning', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'POST /api/v1/posts': { status: 201, body: JSON.stringify({ post: post('new') }) },
+			},
+		});
+
+		await new CoreApi(bridge).createPost({
+			content: 'Reply',
+			contentWarning: 'spoilers',
+			inReplyToId: 'parent',
+		});
+
+		expect(bridge.calls[0]?.body).toEqual({
+			content: 'Reply',
+			visibility: 'public',
+			content_warning: 'spoilers',
+			in_reply_to_id: 'parent',
+		});
+	});
+
+	it('rejects an empty or over-limit post before asking the bridge', async () => {
+		const bridge = new FakeHostBridge();
+		const api = new CoreApi(bridge);
+
+		await expect(api.createPost({ content: '   ' })).rejects.toMatchObject({
+			status: 400,
+			code: 'invalid_post',
+		});
+		await expect(api.createPost({ content: 'a'.repeat(5001) })).rejects.toMatchObject({
+			status: 400,
+			code: 'invalid_post',
+		});
+		expect(bridge.calls).toHaveLength(0);
+	});
+
+	it('rejects malformed account and relationship responses', async () => {
+		const bridge = new FakeHostBridge({
+			responses: {
+				'GET /api/v1/accounts/bob': { status: 200, body: '{"account":null}' },
+				'POST /api/v1/accounts/bob/follow': { status: 200, body: '{"relationship":{}}' },
+			},
+		});
+		const api = new CoreApi(bridge);
+
+		await expect(api.getAccount('bob')).rejects.toMatchObject({
+			status: 502,
+			code: 'invalid_response',
+		});
+		await expect(api.followAccount('bob')).rejects.toMatchObject({
+			status: 502,
+			code: 'invalid_response',
 		});
 	});
 });

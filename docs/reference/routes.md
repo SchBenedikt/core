@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 72 routes in total; 43 use the
+defaults to `/api/mastodon/v1`). There are 79 routes in total; 43 use the
 compatibility prefix.
 
 | Name | Method | Path | Auth | Rate limit |
@@ -33,6 +33,13 @@ compatibility prefix.
 | `blocks.list` | `GET` | `/api/v1/blocks` | yes | 120 / 60 s |
 | `blocks.block` | `POST` | `/api/v1/blocks` | yes | 30 / 900 s |
 | `blocks.unblock` | `DELETE` | `/api/v1/blocks/{id}` | yes | 60 / 900 s |
+| `accounts.show` | `GET` | `/api/v1/accounts/{id}` | no; an optional token adds the viewer relationship | 120 / 60 s |
+| `accounts.follow` | `POST` | `/api/v1/accounts/{id}/follow` | yes | 30 / 900 s |
+| `accounts.unfollow` | `DELETE` | `/api/v1/accounts/{id}/follow` | yes | 60 / 900 s |
+| `notifications.list` | `GET` | `/api/v1/notifications` | yes | 60 / 60 s |
+| `notifications.unread_count` | `GET` | `/api/v1/notifications/unread_count` | yes | 60 / 60 s |
+| `notifications.dismiss` | `POST` | `/api/v1/notifications/{id}/dismiss` | yes | 30 / 900 s |
+| `notifications.clear` | `POST` | `/api/v1/notifications/clear` | yes | 30 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `inbox.shared` | `POST` | `/inbox/shared` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
@@ -436,6 +443,106 @@ from this caller's home timeline only; it does not remove the shared remote
 rows, the local follow edge or another account's view. Delete it with
 `DELETE /api/v1/blocks/{id}` (`204`, or `404` when it is not the caller's).
 See [blocks](../guides/blocks.md).
+
+## Local accounts
+
+```http
+GET /api/v1/accounts/{id}
+```
+
+A public local profile. When the request carries an authenticated local user,
+`relationship` is that viewer's relationship; an anonymous request gets
+`null` rather than a guessed viewer.
+
+```json
+{"account": {
+  "id": "alice",
+  "handle": "alice",
+  "display_name": "alice",
+  "url": "https://social.example/@alice",
+  "followers_count": 3,
+  "following_count": 5,
+  "relationship": {
+    "following": false,
+    "followed_by": true,
+    "blocking": false,
+    "muting": false
+  }
+}}
+```
+
+An unknown, empty or non-local id is `404 not_found`. A host that did not
+supply a `LocalActorDirectory` answers `503 accounts_not_configured`.
+`display_name` is the local handle in this slice because profile detail fields
+remain host-owned; a host may render its own profile header around the shared
+component.
+
+```http
+POST /api/v1/accounts/{id}/follow
+DELETE /api/v1/accounts/{id}/follow
+```
+
+Both return the resulting relationship and are idempotent: repeating a follow
+creates no second edge, and unfollowing an absent edge is a successful no-op.
+
+```json
+{"relationship": {"following": true, "followed_by": false,
+  "blocking": false, "muting": false}}
+```
+
+A self-follow is `422 validation_failed` with an `id` field; an unknown target
+is `404`; a write without a local directory is `503`; an anonymous write is
+`401`. Local follows stay in the existing follower graph and are not delivered
+to a remote inbox. See [federation](../guides/federation.md).
+
+## Notifications
+
+```http
+GET /api/v1/notifications?limit=20&before=notification-…
+```
+
+One page of the caller's unread local events, newest first, plus the current
+unread count.
+
+```json
+{"notifications": [{
+  "id": "notification-…",
+  "type": "mention",
+  "actor_id": "alice",
+  "post_id": "post-…",
+  "created_at": "2026-11-13T10:00:00Z",
+  "read": false
+}], "unread_count": 1}
+```
+
+`type` is `favourite`, `follow`, `mention` or `reblog`. `actor_id` is a local
+account id or, for a remote follower, its actor URL. `post_id` is `null` for a
+follow and the reply/post id for the other types. `limit` defaults to 20 and is
+clamped to 1–40. `before` is a notification id owned by the caller; an unknown
+or foreign id is `422 validation_failed` with a `before` field, so the cursor
+cannot probe another account's events. An unavailable notification table is
+`503 notifications_unavailable`.
+
+```http
+GET /api/v1/notifications/unread_count
+```
+
+```json
+{"count": 3}
+```
+
+```http
+POST /api/v1/notifications/{id}/dismiss
+POST /api/v1/notifications/clear
+```
+
+Dismiss marks one notification read and answers `{"dismissed": true}`. It is
+idempotent for the caller's own already-read row; a missing or foreign id is
+`404 not_found`. Clear marks every unread notification of the caller read and
+answers `{"cleared": 3}`; repeating it returns `0`. Read rows stay stored for
+the host's retention policy; `GET /api/v1/notifications` returns unread rows
+only. The core records a local follow, favourite, mention/reply and reblog;
+recording is best-effort and never fails the primary interaction.
 
 ## Inbox
 

@@ -35,6 +35,8 @@ change. `fields` appears only when an error belongs to specific input.
 | `unsupported_activity` | 400 | An inbox activity type the core does not apply |
 | `replayed_activity` | 400 | An activity id that was already accepted |
 | `inbox_not_configured` | 503 | No actor resolver, HTTP client or signing key configured |
+| `accounts_not_configured` | 503 | A neutral profile/follow route is present but no `LocalActorDirectory` was assembled |
+| `notifications_unavailable` | 503 | Notification storage is missing or unreadable (neutral and compatibility routes) |
 | `media_not_configured` | 503 | No `BlobStore` is configured for the media routes |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
 | `delivery_failed` | 502 | A peer inbox answered non-2xx or could not be reached while delivering a local Follow or Undo. A Follow is rolled back; an Undo keeps the edge so the request can be retried |

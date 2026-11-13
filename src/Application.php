@@ -13,9 +13,12 @@ use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
+use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
+use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
@@ -24,6 +27,8 @@ use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
+use AlohaSocial\Core\Api\NotificationsHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
@@ -71,6 +76,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
+use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -78,6 +84,7 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
@@ -199,6 +206,7 @@ use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
+use AlohaSocial\Core\Service\LocalAccountService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
@@ -572,6 +580,12 @@ final readonly class Application
 				$notificationService,
 				$muteService,
 			);
+		$localAccounts = new LocalAccountService(
+			$localRelationships,
+			$notificationService,
+			$activities,
+			$clock,
+		);
 		$postService = new PostService(
 			$posts,
 			$attachmentRepository,
@@ -744,6 +758,13 @@ final readonly class Application
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
 			->with(FollowRemoteActorHandler::class, static fn (): FollowRemoteActorHandler => new FollowRemoteActorHandler($followingService))
 			->with(UnfollowRemoteActorHandler::class, static fn (): UnfollowRemoteActorHandler => new UnfollowRemoteActorHandler($followingService))
+			->with(ShowLocalAccountHandler::class, static fn (): ShowLocalAccountHandler => new ShowLocalAccountHandler($localAccounts))
+			->with(FollowLocalAccountHandler::class, static fn (): FollowLocalAccountHandler => new FollowLocalAccountHandler($localAccounts))
+			->with(UnfollowLocalAccountHandler::class, static fn (): UnfollowLocalAccountHandler => new UnfollowLocalAccountHandler($localAccounts))
+			->with(NotificationsHandler::class, static fn (): NotificationsHandler => new NotificationsHandler($localAccounts))
+			->with(NotificationUnreadCountHandler::class, static fn (): NotificationUnreadCountHandler => new NotificationUnreadCountHandler($localAccounts))
+			->with(DismissNotificationHandler::class, static fn (): DismissNotificationHandler => new DismissNotificationHandler($localAccounts))
+			->with(ClearNotificationsHandler::class, static fn (): ClearNotificationsHandler => new ClearNotificationsHandler($localAccounts))
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))

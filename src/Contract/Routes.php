@@ -12,10 +12,13 @@ namespace AlohaSocial\Core\Contract;
 use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
+use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
+use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
@@ -24,10 +27,13 @@ use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
+use AlohaSocial\Core\Api\NotificationsHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
+use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -35,6 +41,7 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
@@ -291,6 +298,69 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/900',
 				summary: 'Remove a followed actor and deliver a signed Undo to its inbox.',
+			),
+			new Route(
+				name: 'accounts.show',
+				method: 'GET',
+				path: $base . '/accounts/{id}',
+				handler: ShowLocalAccountHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Public profile of one local account, with the viewer relationship when authenticated.',
+			),
+			new Route(
+				name: 'accounts.follow',
+				method: 'POST',
+				path: $base . '/accounts/{id}/follow',
+				handler: FollowLocalAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Follow one local account; idempotent per relationship.',
+			),
+			new Route(
+				name: 'accounts.unfollow',
+				method: 'DELETE',
+				path: $base . '/accounts/{id}/follow',
+				handler: UnfollowLocalAccountHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove a local follow; an absent edge is a successful no-op.',
+			),
+			new Route(
+				name: 'notifications.list',
+				method: 'GET',
+				path: $base . '/notifications',
+				handler: NotificationsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'Unread notifications of the signed-in account plus the unread count, newest first.',
+			),
+			new Route(
+				name: 'notifications.unread_count',
+				method: 'GET',
+				path: $base . '/notifications/unread_count',
+				handler: NotificationUnreadCountHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'Unread notification count of the signed-in account.',
+			),
+			new Route(
+				name: 'notifications.dismiss',
+				method: 'POST',
+				path: $base . '/notifications/{id}/dismiss',
+				handler: DismissNotificationHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Mark one notification of the signed-in account read.',
+			),
+			new Route(
+				name: 'notifications.clear',
+				method: 'POST',
+				path: $base . '/notifications/clear',
+				handler: ClearNotificationsHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Mark every unread notification of the signed-in account read.',
 			),
 			new Route(
 				name: 'inbox',

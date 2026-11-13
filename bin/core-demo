@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 
@@ -36,7 +37,9 @@ function call(Application $app, string $label, Request $request): void
 	echo "\n";
 }
 
-$app = Application::inMemory();
+$app = Application::inMemory(
+	localActors: new InMemoryActorDirectory(['alice', 'bob']),
+);
 
 echo "Aloha Social core — in-memory reference assembly\n";
 echo "Routes: ", count($app->routes->routes()), ", queued jobs: ", $app->queue->pendingCount(), "\n\n";
@@ -88,6 +91,24 @@ call(
 );
 
 call($app, 'GET /api/v1/followers (alice)', new Request('GET', '/api/v1/followers', userId: 'alice'));
+
+call($app, 'GET /api/v1/accounts/bob', new Request('GET', '/api/v1/accounts/bob'));
+call(
+	$app,
+	'POST /api/v1/accounts/bob/follow (alice)',
+	new Request('POST', '/api/v1/accounts/bob/follow', userId: 'alice'),
+);
+call(
+	$app,
+	'GET /api/v1/accounts/bob (as alice)',
+	new Request('GET', '/api/v1/accounts/bob', userId: 'alice'),
+);
+call($app, 'GET /api/v1/notifications (bob)', new Request('GET', '/api/v1/notifications', userId: 'bob'));
+call(
+	$app,
+	'GET /api/v1/notifications/unread_count (bob)',
+	new Request('GET', '/api/v1/notifications/unread_count', userId: 'bob'),
+);
 
 call(
 	$app,

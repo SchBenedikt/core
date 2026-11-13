@@ -5,11 +5,29 @@
 import { UiApiError, UiTransportError, type UiErrorFields } from './api-error.js';
 import type { HostBridge } from './host-bridge.js';
 import { coreRoutes } from './routes.js';
-import type { Post, UiResponse } from './types.js';
+import type {
+	Account,
+	CreatePostInput,
+	Notification,
+	NotificationPage,
+	Post,
+	Relationship,
+	UiResponse,
+} from './types.js';
 
 export const DEFAULT_TIMELINE_LIMIT = 20;
 
 export const MAX_TIMELINE_LIMIT = 40;
+
+export const DEFAULT_NOTIFICATION_LIMIT = 20;
+
+export const MAX_NOTIFICATION_LIMIT = 40;
+
+/** Mirrors PostService::MAX_CONTENT_LENGTH for an early, friendly error. */
+export const MAX_POST_LENGTH = 5000;
+
+/** Mirrors PostService::MAX_CONTENT_WARNING_LENGTH. */
+export const MAX_CONTENT_WARNING_LENGTH = 200;
 
 export interface PublicTimelineOptions {
 	limit?: number;
@@ -27,6 +45,14 @@ export function normalizeTimelineLimit(limit: number | undefined): number {
 	}
 
 	return Math.min(MAX_TIMELINE_LIMIT, Math.max(1, Math.trunc(limit)));
+}
+
+export function normalizeNotificationLimit(limit: number | undefined): number {
+	if (limit === undefined || !Number.isFinite(limit)) {
+		return DEFAULT_NOTIFICATION_LIMIT;
+	}
+
+	return Math.min(MAX_NOTIFICATION_LIMIT, Math.max(1, Math.trunc(limit)));
 }
 
 /**
@@ -68,11 +94,162 @@ export class CoreApi {
 			path: coreRoutes.post(id),
 		});
 
-		if (!data || typeof data.post !== 'object' || data.post === null) {
+		if (!isRecord(data) || !isRecord(data.post)) {
 			throw new UiApiError(502, 'invalid_response', 'The post response has no post object.');
 		}
 
-		return data.post as Post;
+		return data.post as unknown as Post;
+	}
+
+	async getAccount(id: string): Promise<Account> {
+		if (id.trim() === '') {
+			throw new UiApiError(400, 'invalid_account_id', 'An account id is required.');
+		}
+
+		const data = await this.request<{ account?: unknown }>({
+			method: 'GET',
+			path: coreRoutes.account(id),
+		});
+
+		if (!isRecord(data) || !isRecord(data.account)) {
+			throw new UiApiError(502, 'invalid_response', 'The account response has no account object.');
+		}
+
+		return data.account as unknown as Account;
+	}
+
+	async followAccount(id: string): Promise<Relationship> {
+		if (id.trim() === '') {
+			throw new UiApiError(400, 'invalid_account_id', 'An account id is required.');
+		}
+
+		const data = await this.request<{ relationship?: unknown }>({
+			method: 'POST',
+			path: coreRoutes.accountFollow(id),
+		});
+
+		return relationshipFrom(data);
+	}
+
+	async unfollowAccount(id: string): Promise<Relationship> {
+		if (id.trim() === '') {
+			throw new UiApiError(400, 'invalid_account_id', 'An account id is required.');
+		}
+
+		const data = await this.request<{ relationship?: unknown }>({
+			method: 'DELETE',
+			path: coreRoutes.accountFollow(id),
+		});
+
+		return relationshipFrom(data);
+	}
+
+	async notifications(options: { limit?: number; before?: string } = {}): Promise<NotificationPage> {
+		const query: Record<string, string> = {
+			limit: String(normalizeNotificationLimit(options.limit)),
+		};
+		if (options.before !== undefined && options.before !== '') {
+			query.before = options.before;
+		}
+
+		const data = await this.request<{ notifications?: unknown; unread_count?: unknown }>({
+			method: 'GET',
+			path: coreRoutes.notifications,
+			query,
+		});
+
+		if (!isRecord(data) || !Array.isArray(data.notifications) || typeof data.unread_count !== 'number') {
+			throw new UiApiError(502, 'invalid_response', 'The notification response is incomplete.');
+		}
+
+		return {
+			notifications: data.notifications as Notification[],
+			unreadCount: data.unread_count,
+		};
+	}
+
+	async dismissNotification(id: string): Promise<void> {
+		if (id.trim() === '') {
+			throw new UiApiError(400, 'invalid_notification_id', 'A notification id is required.');
+		}
+
+		await this.request<void>({
+			method: 'POST',
+			path: coreRoutes.notificationDismiss(id),
+		});
+	}
+
+	async clearNotifications(): Promise<number> {
+		const data = await this.request<{ cleared?: unknown }>({
+			method: 'POST',
+			path: coreRoutes.notificationsClear,
+		});
+
+		if (!isRecord(data) || typeof data.cleared !== 'number') {
+			throw new UiApiError(502, 'invalid_response', 'The clear response has no count.');
+		}
+
+		return data.cleared;
+	}
+
+	async notificationUnreadCount(): Promise<number> {
+		const data = await this.request<{ count?: unknown }>({
+			method: 'GET',
+			path: coreRoutes.notificationsUnreadCount,
+		});
+
+		if (!isRecord(data) || typeof data.count !== 'number') {
+			throw new UiApiError(502, 'invalid_response', 'The unread-count response has no count.');
+		}
+
+		return data.count;
+	}
+
+	async createPost(input: CreatePostInput): Promise<Post> {
+		const content = input.content.trim();
+		const length = Array.from(content).length;
+		if (length === 0) {
+			throw new UiApiError(400, 'invalid_post', 'A post needs text.');
+		}
+		if (length > MAX_POST_LENGTH) {
+			throw new UiApiError(
+				400,
+				'invalid_post',
+				`A post may be at most ${MAX_POST_LENGTH} characters long.`,
+			);
+		}
+
+		const warning = input.contentWarning?.trim() ?? '';
+		if (Array.from(warning).length > MAX_CONTENT_WARNING_LENGTH) {
+			throw new UiApiError(
+				400,
+				'invalid_post',
+				`A content warning may be at most ${MAX_CONTENT_WARNING_LENGTH} characters long.`,
+			);
+		}
+
+		const body: Record<string, unknown> = {
+			content: input.content,
+			visibility: input.visibility ?? 'public',
+		};
+		if (warning !== '') {
+			body.content_warning = warning;
+		}
+		if (input.inReplyToId !== undefined && input.inReplyToId !== null && input.inReplyToId !== '') {
+			body.in_reply_to_id = input.inReplyToId;
+		}
+
+		const data = await this.request<{ post?: unknown }>({
+			method: 'POST',
+			path: coreRoutes.posts,
+			body,
+		});
+
+		if (!isRecord(data) || !isRecord(data.post)) {
+			throw new UiApiError(502, 'invalid_response', 'The post response has no post object.');
+		}
+
+		return data.post as unknown as Post;
 	}
 
 	private async request<T>(request: {
@@ -108,6 +285,28 @@ export class CoreApi {
 
 		return decoded as T;
 	}
+}
+
+function relationshipFrom(data: unknown): Relationship {
+	if (!isRecord(data) || !isRecord(data.relationship)) {
+		throw new UiApiError(502, 'invalid_response', 'The relationship response is missing.');
+	}
+
+	const relationship = data.relationship;
+	if (typeof relationship.following !== 'boolean'
+		|| typeof relationship.followed_by !== 'boolean'
+		|| typeof relationship.blocking !== 'boolean'
+		|| typeof relationship.muting !== 'boolean'
+	) {
+		throw new UiApiError(502, 'invalid_response', 'The relationship response is incomplete.');
+	}
+
+	return {
+		following: relationship.following,
+		followed_by: relationship.followed_by,
+		blocking: relationship.blocking,
+		muting: relationship.muting,
+	};
 }
 
 function parseErrorResponse(response: UiResponse): UiApiError {

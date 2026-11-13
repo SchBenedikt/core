@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Neutral local interaction API under `/api/v1`: `GET
+  /api/v1/accounts/{id}` returns a public local profile with the viewer's
+  relationship, `POST`/`DELETE /api/v1/accounts/{id}/follow` write the local
+  follow edge idempotently, and `GET /api/v1/notifications`,
+  `GET /api/v1/notifications/unread_count`, `POST
+  /api/v1/notifications/{id}/dismiss` and `POST
+  /api/v1/notifications/clear` manage the caller's unread events. The new
+  `LocalAccountService` reuses the existing follow graph and notification
+  table; there is no second account or event model, and the routes do not
+  require the Mastodon-compatible prefix. Profiles and follows answer `404
+  not_found` for unknown local ids, `422 validation_failed` for a self-follow,
+  `401` without a user and `503 accounts_not_configured` without a local
+  directory. Notification cursors are caller-owned ids; an unknown or foreign
+  cursor is `422`, a foreign dismiss is `404`, and an unavailable table is
+  `503 notifications_unavailable`. The manifest and OpenAPI export now have 79
+  routes (43 under the compatibility prefix). Tests cover profiles, viewer
+  relationships, idempotent follow/unfollow, notification recording from a
+  follow and a reply, paging, dismiss/clear, ownership and storage failure.
+- Shared write screens: `@alohasocial/ui` now exports `ActorHeader` (profile
+  and follow toggle), `PostComposer` (content, visibility, content warning,
+  core validation errors) and `NotificationList` (unread list, dismiss, clear,
+  cursor paging, signed-out/401 state). `CoreApi` gains typed account/follow,
+  notification and create-post methods plus client-side shape checks;
+  `FakeHostBridge` component tests cover the loading, error, write and
+  authentication states. The screens consume the neutral `/api/v1` routes, so
+  the host bridge contract is unchanged. Host bridges and mount pages remain
+  in `AlohaSocial/social` and `AlohaSocial/server`.
+
+### Changed
+
+- The shared UI rollout is split into M5a (neutral interaction API and write
+  screens, now done) and M5 (mounting the screens in both hosts, still open).
+  `docs/reference/routes.md`, the README, architecture, shared-UI guide, ADR
+  0005 and AGENTS.md describe the new routes and screens; the advertised
+  counts are 79 routes, 1029 PHP tests and 59 UI tests.
+
 ## [0.2.0] - 2026-11-13
 
 ### Changed

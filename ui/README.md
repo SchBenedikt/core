@@ -15,20 +15,24 @@ See [ADR 0005](../docs/adr/0005-shared-ui.md) and the
   components and typed core API reads.
 - `createAlohaUi({ bridge })` and `useHostBridge()`: one bridge provided at the
   host page boundary through Vue dependency injection.
-- `CoreApi`: typed reads over the core HTTP contract, including the documented
-  JSON error shape and the `before`/`limit` public-timeline cursor.
+- `CoreApi`: typed reads and writes over the core HTTP contract, including the
+  documented JSON error shape, the public-timeline `before`/`limit` cursor and
+  the notification id cursor.
 - `PublicTimeline`, `PostDetail` and `PostCard`: the read-only shared screens.
   The timeline covers loading, empty, error, retry and load-more states; the
   detail screen reads one existing post by id and covers loading, not-found,
   error and retry states.
+- `ActorHeader`, `PostComposer` and `NotificationList`: the shared write
+  screens. The actor header loads a local profile and toggles the follow edge;
+  the composer writes a post with visibility and content warning; the
+  notification list pages unread events and dismisses or clears them. Each
+  uses the neutral `/api/v1` routes and covers signed-out/401 states.
 - `FakeHostBridge`: a deterministic, network-free bridge for component tests.
 
-This extraction intentionally does not add a host page, a Nextcloud bridge, a
-standalone bridge or a new core route. Those stay in the host repositories;
-the shared package only consumes existing manifest paths. It also has no
-persistence layer, schema or migration: `PublicTimeline` keeps its page state
-in the component, and `PostDetail` keeps its single-post request state in its
-composable, both through existing core routes.
+The package does not add a host page, a Nextcloud bridge or a standalone
+bridge; those stay in the host repositories. It has no persistence layer,
+schema or migration: screen state lives in the components and composables and
+is read from or written to existing manifest paths.
 
 ## Development
 

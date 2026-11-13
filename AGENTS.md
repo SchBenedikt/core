@@ -96,11 +96,13 @@ authorization-code/PAR protocol client, the durable queue and replay log,
 `Application::forHost()` and the read-only cutover validator.
 
 `@alohasocial/ui` under `ui/` provides the `HostBridge` contract, a fake
-bridge and the read-only timeline and post-detail screens.
+bridge, the read-only timeline and post-detail screens, and the shared write
+screens (actor header with follow, composer and notification list).
 
 Not in this repository: Nextcloud adapters/pages/import, the standalone
-bootstrap and accounts, host bridges and write screens, the external Mastodon
-and AT Protocol remainders, an object-storage adapter and the admin UI.
+bootstrap and accounts, the host-specific bridges and mount pages, the
+external Mastodon and AT Protocol remainders, an object-storage adapter and
+the admin UI.
 
 `docs/roadmap.md` is the canonical status and milestone document; do not
 duplicate its status lists. See `docs/guides/host-integration.md` before

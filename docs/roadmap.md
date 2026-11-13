@@ -47,9 +47,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 72 routes, 43 of them under the Mastodon prefix |
+| HTTP contract | 79 routes, 43 of them under the Mastodon prefix |
 | Persistence | 17 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 110 PHP test files (1024 tests, 4562 assertions) and 5 UI test files (33 tests) |
+| Tests | 111 PHP test files (1029 tests, 4665 assertions) and 8 UI test files (59 tests) |
 | Release | `0.2.0` (2026-11-13) is tagged; `0.1.0` exists only as a CHANGELOG entry; neither is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
@@ -102,9 +102,19 @@ the host that serves it. See
   `PdoJobQueue`/`PdoActivityLog`, `Application::forHost()`, the neutral cutover
   export and the read-only validator. See [database](guides/database.md) and
   [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
+- **Local interaction API** — `GET /api/v1/accounts/{id}` returns a public
+  local profile with the viewer relationship; `POST`/`DELETE
+  /api/v1/accounts/{id}/follow` write the local edge idempotently;
+  `GET /api/v1/notifications` pages unread events with the unread count and
+  `POST .../notifications/{id}/dismiss`, `.../notifications/clear` and
+  `GET .../notifications/unread_count` manage the read marker. These are
+  neutral routes, not the Mastodon-shaped projection, and reuse the existing
+  follow graph and notification table.
 - **Shared UI** — `@alohasocial/ui` with the typed `HostBridge`, Vue plugin,
   typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only
-  `PublicTimeline` and read-only `PostDetail`. See [shared UI](guides/shared-ui.md).
+  `PublicTimeline`/`PostDetail`, and the write screens `ActorHeader` (follow
+  control), `PostComposer` and `NotificationList` (dismiss, clear, paging).
+  See [shared UI](guides/shared-ui.md).
 
 ### Not in this repository
 
@@ -112,8 +122,8 @@ the host that serves it. See
 - The standalone bootstrap, accounts/sessions (host-owned per
   [ADR 0006](adr/0006-host-owned-accounts.md)), installer, container and
   migration runner.
-- The host bridges and the shared write screens (composer, follow controls,
-  actor profile, notifications).
+- The host bridges and mount pages that render the shared screens inside the
+  Nextcloud page and the standalone server.
 - The external remainder of the Mastodon server API and of the AT Protocol
   stack.
 - An object-storage adapter such as S3; the core ships memory and local stores
@@ -132,7 +142,8 @@ server or a product decision.
 | M2 | Release and documentation consistency | done (tagged; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0` tagged |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
 | M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
-| M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; write screens and smoke tests pass |
+| M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
+| M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; smoke tests pass |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
 | M7 | Operations and packaging | open | `server` / ops | Installer, container, backup, cleanup jobs and an object-storage option exist |
 
@@ -151,9 +162,11 @@ server or a product decision.
    no `Platform\Identity` port and no core user table. Review and accept it;
    the standalone then implements auth itself and passes `userId` as every
    host does.
-4. **Grow the shared UI only where both hosts need it.** The next screens are
-   an actor header with follow control, the composer and notifications. Do not
-   move a Nextcloud-only page into the package.
+4. **Mount the finished shared screens in the hosts.** `ActorHeader`,
+   `PostComposer` and `NotificationList` are complete and covered by
+   `FakeHostBridge` tests. The remaining M5 work is the Nextcloud bridge and
+   mount page, then the standalone bridge; neither belongs in this repository.
+   Do not move a Nextcloud-only page into the package.
 
 ## Next
 
@@ -165,7 +178,7 @@ server or a product decision.
 | Cutover: posts/timelines → actor surface → follows/delivery → inbox → UI | `social` | `social` | One account runs end to end on the core and a flag restores the old path |
 | Standalone repository and its host-owned account/session layer | `server` + ADR 0006 | `server` | A second host boots with its own accounts and the same kernel |
 | Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
-| Shared actor profile/follow, composer and notification screens | `@alohasocial/ui` | `ui` + hosts | Both hosts can complete the screen; the package tests use `FakeHostBridge` |
+| Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
 | Registry publication: Packagist and npm | core | core | A host installs `0.2.0` instead of `dev-main` |
 

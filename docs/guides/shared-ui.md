@@ -112,7 +112,8 @@ ui/
     plugin.ts           createAlohaUi() and useHostBridge()
     core-api.ts         typed core reads and JSON error mapping
     routes.ts           core paths checked against the route manifest
-    components/         PostCard, PublicTimeline and PostDetail
+    components/         PostCard, PublicTimeline, PostDetail,
+                        ActorHeader, PostComposer and NotificationList
     composables/        data loading, cursor and single-post state
     testing/            FakeHostBridge and fixtures
     index.ts            public exports
@@ -140,10 +141,33 @@ The extracted read-only screens are `PublicTimeline` plus `PostCard` and
 states. `PostDetail` reads the existing `GET /api/v1/posts/{id}` route through
 `CoreApi.getPost()`, renders the same `PostCard`, and covers loading, not-found,
 error and retry states. A late response for a previous post id is ignored when
-the host changes the id. `CoreApi` maps the documented JSON error shape to
-`UiApiError`; it never retains the raw response body. `FakeHostBridge` answers
-from a fixture and records every request, so a component test does not need a
-server or a browser network.
+the host changes the id.
+
+The write screens use the neutral `/api/v1` interaction routes, not the
+Mastodon-shaped projection:
+
+- `ActorHeader` reads `GET /api/v1/accounts/{id}`. The profile is public; when
+the request carries a host session, the core adds the viewer's relationship.
+The follow control writes `POST` or `DELETE
+/api/v1/accounts/{id}/follow`, both idempotent, and covers loading, not-found,
+retry and follow-error states. The signed-out profile simply has no control.
+- `PostComposer` writes `POST /api/v1/posts` with content, visibility and an
+optional content warning. It checks the host session before rendering the
+form, mirrors the core's 5000/200-character limits for a friendly early error,
+and renders the core's per-field validation errors without discarding the
+draft. It emits `created` with the stored post; the host decides where to put
+it.
+- `NotificationList` reads `GET /api/v1/notifications` and
+`GET /api/v1/notifications/unread_count`, dismisses one id and clears all
+through the two write routes, and pages with the notification id cursor. A
+signed-out visitor or a `401` shows the host sign-in link; each event emits
+`open-post`/`open-actor` so the host owns routing.
+
+`CoreApi` maps the documented JSON error shape to `UiApiError`; it never
+retains the raw response body. `FakeHostBridge` answers from a fixture and
+records every request, so a component test does not need a server or a browser
+network. The host bridge contract is unchanged: the screens use the same
+`apiBase`, `request()`, `currentUser()`, `loginUrl()` and `navigate()` methods.
 
 ## What stays in the host
 
@@ -274,12 +298,13 @@ A host smoke test is not a replacement for the package tests.
 
 1. **Done:** the package, bridge contract, fake bridge and the read-only public
    timeline and post-detail screens with component tests live under `ui/`.
-2. **Next:** add the Nextcloud bridge behind a feature flag, mount the two
-   read-only screens and verify login, request, 401 and logout in the real
-   page.
-3. **Next:** move the shared actor header with its follow control, the post
-   composer and the notification list into the package, one screen at a time.
-   Each screen needs both a `FakeHostBridge` test and a real-host smoke test.
+2. **Done:** the neutral `/api/v1` profile/follow and notification routes and
+   the shared `ActorHeader`, `PostComposer` and `NotificationList` screens live
+   in the core and `ui/`. Each screen has `FakeHostBridge` component tests for
+   loading, errors, writes and signed-out/401 states.
+3. **Next:** add the Nextcloud bridge behind a feature flag, mount the screens
+   one at a time and verify login, request, 401 and logout in the real page.
+   Each screen still needs its real-host smoke test.
 4. **Next:** add the standalone bridge once its auth flow exists.
 5. **Later:** remove the old host screen when parity is confirmed.
 

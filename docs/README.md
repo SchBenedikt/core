@@ -25,7 +25,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Using the core from a host](guides/host-integration.md) | Composer setup, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
-| [Shared UI and HostBridge](guides/shared-ui.md) | The extracted Vue package, bridge contract, package layout, read-only screens and host wiring |
+| [Shared UI and HostBridge](guides/shared-ui.md) | The extracted Vue package, bridge contract, package layout, read/write screens and host wiring |
 | [Posts and timelines](guides/posts-and-timelines.md) | Validation, visibility, replies, local/remote posts and boosts in the home timeline, and deletes |
 | [Media](guides/media.md) | Image upload, local originals and thumbnails, guarded remote attachments from federated posts, limits, failure reasons and cleanup |
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
