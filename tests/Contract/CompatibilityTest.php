@@ -59,6 +59,15 @@ final class CompatibilityTest extends TestCase
 			'| `HostBridge` | contract `' . Version::HOST_BRIDGE_CONTRACT . '` |',
 			$matrix,
 		);
+
+		self::assertSame('alohasocial/core', $composer['name']);
+		self::assertSame('library', $composer['type']);
+		self::assertSame('AGPL-3.0-or-later', $composer['license']);
+		$excluded = $composer['archive']['exclude'];
+		self::assertIsArray($excluded);
+		foreach (['/vendor', '/tests', '/ui', '/docs', '/tools', '/composer.lock'] as $path) {
+			self::assertContains($path, $excluded, 'The Composer archive must not ship ' . $path . '.');
+		}
 	}
 
 	public function testTheCurrentPairIsAccepted(): void

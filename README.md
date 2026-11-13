@@ -192,6 +192,11 @@ is the UI authority. The pair is checked by PHPUnit and the UI suite, not only
 by documentation. See the
 [compatibility matrix](docs/guides/host-integration.md#compatibility).
 
+Neither package is currently available from a public registry. The Composer
+archive and npm tarball are verified locally; the exact publication state,
+credentials gap and remaining steps are in
+[release artifacts](docs/operations/release.md).
+
 ## Quick start
 
 ```bash
@@ -228,6 +233,9 @@ SQLite for the transaction section, but no external database and no network.
 - The UI package has its own strict TypeScript check, Vitest suite and
   ES-module build. Its route-parity test invokes `php bin/export-routes`, so
   PHP dependencies must be installed first.
+- Release preflight is `composer validate --strict`, `composer archive` without
+  development files, and `npm pack --dry-run` with the built `dist/`; see
+  [release artifacts](docs/operations/release.md).
 - CI runs the PHP matrix (8.3–8.5) and the UI job separately.
 
 ## The shared contracts

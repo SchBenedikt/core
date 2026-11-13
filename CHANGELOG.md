@@ -8,13 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Prepare the Composer and npm release artifacts without claiming a registry
+  publication: `.gitattributes` and `composer.json` `archive.exclude` keep
+  `vendor/`, `tests/`, `ui/`, `docs/` and development files out of the library
+  archive; the UI tarball is built from `dist/`, ships `LICENSE` and declares
+  public scoped-package access. The release checklist and the missing
+  credentials are in `docs/operations/release.md`.
 - Enforce the core/UI release pair and HostBridge contract with code rather
   than documentation. `Version::CURRENT` and `ui/package.json` are the package
   authorities; PHPUnit checks the UI lockfile and TypeScript constants, while
   the UI suite checks the package pair and accepts or rejects bridge contracts
   and capabilities in both directions. The HostBridge field is optional and an
   omitted value means contract 1, so existing bridges keep working. Test counts
-  are now 121 PHP files (1084 tests, 5132 assertions) and 9 UI files (69 tests).
+  are now 121 PHP files (1084 tests, 5142 assertions) and 9 UI files (69 tests).
 
 ### Changed
 

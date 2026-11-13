@@ -83,6 +83,17 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
+      - name: Validate release tag against package versions
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          core_version="$(php -r 'require "vendor/autoload.php"; echo AlohaSocial\Core\Version::CURRENT;')"
+          ui_version="$(php -r '$j = json_decode(file_get_contents("ui/package.json"), true, 512, JSON_THROW_ON_ERROR); echo $j["version"];')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$tag_version" != "$core_version" ] || [ "$tag_version" != "$ui_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match core $core_version and UI $ui_version." >&2
+            exit 1
+          fi
+
       - name: Run the gate
         run: composer check
 

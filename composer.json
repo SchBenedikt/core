@@ -32,6 +32,26 @@
 			"AlohaSocial\\Core\\Tests\\": "tests/"
 		}
 	},
+	"archive": {
+		"exclude": [
+			"/.git",
+			"/.github",
+			"/.phpunit.cache",
+			"/.phpunit.result.cache",
+			"/AGENTS.md",
+			"/CODE_OF_CONDUCT.md",
+			"/CONTRIBUTING.md",
+			"/SECURITY.md",
+			"/composer.lock",
+			"/docs",
+			"/intial",
+			"/phpunit.xml",
+			"/tests",
+			"/tools",
+			"/ui",
+			"/vendor"
+		]
+	},
 	"scripts": {
 		"test": "@php vendor/bin/phpunit",
 		"lint": "bash tools/lint.sh",

@@ -36,6 +36,11 @@ bridge; those stay in the host repositories. It has no persistence layer,
 schema or migration: screen state lives in the components and composables and
 is read from or written to existing manifest paths.
 
+The package is not on npm yet. `npm pack --dry-run` builds and lists the
+tarball; the verified artifact, `files`/`exports`/`publishConfig` and the
+registry credential blocker are documented in
+[release artifacts](../docs/operations/release.md).
+
 ## Version compatibility
 
 `ui/package.json` is the UI package's version authority; `UI_VERSION` in
@@ -55,6 +60,7 @@ npm ci
 npm run typecheck
 npm test
 npm run build
+npm pack --dry-run
 ```
 
 `npm test` includes a route-parity test that invokes

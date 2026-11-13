@@ -33,9 +33,11 @@ check, not a user or login adapter.
 
 ## Install it in the other repository
 
-The package is not on Packagist yet. Add the Git repository as a VCS repository
-and require the supported line explicitly; the release tag is still the
-Composer version. This is the `composer.json` shape for a host such as the
+The package is not on Packagist yet, and `@alohasocial/ui` is not on npm yet.
+The verified local artifacts and the credential blocker are in
+[release artifacts](../operations/release.md). Add the Git repository as a VCS
+repository and require the supported line explicitly; the release tag is still
+the Composer version. This is the `composer.json` shape for a host such as the
 Nextcloud app:
 
 ```json

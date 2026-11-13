@@ -65,6 +65,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | Document | Content |
 | --- | --- |
 | [The standalone host](operations/standalone-host.md) | What the future server has to provide and in which order it boots |
+| [Release artifacts](operations/release.md) | Tag/version rule, Composer archive and npm tarball checks, publication steps and the current credential blocker |
 | [Keys and clocks](operations/keys-and-clocks.md) | Key resolution, caching, clock skew and replay windows |
 | [Roadmap](roadmap.md) | Goal, current status, milestones and the next steps |
 | [FAQ](faq.md) | Short answers to the questions that keep coming back |

@@ -13,7 +13,15 @@ import {
 } from '../src/index.js';
 
 interface PackageManifest {
+	name: string;
 	version: string;
+	files: string[];
+	main?: string;
+	module?: string;
+	types?: string;
+	exports?: Record<string, { import?: string; types?: string }>;
+	scripts?: { build?: string; prepack?: string; test?: string; typecheck?: string };
+	publishConfig?: { access?: string };
 }
 
 interface PackageLock {
@@ -44,6 +52,15 @@ describe('package versions', () => {
 		const lock = readJson<PackageLock>('../package-lock.json');
 
 		expect(UI_VERSION).toBe(packageJson.version);
+		expect(packageJson.name).toBe('@alohasocial/ui');
+		expect(packageJson.files).toEqual(expect.arrayContaining(['dist', 'LICENSE', 'README.md']));
+		expect(packageJson.publishConfig).toEqual({ access: 'public' });
+		expect(packageJson.scripts?.prepack).toBe('npm run build');
+		expect(packageJson.scripts?.build).toBe('vite build && vue-tsc -p tsconfig.build.json');
+		expect(packageJson.main).toBe('./dist/index.js');
+		expect(packageJson.types).toBe('./dist/index.d.ts');
+		expect(packageJson.exports?.['.']?.types).toBe('./dist/index.d.ts');
+		expect(packageJson.exports?.['.']?.import).toBe('./dist/index.js');
 		expect(lock.version).toBe(UI_VERSION);
 		expect(lock.packages['']?.version).toBe(UI_VERSION);
 		expect(HOST_BRIDGE_CONTRACT_VERSION).toBe(1);

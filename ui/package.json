@@ -22,8 +22,12 @@
 	},
 	"files": [
 		"dist",
+		"LICENSE",
 		"README.md"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"sideEffects": false,
 	"engines": {
 		"node": ">=20"
@@ -44,6 +48,7 @@
 	},
 	"scripts": {
 		"build": "vite build && vue-tsc -p tsconfig.build.json",
+		"prepack": "npm run build",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "vue-tsc --noEmit -p tsconfig.json"
