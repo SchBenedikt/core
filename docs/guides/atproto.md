@@ -78,7 +78,10 @@ OAuth session refresh and the authorization-code/PAR/revocation protocol are
 implemented. The browser redirect, the short-lived flow store keyed by state,
 the linked-account UI, the account/token store and PDS selection stay in the
 host. The core's `AtprotoAccountResolver` is intentionally a port, not a
-credential table, and it creates no linked-account or OAuth-flow row. A host
+credential table, and it creates no linked-account or OAuth-flow row. This
+OAuth session is separate from application login and does not reopen the
+host-owned identity boundary in [ADR 0006](../adr/0006-host-owned-accounts.md).
+A host
 that has no resolver still serves the publish route, but it answers `503
 atproto_not_configured`.
 

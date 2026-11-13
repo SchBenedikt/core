@@ -130,9 +130,9 @@ the host that serves it. See
 ### Not in this repository
 
 - The Nextcloud adapter, mount pages, admin settings and the data import.
-- The standalone bootstrap, accounts/sessions (host-owned per
-  [ADR 0006](adr/0006-host-owned-accounts.md)), installer, container and
-  migration runner.
+- The standalone bootstrap, accounts, sessions, roles and administrator
+  checks (host-owned per [ADR 0006](adr/0006-host-owned-accounts.md)),
+  installer, container and migration runner.
 - The host bridges and mount pages that render the shared screens inside the
   Nextcloud page and the standalone server.
 - The external remainder of the Mastodon server API and of the AT Protocol
@@ -152,7 +152,7 @@ server or a product decision.
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
 | M2 | Release and documentation consistency | done (`0.2.0`-`0.7.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.7.0` released |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
-| M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
+| M4 | Standalone host | open | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
 | M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; smoke tests pass |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
@@ -168,11 +168,12 @@ server or a product decision.
 2. **Publish the registries.** `0.7.0` is cut and tagged; Packagist and the npm
    registry still need maintainer credentials. A host should be able to install
    a version instead of `dev-main`.
-3. **Close the identity decision.** [ADR 0006](adr/0006-host-owned-accounts.md)
-   (proposed) recommends keeping accounts, sessions and credentials host-owned:
-   no `Platform\Identity` port and no core user table. Review and accept it;
-   the standalone then implements auth itself and passes `userId` as every
-   host does.
+3. **Keep the settled identity boundary.** [ADR 0006](adr/0006-host-owned-accounts.md)
+   is accepted: accounts, sessions, credentials, roles and instance-admin
+   rights stay host-owned. Any new account or permission feature goes to the
+   host; the core keeps `Request::$userId`/scopes and adds no user table or
+   `Platform\Identity` port. The standalone implements auth itself and passes
+   `userId` as every host does.
 4. **Mount the finished shared screens in the hosts.** `ActorHeader`,
    `PostComposer` and `NotificationList` are complete and covered by
    `FakeHostBridge` tests. The remaining M5 work is the Nextcloud bridge and

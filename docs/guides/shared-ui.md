@@ -93,6 +93,10 @@ export interface UiCapabilities {
 - `capabilities()` is for features that genuinely differ, not for hiding a
   broken route. A route in the core manifest is expected to exist in both
   hosts.
+- The bridge transports authentication; it does not authorize. `UiUser` has no
+  role or administrator field, and a component must not infer one. Roles and
+  admin screens stay in the host. See
+  [ADR 0006](../adr/0006-host-owned-accounts.md).
 
 The host bridge is not a place for business logic. It authenticates and
 transports; the core decides visibility, validation and federation.
@@ -173,7 +177,9 @@ network. The host bridge contract is unchanged: the screens use the same
 ## What stays in the host
 
 - login, logout, account creation, password reset and session UI;
-- admin settings and installer pages;
+- roles, groups, administrator checks, admin settings and installer pages;
+- the source of `UiUser` — the bridge maps the host's user id and display name,
+  never a host user object or permission list;
 - Nextcloud navigation, app menu, templates and theming shell;
 - server-specific deployment or health pages;
 - a page whose data does not come from the core.

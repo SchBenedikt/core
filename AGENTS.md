@@ -102,9 +102,9 @@ shared write screens (actor header with follow, composer and notification
 list).
 
 Not in this repository: Nextcloud adapters/pages/import, the standalone
-bootstrap and accounts, the host-specific bridges and mount pages, the
-external Mastodon and AT Protocol remainders, an object-storage adapter and
-the admin UI.
+bootstrap, accounts, sessions and roles, the host-specific bridges and mount
+pages, the external Mastodon and AT Protocol remainders, an object-storage
+adapter and the admin UI. Identity is host-owned per `docs/adr/0006-host-owned-accounts.md`.
 
 `docs/roadmap.md` is the canonical status and milestone document; do not
 duplicate its status lists. See `docs/guides/host-integration.md` before

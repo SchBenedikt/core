@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Finalize [ADR 0006](docs/adr/0006-host-owned-accounts.md) as accepted: the
+  host owns accounts, sessions, credentials, roles and instance-administrator
+  rights; the core receives only `Request::$userId` and host-resolved scopes.
+  The ADR now records the `HostBridge`/`UiUser` boundary, the read-only
+  `LocalActorDirectory` role, the policy ports and the host rollout. No core
+  table, port, route or code behaviour changed.
+
 ## [0.7.0] - 2026-11-13
 
 ### Added
@@ -212,9 +223,10 @@ All notable changes to this project are documented here. The format follows
   deleted or foreign post is `404`, an anonymous request is `401`. The route
   requires authentication and is rate-limited at `120/60`. See
   `docs/guides/atproto.md`.
-- Proposed ADR 0006: accounts, sessions, credentials and token issuance stay
-  host-owned; the core keeps the `Request::$userId`/`scope` seam and adds no
-  user table or identity port. This closes the M4 prerequisite in the roadmap.
+- ADR 0006 (proposed at this point, since [accepted](docs/adr/0006-host-owned-accounts.md)):
+  accounts, sessions, credentials and token issuance stay host-owned; the core
+  keeps the `Request::$userId`/`scope` seam and adds no user table or identity
+  port. This closes the M4 prerequisite in the roadmap.
 - Documentation consistency test: `tests/Contract/DocumentationTest.php`
   compares `docs/reference/routes.md` with `Routes::manifest()`, checks the
   advertised route counts in the route reference, roadmap and README, and

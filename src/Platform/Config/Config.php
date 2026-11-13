@@ -15,9 +15,9 @@ namespace AlohaSocial\Core\Platform\Config;
  * The Nextcloud host backs this with `IConfig`; the standalone host with a
  * YAML/env/DB combination. The core never sees where a value comes from.
  *
- * User-scoped settings deliberately are not part of this port yet: they are
- * a host concern until the standalone has its own user table. See
- * `docs/adr/0001-shared-core-two-hosts.md`.
+ * User-scoped settings deliberately are not part of this port: accounts,
+ * sessions and roles are host-owned, so those settings stay behind the host's
+ * identity boundary too. See `docs/adr/0006-host-owned-accounts.md`.
  */
 interface Config
 {

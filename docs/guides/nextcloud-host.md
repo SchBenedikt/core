@@ -233,7 +233,11 @@ final class NextcloudActorDirectory implements LocalActorDirectory
 ```
 
 The app's external users are still users in the host's sense; include them if
-they can own an Aloha account. The core does not have a user table.
+they can own an Aloha account. The core does not have a user table. Its
+identity boundary is [ADR 0006](../adr/0006-host-owned-accounts.md): Nextcloud
+owns the account, session, group and administrator checks; the core receives
+only the authenticated `userId` and the token scopes. Do not add groups or
+admin flags to `LocalActorDirectory`; keep those checks in the app.
 
 The private key belongs in the host's secret storage. If it is sealed in app
 config:
@@ -500,7 +504,7 @@ one owner, or a peer will see two different answers for the same account.
 
 ## What is still host-specific
 
-- Login, sessions, external users, CSRF, CORS, rate limiting and the admin UI.
+- Login, sessions, external users, CSRF, CORS, rate limiting, groups, roles and the admin UI. The core receives an authenticated id, not a Nextcloud user or administrator object; see [ADR 0006](../adr/0006-host-owned-accounts.md).
 - The core now owns the optional Mastodon-compatible subset (instance
   metadata/statistics, public timeline, status read/create/delete with local
   poll creation/voting, local favourite/unfavourite, local follow/unfollow and

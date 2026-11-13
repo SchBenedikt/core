@@ -93,8 +93,10 @@ These are real host or deployment responsibilities, not missing local routes.
 The milestone order and current status are in [the roadmap](docs/roadmap.md).
 
 - **Host application work:** login, sessions, account creation/reset, CSRF,
-  bearer-token issuance, admin settings, navigation, templates, deployment and
-  the worker process. The Nextcloud adapter and mount pages belong to
+  bearer-token issuance, roles, administrator rights, admin settings,
+  navigation, templates, deployment and the worker process. The identity
+  boundary is [ADR 0006](docs/adr/0006-host-owned-accounts.md); the Nextcloud
+  adapter and mount pages belong to
   `AlohaSocial/social`; see [Nextcloud host integration](docs/guides/nextcloud-host.md).
 - **Host migrations:** the core owns the schema classes, not a migration
   runner. Creating the tables, adding documented columns/indexes and importing
@@ -284,7 +286,9 @@ docs/              architecture, guides, reference, operations, ADRs
   [ADR 0002 — runtime](docs/adr/0002-runtime.md),
   [ADR 0003 — HTTP contract](docs/adr/0003-http-contract.md),
   [ADR 0004 — incremental migration and ownership](docs/adr/0004-incremental-migration-and-ownership.md),
-  [ADR 0005 — shared UI](docs/adr/0005-shared-ui.md)
+  [ADR 0005 — shared UI](docs/adr/0005-shared-ui.md),
+  [ADR 0006 — host-owned accounts and roles](docs/adr/0006-host-owned-accounts.md),
+  [ADR 0007 — two protocols, one model](docs/adr/0007-two-protocols-one-model.md)
 
 ## License
 

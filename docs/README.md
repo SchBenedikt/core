@@ -13,7 +13,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0003 — HTTP contract](adr/0003-http-contract.md) | Why one route manifest drives both hosts |
 | [ADR 0004 — incremental migration and ownership](adr/0004-incremental-migration-and-ownership.md) | How existing data moves without changing federation identities, and which repository owns a feature |
 | [ADR 0005 — shared UI](adr/0005-shared-ui.md) | The `@alohasocial/ui` package and its `HostBridge` boundary |
-| [ADR 0006 — accounts stay host-owned](adr/0006-host-owned-accounts.md) | Why the core has no user table or identity port, and where the standalone keeps accounts |
+| [ADR 0006 — accounts, sessions and roles stay host-owned](adr/0006-host-owned-accounts.md) | The identity boundary between the core and both hosts: `Request::$userId`, scopes, `HostBridge`, roles and the standalone account model |
 | [ADR 0007 — two protocols, one model](adr/0007-two-protocols-one-model.md) | Why ActivityPub and AT Protocol stay two wire protocols instead of becoming a third |
 
 ## Guides

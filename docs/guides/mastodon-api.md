@@ -1203,7 +1203,9 @@ actor-directory search is covered directly.
 Turning this into a complete Mastodon server is intentionally out of scope:
 
 - OAuth authorization, token issuance/refresh/revocation and app registration
-  belong to the host or a dedicated identity service.
+  belong to the host or a dedicated identity service. The core only checks the
+  scopes the host resolved; it does not own tokens, sessions or roles. See
+  [ADR 0006](../adr/0006-host-owned-accounts.md).
 - Remote statuses, public/remote timelines, favourite federation (outbound
   `Like`/`Undo` and remote counts), remote boost federation, remote
   notifications, streaming and remote search need remote data the core does

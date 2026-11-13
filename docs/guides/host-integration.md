@@ -12,7 +12,7 @@ you have to provide, and how to boot it without copying the service wiring.
 
 | The core gives you | The host owns |
 | --- | --- |
-| Posts, timelines, follows, actors, WebFinger, outbox and inbox behaviour | Login, sessions, user directory and authorization |
+| Posts, timelines, follows, actors, WebFinger, outbox and inbox behaviour | Login, sessions, user directory, roles, instance-admin rights and authorization |
 | The route manifest and one handler per route | Mapping its HTTP framework to `Core\Http\Request`/`Response` |
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
@@ -23,6 +23,13 @@ you have to provide, and how to boot it without copying the service wiring.
 The important boundary: **the core never imports a host**. If you need
 something the core cannot know, implement a port in your host rather than
 putting host code into `src/`.
+
+The identity side of this table is settled in
+[ADR 0006](../adr/0006-host-owned-accounts.md): the host authenticates the
+caller, stores accounts/sessions/roles and enforces administrator rights. The
+core receives only the resulting `Request::$userId` and, for the compatibility
+routes, `Request::$scopes`. `LocalActorDirectory` is a read-only existence
+check, not a user or login adapter.
 
 ## Install it in the other repository
 

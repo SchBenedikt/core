@@ -104,6 +104,7 @@ are in [ADR 0005](../adr/0005-shared-ui.md) and the
 | Concern | Why it is not in the core |
 | --- | --- |
 | Authentication, sessions, password reset | Different in Nextcloud and standalone |
+| Roles, groups and instance-administrator rights | Host permission models differ; the core has no role table or admin route ([ADR 0006](../adr/0006-host-owned-accounts.md)) |
 | HTTP kernel and routing to the entry point | The core exposes `Kernel`, not a server |
 | Templates and the admin UI | Presentation is host business |
 | Migrations | The mechanism differs per host; schemas are shared |
@@ -151,6 +152,6 @@ image must not bake configuration or keys into a layer.
 milestone M4 in the [roadmap](../roadmap.md). The core's job is to make it a
 small repository, not a second application. Everything in the boot order above
 is available in the core today except the host's own accounts/sessions and the
-migration runner. [ADR 0006](../adr/0006-host-owned-accounts.md) (proposed)
-keeps accounts, sessions and credentials host-owned; the standalone implements
-them against its own schema.
+migration runner. [ADR 0006](../adr/0006-host-owned-accounts.md) (accepted)
+keeps accounts, sessions, credentials, roles and administrator rights
+host-owned; the standalone implements them against its own schema.

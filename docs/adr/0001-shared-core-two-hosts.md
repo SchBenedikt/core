@@ -96,8 +96,10 @@ hosts around it.**
 - Move the Vue front end into `@alohasocial/ui` with a `HostBridge` per host;
   the contract is in [ADR 0005](0005-shared-ui.md) and the
   [shared UI guide](../guides/shared-ui.md).
-- Add ports for users, sessions and jobs when the standalone gets its own
-  accounts.
+- Add ports for jobs or other genuinely shared capabilities when a host needs
+  them. Accounts, sessions and roles are settled as host-owned by
+  [ADR 0006](0006-host-owned-accounts.md); do not add a user/session port for
+  the standalone.
 - Add a parity test in both hosts that compares their registered routes with
   `bin/export-routes`.
 
@@ -105,7 +107,7 @@ hosts around it.**
 
 As of 2026-11-13: the boundary guard, the platform ports, the durable queue and
 replay log are implemented, and `@alohasocial/ui` exists under `ui/`.
-[ADR 0006](0006-host-owned-accounts.md) (proposed) now recommends keeping
-accounts and sessions host-owned instead of adding a user/identity port; the
+[ADR 0006](0006-host-owned-accounts.md) (accepted) keeps accounts, sessions,
+credentials and roles host-owned instead of adding a user/identity port; the
 host parity tests are still open (M3). This note records progress; it does not
 change the decision.
