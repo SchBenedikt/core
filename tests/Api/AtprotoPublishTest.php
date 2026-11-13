@@ -224,6 +224,54 @@ final class AtprotoPublishTest extends TestCase
 		self::assertSame('authentication_required', $response->decodedBody()['error']['code']);
 	}
 
+	public function testThePublicationStateIsReadableBeforeAndAfterPublishing(): void
+	{
+		$app = $this->app();
+		$post = $this->createPost($app, 'status me');
+
+		$before = $this->publicationStatus($app, $post, self::ALICE);
+
+		self::assertSame(200, $before->status);
+		self::assertNull($before->decodedBody()['publication']);
+
+		$this->http->queueResponse($this->success());
+		self::assertSame(200, $this->publish($app, $post)->status);
+
+		$after = $this->publicationStatus($app, $post, self::ALICE);
+
+		self::assertSame(200, $after->status);
+		self::assertSame(self::URI, $after->decodedBody()['publication']['uri']);
+		self::assertSame($post, $after->decodedBody()['publication']['post_id']);
+		self::assertSame('2026-11-11T10:00:00Z', $after->decodedBody()['publication']['published_at']);
+	}
+
+	public function testThePublicationStateIsOnlyVisibleToTheAuthor(): void
+	{
+		$app = $this->app();
+		$this->http->queueResponse($this->success());
+		$post = $this->createPost($app, 'author only');
+		$this->publish($app, $post);
+
+		$foreign = $this->publicationStatus($app, $post, 'bob');
+		self::assertSame(404, $foreign->status);
+		self::assertSame('not_found', $foreign->decodedBody()['error']['code']);
+
+		$anonymous = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/posts/' . rawurlencode($post) . '/atproto',
+		));
+		self::assertSame(401, $anonymous->status);
+		self::assertSame('authentication_required', $anonymous->decodedBody()['error']['code']);
+	}
+
+	public function testThePublicationStateIs404ForAnUnknownPost(): void
+	{
+		$response = $this->publicationStatus($this->app(), 'missing', self::ALICE);
+
+		self::assertSame(404, $response->status);
+		self::assertSame('not_found', $response->decodedBody()['error']['code']);
+	}
+
 	public function testUnknownPostsAre404(): void
 	{
 		$response = $this->publish($this->app(), 'missing');
@@ -350,6 +398,15 @@ final class AtprotoPublishTest extends TestCase
 			headers: ['Content-Type' => 'application/json'],
 			body: '{}',
 			userId: self::ALICE,
+		));
+	}
+
+	private function publicationStatus(Application $app, string $postId, string $userId): Response
+	{
+		return $app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/posts/' . rawurlencode($postId) . '/atproto',
+			userId: $userId,
 		));
 	}
 }

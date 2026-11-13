@@ -289,6 +289,23 @@ Errors are stable and distinguishable:
 No error includes a token or a PDS response body. A refusal writes no
 publication row and does not modify the local post.
 
+### Reading the publication state
+
+`GET /api/v1/posts/{id}/atproto` returns the stored state for the caller's own
+post without contacting the PDS:
+
+```json
+{"publication": null}
+```
+
+before the first publication, and the object shown above afterwards. It reads
+the local idempotency row, so it still answers after `social/atproto.publish`
+is switched off, and it never repairs or retries a publication. A missing,
+deleted or foreign post is `404 not_found`; an anonymous request is `401
+authentication_required`. The route is rate-limited at `120/60`. See
+[two protocols, one model](dual-protocol.md) for how the local post, the
+ActivityPub object and the PDS record relate.
+
 ## Data and cleanup
 
 `AtprotoPublicationSchema` creates `social_atproto_publication`:

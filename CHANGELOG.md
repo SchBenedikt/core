@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
 ### Changed
 
 - Documentation roadmap: `docs/roadmap.md` is now the canonical
@@ -36,6 +38,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Dual-protocol documentation: the README now has Mermaid diagrams for the
+  local-model fan-out and the release timeline, and
+  `docs/guides/dual-protocol.md` plus ADR 0007 explain that ActivityPub and AT
+  Protocol stay two wire protocols over one local model rather than becoming a
+  third protocol.
+- AT Protocol publication state read: `GET /api/v1/posts/{id}/atproto` returns
+  `{"publication": null}` or the stored `post_id`/`rkey`/`uri`/`published_at`
+  row for the caller's own post. It reads the local idempotency record, not the
+  PDS, so it remains available when publishing is disabled; a missing,
+  deleted or foreign post is `404`, an anonymous request is `401`. The route
+  requires authentication and is rate-limited at `120/60`. See
+  `docs/guides/atproto.md`.
 - Proposed ADR 0006: accounts, sessions, credentials and token issuance stay
   host-owned; the core keeps the `Request::$userId`/`scope` seam and adds no
   user table or identity port. This closes the M4 prerequisite in the roadmap.

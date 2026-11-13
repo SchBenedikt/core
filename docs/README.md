@@ -14,6 +14,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0004 — incremental migration and ownership](adr/0004-incremental-migration-and-ownership.md) | How existing data moves without changing federation identities, and which repository owns a feature |
 | [ADR 0005 — shared UI](adr/0005-shared-ui.md) | The `@alohasocial/ui` package and its `HostBridge` boundary |
 | [ADR 0006 — accounts stay host-owned](adr/0006-host-owned-accounts.md) | Why the core has no user table or identity port, and where the standalone keeps accounts |
+| [ADR 0007 — two protocols, one model](adr/0007-two-protocols-one-model.md) | Why ActivityPub and AT Protocol stay two wire protocols instead of becoming a third |
 
 ## Guides
 
@@ -30,7 +31,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
-| [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
+| [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, publication state reads, OAuth authorization-code/PAR/revocation, limits and the external rest |
+| [Two protocols, one local model](guides/dual-protocol.md) | How ActivityPub and AT Protocol share one local post, what is and is not combined, and why this is not a new protocol |
 | [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, private lists and list timelines, local boosts/reblogs, reply context, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
 | [Shared inboxes](guides/shared-inboxes.md) | Actor-document discovery, the shared route, stored peer shared inboxes, delivery batching, fallback and migration |

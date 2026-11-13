@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 71 routes in total; 43 use the
+defaults to `/api/mastodon/v1`). There are 72 routes in total; 43 use the
 compatibility prefix.
 
 | Name | Method | Path | Auth | Rate limit |
@@ -20,6 +20,7 @@ compatibility prefix.
 | `posts.boost` | `POST` | `/api/v1/posts/{id}/boost` | yes | 30 / 900 s |
 | `posts.unboost` | `DELETE` | `/api/v1/posts/{id}/boost` | yes | 60 / 900 s |
 | `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |
+| `atproto.publication` | `GET` | `/api/v1/posts/{id}/atproto` | yes | 120 / 60 s |
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
@@ -237,6 +238,18 @@ another account's post; `409 atproto_account_not_connected`;
 `social/atproto.publish` is off; `503 atproto_not_configured` when no
 resolver/publisher is assembled. No refusal writes a publication row. See
 [AT Protocol publishing](../guides/atproto.md).
+
+`GET /api/v1/posts/{id}/atproto` reads the stored state of the caller's own
+post. It returns the local idempotency row, not a PDS response:
+
+```json
+{"publication": null}
+```
+
+before the first publication, and the object shown above after it. The route
+stays available when publishing is disabled, so a client can still display an
+existing mirror. A missing, deleted or foreign post is `404 not_found`; an
+anonymous request is `401 authentication_required`.
 
 ## Read a post
 

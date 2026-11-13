@@ -47,10 +47,10 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 71 routes, 43 of them under the Mastodon prefix |
+| HTTP contract | 72 routes, 43 of them under the Mastodon prefix |
 | Persistence | 17 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 109 PHP test files (1018 tests, 4514 assertions) and 5 UI test files |
-| Release | `0.1.0` exists as a CHANGELOG entry (2026-11-11); there is no git tag yet, and the package is not on Packagist |
+| Tests | 110 PHP test files (1024 tests, 4562 assertions) and 5 UI test files (33 tests) |
+| Release | `0.2.0` (2026-11-13) is tagged; `0.1.0` exists only as a CHANGELOG entry; neither is on Packagist yet |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
 
@@ -85,9 +85,11 @@ the host that serves it. See
   ingestion. See [media](guides/media.md).
 - **AT Protocol** — public text-only publishing through authenticated XRPC
   `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
-  remote delete, OAuth session refresh and the authorization-code/PAR/
-  revocation protocol client. Account linking UI, credential storage and PDS
-  selection stay with the host. See [AT Protocol publishing](guides/atproto.md).
+  a read of the stored publication state, remote delete, OAuth session refresh
+  and the authorization-code/PAR/revocation protocol client. Account linking
+  UI, credential storage and PDS selection stay with the host. See
+  [AT Protocol publishing](guides/atproto.md) and
+  [two protocols, one model](guides/dual-protocol.md).
 - **Mastodon compatibility** — 43 local routes behind a configurable,
   disabled-by-default prefix: instance metadata/statistics, public and list
   timelines, status read/create/delete, reblogs, context, polls, favourites,
@@ -127,7 +129,7 @@ server or a product decision.
 | --- | --- | --- | --- | --- |
 | M0 | Core foundation | done (`0.1.0`) | core | Ports, posts, HTTP signatures, delivery queue, kernel and boundary guard are green |
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
-| M2 | Release and documentation consistency | in progress | core | `composer check` green, route/schema/roadmap documentation matches the manifest, `0.2.0` tagged and installable |
+| M2 | Release and documentation consistency | done (tagged; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0` tagged |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
 | M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
 | M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; write screens and smoke tests pass |
@@ -141,9 +143,9 @@ server or a product decision.
    counts in the README and this page, and verifies that every `*Schema` class
    appears in the database guide. Add the configuration reference to the same
    guard when it drifts again.
-2. **Cut `0.2.0`.** The `[Unreleased]` CHANGELOG block contains the whole local
-   social slice. It needs a release entry, a git tag and a Packagist/npm
-   publication; the entry must point at this roadmap rather than repeat it.
+2. **Publish the registries.** `0.2.0` is cut and tagged; Packagist and the npm
+   registry still need maintainer credentials. A host should be able to install
+   a version instead of `dev-main`.
 3. **Close the identity decision.** [ADR 0006](adr/0006-host-owned-accounts.md)
    (proposed) recommends keeping accounts, sessions and credentials host-owned:
    no `Platform\Identity` port and no core user table. Review and accept it;
@@ -165,7 +167,7 @@ server or a product decision.
 | Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
 | Shared actor profile/follow, composer and notification screens | `@alohasocial/ui` | `ui` + hosts | Both hosts can complete the screen; the package tests use `FakeHostBridge` |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
-| Release pipeline: tag, Packagist, npm, changelog | core | core | A host installs a version instead of `dev-main` |
+| Registry publication: Packagist and npm | core | core | A host installs `0.2.0` instead of `dev-main` |
 
 ## Later
 
@@ -218,7 +220,7 @@ local gaps. The detailed lists live in the guides.
 | Version | Date | Content |
 | --- | --- | --- |
 | `0.1.0` | 2026-11-11 | Foundation: ports, posts, timelines, ActivityPub, delivery queue, HTTP kernel, route manifest, boundary guard |
-| `0.2.0` | pending | The local social slice: media, remote content, blocks, direct posts, interactions, Mastodon compatibility, AT Protocol foundation, shared UI reads, migration validator |
+| `0.2.0` | 2026-11-13 | The local social slice: media, remote content, blocks, direct posts, interactions, Mastodon compatibility, AT Protocol foundation and publication-state read, dual-protocol guide, shared UI reads, migration validator |
 
-`0.1.0` has a CHANGELOG entry but no git tag yet. `0.2.0` is the `[Unreleased]`
-block; cutting it is part of M2, not a claim that it already exists.
+`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0` is tagged and recorded in
+the [changelog](../CHANGELOG.md); registry publication is the remaining M2 step.

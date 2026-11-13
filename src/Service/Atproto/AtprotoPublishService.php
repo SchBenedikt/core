@@ -148,6 +148,25 @@ final class AtprotoPublishService
 	}
 
 	/**
+	 * Returns the stored publication of one of the caller's posts.
+	 *
+	 * This reads the local idempotency record, not the PDS: it stays
+	 * available when publishing is disabled, and a post that was never
+	 * published returns null instead of triggering a write.
+	 *
+	 * @throws PostNotFoundException when the post is missing, deleted or owned by another account
+	 */
+	public function publicationFor(string $localUserId, string $postId): ?AtprotoPublication
+	{
+		$post = $this->posts->find($postId);
+		if ($post === null || $post->isDeleted() || $post->authorId !== $localUserId) {
+			throw new PostNotFoundException($postId);
+		}
+
+		return $this->publications->findForPost($localUserId, $postId);
+	}
+
+	/**
 	 * Publishes one post immediately, or returns the existing publication.
 	 *
 	 * @throws AtprotoPublishDisabledException

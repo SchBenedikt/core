@@ -12,6 +12,39 @@ The architecture and the boundary between the core and its hosts are described
 in [ADR 0001](docs/adr/0001-shared-core-two-hosts.md) and
 [the architecture document](docs/architecture.md).
 
+## Two protocols, one local model
+
+Aloha Social keeps one local post, one audience and one set of rules, and
+translates that model to two wire protocols. It does **not** define a third
+protocol: ActivityPub and AT Protocol remain the protocols peers speak.
+
+```mermaid
+flowchart LR
+    P[Local post] --> AP[ActivityPub adapter]
+    P --> AT[AT Protocol adapter]
+    AP --> I[Followers' inboxes]
+    I --> F[Fediverse]
+    AT --> X[Author's PDS]
+    X --> B[Bluesky / AppView]
+```
+
+| Capability | ActivityPub | AT Protocol | Status |
+| --- | --- | --- | --- |
+| Public text post | `Create(Note)` | `app.bsky.feed.post` | both |
+| Delete | `Delete` | `deleteRecord` | both |
+| Follow | `Follow` / `Accept` | `app.bsky.graph.follow` | ActivityPub |
+| Boost | `Announce` | `app.bsky.feed.repost` | ActivityPub |
+| Like | `Like` | `app.bsky.feed.like` | local only |
+| Media | attachment + public URL | blob + embed | ActivityPub |
+| Reply | `in_reply_to` | reply ref | local/ActivityPub |
+
+"Both" means one local post can be delivered to ActivityPub followers and
+mirrored to the author's PDS at the same time, with independent failures. The
+core does not merge identities, timelines or engagement across the networks.
+The full mapping, guarantees and the path to a real bridge are in
+[two protocols, one model](docs/guides/dual-protocol.md) and
+[ADR 0007](docs/adr/0007-two-protocols-one-model.md).
+
 ## What is implemented
 
 | Area | Implemented here |
@@ -22,9 +55,9 @@ in [ADR 0001](docs/adr/0001-shared-core-two-hosts.md) and
 | Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` and local `Announce`/`Undo(Announce)` |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
-| AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
+| AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (71 routes; 43 under the compatibility prefix) |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (72 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
@@ -110,6 +143,20 @@ Core\Kernel → Router → Middleware → Handler
 `Application::inMemory()` is the test/demo assembly. Both use the same handlers
 and services. See [architecture](docs/architecture.md) and
 [using the core from a host](docs/guides/host-integration.md).
+
+## Status and history
+
+```mermaid
+timeline
+    title Aloha Social core
+    2026-11-11 : 0.1.0 foundation
+    2026-11-13 : 0.2.0 local social slice
+    next : Nextcloud cutover
+         : standalone host
+```
+
+The canonical status, milestone table and open decisions are in the
+[roadmap](docs/roadmap.md). Release notes are in the [changelog](CHANGELOG.md).
 
 ## Requirements
 

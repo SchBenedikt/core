@@ -27,6 +27,7 @@ use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
+use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -140,6 +141,15 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '10/900',
 				summary: 'Publish one public post to the signed-in account\'s AT Protocol PDS.',
+			),
+			new Route(
+				name: 'atproto.publication',
+				method: 'GET',
+				path: $base . '/posts/{id}/atproto',
+				handler: ShowAtprotoPublicationHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read the stored AT Protocol publication of one of the signed-in account\'s posts.',
 			),
 			new Route(
 				name: 'threads.get',
