@@ -59,6 +59,28 @@ change. `fields` appears only when an error belongs to specific input.
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
 
+## Worker and queue failure codes
+
+These codes are **not** HTTP status codes and never appear in a response body.
+The worker logs them in `context.code` (and the exception itself in
+`context.exception`) so operators and dashboards can match a stable string.
+The job types and payload details are in
+[jobs and delivery](../guides/jobs-and-delivery.md).
+
+| Code | When | Retry |
+| --- | --- | --- |
+| `invalid_job_type` | A caller tried to push an empty or whitespace-only type. `InvalidJobException::errorCode` carries it; nothing is stored. | n/a |
+| `invalid_job_payload` | A terminal payload error: the stored input can never become valid, for example malformed federation or AT Protocol input. | no; dead-lettered immediately |
+| `unknown_job_type` | No handler is registered for the stored type. Retrying cannot register one. | no; dead-lettered immediately |
+| `job_handler_failed` | A handler threw an ordinary exception (transport, database, storage or an unexpected error). | yes; normal backoff |
+| `job_completion_failed` | The handler succeeded, but deleting the reservation threw. The side effect must not be repeated. | no handler rerun; the reservation is left for the queue's TTL recovery |
+
+`PdoJobQueue::complete()` and `deadLetter()` are guarded by
+`reserved_at IS NOT NULL`; a stale caller cannot delete a pending job or turn
+an unreserved retry into a dead letter. The database still holds the job after
+`job_completion_failed`, so its eventual TTL recovery is visible in
+`pendingCount()`/the job table until a worker completes it.
+
 ## Cleanup job reasons
 
 The `cleanup` worker job and `CleanupService` add no HTTP status codes. They

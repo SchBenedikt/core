@@ -79,6 +79,7 @@ $activityLog = new PdoActivityLog($connection);
 $app = Application::forHost(
     config: $config,             // Core\Platform\Config\Config
     database: $connection,       // Core\Platform\Db\Connection
+    transactions: null,          // optional Core\Platform\Db\TransactionRunner; auto-detected when the database implements it
     httpClient: $http,           // Core\Platform\Http\HttpClient; BoundedHttpClient enables remote media
     signingKey: $keys,           // Core\Protocol\ActivityPub\RsaKeyPair
     localActors: $actors,        // Core\Domain\Federation\LocalActorDirectory
@@ -119,6 +120,20 @@ again after a restart. Tests may pass `InMemoryJobQueue` and
 `InMemoryActivityLog`; production should pass the core's `PdoJobQueue` and
 `PdoActivityLog` over the host's `Connection`.
 
+A host `JobQueue` must implement `push`, `reserve`, `complete`, `fail`,
+`deadLetter`, `pendingCount` and `deadLetterCount`. `deadLetter` is new in
+`0.7.0` and is part of the upgrade: it records a terminal payload/type error
+without another attempt. The core's `PdoJobQueue` is the reference
+implementation; a custom adapter can delegate to it if the host has its own
+table.
+
+`Application::forHost()` uses `transactions` (or the database itself when it
+implements `TransactionRunner`) for post creation/deletion. The boundary
+covers the post and its side rows, the AT Protocol job and the delivery jobs;
+without a runner the writes run directly, which is only appropriate for tests.
+A non-PDO database adapter should implement both `Connection` and
+`TransactionRunner`, or pass a dedicated runner.
+
 `Application::inMemory()` remains the demo/test assembly. Do not use it as a
 production bootstrap.
 
@@ -138,7 +153,7 @@ production bootstrap.
 | `LocalActorCount` | Optional: report the number of local accounts for instance stats; without it the count is `0` | host-specific; `InMemoryActorDirectory` |
 | `PostCount` | Optional: report live local posts for instance stats; without it the count is `0` | `InMemoryPostRepository`, `PdoPostRepository`; host adapter otherwise |
 | `RemoteDomainCount` | Optional: report distinct live remote-post hosts for instance stats; without it the count is `0` | `InMemoryRemotePostRepository`, `PdoRemotePostRepository`; host adapter otherwise |
-| `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
+| `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably; `0.7.0` adds `deadLetter()` | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
 | `ActorInboxResolver` | Resolve a remote actor URL to its individual inbox for `Block`/`Undo(Block)`; an unavailable actor document queues nothing | `HttpActorInboxResolver` when the assembly has an HTTP client |
@@ -284,7 +299,10 @@ answer `503 follows_not_configured`. For AT Protocol publishing, create
 `social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
 supply an `AtprotoAccountResolver`;
 supplying no resolver leaves the existing route at `503 atproto_not_configured`
-without writing anything. There is no migration runner, but `0.6.0` ships a
+without writing anything. `0.7.0` adds no table or column and needs no data
+migration; it only requires the host's queue adapter to gain `deadLetter()`
+and its database adapter to expose `TransactionRunner` for atomic post writes.
+There is no migration runner, but `0.6.0` ships a
 retention job instead of leaving expiry entirely to each host. Register
 `JobType::CLEANUP` through `Application::forHost()`'s normal worker and
 schedule the worker (for example with cron):

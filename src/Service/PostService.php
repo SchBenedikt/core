@@ -19,6 +19,7 @@ use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
@@ -51,6 +52,7 @@ final class PostService
 		private readonly ?AtprotoPublishService $atproto = null,
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?NotificationService $notifications = null,
+		private readonly ?TransactionRunner $transactions = null,
 	) {
 	}
 
@@ -85,10 +87,20 @@ final class PostService
 			inReplyToId: $inReplyToId,
 		);
 
-		$this->posts->insert($post);
-		$this->atproto?->schedule($post);
-		$this->recordMentions($post, $parent);
-		$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
+		// The post row, its attachments/hashtags/poll, the scheduled AT
+		// Protocol publication, successful notification inserts and the
+		// delivery jobs all address the same database. One transaction means a
+		// failed link, AT Protocol job or queue write cannot leave a visible
+		// post without its side rows, or delivery jobs without a post.
+		// Notifications remain best-effort by contract: a storage failure is
+		// logged by NotificationService and does not roll back the primary
+		// write, while a successful insert joins this transaction.
+		$this->runWrite(function () use ($post, $parent): void {
+			$this->posts->insert($post);
+			$this->atproto?->schedule($post);
+			$this->recordMentions($post, $parent);
+			$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
+		});
 
 		return $post;
 	}
@@ -159,10 +171,13 @@ final class PostService
 		}
 
 		$deletedAt = Time::toSecondPrecision($this->clock->now());
-		$this->posts->softDelete($postId, $deletedAt);
-		$this->atproto?->scheduleDelete($post);
 
-		$this->enqueueDelivery($post, fn (): array => $this->activities->deleteNote($post, $deletedAt));
+		$this->runWrite(function () use ($post, $postId, $deletedAt): void {
+			$this->posts->softDelete($postId, $deletedAt);
+			$this->atproto?->scheduleDelete($post);
+
+			$this->enqueueDelivery($post, fn (): array => $this->activities->deleteNote($post, $deletedAt));
+		});
 	}
 
 	/**
@@ -355,6 +370,24 @@ final class PostService
 				$this->notifications->recordMention($recipientId, $post->authorId, $post->id);
 			}
 		}
+	}
+
+	/**
+	 * Runs the database writes of one use case in one transaction when the
+	 * host supplied a transaction runner. The in-memory assembly runs the same
+	 * closure directly; its repositories have no transaction to join.
+	 *
+	 * @param Closure(): void $write
+	 */
+	private function runWrite(Closure $write): void
+	{
+		if ($this->transactions === null) {
+			$write();
+
+			return;
+		}
+
+		$this->transactions->transaction($write);
 	}
 
 	/**

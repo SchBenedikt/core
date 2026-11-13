@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service\Atproto;
 
+use AlohaSocial\Core\Jobs\JobFailureCode;
+use AlohaSocial\Core\Jobs\TerminalJobException;
 use RuntimeException;
 
 /**
@@ -17,6 +19,10 @@ use RuntimeException;
  * Retrying cannot fix the payload, so the worker moves it to the dead-letter
  * count instead of spending the remaining attempts.
  */
-final class InvalidAtprotoJobPayloadException extends RuntimeException
+final class InvalidAtprotoJobPayloadException extends RuntimeException implements TerminalJobException
 {
+	public function errorCode(): string
+	{
+		return JobFailureCode::INVALID_PAYLOAD;
+	}
 }

@@ -56,7 +56,7 @@ final class InMemoryJobQueue implements JobQueue
 	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job
 	{
 		if (trim($type) === '') {
-			throw new \InvalidArgumentException('A job needs a type.');
+			throw new InvalidJobException(JobFailureCode::INVALID_TYPE, 'A job needs a type.');
 		}
 
 		$job = new Job(
@@ -99,6 +99,23 @@ final class InMemoryJobQueue implements JobQueue
 	public function complete(Job $job): void
 	{
 		unset($this->reserved[$job->id]);
+	}
+
+	public function deadLetter(Job $job, Throwable $error, DateTimeImmutable $now): void
+	{
+		if (!isset($this->reserved[$job->id])) {
+			return;
+		}
+
+		unset($this->reserved[$job->id]);
+
+		$this->dead[$job->id] = new Job(
+			$job->id,
+			$job->type,
+			$job->payload,
+			$job->availableAt,
+			$job->attempts + 1,
+		);
 	}
 
 	public function fail(Job $job, Throwable $error, DateTimeImmutable $now): void

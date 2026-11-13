@@ -944,6 +944,17 @@ rows, with the same strict `before` cutoff and deterministic oldest-first
 limit on every run. A host schedules it through its existing worker or calls
 `CleanupService::run()` directly.
 
+## Transactions and job errors (no route)
+
+Version `0.7.0` adds no HTTP route and no OpenAPI path. Post creation/deletion
+is one transaction when the host supplies a `Platform\Db\TransactionRunner`,
+and terminal worker errors are dead-lettered immediately. The worker codes
+(`invalid_job_type`, `invalid_job_payload`, `unknown_job_type`,
+`job_handler_failed`, `job_completion_failed`) are log/operator codes, never
+response bodies; see [jobs and delivery](../guides/jobs-and-delivery.md) and
+the [error code reference](error-codes.md#worker-and-queue-failure-codes). The
+contract remains 84 routes and 70 OpenAPI paths.
+
 ## Route parameters
 
 A parameter matches one path segment (`[^/]+`); a slash in a value must be

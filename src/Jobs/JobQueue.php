@@ -42,6 +42,12 @@ interface JobQueue
 	public function fail(Job $job, Throwable $error, DateTimeImmutable $now): void;
 
 	/**
+	 * Gives up immediately: the job is recorded as failed without another
+	 * retry. Used for terminal payload/type errors that a retry cannot fix.
+	 */
+	public function deadLetter(Job $job, Throwable $error, DateTimeImmutable $now): void;
+
+	/**
 	 * Jobs waiting to run, including those waiting for a retry.
 	 */
 	public function pendingCount(): int;

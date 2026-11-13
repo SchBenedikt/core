@@ -54,7 +54,7 @@ final class PdoJobQueue implements JobQueue
 	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job
 	{
 		if (trim($type) === '') {
-			throw new \InvalidArgumentException('A job needs a type.');
+			throw new InvalidJobException(JobFailureCode::INVALID_TYPE, 'A job needs a type.');
 		}
 
 		$job = new Job(
@@ -132,8 +132,23 @@ final class PdoJobQueue implements JobQueue
 	public function complete(Job $job): void
 	{
 		$this->db->execute(
-			'DELETE FROM ' . JobSchema::TABLE . ' WHERE id = :id',
+			'DELETE FROM ' . JobSchema::TABLE
+			. ' WHERE id = :id AND reserved_at IS NOT NULL',
 			['id' => $job->id],
+		);
+	}
+
+	public function deadLetter(Job $job, Throwable $error, DateTimeImmutable $now): void
+	{
+		$this->db->execute(
+			'UPDATE ' . JobSchema::TABLE
+			. ' SET attempts = :attempts, reserved_at = NULL, dead_at = :now'
+			. ' WHERE id = :id AND reserved_at IS NOT NULL AND dead_at IS NULL',
+			[
+				'id' => $job->id,
+				'attempts' => $job->attempts + 1,
+				'now' => Time::format($now),
+			],
 		);
 	}
 

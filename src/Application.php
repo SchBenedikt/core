@@ -181,6 +181,7 @@ use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\Connection;
+use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Image\GdImageProcessor;
@@ -432,6 +433,7 @@ final readonly class Application
 		?MuteRepository $muteRepository = null,
 		?AccountListRepository $accountListRepository = null,
 		?FollowedHashtagRepository $followedHashtagRepository = null,
+		?TransactionRunner $transactions = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -482,6 +484,7 @@ final readonly class Application
 			ids: $ids,
 			logger: $logger,
 			debug: $debug,
+			transactions: $transactions ?? ($database instanceof TransactionRunner ? $database : null),
 		);
 	}
 
@@ -527,6 +530,7 @@ final readonly class Application
 		IdGenerator $ids,
 		?LoggerInterface $logger,
 		bool $debug,
+		?TransactionRunner $transactions = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -625,6 +629,7 @@ final readonly class Application
 			$atprotoService,
 			$localRelationships,
 			$notificationService,
+			transactions: $transactions,
 		);
 		$boostService = new BoostService(
 			$postService,

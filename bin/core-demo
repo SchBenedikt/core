@@ -9,24 +9,39 @@ declare(strict_types=1);
  */
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\AttachmentSchema;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Jobs\Job;
+use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSchema;
 use AlohaSocial\Core\Jobs\JobType;
+use AlohaSocial\Core\Jobs\PdoJobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Platform\Http\CurlHttpClient;
+use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Support\RandomIdGenerator;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\Cleanup\CleanupOptions;
 use AlohaSocial\Core\Support\Time;
@@ -36,6 +51,41 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 /**
  * @param array<string, string> $headers
  */
+final class DemoRejectingQueue implements JobQueue
+{
+	public function push(string $type, array $payload, ?\DateTimeImmutable $availableAt = null): Job
+	{
+		throw new RuntimeException('The demo delivery queue is unavailable.');
+	}
+
+	public function reserve(int $limit, \DateTimeImmutable $now): array
+	{
+		return [];
+	}
+
+	public function complete(Job $job): void
+	{
+	}
+
+	public function fail(Job $job, \Throwable $error, \DateTimeImmutable $now): void
+	{
+	}
+
+	public function deadLetter(Job $job, \Throwable $error, \DateTimeImmutable $now): void
+	{
+	}
+
+	public function pendingCount(): int
+	{
+		return 0;
+	}
+
+	public function deadLetterCount(): int
+	{
+		return 0;
+	}
+}
+
 function call(Application $app, string $label, Request $request): Response
 {
 	$response = $app->handle($request);
@@ -356,6 +406,103 @@ $cleanupThreads->upsert(new RemoteThreadPost(
 	publishedAt: Time::parse('2026-03-02T00:00:00Z'),
 	fetchedAt: Time::parse('2026-03-02T00:00:00Z'),
 ));
+
+$transactionDatabase = new PdoConnection(new PDO('sqlite::memory:'));
+PostSchema::create($transactionDatabase);
+PollSchema::create($transactionDatabase);
+AttachmentSchema::create($transactionDatabase);
+NotificationSchema::create($transactionDatabase);
+JobSchema::create($transactionDatabase);
+
+$transactionConfig = new ArrayConfig([
+	'social' => [
+		'instance.url' => 'https://social.example',
+		'instance.name' => 'Aloha Social SQLite demo',
+	],
+]);
+$transactionKey = RsaKeyPair::generate();
+$transactionClock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
+$transactionQueue = new PdoJobQueue($transactionDatabase, $transactionClock, new RandomIdGenerator());
+$demoInboxes = new class implements InboxResolver {
+	public function inboxesFor(string $actorId): array
+	{
+		return ['https://remote.example/users/bob/inbox'];
+	}
+};
+
+$sqlApp = Application::forHost(
+	config: $transactionConfig,
+	database: $transactionDatabase,
+	httpClient: new CurlHttpClient(),
+	signingKey: $transactionKey,
+	localActors: new InMemoryActorDirectory(['alice']),
+	queue: $transactionQueue,
+	activityLog: new PdoActivityLog($transactionDatabase),
+	inboxResolver: $demoInboxes,
+	clock: $transactionClock,
+);
+
+$rollbackApp = Application::forHost(
+	config: $transactionConfig,
+	database: $transactionDatabase,
+	httpClient: new CurlHttpClient(),
+	signingKey: $transactionKey,
+	localActors: new InMemoryActorDirectory(['alice']),
+	queue: new DemoRejectingQueue(),
+	activityLog: new PdoActivityLog($transactionDatabase),
+	inboxResolver: $demoInboxes,
+	clock: $transactionClock,
+);
+
+$postCount = static fn (): int => (int) $transactionDatabase->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE);
+$hashtagCount = static fn (): int => (int) $transactionDatabase->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::HASHTAG_TABLE);
+
+$beforePost = $postCount();
+$beforeHashtag = $hashtagCount();
+$beforeJobs = $transactionQueue->pendingCount();
+
+echo "SQLite transaction demo\n";
+call($sqlApp, 'POST /api/v1/posts (committed)', new Request(
+	method: 'POST',
+	path: '/api/v1/posts',
+	headers: ['Content-Type' => 'application/json'],
+	body: json_encode([
+		'content' => 'Committed with its #transaction side rows.',
+		'visibility' => 'public',
+	], JSON_THROW_ON_ERROR),
+	userId: 'alice',
+));
+
+$afterCommitPost = $postCount();
+$afterCommitHashtag = $hashtagCount();
+$afterCommitJobs = $transactionQueue->pendingCount();
+if ($afterCommitPost !== $beforePost + 1
+	|| $afterCommitHashtag !== $beforeHashtag + 1
+	|| $afterCommitJobs !== $beforeJobs + 1
+) {
+	fwrite(STDERR, "demo failed: the successful post did not commit its post, hashtag and job\n");
+	exit(1);
+}
+
+call($rollbackApp, 'POST /api/v1/posts (queue failure)', new Request(
+	method: 'POST',
+	path: '/api/v1/posts',
+	headers: ['Content-Type' => 'application/json'],
+	body: json_encode([
+		'content' => 'This post and its #transaction rows must roll back.',
+		'visibility' => 'public',
+	], JSON_THROW_ON_ERROR),
+	userId: 'alice',
+));
+
+if ($postCount() !== $afterCommitPost || $hashtagCount() !== $afterCommitHashtag) {
+	fwrite(STDERR, "demo failed: the rejected post left rows behind\n");
+	exit(1);
+}
+
+echo "rollback ok: posts ", $beforePost, " -> ", $afterCommitPost, " -> ", $postCount(),
+	", hashtags ", $beforeHashtag, " -> ", $afterCommitHashtag, " -> ", $hashtagCount(),
+	", queued jobs ", $beforeJobs, " -> ", $afterCommitJobs, " -> ", $transactionQueue->pendingCount(), "\n\n";
 
 $cleanupApp = Application::inMemory(
 	clock: $cleanupClock,

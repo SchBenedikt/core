@@ -14,6 +14,13 @@ Current status: the contract is accepted and the validator is implemented,
 but the host import has not started. The phases below are milestone M3 in the
 [roadmap](../roadmap.md); the core repository cannot execute them.
 
+Version `0.7.0` needs no data migration. It adds no table or column; it tightens
+post writes inside one transaction and adds `JobQueue::deadLetter()`. Before a
+host upgrades, its `Connection` adapter should also implement
+`Platform\Db\TransactionRunner` (the core's `PdoConnection` already does), and
+any custom queue adapter must implement `deadLetter()`. The cutover validator,
+export format and identity rules below are unchanged.
+
 The migration is a strangler migration: the old endpoints stay live until one
 feature has passed its checks. Never import into production and point every
 route at the core in the same deployment.

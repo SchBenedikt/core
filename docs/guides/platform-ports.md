@@ -13,6 +13,7 @@ request.
 | `Config` | `get`/`set`/`delete`/`has`/`all`, typed getters | `ArrayConfig` | host configuration |
 | `Storage\BlobStore` | `put`/`read`/`exists`/`delete`/`size`/`list` | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
 | `Db\Connection` | `execute`/`fetchAll`/`fetchOne`/`fetchValue`/`transaction`/`driver` | — | `PdoConnection` |
+| `Db\TransactionRunner` | `transaction()` | — | `PdoConnection`; a host database adapter |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
 | `Http\BoundedHttpClient` | `request()` + bounded `requestBounded()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
 | `Network\HostResolver` | `resolve()` | `DnsHostResolver`, test map | `DnsHostResolver` |
@@ -58,6 +59,15 @@ A deliberately small SQL port: statements and bound parameters, no query
 builder. `execute()` returns the affected row count, which is how a repository
 tells "deleted" from "was not there". `transaction()` joins nested calls and
 rolls the whole chain back if any level throws.
+
+`TransactionRunner` is the service-facing subset: a use case that writes
+through several repositories needs a boundary, not SQL access. `PdoConnection`
+implements both interfaces; `Application::forHost()` detects it and passes it to
+`PostService`. A host with another database adapter should implement
+`TransactionRunner` too (or pass a dedicated `transactions:` adapter), because
+the in-memory fallback runs the writes directly and cannot roll back a
+half-written post. The port has no implicit retry: an exception is rolled back
+and propagated.
 
 ### HttpClient
 
@@ -124,6 +134,11 @@ Several ports have a shared test case that every implementation must pass:
 - `tests/Domain/FollowingRepositoryTestCase.php`
 - `tests/Domain/AtprotoPublicationRepositoryTestCase.php`
 - `tests/Domain/AtprotoSessionStoreTestCase.php`
+
+The `Platform\Db\TransactionRunner` contract is exercised through
+`tests/Service/PostTransactionTest.php` and the SQL host test, because its
+promise is a rollback across repositories rather than a return value. A new
+runner should pass both a commit and a forced-failure case.
 
 A new adapter is done when it passes the existing case, not when its own tests
 pass. That is the mechanism that keeps `InMemoryPostRepository` and

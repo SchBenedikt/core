@@ -58,7 +58,7 @@ The full mapping, guarantees and the path to a real bridge are in
 | AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (84 routes; 43 under the compatibility prefix) |
-| Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
+| Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table; `TransactionRunner` for atomic multi-repository writes |
 | Operations | core `cleanup` worker job and service for unreferenced media older than a retention window, read notifications and thread caches; dry run, per-kind limits, idempotent deletes, stable payload reasons and host scheduling |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
@@ -147,6 +147,9 @@ Core\Kernel → Router → Middleware → Handler
 ```
 
 `src/` contains no host import. `composer check:boundary` enforces that.
+Multi-table writes use `Platform\Db\TransactionRunner`; a PDO host gets it from
+`PdoConnection`, while a host with another database adapter can pass its own
+implementation to `Application::forHost()`.
 `Application::forHost()` is the production composition root;
 `Application::inMemory()` is the test/demo assembly. Both use the same handlers
 and services. See [architecture](docs/architecture.md) and
@@ -163,6 +166,7 @@ timeline
     2026-11-13 : 0.4.0 hashtag timelines
     2026-11-13 : 0.5.0 followed hashtags
     2026-11-13 : 0.6.0 retention cleanup
+    2026-11-13 : 0.7.0 transactions and job errors
     next : Nextcloud cutover
          : standalone host
 ```
@@ -176,7 +180,7 @@ The canonical status, milestone table and open decisions are in the
 - `ext-gd`, `ext-json`, `ext-mbstring`, `ext-openssl`, `ext-pdo` (runtime)
 - `ext-curl` when the host uses `CurlHttpClient` for delivery, remote media or
   thread/context fetching
-- `ext-pdo_sqlite` for the test suite
+- `ext-pdo_sqlite` for the test suite and the SQLite transaction part of `bin/core-demo`
 - Node.js 20 or newer for the `ui/` package
 
 ## Quick start
@@ -199,11 +203,14 @@ npm run build
 hashtag and reads its followed-hashtag timeline, records a follower,
 shows the expected 503 for a follow without delivery configuration, and
 demonstrates the documented errors for unconfigured inboxes, actors and
-WebFinger. It also seeds expired and fresh media, read and unread
+WebFinger. It also boots a SQLite-backed `Application::forHost()`, commits one
+post with its hashtag and delivery job, then deliberately rejects a second
+queue push and asserts that the `500` response left no post, hashtag or job
+behind. Finally it seeds expired and fresh media, read and unread
 notifications, and expired and fresh thread-cache rows, prints the cleanup
 dry-run report, runs the real `cleanup` job through the worker, and asserts
-that only the expired rows and their blobs disappeared. It needs no database
-and no network.
+that only the expired rows and their blobs disappeared. It uses in-memory
+SQLite for the transaction section, but no external database and no network.
 
 ### Quality gates
 

@@ -12,8 +12,25 @@ handle, the Nextcloud host does the same with Nextcloud's.
 | `fetchAll($sql, $params)` | list of associative rows |
 | `fetchOne($sql, $params)` | one row or null |
 | `fetchValue($sql, $params)` | first column of the first row or null |
-| `transaction(callable)` | the callable's result |
+| `transaction(callable)` | the callable's result (see also `TransactionRunner`) |
 | `driver()` | `sqlite`, `mysql`, `pgsql`, … |
+
+`TransactionRunner` is the narrow service-facing transaction port:
+
+```php
+interface TransactionRunner
+{
+    public function transaction(callable $work): mixed;
+}
+```
+
+`PdoConnection` implements both `Connection` and `TransactionRunner`, so
+`Application::forHost()` detects it automatically. A host with a non-PDO
+adapter should implement `TransactionRunner` on that adapter (or pass a
+dedicated implementation as `transactions:`); without one the post service
+runs its writes directly, which is only appropriate for the in-memory
+assembly. Nested calls join the outer transaction, and an exception at any
+depth rolls the whole chain back.
 
 Named parameters are written without a prefix in the array (`['id' => …]`) and
 may be written with one in the SQL (`:id`); the connection adds the prefix when
@@ -70,6 +87,21 @@ is the replay guard used by `PdoActivityLog`. The queue reserves a row with a
 conditional update in a transaction, and the activity log's primary key is the
 claim. Both rely on the database, not on a process-local cache, so a restart or
 a second worker does not lose a delivery or accept a replayed activity.
+`complete()` and `deadLetter()` additionally require `reserved_at IS NOT NULL`: a
+stale worker cannot delete a pending row or dead-letter a job it does not own.
+
+A post write is one unit of work when a `TransactionRunner` is configured:
+the `social_post` row, ordered attachment/hashtag/recipient rows, the poll and
+its options, the scheduled AT Protocol publication and every federation
+delivery job commit or roll back together. A failed attachment link, hashtag
+insert, poll option, AT Protocol job or queue push therefore leaves no visible
+post and no orphaned job. Notification writes are the one deliberate
+exception: a successful notification insert joins the transaction, but
+`NotificationService` treats a missing or failing notification table as
+best-effort, logs it and does not undo the primary post. The deterministic
+notification id remains the dedupe boundary, so a retry repairs a missed row
+without creating a second one. Deleting a post wraps the soft delete, the AT
+Protocol delete job and the delivery jobs in the same boundary.
 
 `social_remote_post` stores signed `Create` and `Announce` content from
 followed remote actors. Its primary key is the activity id, which makes a
@@ -203,7 +235,9 @@ order the attachments by the position list. See [media](media.md).
 
 ### Retention cleanup
 
-Version `0.6.0` adds the `cleanup` job and `CleanupService`. It adds no table
+Version `0.7.0` adds `TransactionRunner` and the post transaction boundary;
+it adds no table or column, so an existing schema needs no migration. Version
+`0.6.0` adds the `cleanup` job and `CleanupService`. It adds no table
 and no migration; it deletes rows through the existing schemas:
 
 ```sql

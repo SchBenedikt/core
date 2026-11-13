@@ -74,12 +74,13 @@ pin a tag or a commit rather than floating `dev-main`.
 | --- | --- | --- |
 | `Config` | `OCP\IConfig` | App id `social`; values are strings |
 | `Db\Connection` | `OCP\IDBConnection` | Doctrine DBAL; see the adapter below |
+| `Db\TransactionRunner` | the same adapter | Required for atomic post writes; `NextcloudConnection` implements it with DBAL `transactional()` |
 | `Http\HttpClient` | `OCP\Http\Client\IClientService` | Keep Nextcloud's CA/proxy policy; or use `CurlHttpClient` |
 | `Http\BoundedHttpClient` | `IClientService` with a streamed body cap and address pinning | Needed for remote media; a plain `HttpClient` wrapper leaves the remote importer disabled |
 | `Network\HostResolver` | `OCP\IDNSResolver` or the app's resolver | The remote-media guard needs every A/AAAA answer before a request |
 | `Storage\BlobStore` | `OCP\Files\IAppData` | Pass it to `forHost()` to enable media; the core supplies the local filesystem adapter for the standalone host |
 | `LocalActorDirectory` | `OCP\IUserManager` / external user backend | The app already has external users; include them |
-| `Jobs\JobQueue` | core `PdoJobQueue` over `NextcloudConnection` | Nothing to implement; the core owns atomic reserve, retry and dead-letter rules |
+| `Jobs\JobQueue` | core `PdoJobQueue` over `NextcloudConnection` | Nothing to implement; the core owns atomic reserve, retry and dead-letter rules. A custom queue adapter must also add `deadLetter()` for `0.7.0` |
 | `ActivityLog` | core `PdoActivityLog` over `NextcloudConnection` | Nothing to implement; the primary key is the replay guard |
 | `ActorResolver` | `HttpActorResolver` or the app's actor cache | Resolve key id → actor, never trust a supplied key |
 | `RsaKeyPair` | sealed key in app config | Open with `OpenSslSecretBox`, then `RsaKeyPair::fromPems()` |
@@ -121,7 +122,7 @@ step 1 when you use shape A.
 repositories to speak Doctrine. The port is deliberately small:
 
 ```php
-final class NextcloudConnection implements Connection
+final class NextcloudConnection implements Connection, TransactionRunner
 {
     public function __construct(private IDBConnection $db) {}
 
@@ -149,6 +150,9 @@ final class NextcloudConnection implements Connection
 
     public function transaction(callable $work): mixed
     {
+        // TransactionRunner has the same contract as Connection::transaction().
+        // Nested calls join the DBAL transaction and an exception rolls the
+        // whole chain back.
         return $this->db->transactional(fn (): mixed => $work($this));
     }
 
@@ -163,7 +167,10 @@ final class NextcloudConnection implements Connection
 
 Normalize booleans and `DateTimeImmutable` parameters exactly as
 `PdoConnection` does if you pass them; the core's repositories currently pass
-strings and null, but the port contract allows the wider set. Test the adapter
+strings and null, but the port contract allows the wider set. The adapter also
+implements `TransactionRunner`; this is what lets `PostService` roll back the
+post, its side rows and its delivery jobs together. `0.7.0` adds no Nextcloud
+table or column. Test the adapter
 against `PostRepositoryTestCase`, `FollowerRepositoryTestCase` and
 `FollowingRepositoryTestCase` with the app's database, not only with SQLite.
 

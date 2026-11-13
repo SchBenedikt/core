@@ -29,7 +29,7 @@ use AlohaSocial\Core\Support\Time;
  * through prepared statements, and booleans and timestamps are normalised so
  * callers never depend on a driver's idea of either.
  */
-final class PdoConnection implements Connection
+final class PdoConnection implements Connection, TransactionRunner
 {
 	private int $transactionDepth = 0;
 

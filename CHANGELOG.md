@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-13
+
+### Added
+
+- `Platform\Db\TransactionRunner`, a narrow port for a use case that writes
+  through several repositories. `PdoConnection` implements it, and
+  `Application::forHost()` detects a database that implements it automatically;
+  a host can also pass a dedicated `transactions` adapter. Nested calls join
+  the outer transaction, and an exception at any depth rolls the whole chain
+  back.
+- `PostService::create()` and `delete()` now run the post row, attachment /
+  hashtag / poll / recipient side rows, the AT Protocol publication job and
+  every federation delivery job in one transaction when a runner is available.
+  A rejected link, AT Protocol write or queue push can no longer leave a
+  visible post without its side rows, or a soft-deleted post with a successful
+  delivery job. Validation still happens before the transaction, so invalid
+  input writes nothing at all. Mentions remain deliberately best-effort at the
+  notification boundary: a successful notification insert joins the
+  transaction, while a storage failure is logged and does not undo the post.
+- `JobQueue::deadLetter()`, implemented by `InMemoryJobQueue` and
+  `PdoJobQueue`. Terminal job errors are now recorded immediately instead of
+  consuming the remaining retry budget. `PdoJobQueue::complete()` and
+  `deadLetter()` only act on a currently reserved job, so a stale or duplicated
+  worker cannot delete a pending row or bury an unreserved retry.
+- `JobFailureCode` and the `TerminalJobException` contract. The stable worker
+  codes are `invalid_job_type`, `invalid_job_payload`, `unknown_job_type`,
+  `job_handler_failed` and `job_completion_failed`; they are log/operator
+  codes, not HTTP status codes. Empty job types are rejected at push time with
+  `InvalidJobException::errorCode = invalid_job_type`.
+- `bin/core-demo` now boots a real `Application::forHost()` over in-memory
+  SQLite, commits one post with its hashtag and queued delivery job, then sends
+  a second post through a rejecting queue. It prints the `500` response and
+  asserts that the post and hashtag counts did not change. This exercises the
+  real transaction and needs `ext-pdo_sqlite`, but no external database or
+  network.
+
+### Changed
+
+- `JobWorker` separates handler failures from completion failures. A terminal
+  payload/type error is dead-lettered at once; a generic handler failure is
+  retried with the normal backoff; when the handler succeeded but removing the
+  reservation failed, the worker logs `job_completion_failed` and does **not**
+  call `fail()`, because retrying would repeat an already completed side
+  effect. The durable queue's reservation TTL recovers the row.
+- Adding `deadLetter()` to `JobQueue` is a breaking change for a custom host
+  adapter. The built-in queues and all test doubles implement it; a host must
+  add the method before upgrading.
+- The suite is now 120 PHP test files with 1077 tests and 5103 assertions; the
+  UI package stays at 63 tests. No HTTP route, schema or OpenAPI path was
+  added: the advertised contract stays at 84 routes and 70 OpenAPI paths.
+
 ## [0.6.0] - 2026-11-13
 
 ### Added

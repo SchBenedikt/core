@@ -14,11 +14,16 @@ use RuntimeException;
 /**
  * A job was queued with a type this worker has no handler for.
  */
-final class UnknownJobTypeException extends RuntimeException
+final class UnknownJobTypeException extends RuntimeException implements TerminalJobException
 {
 	public function __construct(
 		public readonly string $jobType,
 	) {
 		parent::__construct('No handler is registered for job type "' . $jobType . '".');
+	}
+
+	public function errorCode(): string
+	{
+		return JobFailureCode::UNKNOWN_TYPE;
 	}
 }

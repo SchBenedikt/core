@@ -10,11 +10,16 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Jobs;
 
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\Job;
+use AlohaSocial\Core\Jobs\JobFailureCode;
+use AlohaSocial\Core\Jobs\JobHandler;
 use AlohaSocial\Core\Jobs\JobHandlerRegistry;
 use AlohaSocial\Core\Jobs\JobWorker;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Service\Federation\InvalidJobPayloadException;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\ArrayPsrLogger;
+use AlohaSocial\Core\Tests\Support\CompletionFailingJobQueue;
 use AlohaSocial\Core\Tests\Support\FailingJobHandler;
 use AlohaSocial\Core\Tests\Support\RecordingJobHandler;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
@@ -80,6 +85,7 @@ final class JobWorkerTest extends TestCase
 		self::assertSame(0, $this->queue->deadLetterCount());
 		self::assertSame(['warning'], $logger->levels());
 		self::assertStringContainsString('failed', $logger->records[0]['message']);
+		self::assertSame(JobFailureCode::HANDLER_FAILED, $logger->records[0]['context']['code']);
 	}
 
 	public function testARetriedJobRunsAgainAfterTheBackoff(): void
@@ -111,20 +117,67 @@ final class JobWorkerTest extends TestCase
 		self::assertSame(InMemoryJobQueue::MAX_ATTEMPTS, $handler->attempts);
 	}
 
-	public function testAnUnknownJobTypeEndsInTheDeadLetters(): void
+	public function testAnUnknownJobTypeEndsInTheDeadLettersImmediately(): void
 	{
 		$this->queue->push('nobody-handles-this', []);
 		$worker = new JobWorker($this->queue, new JobHandlerRegistry(), $this->clock);
 
 		$worker->runOnce();
 
-		for ($attempt = 1; $attempt < InMemoryJobQueue::MAX_ATTEMPTS; $attempt++) {
-			$this->clock->advance(InMemoryJobQueue::MAX_BACKOFF_SECONDS);
-			$worker->runOnce();
-		}
-
 		self::assertSame(0, $this->queue->pendingCount());
 		self::assertSame(1, $this->queue->deadLetterCount());
+	}
+
+	public function testATerminalPayloadFailureIsDeadLetteredImmediately(): void
+	{
+		$handler = new class implements JobHandler {
+			public int $attempts = 0;
+
+			public function handle(Job $job): void
+			{
+				$this->attempts++;
+
+				throw new InvalidJobPayloadException('The stored payload is invalid.');
+			}
+		};
+		$logger = new ArrayPsrLogger();
+		$this->queue->push('test', []);
+		$worker = new JobWorker(
+			$this->queue,
+			(new JobHandlerRegistry())->with('test', $handler),
+			$this->clock,
+			$logger,
+		);
+
+		$worker->runOnce();
+
+		self::assertSame(1, $handler->attempts);
+		self::assertSame(0, $this->queue->pendingCount());
+		self::assertSame(1, $this->queue->deadLetterCount());
+		self::assertSame(JobFailureCode::INVALID_PAYLOAD, $logger->records[0]['context']['code']);
+		self::assertTrue($logger->records[0]['context']['terminal']);
+	}
+
+	public function testACompletionFailureDoesNotFailOrRerunTheHandler(): void
+	{
+		$job = new Job('job-1', 'test', [], $this->clock->now());
+		$queue = new CompletionFailingJobQueue($job);
+		$handler = new RecordingJobHandler();
+		$logger = new ArrayPsrLogger();
+		$worker = new JobWorker(
+			$queue,
+			(new JobHandlerRegistry())->with('test', $handler),
+			$this->clock,
+			$logger,
+		);
+
+		$worker->runOnce();
+
+		self::assertCount(1, $handler->jobs);
+		self::assertSame(0, $queue->failCalls);
+		self::assertSame(0, $queue->deadLetterCalls);
+		self::assertSame(['error'], $logger->levels());
+		self::assertSame(JobFailureCode::COMPLETION_FAILED, $logger->records[0]['context']['code']);
 	}
 
 	private function worker(RecordingJobHandler|FailingJobHandler $handler, ?ArrayPsrLogger $logger = null): JobWorker

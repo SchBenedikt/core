@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
@@ -47,6 +48,7 @@ use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PollSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
+use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSchema;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Jobs\PdoJobQueue;
@@ -62,7 +64,9 @@ use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
 use AlohaSocial\Core\Tests\Support\InMemoryActorResolver;
+use AlohaSocial\Core\Tests\Support\RejectingJobQueue;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -133,6 +137,30 @@ final class ApplicationHostTest extends TestCase
 
 		$timeline = $app->handle(new Request('GET', '/api/v1/timelines/public'))->decodedBody();
 		self::assertSame(1, count($timeline['posts']));
+	}
+
+	public function testForHostRollsBackThePostWhenTheQueueRejectsIt(): void
+	{
+		$database = $this->database();
+		$app = $this->host(
+			$database,
+			new FakeHttpClient(),
+			inboxResolver: new FixedInboxResolver([self::BOB_INBOX]),
+			queue: new RejectingJobQueue(),
+		);
+
+		$response = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'no half post #rollback'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(500, $response->status);
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::HASHTAG_TABLE));
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . JobSchema::TABLE));
 	}
 
 	public function testForHostServesProfilesFollowsAndNotificationsFromSql(): void
@@ -1094,6 +1122,8 @@ final class ApplicationHostTest extends TestCase
 		?AtprotoAccountResolver $atprotoAccounts = null,
 		array $actors = ['alice'],
 		?BlobStore $blobStore = null,
+		?JobQueue $queue = null,
+		?InboxResolver $inboxResolver = null,
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
@@ -1108,7 +1138,8 @@ final class ApplicationHostTest extends TestCase
 			httpClient: $http,
 			signingKey: self::$key,
 			localActors: new InMemoryActorDirectory($actors),
-			queue: new PdoJobQueue($database, $this->clock, new RandomIdGenerator()),
+			queue: $queue ?? new PdoJobQueue($database, $this->clock, new RandomIdGenerator()),
+			inboxResolver: $inboxResolver,
 			activityLog: new PdoActivityLog($database),
 			actorResolver: $actorResolver,
 			atprotoAccounts: $atprotoAccounts,

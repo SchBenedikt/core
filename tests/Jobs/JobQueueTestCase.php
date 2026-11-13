@@ -10,10 +10,11 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Jobs;
 
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\InvalidJobException;
+use AlohaSocial\Core\Jobs\JobFailureCode;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Support\Time;
-use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -40,11 +41,14 @@ abstract class JobQueueTestCase extends TestCase
 		self::assertSame(1, $this->queue()->pendingCount());
 	}
 
-	public function testPushRefusesAnEmptyType(): void
+	public function testPushRefusesAnEmptyTypeWithAStableCode(): void
 	{
-		$this->expectException(InvalidArgumentException::class);
-
-		$this->queue()->push('  ', []);
+		try {
+			$this->queue()->push('  ', []);
+			self::fail('Expected an invalid job error.');
+		} catch (InvalidJobException $exception) {
+			self::assertSame(JobFailureCode::INVALID_TYPE, $exception->errorCode);
+		}
 	}
 
 	public function testReserveReturnsOnlyDueJobs(): void
@@ -86,6 +90,40 @@ abstract class JobQueueTestCase extends TestCase
 
 		self::assertSame(0, $this->queue()->pendingCount());
 		self::assertSame(0, $this->queue()->deadLetterCount());
+		self::assertSame([], $this->queue()->reserve(10, $this->clock()->now()));
+	}
+
+	public function testCompleteOfAnUnreservedJobDoesNotRemoveIt(): void
+	{
+		$job = $this->queue()->push('a', []);
+
+		$this->queue()->complete($job);
+
+		self::assertSame(1, $this->queue()->pendingCount());
+		$this->assertCount(1, $this->queue()->reserve(10, $this->clock()->now()));
+	}
+
+	public function testDeadLetterOfAnUnreservedJobDoesNotRescheduleOrDropIt(): void
+	{
+		$job = $this->queue()->push('a', []);
+
+		$this->queue()->deadLetter($job, new RuntimeException('stale worker'), $this->clock()->now());
+
+		self::assertSame(1, $this->queue()->pendingCount());
+		self::assertSame(0, $this->queue()->deadLetterCount());
+		self::assertCount(1, $this->queue()->reserve(10, $this->clock()->now()));
+	}
+
+	public function testDeadLetterIsImmediateAndIdempotent(): void
+	{
+		$this->queue()->push('a', []);
+		$reserved = $this->queue()->reserve(10, $this->clock()->now());
+
+		$this->queue()->deadLetter($reserved[0], new RuntimeException('terminal'), $this->clock()->now());
+		$this->queue()->deadLetter($reserved[0], new RuntimeException('terminal'), $this->clock()->now());
+
+		self::assertSame(0, $this->queue()->pendingCount());
+		self::assertSame(1, $this->queue()->deadLetterCount());
 		self::assertSame([], $this->queue()->reserve(10, $this->clock()->now()));
 	}
 
