@@ -18,7 +18,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 /**
  * @param array<string, string> $headers
  */
-function call(Application $app, string $label, Request $request): void
+function call(Application $app, string $label, Request $request): Response
 {
 	$response = $app->handle($request);
 
@@ -35,6 +35,8 @@ function call(Application $app, string $label, Request $request): void
 	}
 
 	echo "\n";
+
+	return $response;
 }
 
 $app = Application::inMemory(
@@ -88,6 +90,29 @@ call(
 
 call($app, 'GET /api/v1/timelines/public', new Request('GET', '/api/v1/timelines/public'));
 call($app, 'GET /api/v1/timelines/tag/demo', new Request('GET', '/api/v1/timelines/tag/demo'));
+
+call(
+	$app,
+	'POST /api/v1/followed_tags (alice)',
+	new Request(
+		method: 'POST',
+		path: '/api/v1/followed_tags',
+		headers: ['Content-Type' => 'application/json'],
+		body: json_encode(['tag' => '#demo'], JSON_THROW_ON_ERROR),
+		userId: 'alice',
+	),
+);
+call($app, 'GET /api/v1/followed_tags (alice)', new Request('GET', '/api/v1/followed_tags', userId: 'alice'));
+$followedTimeline = call(
+	$app,
+	'GET /api/v1/timelines/followed_tags (alice)',
+	new Request('GET', '/api/v1/timelines/followed_tags', userId: 'alice'),
+);
+call(
+	$app,
+	'DELETE /api/v1/followed_tags/demo (alice)',
+	new Request('DELETE', '/api/v1/followed_tags/demo', userId: 'alice'),
+);
 
 call($app, 'GET /api/v1/timelines/home (bob)', new Request('GET', '/api/v1/timelines/home', userId: 'bob'));
 
@@ -184,4 +209,11 @@ if (!is_array($posts) || $posts === []) {
 	exit(1);
 }
 
-echo "demo ok: ", count($posts), " post(s) on the public timeline\n";
+$followedBody = $followedTimeline->decodedBody();
+$followedPosts = is_array($followedBody) ? ($followedBody['posts'] ?? []) : [];
+if (!is_array($followedPosts) || $followedPosts === []) {
+	fwrite(STDERR, "demo failed: the followed hashtag timeline is empty\n");
+	exit(1);
+}
+
+echo "demo ok: ", count($posts), " post(s) on the public timeline, ", count($followedPosts), " on the followed hashtag timeline\n";

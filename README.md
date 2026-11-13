@@ -49,15 +49,15 @@ The full mapping, guarantees and the path to a real bridge are in
 
 | Area | Implemented here |
 | --- | --- |
-| Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public, home and hashtag timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
-| Social interactions | local favourites, private bookmarks, local mutes, private account lists and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
+| Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public, home, hashtag and followed-hashtag timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
+| Social interactions | local favourites, private bookmarks, local mutes, private account lists, private followed hashtags and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
 | Follow graph | incoming and outgoing edges, individual and shared inboxes, batched delivery, optional follow policy, local-to-local follows and local-follow home timeline |
 | Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` and local `Announce`/`Undo(Announce)` |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
 | AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (80 routes; 43 under the compatibility prefix) |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (84 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
@@ -66,7 +66,7 @@ The full mapping, guarantees and the path to a real bridge are in
 `/api/v1` now exposes a host-neutral local interaction surface: public
 account profiles with the viewer relationship, idempotent local
 follow/unfollow, the caller's notification page, unread count, dismiss and
-clear, and public hashtag timelines derived from post content. The richer interaction set (favourites, bookmarks, mutes, lists, polls
+clear, public hashtag timelines derived from post content, and private followed hashtags with their own timeline. The richer interaction set (favourites, bookmarks, mutes, lists, polls
 and the Mastodon-shaped variants) remains part of the optional
 Mastodon-compatible subset under its configurable prefix; both project the
 same local posts, follow graph and notification rows.
@@ -160,6 +160,7 @@ timeline
     2026-11-13 : 0.2.0 local social slice
     2026-11-13 : 0.3.0 neutral interactions
     2026-11-13 : 0.4.0 hashtag timelines
+    2026-11-13 : 0.5.0 followed hashtags
     next : Nextcloud cutover
          : standalone host
 ```
@@ -182,7 +183,7 @@ The canonical status, milestone table and open decisions are in the
 composer install
 composer check          # lint, core boundary, attribution, links, PHP tests
 php bin/core-demo       # real HTTP requests through the in-memory assembly
-php bin/export-routes   # the HTTP contract as JSON (80 routes)
+php bin/export-routes   # the HTTP contract as JSON (84 routes)
 php bin/export-openapi  # the same contract as OpenAPI 3.1
 
 cd ui
@@ -192,7 +193,8 @@ npm test
 npm run build
 ```
 
-`bin/core-demo` writes a post, reads the public timeline, records a follower,
+`bin/core-demo` writes a post, reads the public and tag timelines, follows a
+hashtag and reads its followed-hashtag timeline, records a follower,
 shows the expected 503 for a follow without delivery configuration, and
 demonstrates the documented errors for unconfigured inboxes, actors and
 WebFinger. It needs no database and no network.

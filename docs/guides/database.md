@@ -30,6 +30,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
 - `src/Domain/Federation/MuteSchema.php` → `social_mute` (private per-user mutes of local accounts or remote actor URLs, with a nullable expiry)
 - `src/Domain/Timeline/AccountListSchema.php` → `social_account_list` and `social_account_list_member` (private lists and their local account membership)
+- `src/Domain/Timeline/FollowedHashtagSchema.php` → `social_followed_hashtag` (private per-user followed tags)
 - `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
@@ -137,7 +138,14 @@ is idempotent and membership is shared across renames. It contains only known
 local account ids; deleting a list deletes its member rows, while an account
 deletion is a host cleanup concern. The exclusive flag is read by the
 local-follow home timeline to hide members' posts and boosts, not by a second
-follow table.
+follow table. `social_followed_hashtag` stores one normalized tag per local
+user with the original `created_at`; `(user_id, hashtag)` is the primary key,
+so following twice keeps the first timestamp, and `(user_id, created_at,
+hashtag)` serves the newest-first tag page. The core enforces a 100-tag limit
+per account so the followed-tag timeline query stays bounded. The table is
+private, does not federate and has no backfill; the timeline joins it against
+`social_post_hashtag`, so a host that imported posts without hashtag rows
+needs to backfill those rows before the followed-tag timeline can see them.
 
 Search has no table of its own: `PdoPostRepository` implements
 `PostSearchRepository` over the existing `social_post` rows, and the host's

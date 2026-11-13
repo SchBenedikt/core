@@ -17,7 +17,10 @@ use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
+use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
+use AlohaSocial\Core\Api\FollowedTagsHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowHashtagHandler;
 use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
@@ -85,6 +88,7 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -149,11 +153,14 @@ use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountListRepository;
+use AlohaSocial\Core\Domain\Timeline\FollowedHashtagRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\InMemoryAccountListRepository;
+use AlohaSocial\Core\Domain\Timeline\InMemoryFollowedHashtagRepository;
 use AlohaSocial\Core\Domain\Timeline\InMemoryHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\LocalFollowHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoAccountListRepository;
+use AlohaSocial\Core\Domain\Timeline\PdoFollowedHashtagRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
@@ -204,6 +211,7 @@ use AlohaSocial\Core\Service\Federation\RemoteThreadService;
 use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
+use AlohaSocial\Core\Service\FollowedHashtagService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
@@ -287,6 +295,7 @@ final readonly class Application
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
 		?AccountListRepository $accountListRepository = null,
+		?FollowedHashtagRepository $followedHashtagRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -317,6 +326,7 @@ final readonly class Application
 		$bookmarkRepository ??= new InMemoryBookmarkRepository();
 		$muteRepository ??= new InMemoryMuteRepository();
 		$accountListRepository ??= new InMemoryAccountListRepository();
+		$followedHashtagRepository ??= new InMemoryFollowedHashtagRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -356,6 +366,7 @@ final readonly class Application
 			bookmarkRepository: $bookmarkRepository,
 			muteRepository: $muteRepository,
 			accountListRepository: $accountListRepository,
+			followedHashtagRepository: $followedHashtagRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -417,6 +428,7 @@ final readonly class Application
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
 		?AccountListRepository $accountListRepository = null,
+		?FollowedHashtagRepository $followedHashtagRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -428,6 +440,7 @@ final readonly class Application
 		$blockRepository ??= new PdoBlockRepository($database);
 		$muteRepository ??= new PdoMuteRepository($database);
 		$accountListRepository ??= new PdoAccountListRepository($database);
+		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -449,6 +462,7 @@ final readonly class Application
 			bookmarkRepository: $bookmarkRepository ?? new PdoBookmarkRepository($database),
 			muteRepository: $muteRepository,
 			accountListRepository: $accountListRepository,
+			followedHashtagRepository: $followedHashtagRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -493,6 +507,7 @@ final readonly class Application
 		BookmarkRepository $bookmarkRepository,
 		MuteRepository $muteRepository,
 		AccountListRepository $accountListRepository,
+		FollowedHashtagRepository $followedHashtagRepository,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -524,6 +539,7 @@ final readonly class Application
 		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
+		$followedHashtagService = new FollowedHashtagService($followedHashtagRepository, $clock);
 		$remotePostFactory = new RemotePostFactory($clock);
 
 		$mediaService = $blobStore === null
@@ -751,6 +767,10 @@ final readonly class Application
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
 			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService))
 			->with(HashtagTimelineHandler::class, static fn (): HashtagTimelineHandler => new HashtagTimelineHandler($timelines, $mediaService))
+			->with(FollowedHashtagTimelineHandler::class, static fn (): FollowedHashtagTimelineHandler => new FollowedHashtagTimelineHandler($followedHashtagService, $timelines, $mediaService))
+			->with(FollowedTagsHandler::class, static fn (): FollowedTagsHandler => new FollowedTagsHandler($followedHashtagService))
+			->with(FollowHashtagHandler::class, static fn (): FollowHashtagHandler => new FollowHashtagHandler($followedHashtagService))
+			->with(UnfollowHashtagHandler::class, static fn (): UnfollowHashtagHandler => new UnfollowHashtagHandler($followedHashtagService))
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))

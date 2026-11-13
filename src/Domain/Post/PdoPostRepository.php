@@ -15,6 +15,9 @@ use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use PDOException;
 
+use function array_values;
+use function implode;
+
 /**
  * Post storage in SQL.
  *
@@ -203,6 +206,47 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'unlisted' => Visibility::Unlisted->value,
 			'hashtag' => $hashtag,
 		];
+
+		if ($before !== null) {
+			if ($beforeId === null) {
+				$sql .= ' AND p.published_at < :before';
+			} else {
+				$sql .= ' AND (p.published_at < :before OR (p.published_at = :before AND p.id < :before_id))';
+				$parameters['before_id'] = $beforeId;
+			}
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY p.published_at DESC, p.id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	public function followedHashtagTimeline(
+		array $hashtags,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		if ($hashtags === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [
+			'public' => Visibility::Public->value,
+			'unlisted' => Visibility::Unlisted->value,
+		];
+		foreach (array_values($hashtags) as $index => $hashtag) {
+			$name = 'hashtag_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $hashtag;
+		}
+
+		$sql = 'SELECT DISTINCT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
+			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
+			. ' WHERE p.deleted_at IS NULL AND p.visibility IN (:public, :unlisted)'
+			. ' AND h.hashtag IN (' . implode(', ', $placeholders) . ')';
 
 		if ($before !== null) {
 			if ($beforeId === null) {

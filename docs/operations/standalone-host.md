@@ -24,8 +24,10 @@ This document is the checklist that host is built against.
    bookmark/unbookmark and its list, boost/reblog and notification listing,
    dismiss/clear and unread counts are
    exposed. `social_account_list` and `social_account_list_member` are needed
-   only for the Mastodon list routes and the exclusive home filter. There is
-   no backfill. Existing listing-only `social_notification` tables need the
+   only for the Mastodon list routes and the exclusive home filter.
+   `social_followed_hashtag` is needed only for the neutral followed-tag routes
+   and `timelines.followed_tags`; the timeline also reads
+   `social_post_hashtag`. There is no backfill. Existing listing-only `social_notification` tables need the
    nullable `read_at` column and the unread index from
    `NotificationSchema`; old rows remain unread. Local search needs
    no additional table: it uses `social_post` and the host's account

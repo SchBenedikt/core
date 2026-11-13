@@ -92,9 +92,9 @@ guarded remote media, outbox backfill, thread/context fetching, local
 favourites, bookmarks, mutes, account lists, notifications, polls,
 boosts/replies, a disabled-by-default Mastodon compatibility subset (43
 routes), the AT Protocol publishing foundation with OAuth refresh and the
-authorization-code/PAR protocol client, public hashtag timelines, the durable
-queue and replay log, `Application::forHost()` and the read-only cutover
-validator.
+authorization-code/PAR protocol client, public hashtag timelines, private
+followed hashtags with their own timeline, the durable queue and replay log,
+`Application::forHost()` and the read-only cutover validator.
 
 `@alohasocial/ui` under `ui/` provides the `HostBridge` contract, a fake
 bridge, the read-only public/hashtag timeline and post-detail screens, and the

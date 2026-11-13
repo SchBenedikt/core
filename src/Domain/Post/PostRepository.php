@@ -62,6 +62,23 @@ interface PostRepository
 	): array;
 
 	/**
+	 * Publicly visible posts carrying any of the supplied normalized tags,
+	 * newest first, with the same id-aware cursor as the single-tag timeline.
+	 * A post with two followed tags appears once. Followers-only and direct
+	 * posts are never returned.
+	 *
+	 * @param list<string> $hashtags
+	 *
+	 * @return list<Post>
+	 */
+	public function followedHashtagTimeline(
+		array $hashtags,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array;
+
+	/**
 	 * Live posts of one author, with the same id-aware cursor as
 	 * {@see publicTimeline()}.
 	 *

@@ -29,6 +29,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Timeline\AccountListSchema;
+use AlohaSocial\Core\Domain\Timeline\FollowedHashtagSchema;
 use AlohaSocial\Core\Domain\Post\BookmarkSchema;
 use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
@@ -86,7 +87,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(80, $app->routes->routes());
+		self::assertCount(84, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -829,6 +830,56 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $app->handle(new Request('GET', '/@alice'))->status);
 	}
 
+	public function testForHostPersistsFollowedHashtagsAndServesTheirTimeline(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient());
+
+		$post = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'stored #sql', 'visibility' => 'public'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $post->status);
+
+		$follow = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/followed_tags',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['tag' => '#SQL'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $follow->status);
+		self::assertSame('sql', $follow->decodedBody()['tag']);
+		self::assertSame(1, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . FollowedHashtagSchema::TABLE,
+		));
+
+		$timeline = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/followed_tags',
+			userId: 'alice',
+		));
+		self::assertSame(200, $timeline->status);
+		self::assertSame(['sql'], $timeline->decodedBody()['tags']);
+		self::assertSame(
+			[$post->decodedBody()['post']['id']],
+			array_column($timeline->decodedBody()['posts'], 'id'),
+		);
+
+		$unfollow = $app->handle(new Request(
+			'DELETE',
+			'/api/v1/followed_tags/sql',
+			userId: 'alice',
+		));
+		self::assertSame(200, $unfollow->status);
+		self::assertSame(0, (int) $database->fetchValue(
+			'SELECT COUNT(*) FROM ' . FollowedHashtagSchema::TABLE,
+		));
+	}
+
 	private function database(): Connection
 	{
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
@@ -845,6 +896,7 @@ final class ApplicationHostTest extends TestCase
 		BlockSchema::create($database);
 		MuteSchema::create($database);
 		AccountListSchema::create($database);
+		FollowedHashtagSchema::create($database);
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);
 		AtprotoPublicationSchema::create($database);

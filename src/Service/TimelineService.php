@@ -75,6 +75,30 @@ final class TimelineService
 		return $this->posts->hashtagTimeline($normalized, $this->clamp($limit), $this->cursor($before));
 	}
 
+	/**
+	 * Public posts carrying any of the caller's followed tags.
+	 *
+	 * The tag list is already normalized and owned by the caller. An empty
+	 * list is an empty timeline, not an error.
+	 *
+	 * @param list<string> $hashtags
+	 *
+	 * @return list<Post>
+	 *
+	 * @throws InvalidCursorException when `before` is not a timestamp
+	 */
+	public function followedTags(
+		array $hashtags,
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+	): array {
+		return $this->posts->followedHashtagTimeline(
+			$hashtags,
+			$this->clamp($limit),
+			$this->cursor($before),
+		);
+	}
+
 	public function clamp(int $limit): int
 	{
 		return max(1, min(self::MAX_LIMIT, $limit));

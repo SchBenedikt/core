@@ -204,6 +204,7 @@ The core owns the schema classes, not the migration mechanism:
 - `BookmarkSchema` → `social_bookmark` (private per-user bookmarks; `(user_id, post_id)` primary key, newest-first cursor index)
 - `MuteSchema` → `social_mute` (private per-user mutes of local accounts or remote actor URLs; `(user_id, actor_id)` primary key, nullable `expires_at`, newest-first cursor index)
 - `AccountListSchema` → `social_account_list` and `social_account_list_member` (private per-user lists and their known-local-account membership; `(list_id, account_id)` primary key)
+- `FollowedHashtagSchema` → `social_followed_hashtag` (private per-user followed tags; `(user_id, hashtag)` primary key and newest-first cursor index)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
@@ -251,7 +252,11 @@ job, and there is no backfill. For private lists and their list timeline,
 create `social_account_list` and `social_account_list_member` from
 `AccountListSchema::statements()` before exposing the list routes or the
 exclusive home-timeline filter; deleting a list removes its member rows and
-there is no backfill or remote membership. For
+there is no backfill or remote membership. For followed hashtags, create
+`social_followed_hashtag` from `FollowedHashtagSchema::statements()` before
+exposing `followed_tags` or `timelines.followed_tags`; the table is private
+and has no backfill, and the timeline additionally needs
+`social_post_hashtag` rows for the posts it should match. For
 local boosts/reblogs, create `social_boost`
 from `BoostSchema::statements()` before exposing the reblog routes or status
 counts; the unique pair is the idempotency boundary, and a soft-deleted post

@@ -18,6 +18,9 @@ use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
+use AlohaSocial\Core\Api\FollowedTagsHandler;
+use AlohaSocial\Core\Api\FollowHashtagHandler;
 use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
 use AlohaSocial\Core\Api\FollowersCollectionHandler;
@@ -40,6 +43,7 @@ use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
+use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
@@ -229,12 +233,44 @@ final class Routes
 				summary: 'Public posts carrying a hashtag, newest first.',
 			),
 			new Route(
+				name: 'timelines.followed_tags',
+				method: 'GET',
+				path: $base . '/timelines/followed_tags',
+				handler: FollowedHashtagTimelineHandler::class,
+				requiresAuth: true,
+				summary: 'Posts carrying any hashtag the signed-in account follows, newest first.',
+			),
+			new Route(
 				name: 'timelines.home',
 				method: 'GET',
 				path: $base . '/timelines/home',
 				handler: HomeTimelineHandler::class,
 				requiresAuth: true,
 				summary: 'The signed-in account\'s home timeline.',
+			),
+			new Route(
+				name: 'followed_tags.list',
+				method: 'GET',
+				path: $base . '/followed_tags',
+				handler: FollowedTagsHandler::class,
+				requiresAuth: true,
+				summary: 'The signed-in account\'s followed hashtags, newest first.',
+			),
+			new Route(
+				name: 'followed_tags.follow',
+				method: 'POST',
+				path: $base . '/followed_tags',
+				handler: FollowHashtagHandler::class,
+				requiresAuth: true,
+				summary: 'Follow a hashtag; following it again is a successful no-op.',
+			),
+			new Route(
+				name: 'followed_tags.unfollow',
+				method: 'DELETE',
+				path: $base . '/followed_tags/{tag}',
+				handler: UnfollowHashtagHandler::class,
+				requiresAuth: true,
+				summary: 'Unfollow a hashtag; an absent follow is a successful no-op.',
 			),
 			new Route(
 				name: 'followers.list',

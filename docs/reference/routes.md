@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 80 routes in total; 43 use the
+defaults to `/api/mastodon/v1`). There are 84 routes in total; 43 use the
 compatibility prefix.
 
 | Name | Method | Path | Auth | Rate limit |
@@ -25,7 +25,11 @@ compatibility prefix.
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
 | `timelines.tag` | `GET` | `/api/v1/timelines/tag/{tag}` | no | — |
+| `timelines.followed_tags` | `GET` | `/api/v1/timelines/followed_tags` | yes | — |
 | `timelines.home` | `GET` | `/api/v1/timelines/home` | yes | — |
+| `followed_tags.list` | `GET` | `/api/v1/followed_tags` | yes | — |
+| `followed_tags.follow` | `POST` | `/api/v1/followed_tags` | yes | — |
+| `followed_tags.unfollow` | `DELETE` | `/api/v1/followed_tags/{tag}` | yes | — |
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
@@ -339,13 +343,47 @@ other than letters, digits or underscores is `400 invalid_tag`. The public timel
 contains local posts; the home timeline contains the caller's own local posts,
 remote posts and boosts from followed remote actors, and live local posts from
 followed local accounts, with `kind`, `object_id`, `object_author_id` and
-`boosted_by` on each entry. A blocked followed local account is omitted until
+`boosted_by` on each entry. The private followed-hashtag page is described
+below. A blocked followed local account is omitted until
 it is unblocked. `direct` posts are not part of the local half. Local posts carry the same
 `attachments` array as the single-post response. A remote entry carries the
 same local-original/thumbnail shape for successfully imported federated
 images, and omits the key when it has none. See
 [posts and timelines](../guides/posts-and-timelines.md) and
 [media](../guides/media.md#remote-attachments-from-incoming-posts).
+
+### Followed hashtags
+
+```http
+GET /api/v1/followed_tags?limit=20&before=2026-11-11T10:00:00Z&before_tag=devops
+POST /api/v1/followed_tags
+Content-Type: application/json
+
+{"tag": "#DevOps"}
+
+DELETE /api/v1/followed_tags/devops
+GET /api/v1/timelines/followed_tags?limit=20&before=2026-11-11T10:00:00Z
+```
+
+Follows are private to the signed-in account and persist in
+`social_followed_hashtag`. `POST` normalizes the tag (one optional leading
+`#`, lower case, letters/digits/underscores) and answers `201` for a new row
+or `200` for an existing one with its original `created_at`; both carry
+`{"tag": "devops", "created_at": "…"}`. `DELETE` is idempotent and answers
+`{"tag": "devops"}`. `GET /api/v1/followed_tags` returns the caller's tags
+newest first in `{"tags": [{"tag": "…", "created_at": "…"}]}`; `limit`
+defaults to 20 and is clamped to 1–40, `before` is the exclusive `created_at`
+and `before_tag` breaks an equal-timestamp tie. An account may follow at most
+100 tags; the next new follow is `400 followed_tag_limit`.
+
+`GET /api/v1/timelines/followed_tags` returns
+`{"tags": ["devops", …], "posts": […]}` for every public or unlisted post
+carrying any followed tag. It uses the same `limit` (1–40) and exclusive
+`before` timestamp cursor as the public tag timeline, and a post carrying two
+followed tags appears once. Followers-only, direct and deleted posts never
+appear. With no followed tags the page is empty rather than an error. A
+malformed `before` is `400 invalid_cursor`; a malformed tag or `before_tag` is
+`400 invalid_tag`.
 
 ## Followers
 

@@ -100,6 +100,16 @@ exact (`#devops` does not match `#devops_extra`), and followers-only, direct
 and deleted posts never appear. It uses the same `limit` and `before` rules as
 the other timelines; an empty or malformed tag is `400 invalid_tag`.
 
+`GET /api/v1/followed_tags` lists the caller's private followed tags;
+`POST /api/v1/followed_tags` follows one (idempotently) and `DELETE
+/api/v1/followed_tags/{tag}` unfollows it. Tags are normalized exactly like
+post tags, the list is newest-first with an exclusive `before`/`before_tag`
+cursor, and an account may follow at most 100 tags. `GET
+/api/v1/timelines/followed_tags` then returns public and unlisted posts
+carrying any followed tag, using the same `limit` and `before` cursor as the
+public tag timeline. A post with two followed tags is one entry, not two; the
+response repeats the followed tag list next to `posts`.
+
 `GET /api/v1/timelines/home` is the combined repository page: the caller's own
 local posts and boosts plus live remote posts/boosts from followed remote
 actors, plus posts and boosts from followed local actors, minus actors the

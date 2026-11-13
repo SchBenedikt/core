@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-13
+
+### Added
+
+- Private followed hashtags: `GET`, `POST /api/v1/followed_tags` and
+  `DELETE /api/v1/followed_tags/{tag}` list, follow and unfollow normalized
+  tags for the signed-in account. Follows are idempotent, scoped to the
+  caller and kept in `social_followed_hashtag`; a duplicate follow keeps its
+  original timestamp, an absent unfollow is a no-op, malformed input is `400
+  invalid_tag`, and the bounded 100-tag limit answers `400
+  followed_tag_limit`. `GET /api/v1/timelines/followed_tags` returns the
+  public/unlisted posts carrying any followed tag, newest first, with the same
+  limit and exclusive `before` cursor as the other timelines. A post with two
+  followed tags appears once, and only exact matches count. The tag page uses
+  the exclusive `before`/`before_tag` pair. Tests cover both repositories, the
+  API, SQL host wiring and the cursor/visibility rules; `core-demo` follows
+  `#demo`, reads the timeline and unfollows it again.
+
 ## [0.4.0] - 2026-11-13
 
 ### Added

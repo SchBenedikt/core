@@ -15,6 +15,7 @@ use DateTimeImmutable;
 use function array_fill;
 use function array_fill_keys;
 use function array_filter;
+use function array_intersect;
 use function array_slice;
 use function array_values;
 use function count;
@@ -105,6 +106,29 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& $post->visibility->isPubliclyVisible()
 					&& in_array($hashtag, Hashtags::extract($post->content), true),
+			)),
+			$limit,
+			$before,
+			$beforeId,
+		);
+	}
+
+	public function followedHashtagTimeline(
+		array $hashtags,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		if ($hashtags === []) {
+			return [];
+		}
+
+		return $this->slice(
+			array_values(array_filter(
+				$this->posts,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& $post->visibility->isPubliclyVisible()
+					&& array_intersect($hashtags, Hashtags::extract($post->content)) !== [],
 			)),
 			$limit,
 			$before,

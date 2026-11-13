@@ -478,6 +478,45 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->hashtagTimeline('missing', 10));
 	}
 
+	public function testFollowedHashtagTimelineMatchesAnyTagOnceAndUsesTheSharedCursor(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('m1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: '#devops'));
+		$repository->insert($this->post('m2', 'alice', Visibility::Public, '2026-11-11T10:01:00Z', content: '#php'));
+		$repository->insert($this->post('m3', 'alice', Visibility::Public, '2026-11-11T10:02:00Z', content: '#devops and #php'));
+		$repository->insert($this->post('m4', 'bob', Visibility::Unlisted, '2026-11-11T10:03:00Z', content: '#php unlisted'));
+		$repository->insert($this->post('m5', 'alice', Visibility::Followers, '2026-11-11T10:04:00Z', content: '#devops followers'));
+		$repository->insert($this->post('m6', 'alice', Visibility::Public, '2026-11-11T10:05:00Z', content: '#devops_extra'));
+		$repository->insert($this->post('m7', 'alice', Visibility::Public, '2026-11-11T10:06:00Z', content: '#php gone'));
+		$repository->softDelete('m7', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['m4', 'm3', 'm2', 'm1'],
+			array_column($repository->followedHashtagTimeline(['devops', 'php'], 10), 'id'),
+		);
+		self::assertSame(
+			['m4', 'm3'],
+			array_column($repository->followedHashtagTimeline(['devops', 'php'], 2), 'id'),
+		);
+		self::assertSame(
+			['m3', 'm2', 'm1'],
+			array_column(
+				$repository->followedHashtagTimeline(
+					['devops', 'php'],
+					10,
+					Time::parse('2026-11-11T10:03:00Z'),
+					'm4',
+				),
+				'id',
+			),
+		);
+		self::assertSame(
+			['m6'],
+			array_column($repository->followedHashtagTimeline(['devops_extra'], 10), 'id'),
+		);
+		self::assertSame([], $repository->followedHashtagTimeline([], 10));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();
