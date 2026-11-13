@@ -37,6 +37,8 @@ final class PostTest extends TestCase
 			'published_at' => '2026-11-11T10:00:00Z',
 			'deleted_at' => null,
 			'poll' => null,
+			'in_reply_to_id' => null,
+			'recipient_ids' => [],
 		], $post->toArray());
 	}
 

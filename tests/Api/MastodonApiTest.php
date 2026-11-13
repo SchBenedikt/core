@@ -1357,6 +1357,90 @@ final class MastodonApiTest extends TestCase
 		))->decodedBody()['posts']);
 	}
 
+	public function testBlockingALocalFollowedAccountHidesItsPostsUntilUnblock(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$status = $this->createStatus($app, ['status' => 'hide me'], userId: 'bob')->decodedBody();
+		$bobActor = 'https://social.example/@bob';
+
+		$this->followAccount($app, 'bob');
+		self::assertSame([$status['id']], array_column($app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		))->decodedBody()['posts'], 'id'));
+
+		$blocked = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/blocks',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => $bobActor], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $blocked->status);
+		self::assertSame($bobActor, $blocked->decodedBody()['block']['actor']);
+
+		$hidden = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		));
+		self::assertSame(200, $hidden->status);
+		self::assertSame([], $hidden->decodedBody()['posts']);
+
+		$blockId = $blocked->decodedBody()['block']['id'];
+		self::assertSame(204, $app->handle(new Request(
+			'DELETE',
+			'/api/v1/blocks/' . $blockId,
+			userId: 'alice',
+		))->status);
+
+		$restored = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			userId: 'alice',
+		));
+		self::assertSame([$status['id']], array_column($restored->decodedBody()['posts'], 'id'));
+	}
+
+	public function testAccountStatusesRespectLocalFollowerVisibility(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$status = $this->createStatus($app, [
+			'status' => 'followers only',
+			'visibility' => 'private',
+		], userId: 'bob')->decodedBody();
+		$path = MastodonApiConfig::DEFAULT_PREFIX . '/accounts/bob/statuses';
+		$detailPath = MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'];
+
+		self::assertSame([], $app->handle(new Request('GET', $path))->decodedBody());
+		self::assertSame([], $app->handle(new Request('GET', $path, userId: 'alice'))->decodedBody());
+		self::assertSame(404, $app->handle(new Request('GET', $detailPath, userId: 'alice'))->status);
+
+		$this->followAccount($app, 'bob');
+		self::assertSame(200, $app->handle(new Request('GET', $detailPath, userId: 'alice'))->status);
+		self::assertSame(200, $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $status['id'] . '/favourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		))->status);
+
+		$aliceStatuses = $app->handle(new Request('GET', $path, userId: 'alice'))->decodedBody();
+		self::assertSame([$status['id']], array_column($aliceStatuses, 'id'));
+		self::assertTrue($aliceStatuses[0]['favourited']);
+		self::assertSame([$status['id']], array_column(
+			$app->handle(new Request('GET', $path, userId: 'bob'))->decodedBody(),
+			'id',
+		));
+		self::assertSame([], $app->handle(new Request('GET', $path, userId: 'carol'))->decodedBody());
+		self::assertSame([], $app->handle(new Request('GET', $path))->decodedBody());
+
+		$this->followAccount($app, 'bob', 'unfollow');
+		self::assertSame([], $app->handle(new Request('GET', $path, userId: 'alice'))->decodedBody());
+		self::assertSame(404, $app->handle(new Request('GET', $detailPath, userId: 'alice'))->status);
+	}
+
 	public function testLocalFollowRejectsSelfUnknownAndMissingAuthOrScope(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -1620,17 +1704,64 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('search_not_configured', $following->decodedBody()['error']['code']);
 	}
 
-	public function testDirectVisibilityAndMissingInputAreRejected(): void
+	public function testDirectVisibilityWithoutARecipientAndMissingInputAreRejected(): void
 	{
 		$app = $this->app();
 
 		$direct = $this->createStatus($app, ['status' => 'private', 'visibility' => 'direct']);
 		self::assertSame(422, $direct->status);
-		self::assertSame('unsupported_parameter', $direct->decodedBody()['error']['code']);
+		self::assertSame('validation_failed', $direct->decodedBody()['error']['code']);
 
 		$missing = $this->createStatus($app, []);
 		self::assertSame(422, $missing->status);
 		self::assertSame('validation_failed', $missing->decodedBody()['error']['code']);
+	}
+
+	public function testDirectStatusesUseLocalMentionsAndRepliesExposeTheirTarget(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+
+		$direct = $this->createStatus($app, [
+			'status' => '@bob the secret',
+			'visibility' => 'direct',
+		]);
+		self::assertSame(200, $direct->status);
+		$body = $direct->decodedBody();
+		self::assertSame('direct', $body['visibility']);
+		self::assertSame(['bob'], array_column($body['mentions'], 'id'));
+
+		self::assertSame(200, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $body['id'],
+			userId: 'bob',
+		))->status);
+		self::assertSame(404, $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . $body['id'],
+			userId: 'carol',
+		))->status);
+
+		$explicit = $this->createStatus($app, [
+			'status' => 'explicit audience',
+			'visibility' => 'direct',
+			'recipient_ids' => ['bob'],
+		])->decodedBody();
+		self::assertSame(['bob'], array_column($explicit['mentions'], 'id'));
+
+		// A full remote handle must not be reduced to the known local id
+		// `carol`; direct delivery in this slice only addresses local ids.
+		self::assertSame(422, $this->createStatus($app, [
+			'status' => '@bob@carol',
+			'visibility' => 'direct',
+		])->status);
+
+		$parent = $this->createStatus($app, ['status' => 'parent'], userId: 'bob')->decodedBody();
+		$reply = $this->createStatus($app, [
+			'status' => 'a reply',
+			'in_reply_to_id' => $parent['id'],
+		])->decodedBody();
+		self::assertSame($parent['id'], $reply['in_reply_to_id']);
+		self::assertSame('bob', $reply['in_reply_to_account_id']);
 	}
 
 	public function testAPrivateStatusIsNotPubliclyReadable(): void

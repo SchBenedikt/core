@@ -251,6 +251,38 @@ final class LocalRelationshipService
 	}
 
 	/**
+	 * Whether an id belongs to a local account the host directory knows.
+	 * Direct-post recipients use this check before a post is stored.
+	 */
+	public function hasLocalActor(string $userId): bool
+	{
+		$userId = trim($userId);
+
+		return $userId !== '' && $this->actors->has($userId);
+	}
+
+	/**
+	 * Whether $followerId follows $targetId through a local follower edge.
+	 *
+	 * The check deliberately needs no directory lookup: both ids are local
+	 * account ids and the edge stores the derived actor URL. A stale or
+	 * deleted target simply has no edge and answers false.
+	 */
+	public function isLocalFollower(string $followerId, string $targetId): bool
+	{
+		$followerId = trim($followerId);
+		$targetId = trim($targetId);
+		if ($followerId === '' || $targetId === '') {
+			return false;
+		}
+
+		return $this->followers->findByActor(
+			$targetId,
+			$this->activities->actorId($followerId),
+		)?->local === true;
+	}
+
+	/**
 	 * The local actors one account follows, for the public following view.
 	 *
 	 * @return list<string>

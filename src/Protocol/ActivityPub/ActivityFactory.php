@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Protocol\ActivityPub;
 
+use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -178,6 +179,11 @@ final class ActivityFactory
 			$note['summary'] = $post->contentWarning;
 		}
 
+		if ($post->inReplyToId !== null) {
+			$note['inReplyTo'] = $this->baseUrl()
+				. '/api/v1/posts/' . rawurlencode($post->inReplyToId);
+		}
+
 		return [
 			'@context' => self::CONTEXT,
 			'id' => $noteId . '/activity',
@@ -262,9 +268,48 @@ final class ActivityFactory
 				'cc' => [],
 			],
 			Visibility::Direct => [
-				'to' => [],
+				'to' => array_map(fn (string $recipientId): string => $this->actorId($recipientId), $post->recipientIds),
 				'cc' => [],
 			],
 		};
+	}
+
+	public function blockId(Block $block): string
+	{
+		return $this->baseUrl() . '/api/v1/blocks/' . rawurlencode($block->id) . '/block';
+	}
+
+	/**
+	 * A remote actor is blocked for one local account. The object is the
+	 * actor URL, not a local block id, and `to` addresses that actor so a
+ * peer can match the activity to its own account.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function blockActor(Block $block): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->blockId($block),
+			'type' => 'Block',
+			'actor' => $this->actorId($block->localUserId),
+			'object' => $block->actorId,
+			'to' => [$block->actorId],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function undoBlock(Block $block): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->blockId($block) . '/undo',
+			'type' => 'Undo',
+			'actor' => $this->actorId($block->localUserId),
+			'object' => $this->blockActor($block),
+			'to' => [$block->actorId],
+		];
 	}
 }

@@ -139,6 +139,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->insert($this->post('a1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
 		$repository->insert($this->post('a2', 'alice', Visibility::Public, '2026-11-11T10:02:00Z'));
 		$repository->insert($this->post('a3', 'alice', Visibility::Followers, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post('a4', 'alice', Visibility::Direct, '2026-11-11T10:04:00Z'));
 		$repository->insert($this->post('b1', 'bob', Visibility::Public, '2026-11-11T10:02:00Z'));
 
 		self::assertSame(
@@ -147,7 +148,11 @@ abstract class PostRepositoryTestCase extends TestCase
 		);
 		self::assertSame(
 			['a1'],
-			array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10, $time, 'a2')),
+			array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10, $time, 'a2', includeFollowers: true)),
+		);
+		self::assertSame(
+			['a3', 'a2', 'a1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10, includeFollowers: true)),
 		);
 	}
 
@@ -192,16 +197,30 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame(0, $repository->authorPostCount('nobody'));
 	}
 
-	public function testOwnTimelineIncludesNonPublicPostsButNothingFromOthers(): void
+	public function testOwnTimelineIncludesNonPublicPostsAndAddressedDirectPosts(): void
 	{
 		$repository = $this->repository();
 		$repository->insert($this->post('own-public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
 		$repository->insert($this->post('own-private', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
 		$repository->insert($this->post('other-private', 'bob', Visibility::Followers, '2026-11-11T10:02:00Z'));
 		$repository->insert($this->post('other-public', 'bob', Visibility::Public, '2026-11-11T10:03:00Z'));
+		$repository->insert($this->post(
+			'to-alice',
+			'bob',
+			Visibility::Direct,
+			'2026-11-11T10:04:00Z',
+			recipientIds: ['alice'],
+		));
+		$repository->insert($this->post(
+			'to-carol',
+			'bob',
+			Visibility::Direct,
+			'2026-11-11T10:05:00Z',
+			recipientIds: ['carol'],
+		));
 
 		self::assertSame(
-			['own-private', 'own-public'],
+			['to-alice', 'own-private', 'own-public'],
 			array_map(
 				static fn (Post $post): string => $post->id,
 				$repository->ownTimeline('alice', 10),
@@ -210,11 +229,42 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->ownTimeline('nobody', 10));
 	}
 
+	public function testDirectRecipientsAndReplyTargetRoundTrip(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post(
+			'parent',
+			'alice',
+			Visibility::Public,
+			'2026-11-11T10:00:00Z',
+		));
+		$repository->insert($this->post(
+			'reply',
+			'bob',
+			Visibility::Direct,
+			'2026-11-11T10:01:00Z',
+			recipientIds: ['carol', 'alice'],
+			inReplyToId: 'parent',
+		));
+
+		$post = $repository->find('reply');
+		self::assertNotNull($post);
+		self::assertSame(['carol', 'alice'], $post->recipientIds);
+		self::assertSame('parent', $post->inReplyToId);
+		self::assertSame('parent', $post->toArray()['in_reply_to_id']);
+		// Soft delete keeps the conversation metadata for moderation and
+		// tombstone rendering.
+		$repository->softDelete('reply', Time::parse('2026-11-11T11:00:00Z'));
+		self::assertSame(['carol', 'alice'], $repository->find('reply')?->recipientIds);
+		self::assertSame('parent', $repository->find('reply')?->inReplyToId);
+	}
+
 	public function testTimelineForAuthorsIncludesTheirLivePostsOnly(): void
 	{
 		$repository = $this->repository();
 		$repository->insert($this->post('a-public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
 		$repository->insert($this->post('a-private', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('a-direct', 'alice', Visibility::Direct, '2026-11-11T10:01:30Z'));
 		$repository->insert($this->post('b-private', 'bob', Visibility::Followers, '2026-11-11T10:02:00Z'));
 		$repository->insert($this->post('c-public', 'carol', Visibility::Public, '2026-11-11T10:03:00Z'));
 		$repository->insert($this->post('a-gone', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
@@ -402,6 +452,8 @@ abstract class PostRepositoryTestCase extends TestCase
 		array $attachmentIds = [],
 		?string $content = null,
 		?Poll $poll = null,
+		array $recipientIds = [],
+		?string $inReplyToId = null,
 	): Post {
 		return new Post(
 			$id,
@@ -413,6 +465,8 @@ abstract class PostRepositoryTestCase extends TestCase
 			null,
 			$attachmentIds,
 			$poll,
+			$recipientIds,
+			$inReplyToId,
 		);
 	}
 }

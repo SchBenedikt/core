@@ -130,10 +130,15 @@ final class MastodonService
 		?string $maxId,
 		?string $sinceId,
 		?string $minId,
+		?string $viewerId = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($accountId);
 		[$before, $beforeId, $after, $afterId] = $this->cursor($maxId, $sinceId ?? $minId);
+
+		$includeFollowers = $viewerId !== null
+			&& ($viewerId === $accountId
+				|| $this->relationships?->isLocalFollower($viewerId, $accountId) === true);
 
 		$posts = $this->posts->authorTimeline(
 			$accountId,
@@ -142,18 +147,20 @@ final class MastodonService
 			$beforeId,
 			$after,
 			$afterId,
+			$includeFollowers,
 		);
 
-		return $this->presenter->statuses($posts);
+		return $this->presenter->statuses($posts, $viewerId);
 	}
 
 	/**
 	 * The public profile of one local account.
 	 *
 	 * The shape is deliberately the same minimal account used by statuses and
-	 * notifications; profiles stay host-owned. Without a local directory there
-	 * is no way to tell a local id from a remote one, so the host has opted out
-	 * of that check and the projection is returned for the requested id.
+	 * notifications; profile detail fields stay host-owned. Without a local
+	 * directory there is no way to tell a local id from a remote one, so the
+	 * host has opted out of that check and the projection is returned for the
+	 * requested id.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -330,6 +337,8 @@ final class MastodonService
 		array $mediaIds,
 		?string $idempotencyKey,
 		?array $poll = null,
+		?string $inReplyToId = null,
+		array $recipientIds = [],
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -348,6 +357,8 @@ final class MastodonService
 				attachmentIds: $mediaIds,
 				postId: $postId,
 				poll: $pollModel,
+				inReplyToId: $inReplyToId,
+				recipientIds: $recipientIds,
 			));
 		} catch (DatabaseException $exception) {
 			// A repeated idempotency key maps to the same deterministic post id.

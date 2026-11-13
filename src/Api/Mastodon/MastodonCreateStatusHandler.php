@@ -22,9 +22,11 @@ use function is_string;
  * `POST {mastodon.prefix}/statuses`
  *
  * Accepts the JSON and form encodings Mastodon clients use. `private` maps to
- * the core's followers-only visibility; `direct` is refused because the core
- * has no recipient model yet. `Idempotency-Key` becomes a deterministic post
- * id, so a retry returns the same status instead of creating a second post.
+ * the core's followers-only visibility and `direct` uses the local recipient
+ * model. Direct recipients come from the `recipient_ids` extension or from
+ * `@local-id` mentions in the status text. `Idempotency-Key` becomes a
+ * deterministic post id, so a retry returns the same status instead of
+ * creating a second post.
  */
 final class MastodonCreateStatusHandler extends MastodonHandler
 {
@@ -72,12 +74,16 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			$ids[] = $mediaId;
 		}
 
-		if (($body['in_reply_to_id'] ?? null) !== null && $body['in_reply_to_id'] !== '') {
-			throw new MastodonRequestException(
-				422,
-				'unsupported_parameter',
-				'in_reply_to_id is not available in this compatibility slice.',
-			);
+		$inReplyToId = $body['in_reply_to_id'] ?? null;
+		if ($inReplyToId !== null && !is_string($inReplyToId)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'in_reply_to_id must be a string or null.');
+		}
+
+		$inReplyToId = $inReplyToId === null || trim($inReplyToId) === '' ? null : trim($inReplyToId);
+
+		$recipientIds = $this->recipientIds($body['recipient_ids'] ?? []);
+		if ($visibility === Visibility::Direct && $recipientIds === []) {
+			$recipientIds = $this->mentionedLocalIds($content);
 		}
 
 		$poll = $body['poll'] ?? null;
@@ -95,6 +101,8 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			$ids,
 			$idempotencyKey === '' ? null : $idempotencyKey,
 			$poll,
+			$inReplyToId,
+			$recipientIds,
 		));
 	}
 
@@ -108,16 +116,47 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			'public' => Visibility::Public,
 			'unlisted' => Visibility::Unlisted,
 			'private' => Visibility::Followers,
-			'direct' => throw new MastodonRequestException(
-				422,
-				'unsupported_parameter',
-				'direct visibility is not available in this compatibility slice.',
-			),
+			'direct' => Visibility::Direct,
 			default => throw new MastodonRequestException(
 				422,
 				'validation_failed',
 				'visibility must be one of public, unlisted, private or direct.',
 			),
 		};
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function recipientIds(mixed $value): array
+	{
+		if (!is_array($value) || !array_is_list($value)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'recipient_ids must be a list.');
+		}
+
+		$ids = [];
+		foreach ($value as $id) {
+			if (!is_string($id) || trim($id) === '') {
+				throw new MastodonRequestException(422, 'validation_failed', 'recipient_ids must contain strings.');
+			}
+
+			$ids[] = trim($id);
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * Local handles are the only mentions the core can address. A full
+	 * `@user@remote.example` handle is deliberately not reduced to `user`:
+	 * that would silently deliver a direct post to a different local account.
+	 *
+	 * @return list<string>
+	 */
+	private function mentionedLocalIds(string $content): array
+	{
+		preg_match_all('/(?<![\w.@])@([A-Za-z0-9_][A-Za-z0-9_.-]*)(?![\w.@-])/u', $content, $matches);
+
+		return array_values(array_unique($matches[1] ?? []));
 	}
 }

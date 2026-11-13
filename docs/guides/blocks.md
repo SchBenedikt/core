@@ -1,7 +1,8 @@
 # Blocks
 
-A block is a private decision by one local account to hide a remote actor's
-posts and boosts from its own home timeline. It is not a server-wide
+A block is a private decision by one local account to hide an actor's posts
+and boosts from its own home timeline. The actor may be remote or local; both
+are stored as the same absolute actor URL. A block is not a server-wide
 defederation rule and it does not alter another local account's follow graph.
 
 ## What a block does
@@ -17,12 +18,22 @@ defederation rule and it does not alter another local account's follow graph.
   public following collection; the reader simply stops seeing its content.
 - It has no effect on the public timeline, because that timeline only contains
   local posts.
-- It does not send an ActivityPub `Block` to the peer. The remote server is not
-  told, and inbound activities are still stored for other local followers.
+- For a **remote** actor, it queues one signed ActivityPub `Block` to the
+  actor's individual inbox; `DELETE` queues `Undo(Block)`. The local block is
+  committed first, so a peer that is offline or publishes no inbox cannot make
+  the block or its removal fail. The queue retries like any other delivery.
+- For a followed **local** account, it omits that account's local posts from
+  the caller's home timeline. The follow edge stays in place; unblocking makes
+  the posts visible again. The local actor URL is derived by the host from the
+  local account id (for example `https://social.example/@bob`). Local blocks
+  send no ActivityPub activity; the relationship is already local.
+- Inbound activities from other local followers are still stored; one
+  reader's block does not erase shared content.
 
-The home-timeline filter is applied inside the combined repository, before the
-page limit. A block therefore cannot make a page short or make the cursor skip
-an entry: the local and remote halves are filtered and sorted as one query.
+The remote home-timeline filter is applied inside the combined repository,
+before the page limit. The local half is filtered in the local-follow lookup
+before its page is merged. A block therefore cannot make a page short or make
+the cursor skip an entry: both halves are filtered and sorted as one query.
 
 ## API
 
@@ -64,7 +75,10 @@ deliberately does not reveal that another account owns the id.
 The actor must be an absolute `http(s)` URL of at most 255 characters. A bare
 handle is rejected with `422 validation_failed` because it would not match the
 stored ActivityPub actor id. Blocking an actor hides both its own posts/boosts
-and any boost of its content by a non-blocked actor.
+and any boost of its content by a non-blocked actor. A host that wants to
+block a local account uses that account's absolute local actor URL (for
+example `https://social.example/@bob`); the same idempotent create/list/delete
+routes apply.
 
 ## Storage
 
@@ -75,7 +89,7 @@ The table is `social_block`, defined by
 | --- | --- |
 | `id` | local row id, used by `DELETE` |
 | `local_user_id` | the account whose timeline is filtered |
-| `actor_id` | the remote actor URL |
+| `actor_id` | the absolute actor URL, remote or local |
 | `blocked_at` | canonical UTC timestamp, newest first in the list |
 
 `(local_user_id, actor_id)` is unique. Two accounts may block the same actor;
@@ -97,12 +111,24 @@ list:
 
 A host may provide both; they answer different questions.
 
+Blocking a local account is local-only: no ActivityPub `Block` is created for
+it, and another local account may still follow and see that account. The same
+absolute actor URL format is used for both kinds of target.
+
+## Federation details
+
+`BlockService` resolves the remote actor document through
+`ActorInboxResolver` and queues `Block` with `to: [actor]`; the activity object
+is the actor URL, not the local block row id. `Undo(Block)` wraps the original
+`Block` activity. If the actor document is unavailable, has a mismatching
+`id`, or has no valid inbox, the local block remains and no job is queued. A
+later `DELETE` still removes the local row and attempts its own `Undo`.
+
 ## What is not implemented
 
-- blocking local accounts or hiding local posts from a local-to-local follow
-  graph;
-- sending an ActivityPub `Block`/`Undo(Block)` to the remote server;
 - a public block collection;
+- applying an incoming `Block` as a local moderation rule (the optional
+  instance-wide `BlockedActorPolicy` is the host seam for that);
 - server-wide defederation management beyond the optional policy seam;
 - backfilling a block list into the home timeline (the filter is evaluated on
   every read).

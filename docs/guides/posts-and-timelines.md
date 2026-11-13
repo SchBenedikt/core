@@ -13,35 +13,56 @@ boosts received from remote actors that the reader follows.
 | `content` | yes | trimmed, 1–5000 characters after trimming |
 | `content_warning` | no | trimmed; an empty string means "none"; at most 200 characters |
 | `visibility` | no | `public` (default), `unlisted`, `followers`, `direct` |
+| `recipient_ids` | no | list of known local account ids; only meaningful for `direct` |
+| `in_reply_to_id` | no | id of a live local post the author may read |
 
 Validation lives in `PostService::validate()` and returns one message per
 field, which the API exposes as `error.fields`.
 
-`direct` is refused with 422: a direct post needs recipients, and recipients
-are part of a follow graph that only tracks remote followers so far. Refusing
-is honest; sending an empty audience to the network is not.
+A `direct` post is local-only. Its `recipient_ids` name local accounts, not
+remote inboxes; the author and those recipients can read it, and it is never
+delivered to followers or remote actors. An empty recipient list, the author as
+recipient, an unknown local id and a recipient on a non-direct post are `422`.
+
+## Replies
+
+`in_reply_to_id` stores the parent post id and is returned as the same field.
+The parent must be live and readable by the author, otherwise the write is a
+`422` rather than an existence oracle. A reply may not widen its parent's
+audience: a direct parent requires a direct reply, and a followers-only parent
+cannot receive a public or unlisted reply. A direct reply automatically
+includes the parent author and the parent's other recipients, so the rest of
+the conversation can see the answer. Replies are local; the note carries
+`inReplyTo` if it is ever read through the outbox or delivery path.
 
 ## Visibility
 
 | Visibility | Public timeline | Home timeline | Single post |
 | --- | --- | --- | --- |
-| `public` | yes | own posts; remote posts from followed actors | anyone |
-| `unlisted` | yes | own posts; remote posts from followed actors | anyone |
-| `followers` | no | own posts only | author only |
-| `direct` | no | own posts only | author only |
+| `public` | yes | own posts; remote posts and boosts from followed actors; local posts from followed local accounts | anyone |
+| `unlisted` | yes | own posts; remote posts and boosts from followed actors; local posts from followed local accounts | anyone |
+| `followers` | no | own posts; local followers-only posts from followed local accounts | author and accepted local followers |
+| `direct` | no | own posts and direct posts addressed to the reader | author and recipients |
 
 The home timeline contains the reader's **own** local posts regardless of
-visibility, plus remote posts and boosts by actors in the reader's outgoing
-follow graph. Entries in the reader's private block list are excluded before
-the page limit; both a blocked signing actor and a blocked boosted author are
-filtered. See [blocks](blocks.md). It does not contain local public posts
-from other accounts: local-to-local follow edges are not modelled yet. Remote
-entries have no local visibility field and are serialized with
-`visibility: null`.
+visibility, remote posts and boosts by actors in the reader's outgoing follow
+graph, and live local posts from local accounts the reader follows through
+the local follow route. A local follow is an accepted follower edge, so those
+local posts may include followers-only content; visibility is evaluated by
+the post's own rules when it is read individually. A direct post appears in the
+reader's own home timeline when the reader is its author or one of its
+recipients. Entries in the reader's private block list are excluded before the
+page limit; both a blocked
+signing actor and a blocked boosted author are filtered, and a blocked
+followed local account is omitted from the local half. See
+[blocks](blocks.md). Remote entries have no local visibility field and are
+serialized with `visibility: null`.
 
 The single-post rule is enforced by `PostService::getVisible()`: a non-public
-post answers 404 to anyone but its author. `unlisted` is publicly readable by
-design — it is only hidden from timelines.
+post answers 404 to anyone but its author, except that a followers-only post
+is also readable by an accepted local follower and a direct post by one of its
+recipients. The home timeline and the detail route therefore agree. `unlisted`
+is publicly readable by design — it is only hidden from timelines.
 
 ## Timelines
 

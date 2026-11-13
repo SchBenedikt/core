@@ -280,9 +280,14 @@ POST {mastodon.prefix}/statuses
 ```
 
 Reads project the same `social_post` rows through `MastodonPresenter`; there is
-no compatibility table. The deterministic post id (`mastodon-` + hash of user
-and key) makes an idempotent retry collide with the existing primary key and
-return the stored row. An optional `poll` is validated before `PostService`,
+no compatibility table. `GET {mastodon.prefix}/statuses/{id}` uses the same
+visibility check as the core detail route, and
+`GET {mastodon.prefix}/accounts/{id}/statuses` opts into followers-only rows
+only when the caller is the author or an accepted local follower. The account
+list passes the caller through to the presenter, so favourite and poll-vote
+flags stay viewer-specific. The deterministic post id (`mastodon-` + hash of
+user and key) makes an idempotent retry collide with the existing primary key
+and return the stored row. An optional `poll` is validated before `PostService`,
 built as a `Domain\Post\Poll`, and inserted in the same post transaction:
 
 ```
@@ -574,9 +579,16 @@ maximum is 40, and generated links carry a non-default limit.
   as a local upload; a mismatch writes nothing.
 - **Private blocks.** `social_block` is unique by (local user, actor) and is
   applied only to that user's home query. A block never deletes a shared remote
-  row and never changes another account's follow graph.
-- **Schema next to the repository or adapter.** `PostSchema` defines the post
-  and post-attachment tables once; `PollSchema`, `FavouriteSchema`,
+  row and never changes another account's follow graph. The local write stays
+  committed even when the outbound `Block`/`Undo(Block)` cannot be queued.
+- **Local direct posts and replies.** A direct post has an ordered recipient
+  list (`social_post_recipient`) of known local ids; it is read by its author
+  and recipients and is never delivered to followers or remote inboxes. A
+  reply stores `in_reply_to_id` and may not be more public than its parent; a
+  direct reply inherits the parent participants. Both are local conversation
+  features, not a second status model.
+- **Schema next to the repository or adapter.** `PostSchema` defines the post,
+  post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
   `NotificationSchema`, `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
   `AtprotoPublicationSchema`, `JobSchema` and `ActivityLogSchema` do the same
   for favourites, notifications, media metadata, remote content, per-user

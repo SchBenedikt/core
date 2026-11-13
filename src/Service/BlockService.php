@@ -9,14 +9,20 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
+use AlohaSocial\Core\Exceptions\ConfigurationException;
+use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * The per-user block list as a use case.
@@ -38,6 +44,9 @@ final class BlockService
 		private readonly BlockRepository $blocks,
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
+		private readonly ?JobQueue $queue = null,
+		private readonly ?ActivityFactory $activities = null,
+		private readonly ?ActorInboxResolver $inboxes = null,
 	) {
 	}
 
@@ -88,6 +97,8 @@ final class BlockService
 			throw $exception;
 		}
 
+		$this->queueActivity($block, false);
+
 		return new BlockResult($block, true);
 	}
 
@@ -96,7 +107,21 @@ final class BlockService
 	 */
 	public function unblock(string $localUserId, string $id): bool
 	{
-		return $this->blocks->remove(trim($id), trim($localUserId));
+		$localUserId = trim($localUserId);
+		$id = trim($id);
+		$block = $this->blocks->findById($id);
+
+		if ($block === null || $block->localUserId !== $localUserId) {
+			return false;
+		}
+
+		if (!$this->blocks->remove($id, $localUserId)) {
+			return false;
+		}
+
+		$this->queueActivity($block, true);
+
+		return true;
 	}
 
 	/**
@@ -142,6 +167,50 @@ final class BlockService
 			return Time::parse(trim($before));
 		} catch (InvalidArgumentException) {
 			throw new InvalidCursorException($before);
+		}
+	}
+
+	/**
+	 * Queues the signed Block or Undo(Block) when a remote inbox is known.
+	 *
+	 * The local block is already committed: a peer that is offline or does
+	 * not publish an inbox must not make unblocking impossible. The delivery
+	 * queue owns the retries, exactly like post delivery. Local actors are
+	 * skipped because their relationship is already visible without a network
+	 * hop.
+	 */
+	private function queueActivity(Block $block, bool $undo): void
+	{
+		if ($this->queue === null || $this->activities === null || $this->inboxes === null) {
+			return;
+		}
+
+		try {
+			$localPrefix = rtrim($this->activities->baseUrl(), '/') . '/@';
+		} catch (ConfigurationException) {
+			return;
+		}
+
+		if (str_starts_with($block->actorId, $localPrefix)) {
+			return;
+		}
+
+		$inbox = $this->inboxes->inboxFor($block->actorId);
+		if ($inbox === null) {
+			return;
+		}
+
+		try {
+			$this->queue->push(JobType::FEDERATION_DELIVER, [
+				'inbox' => $inbox,
+				'activity' => $undo
+					? $this->activities->undoBlock($block)
+					: $this->activities->blockActor($block),
+				'key_id' => $this->activities->keyId($block->localUserId),
+			]);
+		} catch (Throwable) {
+			// The local block is already committed. A queue outage must not
+			// turn a successful local block into an error or lose the row.
 		}
 	}
 

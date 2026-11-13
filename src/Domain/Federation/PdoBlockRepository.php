@@ -65,6 +65,16 @@ final class PdoBlockRepository implements BlockRepository
 		return $row === null ? null : $this->hydrate($row);
 	}
 
+	public function findById(string $id): ?Block
+	{
+		$row = $this->db->fetchOne(
+			'SELECT ' . self::COLUMNS . ' FROM ' . BlockSchema::TABLE . ' WHERE id = :id',
+			['id' => $id],
+		);
+
+		return $row === null ? null : $this->hydrate($row);
+	}
+
 	public function remove(string $id, string $localUserId): bool
 	{
 		return $this->db->execute(

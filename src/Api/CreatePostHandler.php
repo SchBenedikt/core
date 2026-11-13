@@ -73,6 +73,25 @@ final class CreatePostHandler implements Handler
 			$attachmentIds[] = $attachmentId;
 		}
 
+		$rawRecipientIds = $body['recipient_ids'] ?? [];
+		if (!is_array($rawRecipientIds) || !array_is_list($rawRecipientIds)) {
+			throw HttpException::validationFailed(['recipient_ids' => 'recipient_ids must be a list of local account ids.']);
+		}
+
+		$recipientIds = [];
+		foreach ($rawRecipientIds as $recipientId) {
+			if (!is_string($recipientId) || trim($recipientId) === '') {
+				throw HttpException::validationFailed(['recipient_ids' => 'recipient_ids must contain non-empty strings.']);
+			}
+
+			$recipientIds[] = $recipientId;
+		}
+
+		$inReplyToId = $body['in_reply_to_id'] ?? null;
+		if ($inReplyToId !== null && !is_string($inReplyToId)) {
+			throw HttpException::validationFailed(['in_reply_to_id' => 'in_reply_to_id must be a string or null.']);
+		}
+
 		$rawVisibility = $body['visibility'] ?? Visibility::Public->value;
 		if (!is_string($rawVisibility)) {
 			throw HttpException::validationFailed(['visibility' => 'visibility must be a string.']);
@@ -91,6 +110,8 @@ final class CreatePostHandler implements Handler
 				visibility: $visibility,
 				contentWarning: $contentWarning,
 				attachmentIds: $attachmentIds,
+				recipientIds: $recipientIds,
+				inReplyToId: $inReplyToId,
 			));
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());

@@ -142,6 +142,7 @@ use AlohaSocial\Core\Platform\Image\ImageProcessor;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
@@ -473,18 +474,15 @@ final readonly class Application
 			$clock,
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
 		);
-		$postService = new PostService(
-			$posts,
-			$attachmentRepository,
-			$queue,
-			$inboxResolver,
-			$activities,
+		$followerService = new FollowerService($followers, $clock, $ids);
+		$blockService = new BlockService(
+			$blockRepository,
 			$clock,
 			$ids,
-			$atprotoService,
+			$queue,
+			$activities,
+			$httpClient === null ? null : new HttpActorInboxResolver($httpClient),
 		);
-		$followerService = new FollowerService($followers, $clock, $ids);
-		$blockService = new BlockService($blockRepository, $clock, $ids);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock)
 			: null;
@@ -507,6 +505,17 @@ final readonly class Application
 				$blockRepository,
 				$notificationService,
 			);
+		$postService = new PostService(
+			$posts,
+			$attachmentRepository,
+			$queue,
+			$inboxResolver,
+			$activities,
+			$clock,
+			$ids,
+			$atprotoService,
+			$localRelationships,
+		);
 		if ($localRelationships !== null) {
 			$homeTimeline = new LocalFollowHomeTimelineRepository($homeTimeline, $posts, $localRelationships);
 		}
@@ -515,7 +524,7 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,

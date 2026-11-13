@@ -33,6 +33,7 @@ final class MastodonAccountStatusesHandler extends MastodonHandler
 			$request->queryParam('max_id'),
 			$request->queryParam('since_id'),
 			$request->queryParam('min_id'),
+			$request->userId,
 		);
 
 		$response = Response::json($statuses);

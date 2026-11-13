@@ -50,6 +50,11 @@ final class InMemoryBlockRepository implements BlockRepository
 		return null;
 	}
 
+	public function findById(string $id): ?Block
+	{
+		return $this->blocks[$id] ?? null;
+	}
+
 	public function remove(string $id, string $localUserId): bool
 	{
 		$block = $this->blocks[$id] ?? null;

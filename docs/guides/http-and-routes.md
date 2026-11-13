@@ -84,4 +84,6 @@ authoritative than the contract. Payload details stay in the
 A 403 confirms that a post with this id exists. For a followers-only or direct
 post that is already a leak. Reads of non-public posts answer 404, exactly as
 if the id were unknown; the author still sees the post because the check
-includes the viewer.
+includes the viewer, and an accepted local follower sees a followers-only
+post because the same check consults the local follow edge. A direct post
+remains author-only.

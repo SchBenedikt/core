@@ -51,7 +51,7 @@ defaults to `/api/mastodon/v1`).
 | `mastodon.accounts.relationships` | `GET` | `/api/mastodon/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
 | `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
-| `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no | 60 / 60 s |
+| `mastodon.accounts.statuses` | `GET` | `/api/mastodon/v1/accounts/{id}/statuses` | no; an optional token adds viewer-scoped rows | 60 / 60 s |
 | `mastodon.accounts.show` | `GET` | `/api/mastodon/v1/accounts/{id}` | no | 120 / 60 s |
 | `mastodon.accounts.followers` | `GET` | `/api/mastodon/v1/accounts/{id}/followers` | no | 60 / 60 s |
 | `mastodon.accounts.following` | `GET` | `/api/mastodon/v1/accounts/{id}/following` | no | 60 / 60 s |
@@ -159,13 +159,18 @@ POST /api/v1/posts
 Content-Type: application/json
 
 {"content": "hello", "visibility": "public", "content_warning": null,
- "attachment_ids": ["…"]}
+ "attachment_ids": ["…"], "recipient_ids": ["bob"],
+ "in_reply_to_id": "…"}
 ```
 
 `attachment_ids` is optional and limited to four ids, each uploaded by the
 author. The post and its attachment links are written in one transaction; an
 id that does not belong to the caller is `422 validation_failed` and creates
-no post. Delivery is queued after the write, as for any other post.
+no post. `recipient_ids` is a list of known local accounts and is only accepted
+for `direct`; `in_reply_to_id` must name a live parent the author can read. A
+reply cannot be more public than its parent; a direct reply inherits the
+parent participants. Direct posts stay local and queue no remote delivery;
+other posts queue delivery after the write.
 
 `201` with a `Location` header:
 
@@ -173,6 +178,7 @@ no post. Delivery is queued after the write, as for any other post.
 {"post": {"id": "…", "author_id": "alice", "content": "hello",
   "content_warning": null, "visibility": "public",
   "published_at": "2026-11-11T10:00:00Z", "deleted_at": null,
+  "in_reply_to_id": null, "recipient_ids": [],
   "attachments": [{"id": "…", "media_type": "image", "mime_type": "image/png",
     "width": 1200, "height": 800, "byte_size": 18342,
     "alt_text": "A cat on a keyboard", "created_at": "2026-11-11T10:00:00Z",
@@ -218,7 +224,8 @@ GET /api/v1/posts/{id}
 ```
 
 `200` with `{"post": …}`, including the same `attachments` array as the
-write response. A missing, deleted or non-public post answers `404`; see
+write response. A missing, deleted or non-public post answers `404`, except
+that a followers-only post is also readable by an accepted local follower; see
 [posts and timelines](../guides/posts-and-timelines.md).
 
 ## Delete a post
@@ -281,9 +288,11 @@ GET /api/v1/timelines/home
 
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. A cursor
 that is not a canonical timestamp is `400 invalid_cursor`. The public timeline
-contains local posts; the home timeline contains the caller's own local posts
-plus remote posts and boosts from followed actors, with `kind`, `object_id`,
-`object_author_id` and `boosted_by` on each entry. Local posts carry the same
+contains local posts; the home timeline contains the caller's own local posts,
+remote posts and boosts from followed remote actors, and live local posts from
+followed local accounts, with `kind`, `object_id`, `object_author_id` and
+`boosted_by` on each entry. A blocked followed local account is omitted until
+it is unblocked. `direct` posts are not part of the local half. Local posts carry the same
 `attachments` array as the single-post response. A remote entry carries the
 same local-original/thumbnail shape for successfully imported federated
 images, and omits the key when it has none. See
@@ -388,9 +397,10 @@ GET /api/v1/blocks?limit=20&before=2026-11-11T10:00:00Z
 
 `limit` defaults to 20 and is clamped to 1–100. `before` is exclusive; a value
 that is not a canonical timestamp is `400 invalid_cursor`. A block hides the
-actor's remote posts and boosts from this caller's home timeline only; it does
-not remove the shared remote rows or change another account's view. Delete it
-with `DELETE /api/v1/blocks/{id}` (`204`, or `404` when it is not the caller's).
+actor's remote posts and boosts, and a followed local actor's local posts,
+from this caller's home timeline only; it does not remove the shared remote
+rows, the local follow edge or another account's view. Delete it with
+`DELETE /api/v1/blocks/{id}` (`204`, or `404` when it is not the caller's).
 See [blocks](../guides/blocks.md).
 
 ## Inbox
@@ -515,6 +525,11 @@ POST /api/mastodon/v1/statuses/{id}/unfavourite
 GET /api/mastodon/v1/accounts/relationships?id[]=bob&id[]=carol
 POST /api/mastodon/v1/accounts/bob/follow
 POST /api/mastodon/v1/accounts/bob/unfollow
+GET /api/mastodon/v1/accounts/bob/statuses?limit=20
+GET /api/mastodon/v1/accounts/bob
+GET /api/mastodon/v1/accounts/bob/followers
+GET /api/mastodon/v1/accounts/bob/following
+GET /api/mastodon/v1/search?q=hello&type=statuses
 GET /api/mastodon/v1/notifications?limit=20&types[]=favourite
 GET /api/mastodon/v1/notifications/unread_count?limit=100
 POST /api/mastodon/v1/notifications/{id}/dismiss
@@ -532,9 +547,10 @@ A status response is the usual Mastodon shape (`id`, `content`,
 `poll`, `favourites_count`, `favourited`, …). `poll` is `null` without one;
 otherwise it carries two to four options, a clock-derived `expired` flag and
 the stored vote counts; `voted`/`own_votes` are viewer-specific. `private` maps to
-followers-only; `direct` and `in_reply_to_id` are `422 unsupported_parameter`
-in this slice. The write goes through `PostService`, so validation, ownership,
-soft deletion and delivery are identical to `/api/v1/posts`. A valid `poll` is
+followers-only; `direct` uses `recipient_ids` or `@local-id` mentions, and
+`in_reply_to_id` names the local parent. The write goes through `PostService`,
+so validation, ownership, soft deletion and delivery are identical to
+`/api/v1/posts`. A valid `poll` is
 written in the same transaction as its post; invalid options or expiry are
 `422 validation_failed` and leave no status. `Idempotency-Key` makes a retry
 return the same status, including its poll, instead of inserting a duplicate.

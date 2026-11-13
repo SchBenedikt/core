@@ -140,6 +140,7 @@ production bootstrap.
 | `Jobs\JobQueue` | Reserve, complete, retry and dead-letter jobs durably | `PdoJobQueue`; `InMemoryJobQueue` for tests |
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
+| `ActorInboxResolver` | Resolve a remote actor URL to its individual inbox for `Block`/`Undo(Block)`; an unavailable actor document queues nothing | `HttpActorInboxResolver` when the assembly has an HTTP client |
 | `BlockedActorPolicy` | Optional instance-wide decision whether inbound content from an actor is refused | `NoBlockedActors` by default; host policy otherwise |
 | `FollowPolicy` | Optional per-account decision whether an inbound Follow creates an edge | `AcceptAllFollows` by default; host policy otherwise |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
@@ -205,6 +206,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowingSchema` → `social_following` (includes `inbox_url`)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
+- `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`
 - `BlockSchema` → `social_block` (per-user blocks)
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`

@@ -25,14 +25,17 @@ keep than to restore.
 
 ### Why can't I create a direct post?
 
-A direct post needs recipients. The follow graph tracks who follows *you*, not
-who you follow, so there is no audience to deliver to. Refusing with 422 is
-honest; delivering to nobody is not.
+A direct post needs an explicit recipient model and delivery targets. The
+local follow graph can show a follower a followers-only post, but it is not an
+explicit recipient list; there is no audience to deliver a direct post to.
+Refusing with 422 is honest; delivering to nobody is not.
 
 ### Why does a followers-only post answer 404 instead of 403?
 
 A 403 confirms the post exists. For a private post that is already a leak. The
-author still sees it because the visibility check includes the viewer.
+author still sees it because the visibility check includes the viewer; an
+accepted local follower also sees it, because that follower already receives
+it in the local-follow home timeline.
 
 ### Why is there no migrations runner?
 
@@ -46,9 +49,10 @@ server will use Doctrine Migrations. The core shares the *schema*
 
 Use `POST /api/v1/blocks` with the actor URL and remove the block with
 `DELETE /api/v1/blocks/{id}`. The block is private to your account: it hides
-that actor's posts and boosts from **your** home timeline, but does not delete
-the shared remote rows or change another account's view. It does not send an
-ActivityPub `Block` to the peer. See [blocks](guides/blocks.md).
+that actor's remote posts and boosts, and a followed local account's local
+posts, from **your** home timeline. It does not delete shared remote rows,
+remove a local follow edge or change another account's view, and it does not
+send an ActivityPub `Block` to the peer. See [blocks](guides/blocks.md).
 
 ### Why is the activity built when the post is written, not when it is sent?
 
@@ -75,9 +79,11 @@ the route is public. See [outbox](guides/outbox.md).
 
 `followers` lists the actors that follow this account; `following` lists the
 actors this account follows. They are separate repositories because the
-directions are opposite. Following is written by `POST` and
-`DELETE /api/v1/following`, which also deliver the signed `Follow`/`Undo` to
-the peer; see [following collection](guides/following-collection.md).
+directions are opposite. Remote follows are written by `POST` and
+`DELETE /api/v1/following`, which deliver the signed `Follow`/`Undo` to the
+peer. A local-to-local follow is stored as a local follower edge and appears in
+both public collections without remote delivery; see
+[following collection](guides/following-collection.md).
 
 ### How is an inbound activity authenticated?
 

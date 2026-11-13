@@ -34,6 +34,9 @@ final readonly class Post
 		/** @var list<string> */
 		public array $attachmentIds = [],
 		public ?Poll $poll = null,
+		/** @var list<string> local account ids for a direct post */
+		public array $recipientIds = [],
+		public ?string $inReplyToId = null,
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A post needs an id.');
@@ -63,6 +66,27 @@ final readonly class Post
 
 			$seen[$attachmentId] = true;
 		}
+
+		if (array_values($recipientIds) !== $recipientIds) {
+			throw new InvalidArgumentException('Post recipient ids must be a list.');
+		}
+
+		$seenRecipients = [];
+		foreach ($recipientIds as $recipientId) {
+			if (!is_string($recipientId) || $recipientId === '') {
+				throw new InvalidArgumentException('A post recipient needs an id.');
+			}
+
+			if (isset($seenRecipients[$recipientId])) {
+				throw new InvalidArgumentException('A post cannot repeat a recipient.');
+			}
+
+			$seenRecipients[$recipientId] = true;
+		}
+
+		if ($inReplyToId !== null && trim($inReplyToId) === '') {
+			throw new InvalidArgumentException('A reply target needs an id.');
+		}
 	}
 
 	public function isDeleted(): bool
@@ -86,6 +110,8 @@ final readonly class Post
 			'published_at' => Time::format($this->publishedAt),
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
 			'poll' => $this->poll?->toArray(),
+			'in_reply_to_id' => $this->inReplyToId,
+			'recipient_ids' => $this->recipientIds,
 		];
 	}
 }

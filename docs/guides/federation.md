@@ -23,7 +23,12 @@ receiver.
 
 `Create` wraps a `Note`; `Delete` wraps a `Tombstone`. Content is declared as
 `text/plain` — the core does not render HTML, and claiming `text/html` over an
-unescaped string would be a cross-server XSS.
+unescaped string would be a cross-server XSS. A reply adds the parent URL as
+`inReplyTo`.
+
+A `Block` has the blocked actor URL as its `object` and `to: [actor]`.
+`Undo(Block)` wraps that activity. Both use the same signed delivery queue as
+posts, but no post audience is involved.
 
 Audience mapping:
 
@@ -32,7 +37,11 @@ Audience mapping:
 | `public` | `as:Public` | followers collection |
 | `unlisted` | followers collection | `as:Public` |
 | `followers` | followers collection | — |
-| `direct` | — | — |
+| `direct` | local recipient actor URLs | — |
+
+Direct posts are not delivered over the network; their `to` field is built for
+an outbox reader and names the local recipients. The write path skips remote
+delivery entirely.
 
 ## Signatures
 
@@ -74,6 +83,10 @@ it synchronously through the same `FederationDeliveryHandler`, rolls a Follow
 back when the peer refuses it, and keeps an edge when an Undo fails so the
 request can be retried. See the [following collection](following-collection.md).
 
+Per-user blocks are queued asynchronously instead. The local block is stored
+before the actor document is resolved; when the actor's inbox is known, a
+signed `Block` or `Undo(Block)` job is added. See [blocks](blocks.md).
+
 ## Inbound
 
 The other direction is implemented too: `POST /inbox` and `POST /inbox/shared`
@@ -103,7 +116,8 @@ backfill, thread/context fetching, remote media and shared-inbox batching are
 implemented. Scheduling the backfill, thread retention and host-specific
 policy remain host operations. The AT Protocol publishing foundation is now in
 the core, while account linking/OAuth and the full repository/AppView stack
-remain external; a Mastodon-compatible API is still a separate roadmap item.
+remain external. The local Mastodon-compatible subset is implemented under its
+own disabled-by-default prefix; only its remote server remainder is external.
 The seams are named in [the architecture](../architecture.md#what-is-not-here-yet),
 so each is an addition, not a rewrite. See
 [AT Protocol publishing](atproto.md).

@@ -7,6 +7,12 @@ Status of the core, not a promise about dates.
 - Platform ports: clock, config, blob storage, SQL, HTTP client — with in-memory
   and production adapters.
 - Posts: validation, visibility, soft deletion, single-post access control.
+  A followers-only local post is readable by its accepted local follower as
+  well as its author, matching the local-follow home timeline. Direct posts
+  address known local accounts through `recipient_ids`; only the author and
+  recipients can read them, and they appear in the recipients' home timeline.
+  Replies carry `in_reply_to_id`, cannot widen the parent audience, and a
+  direct reply inherits the parent participants.
 - Timelines: public and home, stable cursor pagination.
 - ActivityPub: RSA keys, HTTP signatures (sign and verify), `Create`/`Delete`
   documents, audience mapping.
@@ -83,9 +89,13 @@ Status of the core, not a promise about dates.
   local media catch-up gap that was previously left to each host; scheduling
   the backfill remains a host operation.
 - Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
-  test) over `social_block`, an authenticated block API and a home-timeline
-  filter scoped to the reader. Blocks hide shared remote rows without deleting
-  them or affecting another local account.
+  test) over `social_block`, an authenticated block API, a home-timeline
+  filter scoped to the reader, and outbound `Block`/`Undo(Block)` delivery to a
+  resolved remote actor inbox. Blocks hide shared remote rows without deleting
+  them or affecting another local account. A block also accepts a local
+  actor's absolute URL; the local-follow home timeline then omits that
+  followed account's posts until it is unblocked, without removing the follow
+  edge.
 - Thread/context fetching: `GET /api/v1/remote-posts/{id}/thread` returns a
   bounded view of a stored remote post: the target object, its ancestors from
   root to parent and its direct replies. The remote activity id is
@@ -288,3 +298,9 @@ above.
 - A "fake Nextcloud" shim as a permanent architecture (see
   [ADR 0001](adr/0001-shared-core-two-hosts.md)).
 - Storing configuration or keys in this repository.
+- Remote direct delivery and remote reply threading: direct posts and replies
+  address the local model only. Remote recipients/inboxes and fetching a
+  remote parent are not part of this slice.
+- A public block collection and applying an incoming `Block` as a per-user
+  moderation rule: block propagation is outbound, and the optional instance
+  policy remains the host seam for instance-wide refusal.

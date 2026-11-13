@@ -23,9 +23,11 @@ use function is_string;
 /**
  * `POST /api/v1/blocks`
  *
- * Blocks a remote actor for the signed-in account. A new block answers 201
- * with a Location; repeating the call answers 200 with the existing row and
- * creates nothing. The actor is not removed from other accounts' timelines.
+ * Blocks an actor for the signed-in account. The actor URL may address a
+ * remote account or a local account; both use the same list. A new block
+ * answers 201 with a Location; repeating the call answers 200 with the
+ * existing row and creates nothing. The actor is not removed from other
+ * accounts' timelines.
  */
 final class BlockActorHandler implements Handler
 {

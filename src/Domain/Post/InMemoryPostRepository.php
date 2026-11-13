@@ -68,6 +68,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			$deletedAt,
 			$post->attachmentIds,
 			$post->poll,
+			$post->recipientIds,
+			$post->inReplyToId,
 		);
 	}
 
@@ -98,13 +100,15 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $includeFollowers = false,
 	): array {
 		return $this->slice(
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& $post->authorId === $userId
-					&& $post->visibility->isPubliclyVisible(),
+					&& ($post->visibility->isPubliclyVisible()
+						|| ($includeFollowers && $post->visibility === Visibility::Followers)),
 			)),
 			$limit,
 			$before,
@@ -160,6 +164,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$posts = array_values(array_filter(
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
+				&& $post->visibility !== Visibility::Direct
 				&& isset($authors[$post->authorId])
 				&& ($before === null || $post->publishedAt < $before),
 		));
@@ -178,7 +183,9 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return $this->slice(
 			array_values(array_filter(
 				$this->posts,
-				static fn (Post $post): bool => !$post->isDeleted() && $post->authorId === $userId,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& ($post->authorId === $userId
+						|| ($post->visibility === Visibility::Direct && in_array($userId, $post->recipientIds, true))),
 			)),
 			$limit,
 			$before,
@@ -224,6 +231,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				votesCount: $poll->votesCount + count($vote->positions),
 				votersCount: $poll->votersCount + 1,
 			),
+			recipientIds: $post->recipientIds,
+			inReplyToId: $post->inReplyToId,
 		);
 	}
 

@@ -46,6 +46,16 @@ abstract class BlockRepositoryTestCase extends TestCase
 		$repository->insert($this->block('b2', 'alice', 'https://remote.example/users/bob'));
 	}
 
+	public function testFindByIdReturnsTheStoredBlock(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->block('b1', 'alice', 'https://remote.example/users/bob'));
+
+		self::assertSame('b1', $repository->findById('b1')?->id);
+		self::assertSame('alice', $repository->findById('b1')?->localUserId);
+		self::assertNull($repository->findById('missing'));
+	}
+
 	public function testAnotherUserMayBlockTheSameActor(): void
 	{
 		$repository = $this->repository();

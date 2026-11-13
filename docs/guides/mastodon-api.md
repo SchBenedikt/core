@@ -28,7 +28,7 @@ Locally implemented (core):
 - `PUT /media/{id}`
 - `DELETE /media/{id}`
 - `DELETE /statuses/{id}`
-- `GET /accounts/{id}/statuses`
+- `GET /accounts/{id}/statuses` (with optional viewer-specific visibility)
 - `GET /accounts/{id}`
 - `GET /accounts/{id}/followers`
 - `GET /accounts/{id}/following`
@@ -177,7 +177,7 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
 - `account.id`/`acct`/`username` is the local user id. A full profile is
   host-owned; display name, avatar and counts are minimal defaults.
 - `visibility`: `public`, `unlisted`, `private` (core followers-only) or
-  `direct` (not writable locally).
+  `direct`.
 - `content` is escaped text in a single `<p>`; `spoiler_text` is the content
   warning. A content warning implies `sensitive: true`.
 - `media_attachments` projects the existing attachments, their alt text and
@@ -197,10 +197,16 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
 - `uri`/`url` point at the core post URL; `created_at` is the stored publish
   time.
 
-A non-public status is readable only by its author. For everyone else it is
-`404 not_found`, like the core API; the status route does not leak existence.
-Account statuses are public/unlisted only, including when the account asks for
-its own list.
+A followers-only status is readable by its author and by an accepted local
+follower; a direct status by its author and its local recipients. Everyone else
+gets `404 not_found`, like the core API, so the status route does not leak
+existence. The account status list includes public and unlisted posts, plus
+followers-only posts when the caller is the account itself or an accepted
+local follower; direct posts and other viewers see no followers-only rows.
+For an authenticated viewer the projected statuses also carry that viewer's
+`favourited` and poll-vote state. `in_reply_to_id` is the parent post id,
+`in_reply_to_account_id` its author (when the parent is still stored), and
+`mentions` lists direct recipients.
 
 ## Reading local profiles and follow lists
 
@@ -211,7 +217,8 @@ not know is `404 not_found`; the route does not reveal whether an account ever
 existed. The id is the local user id, and the counts come from the existing
 follower graph: `followers_count` is the follower collection and
 `following_count` merges outgoing remote edges with local-to-local edges.
-Profiles stay host-owned; display name, note, avatar, header, fields and
+Profile detail fields stay host-owned; the local id and counts are projected
+as above, while display name, note, avatar, header, fields and
 `statuses_count` keep their minimal defaults instead of inventing host data.
 
 `GET /accounts/{id}/followers` and `GET /accounts/{id}/following` are also
@@ -258,12 +265,16 @@ or migration: the routes read the existing follower/outgoing graphs.
 }
 ```
 
-`private` maps to followers-only. `direct` is refused with `422
-unsupported_parameter` because the core has no recipient model yet. Empty
-content, over-limit text, more than four attachments and an attachment not
-owned by the caller are refused by `PostService` with `422
-validation_failed` and `error.fields`. `in_reply_to_id` is also refused with
-`422 unsupported_parameter` in this slice.
+`private` maps to followers-only. `direct` uses the local recipient model:
+recipients come from the `recipient_ids` extension (a list) or, when that is
+absent, from `@local-id` mentions in the status text. `@user@remote.example` is
+not reduced to a local id. A direct status with no local recipient is `422`.
+
+`in_reply_to_id` is the parent post id. The parent must be visible to the
+caller; a direct parent requires `visibility=direct`, and a followers-only
+parent refuses a public/unlisted reply. Empty content, over-limit text, more
+than four attachments and an attachment not owned by the caller are refused by
+`PostService` with `422 validation_failed` and `error.fields`.
 
 `poll` is optional and is stored atomically with the status. It accepts two to
 four `options`, each after trimming one to 50 characters, plus exactly one of
@@ -295,8 +306,9 @@ vote by the same account is `422 already_voted`. The composite
 `(post_id, user_id)` key is the race-safe boundary. Votes live in
 `social_poll_vote`; an assembly without a vote repository answers `503
 polls_not_configured` rather than silently accepting a write. A poll on a
-followers-only status is readable and votable only by its author, through the
-same `404` visibility rule as statuses.
+followers-only status is readable and votable by its author and by an accepted
+local follower, through the same visibility rule as statuses; everyone else
+gets `404`.
 
 `GET {prefix}/polls/{id}` is public and returns the poll object; when the host
 supplies an authenticated user id it includes that viewer's `voted` and
@@ -671,7 +683,7 @@ The normal core JSON error shape applies. The compatibility-specific codes are:
 | `instance_not_configured` | 503 | `social/instance.url` is missing; a local follow needs it to derive actor URLs |
 | `media_not_configured` | 503 | Media upload has no `BlobStore`-backed `MediaService` |
 | `media_storage_unavailable` | 503 | A validated upload could not be written to the blob store |
-| `unsupported_parameter` | 422 | `direct` visibility, `in_reply_to_id`, or replacing media bytes (`file`/`thumbnail`) in this slice |
+| `unsupported_parameter` | 422 | Replacing media bytes (`file`/`thumbnail`) in this slice |
 | `validation_failed` | 422 | Missing/invalid status fields, poll options/expiry/choices, media ids, relationship ids, search `q`/`type` or a self-follow; see `error.fields` |
 | `not_found` | 404 | Missing/private status or poll, unknown cursor, unknown local account or unknown relationship target |
 

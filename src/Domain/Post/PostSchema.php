@@ -25,6 +25,8 @@ final class PostSchema
 
 	public const ATTACHMENT_TABLE = 'social_post_attachment';
 
+	public const RECIPIENT_TABLE = 'social_post_recipient';
+
 	/**
 	 * @return list<string>
 	 */
@@ -37,11 +39,13 @@ final class PostSchema
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' visibility VARCHAR(16) NOT NULL,'
+			. ' in_reply_to_id VARCHAR(64) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
 			. ' deleted_at VARCHAR(20) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',
+			'CREATE INDEX ' . self::TABLE . '_reply ON ' . self::TABLE . ' (in_reply_to_id, published_at)',
 			'CREATE TABLE ' . self::ATTACHMENT_TABLE . ' ('
 			. ' post_id VARCHAR(64) NOT NULL,'
 			. ' attachment_id VARCHAR(64) NOT NULL,'
@@ -49,6 +53,14 @@ final class PostSchema
 			. ' PRIMARY KEY (post_id, attachment_id)'
 			. ')',
 			'CREATE INDEX ' . self::ATTACHMENT_TABLE . '_post ON ' . self::ATTACHMENT_TABLE . ' (post_id, position)',
+			'CREATE TABLE ' . self::RECIPIENT_TABLE . ' ('
+			. ' post_id VARCHAR(64) NOT NULL,'
+			. ' recipient_id VARCHAR(255) NOT NULL,'
+			. ' position INTEGER NOT NULL,'
+			. ' PRIMARY KEY (post_id, recipient_id)'
+			. ')',
+			'CREATE INDEX ' . self::RECIPIENT_TABLE . '_post ON ' . self::RECIPIENT_TABLE . ' (post_id, position)',
+			'CREATE INDEX ' . self::RECIPIENT_TABLE . '_recipient ON ' . self::RECIPIENT_TABLE . ' (recipient_id, post_id)',
 		];
 	}
 

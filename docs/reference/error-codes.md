@@ -51,7 +51,7 @@ change. `fields` appears only when an error belongs to specific input.
 | `actor_not_configured` | 503 | No signing key or no local actor directory configured (actor document, followers/following collections, outbox, WebFinger) |
 | `method_not_allowed` | 405 | The path exists for another method; carries `Allow` |
 | `validation_failed` | 422 | Input violates the contract; `fields` names each problem |
-| `unsupported_parameter` | 422 | A Mastodon write asks for `direct` visibility or `in_reply_to_id`, which this local slice does not support |
+| `unsupported_parameter` | 422 | A Mastodon media update tries to replace the stored bytes (`file`/`thumbnail`) |
 | `internal_error` | 500 | Unexpected; the message is hidden unless debug mode is on |
 | `instance_not_configured` | 503 | `social/instance.url` is missing or invalid, so no actor or federation URL can be built |
 
@@ -61,10 +61,11 @@ A disabled compatibility surface is `404 mastodon_api_disabled`, including for
 authenticated writes. A missing token is still `401
 authentication_required`; a valid token without the route's scope is `403
 insufficient_scope`. An unknown `max_id`/`since_id`/`min_id`, a missing or
-deleted status, a private status for anyone but its author, and an unknown
-local account are all `404 not_found`. `direct` visibility and
-`in_reply_to_id` are `422 unsupported_parameter`; other input problems use
-`422 validation_failed` with `error.fields`. Media upload reuses the core media
+deleted status, a followers-only status for a viewer who is neither its author
+nor an accepted local follower, and an unknown local account are all `404
+not_found`. An invalid direct recipient, a recipient on a non-direct status,
+an invisible reply parent or a wider reply visibility use `422
+validation_failed` with `error.fields`. Media upload reuses the core media
 codes: `400 invalid_multipart`, `413 payload_too_large`, `422
 validation_failed`, `503 media_not_configured` and `503
 media_storage_unavailable`; `write:media` is enforced like every other declared

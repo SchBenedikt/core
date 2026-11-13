@@ -47,8 +47,12 @@ interface PostRepository
 	): array;
 
 	/**
-	 * Publicly visible posts of one author, with the same id-aware cursor as
+	 * Live posts of one author, with the same id-aware cursor as
 	 * {@see publicTimeline()}.
+	 *
+	 * Public and unlisted posts are always included. `$includeFollowers` adds
+	 * followers-only posts for a caller that has already established the author
+	 * or accepted-follower relationship; direct posts are never included.
 	 *
 	 * @return list<Post>
 	 */
@@ -59,6 +63,7 @@ interface PostRepository
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $includeFollowers = false,
 	): array;
 
 	/**
@@ -85,10 +90,12 @@ interface PostRepository
 	public function authorPostCount(string $userId): int;
 
 	/**
-	 * Every live post of one local user, including non-public ones.
+	 * Every live post of one local user, including non-public ones, plus
+	 * direct posts addressed to that user.
 	 *
-	 * The combined home timeline uses this for the reader's own posts; the
-	 * remote half comes from {@see \AlohaSocial\Core\Domain\Federation\RemotePostRepository}.
+	 * The combined home timeline uses this for the reader's own posts and
+	 * direct messages; the remote half comes from
+	 * {@see \AlohaSocial\Core\Domain\Federation\RemotePostRepository}.
 	 *
 	 * @return list<Post>
 	 */
@@ -97,9 +104,9 @@ interface PostRepository
 	/**
 	 * Live posts of several local authors, newest first.
 	 *
-	 * Used by the home timeline for local accounts the reader follows. Visibility
-	 * is not filtered: an accepted local follower may also see followers-only
-	 * and unlisted posts.
+	 * Used by the home timeline for local accounts the reader follows. Public,
+	 * unlisted and followers-only posts are included; direct posts are excluded
+	 * because their recipients are explicit and are not modelled here.
 	 *
 	 * @param list<string> $authorIds
 	 *

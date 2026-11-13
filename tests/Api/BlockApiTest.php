@@ -12,8 +12,15 @@ namespace AlohaSocial\Core\Tests\Api;
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -94,6 +101,56 @@ final class BlockApiTest extends TestCase
 		self::assertSame(0, $app->handle(new Request('GET', '/api/v1/blocks', userId: 'alice'))->decodedBody()['total']);
 	}
 
+	public function testABlockAndUnblockAreDeliveredToTheRemoteActorsInbox(): void
+	{
+		$http = new FakeHttpClient();
+		$actor = json_encode([
+			'id' => self::BOB,
+			'type' => 'Person',
+			'inbox' => 'https://remote.example/users/bob/inbox',
+		], JSON_THROW_ON_ERROR);
+		$http->queueResponse(new HttpResponse(200, ['Content-Type' => 'application/activity+json'], $actor));
+		$http->queueResponse(new HttpResponse(200, ['Content-Type' => 'application/activity+json'], $actor));
+
+		$app = $this->app($http);
+		$created = $this->block($app)->decodedBody()['block'];
+
+		self::assertInstanceOf(InMemoryJobQueue::class, $app->queue);
+		$jobs = $app->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame(JobType::FEDERATION_DELIVER, $jobs[0]->type);
+		self::assertSame('https://remote.example/users/bob/inbox', $jobs[0]->payload['inbox']);
+		self::assertSame('Block', $jobs[0]->payload['activity']['type']);
+		self::assertSame(self::BOB, $jobs[0]->payload['activity']['object']);
+		self::assertSame([self::BOB], $jobs[0]->payload['activity']['to']);
+		self::assertSame(self::BOB, $http->requests[0]['url']);
+
+		$this->unblock($app, $created['id']);
+
+		$jobs = $app->queue->pending();
+		self::assertCount(2, $jobs);
+		$undo = array_values(array_filter(
+			$jobs,
+			static fn ($job): bool => $job->payload['activity']['type'] === 'Undo',
+		));
+		self::assertCount(1, $undo);
+		self::assertSame('Block', $undo[0]->payload['activity']['object']['type']);
+		self::assertSame(self::BOB, $undo[0]->payload['activity']['object']['object']);
+	}
+
+	public function testABlockStaysLocalWhenTheRemoteActorCannotBeResolved(): void
+	{
+		$http = new FakeHttpClient();
+		$app = $this->app($http);
+
+		$response = $this->block($app);
+
+		self::assertSame(201, $response->status);
+		self::assertInstanceOf(InMemoryJobQueue::class, $app->queue);
+		self::assertCount(0, $app->queue->pending());
+		self::assertSame(1, $app->handle(new Request('GET', '/api/v1/blocks', userId: 'alice'))->decodedBody()['total']);
+	}
+
 	public function testTheBlockListRejectsAnInvalidCursor(): void
 	{
 		$response = $this->app()->handle(new Request(
@@ -107,9 +164,31 @@ final class BlockApiTest extends TestCase
 		self::assertSame('invalid_cursor', $response->decodedBody()['error']['code']);
 	}
 
-	private function app(): Application
+	private function app(?FakeHttpClient $http = null): Application
 	{
-		return Application::inMemory(clock: $this->clock);
+		if ($http === null) {
+			return Application::inMemory(clock: $this->clock);
+		}
+
+		return Application::inMemory(
+			clock: $this->clock,
+			config: new ArrayConfig([
+				InstanceInfo::CONFIG_APP => [
+					'instance.url' => 'https://social.example',
+				],
+			]),
+			httpClient: $http,
+			signingKey: RsaKeyPair::generate(),
+		);
+	}
+
+	private function unblock(Application $app, string $id, string $userId = 'alice'): Response
+	{
+		return $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/blocks/' . $id,
+			userId: $userId,
+		));
 	}
 
 	private function block(Application $app, string $actor = self::BOB, string $userId = 'alice'): Response

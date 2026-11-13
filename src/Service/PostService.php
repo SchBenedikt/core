@@ -21,6 +21,7 @@ use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
+use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 use Closure;
@@ -48,6 +49,7 @@ final class PostService
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
 		private readonly ?AtprotoPublishService $atproto = null,
+		private readonly ?LocalRelationshipService $relationships = null,
 	) {
 	}
 
@@ -59,7 +61,15 @@ final class PostService
 			$warning = null;
 		}
 
-		$this->validate($command, $content, $warning);
+		$inReplyToId = $command->inReplyToId === null ? null : trim($command->inReplyToId);
+		if ($inReplyToId === '') {
+			$inReplyToId = null;
+		}
+
+		$parent = $this->parentFor($inReplyToId, $command->authorId);
+		$recipientIds = $this->recipientsFor($command, $parent);
+
+		$this->validate($command, $content, $warning, $recipientIds, $parent);
 
 		$post = new Post(
 			id: $command->postId ?? $this->ids->generate(),
@@ -70,6 +80,8 @@ final class PostService
 			contentWarning: $warning,
 			attachmentIds: $command->attachmentIds,
 			poll: $command->poll,
+			recipientIds: $recipientIds,
+			inReplyToId: $inReplyToId,
 		);
 
 		$this->posts->insert($post);
@@ -95,6 +107,9 @@ final class PostService
 	 * A post that is not publicly visible must not be readable just because
 	 * somebody guessed its id. The answer is `not found` rather than
 	 * `forbidden`, so the existence of a non-public post does not leak either.
+	 * A followers-only post is also readable by an accepted local follower and
+	 * a direct post by one of its local recipients; the home timeline already
+	 * exposes both, so the detail route must agree.
 	 *
 	 * @throws PostNotFoundException when the post is missing, deleted or not visible to the viewer
 	 */
@@ -107,6 +122,20 @@ final class PostService
 		}
 
 		if ($viewerId !== null && $post->authorId === $viewerId) {
+			return $post;
+		}
+
+		if ($viewerId !== null
+			&& $post->visibility === Visibility::Direct
+			&& in_array($viewerId, $post->recipientIds, true)
+		) {
+			return $post;
+		}
+
+		if ($viewerId !== null
+			&& $post->visibility === Visibility::Followers
+			&& $this->relationships?->isLocalFollower($viewerId, $post->authorId) === true
+		) {
 			return $post;
 		}
 
@@ -135,10 +164,111 @@ final class PostService
 	}
 
 	/**
+	 * Resolves a reply target through the same visibility check as a read.
+	 *
+	 * A missing parent and a parent the author may not see are the same 422:
+	 * the write route must not turn an invisible post into an existence
+	 * oracle. The parent is needed before recipient validation, because a
+	 * direct reply inherits the participants of a direct parent.
+	 */
+	private function parentFor(?string $inReplyToId, string $authorId): ?Post
+	{
+		if ($inReplyToId === null) {
+			return null;
+		}
+
+		try {
+			return $this->getVisible($inReplyToId, $authorId);
+		} catch (PostNotFoundException) {
+			throw new ValidationException([
+				'in_reply_to_id' => 'The reply target does not exist or is not visible to this account.',
+			]);
+		}
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function recipientsFor(CreatePost $command, ?Post $parent): array
+	{
+		$raw = $command->recipientIds;
+		$errors = [];
+
+		if (!array_is_list($raw)) {
+			throw new ValidationException(['recipient_ids' => 'Recipients must be a list of local account ids.']);
+		}
+
+		$recipients = [];
+		foreach ($raw as $recipientId) {
+			if (!is_string($recipientId) || trim($recipientId) === '') {
+				$errors['recipient_ids'] = 'Every recipient must be a non-empty local account id.';
+				continue;
+			}
+
+			$recipientId = trim($recipientId);
+			if ($recipientId === $command->authorId) {
+				$errors['recipient_ids'] = 'A direct post cannot address its own author.';
+				continue;
+			}
+
+			if (isset($recipients[$recipientId])) {
+				$errors['recipient_ids'] = 'A recipient cannot be repeated.';
+				continue;
+			}
+
+			$recipients[$recipientId] = $recipientId;
+		}
+
+		if ($command->visibility !== Visibility::Direct && $recipients !== []) {
+			$errors['recipient_ids'] = 'Recipients are only used by direct posts.';
+		}
+
+		if ($command->visibility === Visibility::Direct && $parent !== null) {
+			// A direct reply is part of the parent conversation. Keeping the
+			// parent author and participants makes it visible to the people
+			// who can already see the message it answers.
+			if ($parent->authorId !== $command->authorId) {
+				$recipients[$parent->authorId] = $parent->authorId;
+			}
+
+			foreach ($parent->recipientIds as $recipientId) {
+				if ($recipientId !== $command->authorId) {
+					$recipients[$recipientId] = $recipientId;
+				}
+			}
+		}
+
+		if ($command->visibility === Visibility::Direct) {
+			if ($this->relationships === null) {
+				$errors['recipient_ids'] = 'Direct posts require a configured local actor directory.';
+			} else {
+				foreach ($recipients as $recipientId) {
+					if (!$this->relationships->hasLocalActor($recipientId)) {
+						$errors['recipient_ids'] = 'Every direct recipient must be a known local account.';
+						break;
+					}
+				}
+			}
+		}
+
+		if ($errors !== []) {
+			throw new ValidationException($errors);
+		}
+
+		return array_values($recipients);
+	}
+
+	/**
+	 * @param list<string> $recipientIds
 	 * @param array<string, string> $errors
 	 */
-	private function validate(CreatePost $command, string $content, ?string $warning): void
-	{
+	private function validate(
+		CreatePost $command,
+		string $content,
+		?string $warning,
+		array $recipientIds,
+		?Post $parent,
+	): void {
 		$errors = [];
 
 		if (trim($command->authorId) === '') {
@@ -182,11 +312,20 @@ final class PostService
 			}
 		}
 
-		if ($command->visibility === Visibility::Direct) {
-			// A direct post needs recipients, and the recipients of a post are
-			// part of the follow graph this milestone does not have yet.
-			// Refusing is honest; federating an empty audience is not.
-			$errors['visibility'] = 'Direct posts are not available yet.';
+		if ($parent !== null) {
+			if ($parent->visibility === Visibility::Direct && $command->visibility !== Visibility::Direct) {
+				$errors['in_reply_to_id'] = 'A reply to a direct post must also be direct.';
+			}
+
+			if ($parent->visibility === Visibility::Followers
+				&& ($command->visibility === Visibility::Public || $command->visibility === Visibility::Unlisted)
+			) {
+				$errors['in_reply_to_id'] = 'A reply to a followers-only post cannot be public or unlisted.';
+			}
+		}
+
+		if ($command->visibility === Visibility::Direct && $recipientIds === []) {
+			$errors['recipient_ids'] = 'A direct post needs at least one local recipient.';
 		}
 
 		if ($errors !== []) {
@@ -199,6 +338,13 @@ final class PostService
 	 */
 	private function enqueueDelivery(Post $post, Closure $buildActivity): void
 	{
+		// Direct posts are local-only: their recipients are local ids, not
+		// remote inboxes. Delivering them to the author's followers would
+		// leak a message the audience did not ask for.
+		if ($post->visibility === Visibility::Direct) {
+			return;
+		}
+
 		$inboxes = array_values(array_unique(array_filter(
 			$this->inboxes->inboxesFor($post->authorId),
 			static fn (mixed $inbox): bool => is_string($inbox) && trim($inbox) !== '',

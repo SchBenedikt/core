@@ -113,13 +113,13 @@ final class PostServiceTest extends TestCase
 		}
 	}
 
-	public function testRejectsDirectPostsUntilRecipientsExist(): void
+	public function testRejectsDirectPostsWithoutARecipient(): void
 	{
 		try {
 			$this->service()->create(new CreatePost('alice', 'secret', Visibility::Direct));
 			self::fail('Expected a validation error.');
 		} catch (ValidationException $exception) {
-			self::assertArrayHasKey('visibility', $exception->fields());
+			self::assertArrayHasKey('recipient_ids', $exception->fields());
 		}
 	}
 

@@ -163,8 +163,9 @@ follows its actor.
 A per-user block is stored in `social_block` (`BlockSchema`) and is separate
 from both follow directions. `BlockRepository::actorIds()` returns the actors
 the reader blocks; the home timeline excludes those remote rows for that reader
-only. The outgoing edge is not removed, and another local account that follows
-the same actor still sees its posts. See [blocks](blocks.md).
+only. The local-follow lookup also omits a blocked followed local account from
+the local half. The outgoing edge is not removed, and another local account
+that follows the same actor still sees its posts. See [blocks](blocks.md).
 
 The optional instance-wide `BlockedActorPolicy` is a different seam: it
 refuses inbound activities before they are stored. It is not the per-user block
@@ -179,9 +180,28 @@ edge; `AcceptAllFollows` is the default. A refusal writes nothing, answers
 can succeed after the host changes its policy. See
 [inbound federation](inbound-federation.md).
 
-## What is missing
+## Local follows and the home timeline
 
-- local-to-local follow edges and a local-follow home timeline.
+A local-to-local follow is an ordinary follower edge with `is_local = 1` on
+the target account. The marker keeps the edge out of remote inbox resolution,
+while the follower count, the public followers collection and both
+relationship directions read the same row. A local follow needs no inbox
+delivery and is visible immediately.
+
+`LocalFollowHomeTimelineRepository` decorates the combined home timeline. It
+looks up the local accounts the reader follows, adds their current public,
+unlisted and followers-only local posts, merges both halves with the same
+timestamp/id ordering and applies the page limit once. A direct post is included
+only when the reader is its author or one of its recipients; the follow edge
+alone does not grant access. There is no fan-out copy and no timeline table: a
+new post from a followed local account appears on the next read. A followers-only post is readable by the follower
+through the single-post route as well as the timeline.
+
+The same lookup also consults the reader's private block list. Blocking a
+followed local account's absolute actor URL omits that account from the local
+half until it is unblocked; the follow edge itself remains. A local block sends
+no ActivityPub `Block`; a remote block queues one to the resolved inbox. See
+[blocks](blocks.md).
 
 The follower list is published at `/@{handle}/followers`; see the
 [followers collection](followers-collection.md).

@@ -14,11 +14,14 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 
 /**
- * A remote actor blocked by one local account.
+ * An actor blocked by one local account.
  *
  * A block is private to the local account that created it. It hides the
  * actor's remote posts and boosts from that account's home timeline without
- * affecting another local account that still follows the same actor.
+ * affecting another local account that still follows the same actor. A local
+ * actor is stored with the same absolute actor URL; when the reader follows
+ * that local account, its local posts are filtered from the home timeline as
+ * well.
  */
 final readonly class Block
 {

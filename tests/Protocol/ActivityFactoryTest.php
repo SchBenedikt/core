@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Protocol;
 
+use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -113,6 +114,55 @@ final class ActivityFactoryTest extends TestCase
 		self::assertSame('2026-11-11T11:00:00Z', $activity['published']);
 	}
 
+	public function testDirectAudienceNamesTheLocalRecipients(): void
+	{
+		$activity = $this->factory->createNote($this->post(
+			'p1',
+			Visibility::Direct,
+			recipientIds: ['bob', 'carol'],
+		));
+
+		self::assertSame([
+			'https://social.example/@bob',
+			'https://social.example/@carol',
+		], $activity['to']);
+		self::assertSame([], $activity['cc']);
+		self::assertSame($activity['to'], $activity['object']['to']);
+	}
+
+	public function testAReplyCarriesTheParentPostId(): void
+	{
+		$activity = $this->factory->createNote($this->post(
+			'p1',
+			Visibility::Public,
+			inReplyToId: 'parent',
+		));
+
+		self::assertSame('https://social.example/api/v1/posts/parent', $activity['object']['inReplyTo']);
+	}
+
+	public function testBlockAndUndoUseTheActorAsObject(): void
+	{
+		$block = new Block(
+			'b1',
+			'alice',
+			'https://remote.example/users/bob',
+			Time::parse('2026-11-11T10:00:00Z'),
+		);
+
+		$activity = $this->factory->blockActor($block);
+		self::assertSame('Block', $activity['type']);
+		self::assertSame('https://social.example/@alice', $activity['actor']);
+		self::assertSame('https://remote.example/users/bob', $activity['object']);
+		self::assertSame(['https://remote.example/users/bob'], $activity['to']);
+		self::assertSame('https://social.example/api/v1/blocks/b1/block', $activity['id']);
+
+		$undo = $this->factory->undoBlock($block);
+		self::assertSame('Undo', $undo['type']);
+		self::assertSame($activity, $undo['object']);
+		self::assertSame('https://social.example/api/v1/blocks/b1/block/undo', $undo['id']);
+	}
+
 	public function testRefusesWithoutAnInstanceUrl(): void
 	{
 		$factory = new ActivityFactory(new ArrayConfig());
@@ -133,8 +183,13 @@ final class ActivityFactoryTest extends TestCase
 		$factory->baseUrl();
 	}
 
-	private function post(string $id, Visibility $visibility, ?string $contentWarning = null): Post
-	{
+	private function post(
+		string $id,
+		Visibility $visibility,
+		?string $contentWarning = null,
+		array $recipientIds = [],
+		?string $inReplyToId = null,
+	): Post {
 		return new Post(
 			$id,
 			'alice',
@@ -142,6 +197,11 @@ final class ActivityFactoryTest extends TestCase
 			$visibility,
 			Time::parse('2026-11-11T10:00:00Z'),
 			$contentWarning,
+			null,
+			[],
+			null,
+			$recipientIds,
+			$inReplyToId,
 		);
 	}
 }

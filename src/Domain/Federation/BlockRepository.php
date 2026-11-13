@@ -28,6 +28,8 @@ interface BlockRepository
 
 	public function findByActor(string $localUserId, string $actorId): ?Block;
 
+	public function findById(string $id): ?Block;
+
 	/**
 	 * Deletes only if the block belongs to the given local user.
 	 *

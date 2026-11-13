@@ -29,6 +29,9 @@ final readonly class CreatePost
 		public array $attachmentIds = [],
 		public ?string $postId = null,
 		public ?Poll $poll = null,
+		/** @var list<string> local recipient ids for a direct post */
+		public array $recipientIds = [],
+		public ?string $inReplyToId = null,
 	) {
 	}
 }

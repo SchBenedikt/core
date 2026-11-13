@@ -22,7 +22,10 @@ use function usort;
  * The base repository already owns the cursor and the remote/own-post merge.
  * This decorator fetches its top page plus the top page of locally followed
  * authors, sorts the union with the same tie-break and slices once, so a local
- * post older than the remote page cannot jump ahead of newer content.
+ * post older than the remote page cannot jump ahead of newer content. The
+ * followed-author query excludes direct posts; a direct post is already in the
+ * base page when the reader is its author or recipient, and a follower edge
+ * alone must not expose it.
  *
  * With no local follows it delegates unchanged and costs one empty lookup.
  */

@@ -6,8 +6,48 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation: `README.md` now states the complete locally implemented
+  surface, separates core features from host/external responsibilities and
+  links the current contracts and guides. The follow-graph, timeline and block
+  guides now describe the existing local-follow home timeline and local actor
+  blocks; a new end-to-end test proves that blocking a followed local account
+  hides its local posts from the home timeline until it is unblocked.
+
+### Fixed
+
+- A followers-only local post is now readable through `GET
+  /api/v1/posts/{id}` and the Mastodon status route by an accepted local
+  follower, not only by its author. This makes the detail route agree with the
+  local-follow home timeline; unfollowing revokes the read again. Direct posts
+  remain private: they appear only for their author and local recipients.
+- `GET /api/mastodon/v1/accounts/{id}/statuses` now applies the same
+  followers-only rule and viewer flags as the status detail route: the author
+  and accepted local followers see the rows, other viewers do not, and an
+  authenticated viewer gets their own favourite/poll state.
+
 ### Added
 
+- Direct posts and replies: `CreatePost` and `Post` carry `recipient_ids` and
+  `in_reply_to_id`. `PostService` validates known local recipients, enforces
+  the parent visibility rules, inherits participants for a direct reply and
+  keeps direct posts local (no remote delivery). Direct posts appear in the
+  author's and recipients' home timelines and are readable only by them;
+  `social_post_recipient` stores the ordered audience in PDO. The HTTP route,
+  post projection and `PostSchema` expose both fields. Tests cover direct
+  visibility, recipient validation, direct replies, reply widening refusal,
+  repository round-trips and home-timeline inclusion.
+- Block federation: `BlockService` stores the block first, resolves the remote
+  actor's individual inbox through the new `ActorInboxResolver` port and
+  queues a signed `Block` or `Undo(Block)` with the existing delivery queue.
+  `ActivityFactory` builds both activities with the actor URL as the object.
+  A missing or mismatching actor document keeps the local block and queues
+  nothing. `BlockRepository::findById()` supports the unblock path.
+- Mastodon compatibility for direct statuses and replies: `visibility=direct`
+  accepts `recipient_ids` or local `@id` mentions, `in_reply_to_id` is passed
+  through, and statuses project `in_reply_to_id`,
+  `in_reply_to_account_id` and recipient `mentions`.
 - Shared UI post detail: `@alohasocial/ui` now exports `PostDetail` and
   `usePostDetail()`. The second read-only screen consumes the existing core
   `GET /api/v1/posts/{id}` route through `CoreApi.getPost()`, renders the same

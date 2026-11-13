@@ -3,86 +3,171 @@
 The host-neutral core of Aloha Social: domain, federation, services, HTTP
 contract and platform ports.
 
-This repository is a **library**. It contains no server, no login page and no
-process you could install; it is what both Aloha Social hosts run.
+> **This repository is a library.** It has no installable server, login page
+> or process of its own. It is the shared foundation that the Aloha Social
+> hosts run. The Nextcloud app, the standalone server and their bridges live in
+> separate repositories.
 
-| Host | What it is | Status |
-| --- | --- | --- |
-| [`AlohaSocial/social`](https://github.com/AlohaSocial/social) | the Nextcloud app | exists, not yet consuming this package |
-| `AlohaSocial/server` | the standalone server, installed by script or container | planned |
-| this repository | the code both of them share | foundation |
+The architecture and the boundary between the core and its hosts are described
+in [ADR 0001](docs/adr/0001-shared-core-two-hosts.md) and
+[the architecture document](docs/architecture.md).
 
-The architecture and the reasons behind it are in
-[`docs/adr/0001`](docs/adr/0001-shared-core-two-hosts.md).
+## What is implemented
 
-## Status
-
-Implemented and tested here:
-
-| Area | What |
+| Area | Implemented here |
 | --- | --- |
-| Platform ports | config, clock, blob storage (local and in-memory), image thumbnails (GD), database (PDO), outbound HTTP (curl) |
-| Domain | posts, visibility, local favourites, remote posts/boosts, per-user blocks, media metadata with local and remote post links, a bounded remote thread cache, post/favourite/remote-post/remote-thread/block/attachment repositories (in-memory and SQL, same contract tests), combined home-timeline repository |
-| Follow graph | followers and following per local account, in-memory and SQL repositories behind one contract test, individual and shared inbox resolution, batched post delivery, signed `Follow`/`Undo` delivery |
-| Inbound federation | signed `POST /inbox` and `/inbox/shared`, actor-key resolution over a port, `Follow` → edge + `Accept` behind an optional `FollowPolicy`, `Undo(Follow)`, signed `Create`/`Delete`/`Announce` from followed actors, replay guard, remote-post persistence, guarded remote-media attachment ingestion, bounded outbox catch-up with historical media repair, bounded on-demand thread/context fetching and per-user timeline blocking |
-| Discovery | WebFinger handle resolution, ActivityStreams actor document with the published key, paged followers/following `OrderedCollection`s and the paged public outbox |
-| Services | write/read/delete a post, public and follow-based home timelines, followers, following, configurable instance description and local statistics, local favourite/follow notification recording, listing and dismiss/unread state, image upload with validation and thumbnails, guarded remote-image import for incoming federated posts and historical outbox media catch-up, bounded remote thread/context reads, opt-in AT Protocol publishing and remote delete for public text posts |
-| AT Protocol | ATProto account/record primitives, deterministic TIDs, authenticated XRPC `putRecord`/`deleteRecord`, an idempotent publication table with in-memory/PDO adapters, a disabled-by-default publish route, an idempotent remote delete for core-published records, an OAuth session-refresh exchange and an authorization-code/PAR/revocation client with ES256 DPoP proofs; the account-linking UI/callback, credential store and the full AppView/repository stack are still external (see the [guide](docs/guides/atproto.md)) |
-| Federation | RSA key pairs, HTTP signatures (sign and verify), ActivityStreams `Create`/`Delete`, inbox fan-out, signed delivery jobs with backoff and dead letters, bounded actor-key caching |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest with 51 routes and its JSON export |
-| Mastodon compatibility | optional, disabled-by-default `/api/mastodon/v1` subset (instance metadata/statistics, public timeline, status read/write/delete with local poll creation/voting, local favourite/unfavourite, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, local status/actor search, media upload/update/delete, local account profiles, paged local follower/following lists, account statuses, verify credentials) over the same posts, media service, follower graph, notification repository and local account directory, with scopes (`write:statuses`, `write:favourites`, `write:follows`, `write:media`, `write:notifications`, `read:accounts`, `read:follows`, `read:notifications`, `read:search`), id-aware and offset pagination, idempotency keys and a configurable prefix; the full Mastodon server API remains external |
-| Host integration | `Application::forHost()` with injected ports, SQL repositories, durable `PdoJobQueue`/`PdoActivityLog` and a documented Nextcloud adapter path |
-| Migration and ownership | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md) fixes identity-preserving, feature-by-feature migration and the core/social/server boundary; `bin/validate-cutover` checks a neutral JSON export against the derived identities |
-| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, `CoreApi`, network-free `FakeHostBridge`, `PostCard`, a read-only `PublicTimeline` with loading/empty/error/load-more states and a read-only `PostDetail` with loading/not-found/error states over the existing single-post route; host bridges and mount pages remain host work |
-| Security | AES-256-GCM secret box for private keys at rest |
+| Posts and timelines | create, read and soft-delete local posts; replies with `in_reply_to_id`; direct posts with local recipients; public and home timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
+| Social interactions | local favourites and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; local follow/unfollow and relationship reads |
+| Follow graph | incoming and outgoing edges, individual and shared inboxes, batched delivery, optional follow policy, local-to-local follows and local-follow home timeline |
+| Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Block`/`Undo(Block)` |
+| Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
+| Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
+| AT Protocol | account/record primitives, deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication rows, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
+| Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), poll creation/voting, favourites, local follow/unfollow and relationships, notifications with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (51 routes; 25 under the compatibility prefix) |
+| Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table |
+| Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
+| Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
+| Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` and read-only `PostDetail` |
 
-Deliberately not here yet: the rest of the AT Protocol stack (account-linking
-UI/callback, the credential store, full repository/AppView, media and firehose),
-the full
-Mastodon server API (the local compatibility subset is in
-`docs/guides/mastodon-api.md`), an
-admin UI, a migration runner, host-specific UI bridges/mount pages and the
-Nextcloud/standalone host applications. Local image upload, thumbnails, guarded remote-media
-ingestion for incoming federated posts and bounded thread/context fetches are
-implemented; an object-storage adapter remains a host choice. The
-[architecture document](docs/architecture.md#what-is-not-here-yet) lists the
-remaining seams.
+The Mastodon-compatible surface is additive and disabled by default. It reuses
+the same posts, media service, follow graph, notification repository and local
+account directory as `/api/v1`; it is not a second status store. See
+[the compatibility guide](docs/guides/mastodon-api.md).
+
+The shared UI consumes existing core routes only. `PublicTimeline` reads
+`GET /api/v1/timelines/public`; `PostDetail` reads
+`GET /api/v1/posts/{id}`. Both cover loading, error and 401 states, and the
+timeline covers empty and cursor paging as well. Host bridges and mount pages
+are deliberately not in this repository.
+
+## What remains outside this repository
+
+These are real host or deployment responsibilities, not missing local routes:
+
+- **Host application work:** login, sessions, account creation/reset, CSRF,
+  bearer-token issuance, admin settings, navigation, templates, deployment and
+  the worker process. The Nextcloud adapter and mount pages belong to
+  `AlohaSocial/social`; see [Nextcloud host integration](docs/guides/nextcloud-host.md).
+- **Host migrations:** the core owns the schema classes, not a migration
+  runner. Creating the tables, adding documented columns/indexes and importing
+  existing Nextcloud data stay with the host. See
+  [migrating a Nextcloud installation](docs/guides/migration-from-nextcloud.md).
+- **The full Mastodon server API:** OAuth authorization/token issuance and app
+  registration; real remote timelines and remote delivery; favourite
+  federation; boosts; remote notifications; streaming infrastructure; remote
+  poll fetching/voting/federation; remote search; and remote
+  relationship/admin APIs. The local subset and the exact external list are in
+  [Mastodon-compatible API](docs/guides/mastodon-api.md#what-remains-external).
+- **The full AT Protocol stack:** account-linking UI/browser callback, the
+  short-lived flow store, credential storage, PDS selection, the full
+  repository/AppView client, CAR/MST, blob uploads and the firehose. The
+  protocol client and publishing foundation are implemented; see
+  [AT Protocol publishing](docs/guides/atproto.md#remaining-external-work).
+- **Host-specific UI bridges and mount pages**, including the Nextcloud
+  `HostBridge`, rollout of the shared screens and the standalone bridge. See
+  [shared UI](docs/guides/shared-ui.md).
+- **An object-storage adapter** such as S3; it is a host/deployment choice. The
+  core ships in-memory and local blob stores behind the `BlobStore` port.
+
+Two boundaries remain deliberate product/contract decisions rather than host
+work: direct posts and replies are local-only and address local account ids
+(no remote direct delivery), and block propagation is outbound only — a peer
+receives `Block`/`Undo(Block)`, but no public block collection is served and an
+incoming block is not applied as a local moderation rule. See
+[posts and timelines](docs/guides/posts-and-timelines.md) and
+[blocks](docs/guides/blocks.md).
+
+## Architecture at a glance
+
+```
+Host (auth, HTTP framework, database, worker)
+  │
+  ▼
+Core\Kernel → Router → Middleware → Handler
+                                  │
+                                  ▼
+                         Service (validation, transactions, fan-out)
+                                  │
+                ┌─────────────────┴─────────────────┐
+                ▼                                   ▼
+       Domain repositories                  JobQueue / InboxResolver
+                │                                   │
+                └──────────────┬────────────────────┘
+                               ▼
+                    Platform ports: Config, Clock, Connection,
+                    BlobStore, HttpClient, ActivityLog, ...
+```
+
+`src/` contains no host import. `composer check:boundary` enforces that.
+`Application::forHost()` is the production composition root;
+`Application::inMemory()` is the test/demo assembly. Both use the same handlers
+and services. See [architecture](docs/architecture.md) and
+[using the core from a host](docs/guides/host-integration.md).
 
 ## Requirements
 
 - PHP 8.3 or newer
 - `ext-gd`, `ext-json`, `ext-mbstring`, `ext-openssl`, `ext-pdo` (runtime)
-- `ext-curl` when the host uses `CurlHttpClient` for outbound delivery, remote media or thread/context fetching
-- `ext-pdo_sqlite` (tests)
+- `ext-curl` when the host uses `CurlHttpClient` for delivery, remote media or
+  thread/context fetching
+- `ext-pdo_sqlite` for the test suite
 - Node.js 20 or newer for the `ui/` package
 
 ## Quick start
 
 ```bash
 composer install
-composer check          # lint, boundary, attribution, links, tests
-php bin/core-demo       # drives the core through real HTTP requests
+composer check          # lint, core boundary, attribution, links, PHP tests
+php bin/core-demo       # real HTTP requests through the in-memory assembly
 php bin/export-routes   # the HTTP contract as JSON (51 routes)
-php bin/export-openapi  # the same manifest as OpenAPI 3.1
-php bin/validate-cutover var/migration-export.json  # read-only cutover parity
-cd ui && npm ci && npm test && npm run build  # shared UI package
+php bin/export-openapi  # the same contract as OpenAPI 3.1
+
+cd ui
+npm ci
+npm run typecheck
+npm test
+npm run build
 ```
 
-The demo builds the in-memory assembly, writes a post, reads the timeline,
-records a follower, attempts a local follow (503 without delivery
-configuration), shows the error shapes and shows that the inbox, the actor
-routes and WebFinger answer 503 without a key or resolver — no database and no
-network.
+`bin/core-demo` writes a post, reads the public timeline, records a follower,
+shows the expected 503 for a follow without delivery configuration, and
+demonstrates the documented errors for unconfigured inboxes, actors and
+WebFinger. It needs no database and no network.
+
+### Quality gates
+
+- `composer check` runs PHP lint, the core-boundary guard, the no-attribution
+  commit check, relative-link validation and the full PHPUnit suite.
+- The UI package has its own strict TypeScript check, Vitest suite and
+  ES-module build. Its route-parity test invokes `php bin/export-routes`, so
+  PHP dependencies must be installed first.
+- CI runs the PHP matrix (8.3–8.5) and the UI job separately.
+
+## The three shared contracts
+
+1. **HTTP** — [`src/Contract/Routes.php`](src/Contract/Routes.php) is the only
+   route declaration. Both hosts must serve exactly this manifest; the OpenAPI
+   export is generated from it. See [ADR 0003](docs/adr/0003-http-contract.md).
+2. **Platform** — everything the core needs from a host is an interface in
+   `src/Platform/`. The core imports no host code; the boundary check fails the
+   build otherwise.
+3. **Data** — each table's schema lives next to its repository or adapter.
+   `PostSchema`, `PollSchema`, `FavouriteSchema`, `NotificationSchema`,
+   `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
+   `BlockSchema`, `AtprotoPublicationSchema`, `JobSchema` and
+   `ActivityLogSchema` are shared by the in-memory contract tests and the PDO
+   adapters, so a database dump can move between hosts.
 
 ## Layout
 
 ```
 src/
   Platform/        ports the hosts implement — no host code ever enters here
-  Domain/          posts, media, remote posts, remote threads, followers, timelines, AT Protocol accounts/publications/sessions, repositories, inbox resolution, activity log
-  Service/         application behaviour and its validation
-  Protocol/        ActivityPub documents, RSA keys, HTTP signatures, ATProto records and XRPC
-  Jobs/            durable queue contract, PDO and in-memory queues, worker
+  Domain/          posts, polls, media, federation, timelines, AT Protocol, repositories
+  Service/         application behaviour and validation
+  Protocol/        ActivityPub, RSA, HTTP signatures, ATProto records and XRPC
+  Jobs/            durable queue contract, PDO/in-memory queues, worker
   Migration/       read-only validator for neutral cutover exports
   Http/            request, response, router, middleware, kernel
   Api/             one handler per route
@@ -93,105 +178,8 @@ tests/             unit, contract and end-to-end tests
 ui/                @alohasocial/ui Vue package, HostBridge contract and tests
 bin/               demo, route export and cutover validation
 tools/             lint, link, attribution and host-neutrality guards
-docs/              index, architecture, guides, reference, operations, ADRs
+docs/              architecture, guides, reference, operations, ADRs
 ```
-
-## The three contracts
-
-1. **HTTP** — [`src/Contract/Routes.php`](src/Contract/Routes.php) is the only
-   place a route is declared. Both hosts must serve exactly this list; a host
-   that drifts fails its parity test. See
-   [ADR 0003](docs/adr/0003-http-contract.md).
-2. **Platform** — everything the core needs from a host is one interface in
-   `src/Platform/`. The Nextcloud and standalone adapters implement them; the
-   core imports nothing from either. Enforced by `tools/check-core-boundary.php`
-   on every run.
-3. **Data** — the schema of a table lives next to its repository or adapter
-   ([`PostSchema`](src/Domain/Post/PostSchema.php),
-   [`PollSchema`](src/Domain/Post/PollSchema.php),
-   [`FavouriteSchema`](src/Domain/Post/FavouriteSchema.php),
-   [`NotificationSchema`](src/Domain/Notification/NotificationSchema.php),
-   [`AttachmentSchema`](src/Domain/Media/AttachmentSchema.php),
-   [`FollowerSchema`](src/Domain/Federation/FollowerSchema.php),
-   [`FollowingSchema`](src/Domain/Federation/FollowingSchema.php),
-   [`RemotePostSchema`](src/Domain/Federation/RemotePostSchema.php),
-   [`BlockSchema`](src/Domain/Federation/BlockSchema.php),
-   [`AtprotoPublicationSchema`](src/Domain/Atproto/AtprotoPublicationSchema.php),
-   [`JobSchema`](src/Jobs/JobSchema.php),
-   [`ActivityLogSchema`](src/Domain/Federation/ActivityLogSchema.php)), so
-   both databases have the same columns and a dump can move between them.
-
-## Tests
-
-```bash
-composer test                                  # everything
-php vendor/bin/phpunit tests/Http              # one directory
-php vendor/bin/phpunit --filter HttpSignatureTest
-```
-
-The suite covers the platform adapters, the domain, both repository
-implementations against one contract, the signature and ActivityPub
-primitives, the queue's retry and dead-letter rules, routing and error
-rendering, and end-to-end paths from HTTP through the queue to a signed
-delivery to a real follower. The PDO queue and activity log are also tested
-against a SQLite file with a fresh connection, proving that a pending job, a
-retry and a replay decision survive a restart. The outgoing follow path is
-tested end to end: Follow/Undo requests, signature verification, rollback and
-retry. The inbound content path is tested through a signed `POST /inbox`, the
-remote-post repository and the authenticated home timeline, including a
-duplicate create, a targeted delete, a boost, an unfollowed actor and a
-blocked actor. The per-user block path is tested through the real block API
-and the combined timeline, including SQL filtering and unblocking. `MediaTest`
-uploads a PNG through the real route into a temporary local blob store, checks
-that the original and thumbnail are separate objects, attaches it to a post
-and reads the alt text and URLs back through the post and both timelines. It
-also proves wrong, corrupt and oversized uploads leave no blob and no post.
-`RemoteMediaTest` adds the guarded inbound and outbox-backfill media paths,
-including historical repair, idempotent repeats and failing candidates.
-`ApplicationTest` proves that two followers on one server sharing an advertised
-inbox produce one signed job to `/inbox/shared`; `InboxTest` delivers a signed
-Follow to that route and reads the stored edge back, and the follower
-repository contract covers shared-inbox preference, de-duplication and the
-individual-inbox fallback. `ApplicationHostTest` repeats the Create-to-home
-path against SQL repositories. `AtprotoPublishTest` drives post creation through
-the queued AT Protocol job to the XRPC request and publication row, including
-repeat idempotency, unsupported posts, disabled/auth/missing-account and PDS
-failure paths; the XRPC adapter, record builder, TID and publication
-repositories have their own tests. Remote delete is covered through the real
-post-delete route, the queued job, the XRPC `deleteRecord` request, retry after
-a PDS failure and the no-publication/no-duplicate cases. OAuth session refresh
-is covered with a real ES256 DPoP proof, a fake token endpoint including the
-nonce retry, token rotation and terminal/retryable failures. The
-authorization-code client is covered with fake metadata and token endpoints for
-PAR, PKCE/`dpop_jkt`, nonce retries, issuer/DID checks and revocation.
-`MastodonApiTest` drives the optional
-compatibility routes through the real kernel: instance metadata and local
-stats, public timeline, media upload (including description, media-in-status, scopes, disabled,
-invalid input and idempotency), media update/delete (form, JSON, multipart,
-ownership, attached-media refusal, empty-object delete, no orphan blobs, scopes
-and disabled feature), create (form and JSON), poll creation (options, both
-expiry forms, expiry flip, validation without partial status and idempotent
-retry), poll read/voting (viewer state, multiple choices, idempotent retry,
-changed-vote rejection, expiry, private visibility, missing ids,
-auth/scope/disabled and SQL counters), read, local
-favourite/unfavourite (counts, viewer flags, idempotency, auth, scope,
-deleted status and custom prefix), local follow/unfollow and relationship
-reads (flags, idempotency, self/unknown targets, scalar and array ids, limits
-and scopes), notifications (favourite/follow creation, repeat idempotency,
-historical survival, type filters, cursor pagination, dismiss/clear idempotency, read-row hiding, unread count filters/caps, foreign ids, scopes and disabled feature), local search
-(account/status matches, type and following filters, offset pages, visibility,
-auth/scope/disabled and missing capabilities), account statuses,
-verify, delete, cursor pagination and invalid media. The `FavouriteRepository`,
-`NotificationRepository`, `FollowerRepository` and `PostRepository` contracts
-cover the new storage, scoped read markers and unread counts, local-edge
-delivery exclusion, attachment-link queries,
-poll round-tripping/soft-delete retention and the search
-visibility/author/offset contract. The
-`MastodonCompatibilityTest` covers prefix validation, scope matching and route
-metadata, including the search route. The `ui/` package has 33 Vitest tests for
-the `HostBridge` plugin/FakeBridge, typed `CoreApi`, loading/empty/not-found/
-error/401, retry, cursor pagination, reactive post-detail loading and route
-parity against `bin/export-routes`; it is typechecked and built separately in CI.
 
 ## Documentation
 
@@ -201,30 +189,23 @@ parity against `bin/export-routes`; it is typechecked and built separately in CI
   [Nextcloud host integration](docs/guides/nextcloud-host.md),
   [migrating a Nextcloud installation](docs/guides/migration-from-nextcloud.md),
   [shared UI and HostBridge](docs/guides/shared-ui.md)
-- [Development](docs/development.md)
 - [Routes](docs/reference/routes.md), [error codes](docs/reference/error-codes.md),
   [configuration](docs/reference/configuration.md)
-- [Inbound federation](docs/guides/inbound-federation.md),
-  [shared inboxes](docs/guides/shared-inboxes.md),
-  [Mastodon-compatible API](docs/guides/mastodon-api.md),
+- [Mastodon-compatible API](docs/guides/mastodon-api.md),
   [AT Protocol publishing](docs/guides/atproto.md),
-  [media](docs/guides/media.md), [blocks](docs/guides/blocks.md),
-  [inbox activities](docs/reference/inbox-activities.md),
-  [keys and clocks](docs/operations/keys-and-clocks.md)
-- [Actor document](docs/reference/actor-document.md),
-  [peer discovery](docs/guides/peer-discovery.md),
-  [followers collection](docs/guides/followers-collection.md),
-  [following collection](docs/guides/following-collection.md),
-  [outbox](docs/guides/outbox.md),
-  [WebFinger](docs/guides/webfinger.md)
-- [ADR 0001 — one core, two hosts](docs/adr/0001-shared-core-two-hosts.md)
-- [ADR 0002 — runtime](docs/adr/0002-runtime.md)
-- [ADR 0003 — HTTP contract](docs/adr/0003-http-contract.md),
+  [federation](docs/guides/federation.md),
+  [inbound federation](docs/guides/inbound-federation.md),
+  [media](docs/guides/media.md), [blocks](docs/guides/blocks.md)
+- [Testing](docs/guides/testing.md), [development](docs/development.md),
+  [roadmap](docs/roadmap.md)
+- [Contributing](CONTRIBUTING.md), [security](SECURITY.md),
+  [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md),
+  [agent conventions](AGENTS.md)
+- [ADR 0001 — one core, two hosts](docs/adr/0001-shared-core-two-hosts.md),
+  [ADR 0002 — runtime](docs/adr/0002-runtime.md),
+  [ADR 0003 — HTTP contract](docs/adr/0003-http-contract.md),
   [ADR 0004 — incremental migration and ownership](docs/adr/0004-incremental-migration-and-ownership.md),
   [ADR 0005 — shared UI](docs/adr/0005-shared-ui.md)
-- [Contributing](CONTRIBUTING.md), [security](SECURITY.md),
-  [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md)
-- [Agent conventions](AGENTS.md)
 
 ## License
 

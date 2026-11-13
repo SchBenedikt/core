@@ -24,7 +24,7 @@ timestamp, and anything else is refused.
 
 Each table's definition lives next to its repository or adapter:
 
-- `src/Domain/Post/PostSchema.php` → `social_post` and `social_post_attachment`
+- `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment` and ordered `social_post_recipient`
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites and follows, keyed by a deterministic event id, with a nullable `read_at` marker)
@@ -41,6 +41,14 @@ Each table's definition lives next to its repository or adapter:
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
 therefore move between the two databases.
+
+`social_post` has nullable `in_reply_to_id` and an index on
+`(in_reply_to_id, published_at)`. A direct post's local audience is stored in
+`social_post_recipient` as ordered `(post_id, recipient_id, position)` rows;
+both PDO reads (hydrating a post and the reader's own/direct home timeline)
+use those rows, so the audience is not duplicated in a JSON column. Existing
+hosts add the nullable column and create the recipient table before enabling
+direct posts or replies; rows without a reply/audience need no backfill.
 
 Adding a column means changing the schema class **and** both hosts' migration
 paths in the same release. There is no automatic migration runner in the core:
@@ -98,8 +106,9 @@ is the race-safe no-second-vote boundary. Status and poll reads degrade to
 `voted: false` until the table exists, while the vote route answers `503
 polls_not_configured`; these writes are not imported from a legacy host.
 `social_block` is unique by (local user, actor) and is applied to the same
-home query with a `NOT EXISTS`, so a block hides an actor only for the reader
-who created it; see [blocks](blocks.md). `social_favourite` is unique by
+home query with a `NOT EXISTS`, so a block hides a remote actor only for the
+reader who created it. The local-follow half filters the same table by the
+derived actor URL; see [blocks](blocks.md). `social_favourite` is unique by
 (local user, post) and stores the creation time. The composite primary key
 makes a repeat favourite idempotent, the post index serves public counts and
 the `(user, created_at)` index supports a future favourites timeline. A post

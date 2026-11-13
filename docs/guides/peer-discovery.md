@@ -90,5 +90,11 @@ Follow signed with the published key id is accepted, proving the values agree.
 
 - fetch a single post over ActivityPub (objects are embedded in the `Create`;
   the JSON API is for local clients);
-- deliver posts to this instance (`POST /inbox` applies only `Follow` and
-  `Undo(Follow)`).
+- follow a remote actor through the Mastodon-compatible prefix (the core
+  `/api/v1/following` route is the federation path);
+- use a remote `Like`, `Boost`, `Block` or streaming subscription through this
+  core (those remain external).
+
+The inbox does accept signed `Create`, `Delete` and `Announce` from followed
+actors, in addition to `Follow` and `Undo(Follow)`; see
+[inbound federation](inbound-federation.md).

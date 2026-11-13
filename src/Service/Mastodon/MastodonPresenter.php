@@ -18,6 +18,7 @@ use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\PollVote;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
@@ -32,9 +33,9 @@ use DateTimeImmutable;
  * Maps core posts and accounts to Mastodon API shapes.
  *
  * This is a read-side adapter only: it never creates a second post model. The
- * account is intentionally minimal because user profiles belong to the host;
- * the id, handle, URL and counts are the fields a Mastodon client needs to
- * render a status.
+ * account is intentionally minimal because profile detail fields belong to the
+ * host; the local id, handle, URL and counts are the fields a Mastodon client
+ * needs to render a status or a local profile.
  */
 final class MastodonPresenter
 {
@@ -47,6 +48,7 @@ final class MastodonPresenter
 		private readonly ?LocalActorDirectory $localActors = null,
 		private readonly ?Clock $clock = null,
 		private readonly ?PollVoteRepository $pollVotes = null,
+		private readonly ?PostRepository $posts = null,
 	) {
 	}
 
@@ -109,12 +111,13 @@ final class MastodonPresenter
 		}
 
 		$url = $this->baseUrl() . '/api/v1/posts/' . rawurlencode($post->id);
+		$parent = $post->inReplyToId === null ? null : $this->posts?->find($post->inReplyToId);
 
 		return [
 			'id' => $post->id,
 			'created_at' => $post->publishedAt->format('Y-m-d\TH:i:s.000\Z'),
-			'in_reply_to_id' => null,
-			'in_reply_to_account_id' => null,
+			'in_reply_to_id' => $post->inReplyToId,
+			'in_reply_to_account_id' => $parent?->authorId,
 			'sensitive' => $post->contentWarning !== null,
 			'spoiler_text' => $post->contentWarning ?? '',
 			'visibility' => $this->visibility($post->visibility),
@@ -130,7 +133,7 @@ final class MastodonPresenter
 			'application' => null,
 			'account' => $this->account($post->authorId),
 			'media_attachments' => $attachments,
-			'mentions' => [],
+			'mentions' => $this->mentions($post),
 			'tags' => [],
 			'emojis' => [],
 			'card' => null,
@@ -442,6 +445,27 @@ final class MastodonPresenter
 			'size' => $width . 'x' . $height,
 			'aspect' => $height > 0 ? $width / $height : 1.0,
 		];
+	}
+
+	/**
+	 * Direct recipients are the only structured mentions the core stores.
+	 * A reply that is not direct has no recipient list, so it reports none
+	 * rather than inventing a mention that was never in the text.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private function mentions(Post $post): array
+	{
+		return array_map(function (string $userId): array {
+			$account = $this->account($userId);
+
+			return [
+				'id' => $userId,
+				'username' => $account['username'],
+				'url' => $account['url'],
+				'acct' => $account['acct'],
+			];
+		}, $post->recipientIds);
 	}
 
 	private function visibility(Visibility $visibility): string

@@ -24,7 +24,7 @@ use PDOException;
  */
 final class PdoPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
-	private const COLUMNS = 'id, author_id, content, content_warning, visibility, published_at, deleted_at';
+	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, deleted_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -37,18 +37,31 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$this->db->transaction(function () use ($post): void {
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
-					. ' (id, author_id, content, content_warning, visibility, published_at, deleted_at)'
-					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :published_at, :deleted_at)',
+					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, deleted_at)'
+					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :deleted_at)',
 					[
 						'id' => $post->id,
 						'author_id' => $post->authorId,
 						'content' => $post->content,
 						'content_warning' => $post->contentWarning,
 						'visibility' => $post->visibility->value,
+						'in_reply_to_id' => $post->inReplyToId,
 						'published_at' => Time::format($post->publishedAt),
 						'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
 					],
 				);
+
+				foreach ($post->recipientIds as $position => $recipientId) {
+					$this->db->execute(
+						'INSERT INTO ' . PostSchema::RECIPIENT_TABLE
+						. ' (post_id, recipient_id, position) VALUES (:post_id, :recipient_id, :position)',
+						[
+							'post_id' => $post->id,
+							'recipient_id' => $recipientId,
+							'position' => $position,
+						],
+					);
+				}
 
 				foreach ($post->attachmentIds as $position => $attachmentId) {
 					$this->db->execute(
@@ -111,6 +124,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$row,
 			$this->attachmentIdsFor([$id])[$id] ?? [],
 			$this->pollsFor([$id])[$id] ?? null,
+			$this->recipientIdsFor([$id])[$id] ?? [],
 		);
 	}
 
@@ -169,15 +183,20 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $includeFollowers = false,
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND author_id = :author'
-			. ' AND visibility IN (:public, :unlisted)';
+			. ' AND visibility IN (:public, :unlisted'
+			. ($includeFollowers ? ', :followers' : '') . ')';
 		$parameters = [
 			'author' => $userId,
 			'public' => Visibility::Public->value,
 			'unlisted' => Visibility::Unlisted->value,
 		];
+		if ($includeFollowers) {
+			$parameters['followers'] = Visibility::Followers->value;
+		}
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -272,7 +291,11 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		}
 
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')';
+			. ' WHERE deleted_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')'
+			. ' AND visibility IN (:public, :unlisted, :followers)';
+		$parameters['public'] = Visibility::Public->value;
+		$parameters['unlisted'] = Visibility::Unlisted->value;
+		$parameters['followers'] = Visibility::Followers->value;
 
 		if ($before !== null) {
 			$sql .= ' AND published_at < :before';
@@ -286,16 +309,23 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
-		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id = :author';
-		$parameters = ['author' => $userId];
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
+			. ' WHERE p.deleted_at IS NULL AND (p.author_id = :author'
+			. ' OR (p.visibility = :direct AND EXISTS ('
+			. ' SELECT 1 FROM ' . PostSchema::RECIPIENT_TABLE . ' r'
+			. ' WHERE r.post_id = p.id AND r.recipient_id = :recipient)))';
+		$parameters = [
+			'author' => $userId,
+			'recipient' => $userId,
+			'direct' => Visibility::Direct->value,
+		];
 
 		if ($before !== null) {
-			$sql .= ' AND published_at < :before';
+			$sql .= ' AND p.published_at < :before';
 			$parameters['before'] = Time::format($before);
 		}
 
-		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+		$sql .= ' ORDER BY p.published_at DESC, p.id DESC LIMIT ' . $this->limit($limit);
 
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
@@ -382,6 +412,40 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	}
 
 	/**
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, list<string>>
+	 */
+	private function recipientIdsFor(array $postIds): array
+	{
+		if ($postIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach (array_values($postIds) as $index => $postId) {
+			$name = 'post_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $postId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT post_id, recipient_id FROM ' . PostSchema::RECIPIENT_TABLE
+			. ' WHERE post_id IN (' . implode(', ', $placeholders) . ')'
+			. ' ORDER BY post_id, position',
+			$parameters,
+		);
+
+		$result = [];
+		foreach ($rows as $row) {
+			$result[(string) $row['post_id']][] = (string) $row['recipient_id'];
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Limits are integers the service already clamped; inlining one is what
 	 * keeps the statement identical on drivers that refuse a bound LIMIT.
 	 */
@@ -409,12 +473,14 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$ids = array_map(static fn (array $row): string => (string) $row['id'], $rows);
 		$attachmentIds = $this->attachmentIdsFor($ids);
 		$polls = $this->pollsFor($ids);
+		$recipients = $this->recipientIdsFor($ids);
 
 		return array_map(
 			fn (array $row): Post => $this->hydrate(
 				$row,
 				$attachmentIds[(string) $row['id']] ?? [],
 				$polls[(string) $row['id']] ?? null,
+				$recipients[(string) $row['id']] ?? [],
 			),
 			$rows,
 		);
@@ -485,8 +551,12 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	/**
 	 * @param array<string, mixed> $row
 	 */
-	private function hydrate(array $row, array $attachmentIds = [], ?Poll $poll = null): Post
-	{
+	private function hydrate(
+		array $row,
+		array $attachmentIds = [],
+		?Poll $poll = null,
+		array $recipientIds = [],
+	): Post {
 		return new Post(
 			id: (string) $row['id'],
 			authorId: (string) $row['author_id'],
@@ -497,6 +567,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			deletedAt: $row['deleted_at'] === null ? null : Time::parse((string) $row['deleted_at']),
 			attachmentIds: $attachmentIds,
 			poll: $poll,
+			recipientIds: $recipientIds,
+			inReplyToId: $row['in_reply_to_id'] === null ? null : (string) $row['in_reply_to_id'],
 		);
 	}
 }

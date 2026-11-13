@@ -451,7 +451,7 @@ final class Routes
 				handler: MastodonAccountStatusesHandler::class,
 				requiresAuth: false,
 				rateLimit: '60/60',
-				summary: 'Public statuses of one local account in the Mastodon shape.',
+				summary: 'Statuses of one local account in the Mastodon shape, with viewer-scoped followers-only visibility.',
 			),
 			new Route(
 				name: 'mastodon.accounts.show',
