@@ -30,6 +30,11 @@ in [ADR 0001](docs/adr/0001-shared-core-two-hosts.md) and
 | Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
 | Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` and read-only `PostDetail` |
 
+The interaction routes (favourites, bookmarks, mutes, lists, notifications,
+polls and local follow/unfollow) are part of the optional Mastodon-compatible
+subset and are only served under its configurable prefix. `/api/v1` exposes
+posts, timelines, blocks, follows, media and remote threads.
+
 The Mastodon-compatible surface is additive and disabled by default. It reuses
 the same posts, media service, follow graph, notification repository and local
 account directory as `/api/v1`; it is not a second status store. See
@@ -43,7 +48,8 @@ are deliberately not in this repository.
 
 ## What remains outside this repository
 
-These are real host or deployment responsibilities, not missing local routes:
+These are real host or deployment responsibilities, not missing local routes.
+The milestone order and current status are in [the roadmap](docs/roadmap.md).
 
 - **Host application work:** login, sessions, account creation/reset, CSRF,
   bearer-token issuance, admin settings, navigation, templates, deployment and

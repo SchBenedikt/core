@@ -1,14 +1,14 @@
 # Shared UI and HostBridge
 
-The shared front end is planned as `@alohasocial/ui`, a Vue 3 package used by
-the Nextcloud app and the standalone server. This guide is the practical
-contract for that package; [ADR 0005](../adr/0005-shared-ui.md) explains why
-the boundary is drawn this way.
+The shared front end is `@alohasocial/ui`, a Vue 3 package used by the
+Nextcloud app and the standalone server. This guide is the practical contract
+for that package; [ADR 0005](../adr/0005-shared-ui.md) explains why the
+boundary is drawn this way.
 
-The package now exists under [`ui/`](../../ui/README.md). This guide defines
-what it exposes, which read-only screens were moved and what remains in the hosts.
-The Nextcloud bridge and mount page are still host work; the package does not
-contain either host's session or CSRF implementation.
+The package lives under [`ui/`](../../ui/README.md). This guide defines what it
+exposes, which screens were moved and what remains in the hosts. The host
+bridges and mount pages are still host work; the package does not contain
+either host's session or CSRF implementation.
 
 ## The boundary
 
@@ -274,11 +274,16 @@ A host smoke test is not a replacement for the package tests.
 
 1. **Done:** the package, bridge contract, fake bridge and the read-only public
    timeline and post-detail screens with component tests live under `ui/`.
-2. Add the Nextcloud bridge behind a feature flag.
-3. Verify login, request, 401 and logout in the real page.
-4. Add the standalone bridge when its auth flow exists.
-5. Move a write screen only after both hosts can complete it.
-6. Remove the old screen when parity is confirmed.
+2. **Next:** add the Nextcloud bridge behind a feature flag, mount the two
+   read-only screens and verify login, request, 401 and logout in the real
+   page.
+3. **Next:** move the shared actor header with its follow control, the post
+   composer and the notification list into the package, one screen at a time.
+   Each screen needs both a `FakeHostBridge` test and a real-host smoke test.
+4. **Next:** add the standalone bridge once its auth flow exists.
+5. **Later:** remove the old host screen when parity is confirmed.
 
 The backend slice must be migrated first. A shared component is not a reason to
-move an API that still has identity or data-parity problems.
+move an API that still has identity or data-parity problems. Milestone M5 in
+the [roadmap](../roadmap.md) tracks the rollout; this guide tracks the
+contract.

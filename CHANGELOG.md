@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Documentation roadmap: `docs/roadmap.md` is now the canonical
+  goal/status document with milestones M0–M7, owners and exit criteria. The
+  README, AGENTS.md, architecture, standalone-host checklist, shared-UI
+  rollout, Mastodon/AT Protocol remainder, migration guide and FAQ were aligned
+  with it. Stale FAQ answers (direct posts, block federation), the incomplete
+  standalone schema/repository/service list and six missing Mastodon rows in
+  the route reference were corrected.
 - Documentation: `README.md` now states the complete locally implemented
   surface, separates core features from host/external responsibilities and
   links the current contracts and guides. The follow-graph, timeline and block
@@ -29,6 +36,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Proposed ADR 0006: accounts, sessions, credentials and token issuance stay
+  host-owned; the core keeps the `Request::$userId`/`scope` seam and adds no
+  user table or identity port. This closes the M4 prerequisite in the roadmap.
+- Documentation consistency test: `tests/Contract/DocumentationTest.php`
+  compares `docs/reference/routes.md` with `Routes::manifest()`, checks the
+  advertised route counts in the route reference, roadmap and README, and
+  verifies that every `*Schema` class is listed in the database guide.
 - Private Mastodon-compatible lists: `POST/GET {mastodon.prefix}/lists`
   create and list the caller's private lists, and `GET`/`PUT`/`DELETE
   {mastodon.prefix}/lists/{id}` read, update and delete one. A list carries a

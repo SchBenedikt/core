@@ -354,5 +354,7 @@ are implemented locally. Deleting records created outside this core, the
 account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
-Those are tracked in the [roadmap](../roadmap.md) as the remaining part of the
-AT Protocol stack, not as part of this publishing foundation.
+The remaining protocol follow-ups after account linking — facets, mentions,
+link cards, media embeds and reply/thread mapping — are listed as Later in the
+[roadmap](../roadmap.md). The rest is tracked there as the compatibility
+remainder (M6), not as part of this publishing foundation.

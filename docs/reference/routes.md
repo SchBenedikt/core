@@ -45,12 +45,18 @@ compatibility prefix.
 | `mastodon.media.delete` | `DELETE` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
+| `mastodon.statuses.context` | `GET` | `/api/mastodon/v1/statuses/{id}/context` | no | 60 / 60 s |
 | `mastodon.polls.show` | `GET` | `/api/mastodon/v1/polls/{id}` | no | 120 / 60 s |
 | `mastodon.polls.vote` | `POST` | `/api/mastodon/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.statuses.reblog` | `POST` | `/api/mastodon/v1/statuses/{id}/reblog` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.statuses.unreblog` | `POST` | `/api/mastodon/v1/statuses/{id}/unreblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
 | `mastodon.statuses.unfavourite` | `POST` | `/api/mastodon/v1/statuses/{id}/unfavourite` | yes, `write:favourites` | 30 / 900 s |
+| `mastodon.statuses.bookmark` | `POST` | `/api/mastodon/v1/statuses/{id}/bookmark` | yes, `write:bookmarks` | 30 / 900 s |
+| `mastodon.statuses.unbookmark` | `POST` | `/api/mastodon/v1/statuses/{id}/unbookmark` | yes, `write:bookmarks` | 30 / 900 s |
+| `mastodon.bookmarks` | `GET` | `/api/mastodon/v1/bookmarks` | yes, `read:bookmarks` | 60 / 60 s |
 | `mastodon.accounts.relationships` | `GET` | `/api/mastodon/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
 | `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |

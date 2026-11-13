@@ -100,3 +100,12 @@ hosts around it.**
   accounts.
 - Add a parity test in both hosts that compares their registered routes with
   `bin/export-routes`.
+
+## Implementation status
+
+As of 2026-11-13: the boundary guard, the platform ports, the durable queue and
+replay log are implemented, and `@alohasocial/ui` exists under `ui/`.
+[ADR 0006](0006-host-owned-accounts.md) (proposed) now recommends keeping
+accounts and sessions host-owned instead of adding a user/identity port; the
+host parity tests are still open (M3). This note records progress; it does not
+change the decision.

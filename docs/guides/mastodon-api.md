@@ -73,9 +73,11 @@ search, remote profile fetching, admin APIs or the full account management
 surface. Lists are limited to known local account ids; remote list membership
 is external.
 Local search over local accounts and statuses is implemented below; remote
-search and hashtag search are external. Some of the remaining pieces are
-locally implementable and remain on the roadmap; only the parts that need a
-host or remote data are external. See the section at the end.
+search and hashtag search are external. The locally implementable remainder —
+hashtags and hashtag search, filters, followed tags, scheduled posts, follow
+requests/locked accounts and the wider account-management surface — is a
+product follow-up listed as Later in the [roadmap](../roadmap.md); everything
+else needs a host or remote data. See the section at the end.
 
 ## Configuration and prefix
 
@@ -1222,6 +1224,6 @@ Turning this into a complete Mastodon server is intentionally out of scope:
 - The host must map bearer tokens to `userId`/`scopes`, enforce the declared
   rate limits and decide whether to expose the custom prefix publicly.
 
-These remain tracked in the roadmap as host/integration work; the local
-routes, mapping, validation, pagination, idempotency and error behavior above
-are complete and tested.
+These are tracked as the compatibility remainder (M6) in the
+[roadmap](../roadmap.md); the local routes, mapping, validation, pagination,
+idempotency and error behavior above are complete and tested.

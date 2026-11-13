@@ -794,14 +794,16 @@ genuinely owns the capability.
 
 | Missing | Where it will attach |
 | --- | --- |
-| accounts, sessions, password reset | a `Platform\Identity` port and a `User` domain |
+| accounts, sessions, password reset | host-owned by [ADR 0006](adr/0006-host-owned-accounts.md); the core accepts an authenticated `Request::$userId` and stores no user table, credentials or sessions |
 | AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
-| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset, including media management, local favourites, private lists, local boosts/reblogs, reply context, local notifications with dismiss/unread state, local follow/unfollow, relationship reads, local account profiles and follower/following lists, local poll creation/voting, instance metadata/statistics and local status/actor search; no locally implementable profile follow-up remains; see [Mastodon-compatible API](guides/mastodon-api.md) |
+| Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset; the locally implementable remainder (hashtags, filters, followed tags, scheduled posts, follow requests and account management) is listed as Later in the [roadmap](roadmap.md); see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages; the core keeps the settings *rules* |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |
-| Host UI bridges and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screen; the package under `ui/` is now extracted |
+| Host UI bridges, write screens and mount pages | Each host implements `HostBridge`, imports `@alohasocial/ui` and mounts the shared screens; the package under `ui/` is extracted, the bridges and mount pages are host work (M5) |
+| Host route parity test | each host compares its registered routes with `bin/export-routes`; required before a cutover (M3) |
 | Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
 | Nextcloud data import | the `social` host, following the [migration guide](guides/migration-from-nextcloud.md) |
+| object-storage adapter | host choice behind `BlobStore`; the core ships the in-memory and local adapters, an S3 adapter is Later (M7) |
 
 ## Testing strategy
 

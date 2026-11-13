@@ -23,12 +23,15 @@ A single import of `OCP\` makes the core impossible to run outside Nextcloud.
 `composer check:boundary` fails the build instead, because the rule is easier to
 keep than to restore.
 
-### Why can't I create a direct post?
+### Can I create a direct post?
 
-A direct post needs an explicit recipient model and delivery targets. The
-local follow graph can show a follower a followers-only post, but it is not an
-explicit recipient list; there is no audience to deliver a direct post to.
-Refusing with 422 is honest; delivering to nobody is not.
+Yes, as a local conversation. `POST /api/v1/posts` accepts
+`visibility: "direct"` with `recipient_ids` naming known local accounts; only
+the author and those recipients can read it, and it appears in their home
+timelines. A direct reply inherits the parent's participants. Direct posts are
+deliberately not delivered to remote inboxes: remote direct delivery and
+remote reply threading are not part of this slice. See
+[posts and timelines](guides/posts-and-timelines.md).
 
 ### Why does a followers-only post answer 404 instead of 403?
 
@@ -40,10 +43,12 @@ it in the local-follow home timeline.
 ### Why is there no migrations runner?
 
 The mechanism differs per host: Nextcloud has its own schema API, the standalone
-server will use Doctrine Migrations. The core shares the *schema*
-(`PostSchema`, `FavouriteSchema`, `BookmarkSchema`, `BoostSchema`, `NotificationSchema`,
-`AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`,
-`BlockSchema`, `JobSchema`, `ActivityLogSchema`), not the runner.
+server will use its own migration runner. The core shares the *schema*
+(`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `MuteSchema`,
+`BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
+`FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
+`AccountListSchema`, `AtprotoPublicationSchema`, `JobSchema`,
+`ActivityLogSchema`), not the runner.
 
 ### How do I block an actor?
 
@@ -51,8 +56,10 @@ Use `POST /api/v1/blocks` with the actor URL and remove the block with
 `DELETE /api/v1/blocks/{id}`. The block is private to your account: it hides
 that actor's remote posts and boosts, and a followed local account's local
 posts, from **your** home timeline. It does not delete shared remote rows,
-remove a local follow edge or change another account's view, and it does not
-send an ActivityPub `Block` to the peer. See [blocks](guides/blocks.md).
+remove a local follow edge or change another account's view. For a remote
+actor it also queues a signed ActivityPub `Block` to the actor's individual
+inbox, and `Undo(Block)` on removal; a local block sends no activity because
+the relationship is already local. See [blocks](guides/blocks.md).
 
 ### Why is the activity built when the post is written, not when it is sent?
 

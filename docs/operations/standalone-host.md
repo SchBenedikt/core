@@ -12,10 +12,11 @@ This document is the checklist that host is built against.
    `social/instance.*` metadata keys feed both instance endpoints; unset keys
    use their documented defaults, and no instance row or migration is needed.
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
-   statements (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
+   statements    (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
    `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
-   `AccountListSchema`, `JobSchema`, `ActivityLogSchema`) from the migration step.
+   `MuteSchema`, `AccountListSchema`, `AtprotoPublicationSchema`, `JobSchema`,
+   `ActivityLogSchema`) from the migration step.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because
    `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_bookmark`, `social_boost` and
@@ -51,19 +52,23 @@ This document is the checklist that host is built against.
 5. **HTTP client** — `CurlHttpClient` with a timeout and a user agent.
 6. **Repositories** — `PdoPostRepository`, `PdoAttachmentRepository`,
    `PdoFollowerRepository`, `PdoFollowingRepository`,
-   `PdoRemotePostRepository`, `PdoBlockRepository`, `PdoFavouriteRepository`,
-   `PdoBookmarkRepository`, `PdoMuteRepository`, `PdoAccountListRepository` and
-   `PdoNotificationRepository` when local
-   favourites, bookmarks, mutes, lists and notifications
-   are exposed, and the combined `PdoHomeTimelineRepository`. The PDO post and
+   `PdoRemotePostRepository`, `PdoRemoteThreadRepository`,
+   `PdoBlockRepository`, `PdoFavouriteRepository`, `PdoBookmarkRepository`,
+   `PdoMuteRepository`, `PdoBoostRepository`, `PdoPollVoteRepository`,
+   `PdoAccountListRepository`, `PdoNotificationRepository` and
+   `PdoAtprotoPublicationRepository` when the matching feature is exposed, and
+   the combined `PdoHomeTimelineRepository`. The PDO post and
    remote-post repositories already implement `PostCount` and
    `RemoteDomainCount`; a custom local directory should implement
    `LocalActorCount` if the instance stats should include its accounts,
    otherwise `user_count` stays `0`.
 7. **Services** — `PostService` with a `FollowerInboxResolver`,
    `TimelineService`, `FollowerService`, `FollowingService` with the delivery
-   handler, `BlockService`, `AccountListService` for private lists, and
-   `MediaService` with a `BlobStore` and an `ImageProcessor`.
+   handler, `BlockService`, `BoostService`, `MuteService`,
+   `NotificationService`, `LocalRelationshipService`, `AccountListService` for
+   private lists, `MastodonService` for the optional compatibility prefix, the
+   AT Protocol publish/session services, and `MediaService` with a `BlobStore`
+   and an `ImageProcessor`.
 8. **Inbound** — `HttpActorResolver` over the HTTP client, `PdoActivityLog`,
    `InboxService` and, when `social_remote_post` exists, a `RemotePostRepository`
    for signed Create/Delete/Announce. Both `/inbox` and `/inbox/shared` use
@@ -133,5 +138,10 @@ image must not bake configuration or keys into a layer.
 
 ## Status
 
-None of this exists yet. The core's job is to make it a small repository, not a
-second application.
+`AlohaSocial/server` does not exist yet; this page is the build checklist for
+milestone M4 in the [roadmap](../roadmap.md). The core's job is to make it a
+small repository, not a second application. Everything in the boot order above
+is available in the core today except the host's own accounts/sessions and the
+migration runner. [ADR 0006](../adr/0006-host-owned-accounts.md) (proposed)
+keeps accounts, sessions and credentials host-owned; the standalone implements
+them against its own schema.

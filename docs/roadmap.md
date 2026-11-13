@@ -1,373 +1,184 @@
 # Roadmap
 
-Status of the core, not a promise about dates.
+Status of the core, not a promise about dates. Last reviewed: 2026-11-13.
 
-## Done
+This is the canonical status document. The guides explain how a part works;
+this page says what exists, what is next and which repository owns it. If a
+guide and this page disagree, the route manifest, the schemas and the tests
+win — and the disagreement is a documentation bug.
 
-- Platform ports: clock, config, blob storage, SQL, HTTP client — with in-memory
-  and production adapters.
-- Posts: validation, visibility, soft deletion, single-post access control.
-  A followers-only local post is readable by its accepted local follower as
-  well as its author, matching the local-follow home timeline. Direct posts
-  address known local accounts through `recipient_ids`; only the author and
-  recipients can read them, and they appear in the recipients' home timeline.
-  Replies carry `in_reply_to_id`, cannot widen the parent audience, and a
-  direct reply inherits the parent participants.
-- Timelines: public and home, stable cursor pagination.
-- ActivityPub: RSA keys, HTTP signatures (sign and verify), `Create`/`Delete`
-  documents, audience mapping.
-- Delivery: durable queue contract, retries with backoff, dead letters,
-  signed POSTs, idempotent activity ids. `PdoJobQueue` and `PdoActivityLog`
-  provide the durable SQL implementations.
-- Follow graph: follower storage (in-memory and SQL), inbox resolution, three
-  endpoints, isolated per account.
-- Shared inboxes and delivery batching: every actor document advertises
-  `endpoints.sharedInbox`, and `POST /inbox/shared` accepts the same signed
-  activities as `POST /inbox`. A peer's advertised shared inbox is stored on
-  the follower edge in nullable `shared_inbox_url`; delivery de-duplicates by
-  that URL, so two followers on one server receive one post job. Follow, Undo
-  and Accept keep using the individual inbox, and rows without a shared inbox
-  fall back unchanged. See [shared inboxes](guides/shared-inboxes.md).
-- Inbound federation: `POST /inbox` with signature verification, actor-key
-  resolution over a port, `Follow` → edge + `Accept`, `Undo(Follow)`, replay
-  guard, and signed `Create`/`Delete`/`Announce` from followed remote actors.
-- Remote posts and boosts: `RemotePost`/`RemotePostKind`, a canonical
-  `RemotePostSchema` (`social_remote_post`), in-memory and PDO repositories,
-  activity-id deduplication and soft deletion. Announce rows are boosts, not
-  standalone posts.
-- Follow-based home timeline: `HomeTimelineRepository` combines the reader's
-  own local posts with remote posts/boosts from the outgoing follow graph and
-  applies one cursor and limit after sorting.
-- Inbound content authorization: an actor must be followed by at least one
-  local account, an optional host `BlockedActorPolicy` can refuse an actor,
-  and an object/Delete ownership mismatch is refused without changing state.
-- Actor-key cache: `CachingActorResolver` wraps the HTTP resolver, keys by the
-  full key id, caches only successful resolutions and bounds entries by a short
-  TTL and a maximum size. A cached entry still came from the full identity
-  check; failures are not cached.
-- Follow approval: the optional `FollowPolicy` decides whether a verified
-  inbound Follow creates an edge for a local account. A refusal is
-  `follow_not_accepted`, writes nothing and releases the replay claim; the
-  default `AcceptAllFollows` preserves the previous behaviour.
-- OpenAPI export: `bin/export-openapi` renders the route manifest as OpenAPI
-  3.1, including paths, methods, operation ids, auth, rate limits and path
-  parameters. It does not invent payload schemas the manifest does not have.
-- Remote outbox backfill: `RemoteOutboxBackfill` catches up missed `Create` and
-  `Announce` activities from a followed actor's public outbox. It is bounded by
-  pages and items, stays on the outbox origin, skips unsupported or malformed
-  entries and deduplicates by activity id. Thread/context fetching is a
-  separate, explicit read path, not a mirror of the outbox.
-- Media: `Attachment` metadata with JPEG/PNG/WebP validation, an
-  `AttachmentRepository` with in-memory and PDO adapters behind one contract
-  test, `BlobStore` storage of an untouched original and a GD-generated
-  thumbnail, authenticated multipart upload, public original/thumbnail fetch
-  and up to four attachments on a post. Alt text and URLs are included in the
-  post and both timeline shapes without changing posts that have no
-  attachments. Invalid, corrupt and oversized uploads leave no blob and no
-  row.
-- Remote media: images advertised by an incoming `Create` or `Announce` are
-  fetched after the post is stored, but only through the bounded HTTP client
-  and a host resolver that rejects private, loopback, link-local, CGNAT,
-  documentation and mapped addresses (SSRF), with manual redirect rechecks,
-  a per-hop timeout and a hard body limit. Up to four image attachments are
-  parsed from `url`/`mediaType`/`name`, validated by the existing
-  `MediaService` (declared vs. sniffed type, dimensions, thumbnail) and stored
-  locally. The unique `source_url` makes repeated URLs reuse the existing
-  copy. Failed attachments are logged with stable reasons and skipped; the
-  post remains available. Remote timeline entries resolve their links and
-  present local original/thumbnail URLs plus alt text. The switch
-  `social/media.remote_fetch` disables all outbound fetching without deleting
-  existing copies.
-- Historical remote media catch-up: the outbox backfill passes every newly
-  stored and every already-present `Create`/`Announce` object to the same
-  `RemoteMediaService` the inbox uses. A later run therefore repairs posts
-  whose media was disabled or failed earlier, without a second post row;
-  repeated source URLs reuse the existing local attachment. The bounded
-  fetcher, SSRF checks, limits, validation, stable failure reasons and the
-  `social/media.remote_fetch` switch apply unchanged. Existing links survive a
-  repeat in which one candidate can no longer be fetched. This closes the
-  local media catch-up gap that was previously left to each host; scheduling
-  the backfill remains a host operation.
-- Per-user blocks: `Block`/`BlockRepository` (in-memory and PDO, one contract
-  test) over `social_block`, an authenticated block API, a home-timeline
-  filter scoped to the reader, and outbound `Block`/`Undo(Block)` delivery to a
-  resolved remote actor inbox. Blocks hide shared remote rows without deleting
-  them or affecting another local account. A block also accepts a local
-  actor's absolute URL; the local-follow home timeline then omits that
-  followed account's posts until it is unblocked, without removing the follow
-  edge.
-- Thread/context fetching: `GET /api/v1/remote-posts/{id}/thread` returns a
-  bounded view of a stored remote post: the target object, its ancestors from
-  root to parent and its direct replies. The remote activity id is
-  URL-encoded as the path segment. The reader must follow the target actor and
-  must not block it; ancestors and replies from blocked actors are omitted.
-  `RemoteThreadRepository` (in-memory and PDO, one contract test) over
-  `social_remote_thread_post` caches fetched nodes by object id, so repeated
-  requests and shared ancestors do not duplicate rows. `RemoteFetcher` is the
-  shared network guard for media and threads: http(s)-only, public-address
-  checks on every hop, manual redirect revalidation, timeout and body limit.
-  `social/thread.fetch` switches the route off with a `503`, and
-  `thread.max_depth`, `thread.max_replies`, `thread.max_bytes`,
-  `thread.timeout_seconds` and `thread.max_redirects` bound work. Ancestor and
-  reply failures are logged and skipped; a target failure answers `502`. No
-  media is imported into the cache. Expiring old nodes remains a host job via
-  `RemoteThreadRepository::deleteFetchedBefore()`.
-- Discovery: the ActivityStreams actor document with its published key, and
-  the followers `OrderedCollection` read from the follower repository.
-- Outbox: the public `OrderedCollection` of an account's public posts as
-  `Create` activities, read from the same post repository the local API uses.
-- Following: the public `OrderedCollection` of the actors a local account
-  follows, read from a separate outgoing follow repository.
-- Paged actor collections: followers, following and outbox advertise a
-  `first` page and serve `OrderedCollectionPage` documents with `partOf`,
-  `next`, `prev` and a bounded page size, backed by repository page queries.
-- Local following: `POST`/`DELETE /api/v1/following` writes the edge, delivers
-  a signed `Follow`/`Undo`, rolls back a refused Follow and keeps a refused
-  Undo retryable.
-- WebFinger: `GET /.well-known/webfinger` resolves a local `acct:` handle to
-  the actor document URL, with the configured host enforced.
-- Local Mastodon notifications: `GET {mastodon.prefix}/notifications` lists
-  unread favourite and follow events for the signed-in local account. Local
-  favourites, local follows and verified inbound remote Follows record a
-  notification; a deterministic event id makes every repeat idempotent. The
-  listing supports `max_id`/`since_id`/`min_id`, `types[]`/`exclude_types[]`
-  and the `read:notifications` scope, and projects local actors or minimal
-  remote actor URLs without a second account model.
-- Local Mastodon notification read state: `POST
-  {mastodon.prefix}/notifications/{id}/dismiss` and `POST
-  {mastodon.prefix}/notifications/clear` set the nullable `read_at` marker
-  instead of deleting the historical row. `GET
-  {mastodon.prefix}/notifications/unread_count` returns the capped unread
-  count. The list omits read rows and exposes `unread` on each remaining
-  event. Dismiss and clear are idempotent for the caller; a foreign or missing
-  id stays `404 not_found`. The write routes require `write:notifications`,
-  the count requires `read:notifications`, and existing hosts add the column
-  and unread index through the documented migration. No new table or job is
-  required; read rows can be pruned by the host's existing retention policy.
-- Local boosts and reblogs: `POST /api/v1/posts/{id}/boost` and `POST
-  {mastodon.prefix}/statuses/{id}/reblog` write one `social_boost` row per
-  local account and visible public/unlisted post. The unique pair is the
-  idempotency boundary; `DELETE /api/v1/posts/{id}/boost` and `POST
-  {mastodon.prefix}/statuses/{id}/unreblog` remove it. A new boost queues one
-  public `Announce` to the booster's followers through the existing delivery
-  queue, an unboost queues `Undo(Announce)`, and a self-boost is not
-  notified. `reblogs_count`, `reblogged` and the nested `reblog` projection
-  read the same rows. Local boosts by followed accounts (and the reader's own
-  boosts) appear in the home timeline.
-- Local reply context and counts: `GET
-  {mastodon.prefix}/statuses/{id}/context` returns visible ancestors and a
-  bounded breadth-first descendant walk; `replies_count` counts live direct
-  replies. Replies and direct recipients record `mention` notifications, and
-  boosts record `reblog` notifications, through the existing deterministic
-  notification ids.
-- Local Mastodon bookmarks: `POST {mastodon.prefix}/statuses/{id}/bookmark`
-  and `POST .../unbookmark` write one private `social_bookmark` row per local
-  account and visible status. The composite `(user_id, post_id)` key makes a
-  repeat idempotent; `bookmarked` is viewer-specific and creates no public
-  count or notification. `GET {mastodon.prefix}/bookmarks` lists the caller's
-  live bookmarks newest-first with `limit`, `max_id`, `since_id`/`min_id` and
-  the usual `Link`; a cursor must belong to the caller and disappeared
-  statuses are skipped. `write:bookmarks`/`read:bookmarks` gate the writes and
-  the list. Existing hosts add `social_bookmark` through `BookmarkSchema`;
-  there is no backfill.
-- Local Mastodon mutes: `POST {mastodon.prefix}/accounts/{id}/mute` stores
-  one private `social_mute` row per local account and target, accepting a
-  local account id or an absolute remote actor URL. An optional
-  `notifications` flag suppresses the target's notifications in addition to
-  the home-timeline hide; an optional `duration` in seconds sets `expires_at`,
-  and an expired mute is ignored without requiring a cleanup job. `POST
-  .../unmute` removes only the caller's row and is idempotent. `GET
-  {mastodon.prefix}/mutes` lists active mutes newest-first with `limit`,
-  `max_id`, `since_id`/`min_id`, an ownership-checked account cursor and the
-  usual `Link`. The timeline hides the muted actor and the object author of
-  its boosts; notification lists and unread counts exclude targets muted with
-  `notifications`. Relationships expose `muting`/`muting_notifications`, and
-  statuses expose `muted`. `write:mutes`/`read:mutes` gate the routes.
-  Existing hosts add `social_mute` through `MuteSchema`; there is no backfill.
-- Local Mastodon lists: `POST/GET {mastodon.prefix}/lists` create and list a
-  caller's private lists; `GET`/`PUT`/`DELETE {mastodon.prefix}/lists/{id}`
-  read, update and delete one. A list stores a trimmed title, a
-  `replies_policy` (`followed`, `list`, `none`) and an `exclusive` flag.
-  `GET`/`POST`/`DELETE {mastodon.prefix}/lists/{id}/accounts` page, add and
-  remove known local account ids idempotently, with an ownership-checked
-  account cursor, the usual `Link` and at most 100 ids per write. `GET
-  {mastodon.prefix}/timelines/list/{list_id}` merges members' local posts and
-  boosts with normal visibility, block and mute filtering and the replies
-  policy; it pages with the usual status cursor. Exclusive lists hide their
-  members from the local-follow home timeline. `write:lists`/`read:lists` gate
-  the routes. Existing hosts add `social_account_list` and
-  `social_account_list_member` through `AccountListSchema`; there is no
-  backfill and no remote membership.
-- Local Mastodon instance metadata: `GET {mastodon.prefix}/instance` and the
-  core `GET /api/v1/instance` now expose configurable description, version,
-  contact email/account, registration/approval/invite flags, languages,
-  thumbnail and real local statistics. The metadata comes from the existing
-  `social/instance.*` configuration; `user_count`/`status_count`/`domain_count`
-  come from optional count capabilities on the local directory and the
-  local/remote post repositories, so a custom adapter that cannot cheaply
-  count reports zero instead of forcing a scan. The contact account is hidden
-  when a supplied directory does not know it. No new table, migration or
-  cleanup job is needed. Tests cover configured values, defaults, stale
-  contacts, in-memory and SQL counts, and both HTTP projections.
-- HTTP: one route manifest, generic kernel, one error shape, JSON export.
-- Security: AES-256-GCM secret box.
-- Documentation and CI across PHP 8.3, 8.4, 8.5.
-- Migration and ownership contract: [ADR 0004](adr/0004-incremental-migration-and-ownership.md),
-  the [Nextcloud migration guide](guides/migration-from-nextcloud.md), the
-  read-only cutover validator (`bin/validate-cutover`) and the shared UI
-  contract in [ADR 0005](adr/0005-shared-ui.md).
-- Shared UI package: `@alohasocial/ui` now exists under `ui/` with the typed
-  `HostBridge`, Vue dependency-injection plugin, typed `CoreApi`, a network-free
-  `FakeHostBridge`, `PostCard`, the read-only `PublicTimeline` and the second
-  read-only `PostDetail` screen over the existing single-post route. The
-  package covers loading, empty, not-found, error, retry and cursor pagination
-  states, has its own typecheck/test/build commands and a route-parity test against
-  `bin/export-routes`. Host bridges, mount pages and Nextcloud/standalone
-  navigation remain host work.
+## Goal
 
-## Partially done
+`alohasocial/core` is the host-neutral core of Aloha Social: domain, services,
+federation protocol, HTTP contract, platform ports and the shared Vue package
+`@alohasocial/ui`. The product is three artifacts and one behaviour:
 
-- **Mastodon-compatible API**: the core now owns the additive,
-  disabled-by-default compatibility subset under `social/mastodon.prefix`
-  (default `/api/mastodon/v1`): instance metadata and statistics, public timeline, status
-  read/create/delete including local poll creation and voting on an own or
-  visible local status, local favourite/unfavourite, private bookmark/unbookmark and list, local mutes,
-  local follow/unfollow and relationship reads, local notification listing with
-  dismiss/unread state, media upload/update/delete,
-  local account statuses and verify credentials. It maps
-  to the existing posts, `PostService`, `MediaService` and repositories rather
-  than a second status or media store, carries auth and scope metadata
-  (`write:statuses`, `write:favourites`, `write:bookmarks`, `write:mutes`,
-  `write:follows`, `write:media`, `write:notifications`, `read:accounts`,
-  `read:follows`, `read:bookmarks`, `read:mutes`, `read:notifications`,
-  `read:search`),
-  implements `max_id`/`since_id`/`min_id` pagination with an id tie-break and
-  `Link` headers, offset pagination for search, and makes `Idempotency-Key`
-  idempotent through a deterministic post id or media source key. Local favourites live in `social_favourite` behind
-  `FavouriteRepository`; counts and the viewer flag are projected without a
-  second status model, and unfavourite is an idempotent no-op when the row is
-  already absent. Private bookmarks live in `social_bookmark` behind
-  `BookmarkRepository`; the pair is idempotent, the viewer flag is projected
-  without a public count, and the list uses the same id-aware cursor with an
-  ownership check. Local mutes live in `social_mute` behind `MuteRepository`;
-  the pair is idempotent, an optional expiry is applied on every read, the
-  home timeline filters both the muted actor and boosted object authors, and
-  notification mutes filter the list and unread count. Local boosts live in `social_boost` behind
-  `BoostRepository`; the unique pair is the idempotency boundary, a new row
-  queues `Announce` and a removal queues `Undo(Announce)`, and the presenter
-  exposes the nested `reblog` wrapper plus `reblogs_count`/`reblogged`. Reply
-  context and `replies_count` read the existing `in_reply_to_id` index. A
-  reply/direct recipient records a `mention` notification and a boost records
-  a `reblog` notification through the same deterministic notification store.
-  Polls live in `social_poll` and `social_poll_option` behind
-  `PollSchema` and are attached to the existing post; creation is atomic with
-  the post insert. Local votes live in `social_poll_vote` behind
-  `PollVoteRepository`; an insert updates the poll and option counters in the
-  same transaction, and the status projection returns the viewer's `voted`,
-  `own_votes` and the shared counts. An identical retry is idempotent, a
-  changed second vote and a vote after expiry are rejected, and `expired` is
-  derived from the clock rather than a scheduled job. Local follows use the existing follower graph with
-  `social_follower.is_local = 1`, so the target's followers collection and
-  both relationship directions share one source of truth; those edges are
-  excluded from remote inbox resolution and feed the authenticated home
-  timeline. Notifications live in `social_notification` behind
-  `NotificationRepository`: a local favourite, local follow or verified remote
-  Follow records one row, a deterministic id makes repeats no-ops, and a
-  remote follower is projected as a minimal actor URL without fetching its
-  profile. Dismiss and clear set `read_at`; the list hides read rows and the
-  unread count projects the remaining ones, with no second table. Local search
-  uses two optional read ports over the existing stores:
-  `PostSearchRepository` matches live public/unlisted `social_post.content`
-  (case-insensitive, offset-paged) and `LocalActorSearch` matches the host's
-  local account directory. `GET /search` returns the Mastodon v2 object with
-  `accounts`, `statuses` and an always-empty `hashtags`, requires
-  `read:search`, and supports `type`, `limit`, `offset` and the local
-  `following` filter. No search table or index migration is needed; hosts
-  without a search implementation answer `503 search_not_configured` for the
-  affected type. Instance metadata is projected from the optional
-  `social/instance.*` keys; the stats use the optional `LocalActorCount`,
-  `PostCount` and `RemoteDomainCount` capabilities over the existing stores,
-  with no new table or migration. The prefix is configurable and cannot overlap `/api/v1`; the
-  whole surface answers `404 mastodon_api_disabled` when `social/mastodon.api`
-  is off. See [Mastodon-compatible API](guides/mastodon-api.md). The full Mastodon
-  server API is **not** done. Only these parts are genuinely external:
-  OAuth/authorization/token issuance and app registration; real remote
-  timelines and remote delivery; favourite federation (outbound `Like`/`Undo`
-  and remote counts); remote boost federation; remote notifications; streaming infrastructure;
-  remote poll fetching/voting/federation; remote relationship/admin APIs; and
-  migrations in an existing host database.
-  Local account profiles, private lists and paged follower/following lists are
-  complete locally too, not host prerequisites. Media upload/update/delete,
-  local favourite and private bookmark bookkeeping, local
-  follow/unfollow/relationship reads, local
-  notification listing with dismiss/unread state, local status/actor search,
-  local poll creation/voting, local boosts/reblogs, reply context/counts,
-  account profiles, private lists and instance metadata/statistics are
-  complete locally. The
-  migration for the local follow marker remains a host step: add
-  `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; add
-  `social_notification` from `NotificationSchema` before exposing the
-  notification routes, or add `read_at` and the unread index to an existing
-  table as documented; add `social_bookmark` from `BookmarkSchema` before
-  exposing the bookmark routes; add `social_boost` from `BoostSchema` before
-  exposing boost/reblog routes or status reblog counts; add
-  `social_account_list` and `social_account_list_member` from
-  `AccountListSchema` before exposing the list routes or the exclusive
-  home-timeline filter; add `social_poll`/`social_poll_option` from
-  `PollSchema` before accepting a `poll` parameter. The remaining parts are
-  tracked in the Next table, not as a completed item.
-- **AT Protocol stack**: the core now owns the public text-only publishing
-  foundation — ATProto identity/record primitives, deterministic TIDs, the
-  authenticated XRPC `com.atproto.repo.putRecord` adapter, the
-  `AtprotoAccountResolver`/`AtprotoPublisher` ports, the idempotent publication
-  table and the disabled-by-default `POST /api/v1/posts/{id}/atproto` path.
-  Only public text posts are mirrored; media, edits, replies and long posts are
-  refused. A local post deletion now queues an idempotent
-  `com.atproto.repo.deleteRecord` for a record the core published and removes
-  the local publication row only after the PDS accepted it; a 404 is success,
-  and a failed delete stays retryable. OAuth session refresh is also local:
-  `AtprotoSessionService`, `XrpcAtprotoSessionRefresher` and the ES256 DPoP
-  proof adapter rotate a host-owned session at the authorization server, with
-  one nonce retry and no core credential table. The authorization-code/PAR flow
-  and refresh-token revocation are local too: `AtprotoOAuthMetadataResolver`
-  validates the PDS protected-resource and authorization-server documents,
-  `XrpcAtprotoOAuthClient` sends the PAR request with PKCE S256 and `dpop_jkt`,
-  exchanges the code after checking `iss` and the token `sub`, and revokes the
-  refresh token; `DpopKeyThumbprint` is the optional proof-provider capability
-  needed for PAR. The host still owns the browser redirect, the short-lived
-  state/verifier flow store, credential storage and PDS selection. See
-  [AT Protocol publishing](guides/atproto.md). The full stack is **not** done:
-  account-linking UI/callback, a full repository/AppView client, CAR/MST, blob
-  uploads, firehose and the extraction from the Nextcloud app remain external.
-  Remote delete for core-published records, OAuth session refresh,
-  authorization-code/PAR and revocation are done locally. The remaining parts
-  are tracked in the Next table below, not as a completed item.
+```
+                    alohasocial/core (this repository)
+                    domain · services · protocols · contract
+                       │                          │
+        AlohaSocial/social                AlohaSocial/server
+        Nextcloud host                    standalone host
+        (OCP adapters, NC pages)          (kernel, auth, installer)
+```
+
+A slice is not done because a route exists. It is done when the import, the
+identity checks, the contract tests and a real peer smoke test have passed in
+the host that serves it. See
+[ADR 0004](adr/0004-incremental-migration-and-ownership.md).
+
+### Definition of done for the product
+
+1. Both hosts serve exactly [`Routes::manifest()`](../src/Contract/Routes.php)
+   and the same JSON error shape; a parity test compares their registered
+   routes with `bin/export-routes`.
+2. The Nextcloud app runs the migrated slices on the core without changing
+   actor URLs, key ids, note URLs, `Create`/`Delete`/`Follow`/`Undo` activity
+   ids or outgoing follow row ids, and can roll back one account by flag.
+3. `AlohaSocial/server` installs from scratch and publishes a post through the
+   same objects the core tests, with its own accounts, sessions and worker.
+4. The shared screens run in both hosts through one `HostBridge` each, and the
+   host smoke tests (login, one read, one write, logout) pass.
+5. Mastodon compatibility and AT Protocol remain additive, bounded and
+   disabled by default where documented; no host-specific branch appears in
+   `src/`.
+
+## Where we are (2026-11-13)
+
+| Measure | Value |
+| --- | --- |
+| HTTP contract | 71 routes, 43 of them under the Mastodon prefix |
+| Persistence | 17 schema classes, in-memory and PDO adapters behind shared contract tests |
+| Tests | 109 PHP test files (1018 tests, 4514 assertions) and 5 UI test files |
+| Release | `0.1.0` exists as a CHANGELOG entry (2026-11-11); there is no git tag yet, and the package is not on Packagist |
+| Local feature slice | complete for the scope described below |
+| Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
+
+### Implemented in the core
+
+- **Posts and timelines** — create, read, soft-delete, visibility, replies,
+  local direct posts with `recipient_ids`, public and follow-based home
+  timelines with stable cursors, blocks, mutes, exclusive lists and boosts.
+  See [posts and timelines](guides/posts-and-timelines.md).
+- **Social interactions** — local favourites, private bookmarks, local mutes,
+  private account lists and list timelines, notifications (favourite, follow,
+  mention, reblog) with dismiss/unread state, polls with local voting, local
+  follow/unfollow and relationship reads. These routes live under the optional
+  Mastodon compatibility prefix, not under `/api/v1`. See
+  [Mastodon-compatible API](guides/mastodon-api.md).
+- **Follow graph and federation** — incoming and outgoing edges, individual
+  and shared inboxes, batched delivery, optional follow policy, local-to-local
+  follows, signed `Follow`/`Undo`, inbound `Follow`/`Undo`/`Create`/`Delete`/
+  `Announce`, outbound `Block`/`Undo(Block)` and local `Announce`/
+  `Undo(Announce)`, retries with backoff, dead letters and a durable replay
+  log. See [federation](guides/federation.md),
+  [inbound federation](guides/inbound-federation.md) and
+  [jobs and delivery](guides/jobs-and-delivery.md).
+- **Discovery** — actor document, WebFinger, followers/following/outbox
+  collections with bounded pages. See [peer discovery](guides/peer-discovery.md).
+- **Remote content** — stored remote posts and boosts, guarded remote media,
+  bounded outbox backfill and on-demand thread/context fetching with an
+  idempotent object cache. See [remote threads](guides/remote-threads.md) and
+  [remote backfill](guides/remote-backfill.md).
+- **Media** — JPEG/PNG/WebP validation, untouched originals, GD thumbnails,
+  authenticated upload, public fetch, post attachments and SSRF-safe remote
+  ingestion. See [media](guides/media.md).
+- **AT Protocol** — public text-only publishing through authenticated XRPC
+  `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
+  remote delete, OAuth session refresh and the authorization-code/PAR/
+  revocation protocol client. Account linking UI, credential storage and PDS
+  selection stay with the host. See [AT Protocol publishing](guides/atproto.md).
+- **Mastodon compatibility** — 43 local routes behind a configurable,
+  disabled-by-default prefix: instance metadata/statistics, public and list
+  timelines, status read/create/delete, reblogs, context, polls, favourites,
+  bookmarks, mutes, lists, notifications, local search, media management,
+  account profiles, follower/following lists and verify credentials.
+- **HTTP contract** — one route manifest, generic kernel, one error shape,
+  OpenAPI 3.1 export and stable error codes. See [routes](reference/routes.md).
+- **Persistence and migration** — schema classes for every core table,
+  in-memory and PDO repositories behind shared contract tests, durable
+  `PdoJobQueue`/`PdoActivityLog`, `Application::forHost()`, the neutral cutover
+  export and the read-only validator. See [database](guides/database.md) and
+  [migrating a Nextcloud installation](guides/migration-from-nextcloud.md).
+- **Shared UI** — `@alohasocial/ui` with the typed `HostBridge`, Vue plugin,
+  typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only
+  `PublicTimeline` and read-only `PostDetail`. See [shared UI](guides/shared-ui.md).
+
+### Not in this repository
+
+- The Nextcloud adapter, mount pages, admin settings and the data import.
+- The standalone bootstrap, accounts/sessions (host-owned per
+  [ADR 0006](adr/0006-host-owned-accounts.md)), installer, container and
+  migration runner.
+- The host bridges and the shared write screens (composer, follow controls,
+  actor profile, notifications).
+- The external remainder of the Mastodon server API and of the AT Protocol
+  stack.
+- An object-storage adapter such as S3; the core ships memory and local stores
+  behind `BlobStore`.
+
+## Milestones
+
+State legend: **done** — shipped and tested; **partial** — a documented slice
+exists; **open** — not started; **external** — depends on a host, a remote
+server or a product decision.
+
+| # | Milestone | State | Owner | Exit criterion |
+| --- | --- | --- | --- | --- |
+| M0 | Core foundation | done (`0.1.0`) | core | Ports, posts, HTTP signatures, delivery queue, kernel and boundary guard are green |
+| M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
+| M2 | Release and documentation consistency | in progress | core | `composer check` green, route/schema/roadmap documentation matches the manifest, `0.2.0` tagged and installable |
+| M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
+| M4 | Standalone host | open | `server` | Fresh install with its own accounts/sessions (host-owned, ADR 0006), worker and installer publishes a post and federates |
+| M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; write screens and smoke tests pass |
+| M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
+| M7 | Operations and packaging | open | `server` / ops | Installer, container, backup, cleanup jobs and an object-storage option exist |
+
+## Now (core)
+
+1. **Keep the contract documentation honest.** `DocumentationTest` compares
+   `docs/reference/routes.md` with `Routes::manifest()`, checks the advertised
+   counts in the README and this page, and verifies that every `*Schema` class
+   appears in the database guide. Add the configuration reference to the same
+   guard when it drifts again.
+2. **Cut `0.2.0`.** The `[Unreleased]` CHANGELOG block contains the whole local
+   social slice. It needs a release entry, a git tag and a Packagist/npm
+   publication; the entry must point at this roadmap rather than repeat it.
+3. **Close the identity decision.** [ADR 0006](adr/0006-host-owned-accounts.md)
+   (proposed) recommends keeping accounts, sessions and credentials host-owned:
+   no `Platform\Identity` port and no core user table. Review and accept it;
+   the standalone then implements auth itself and passes `userId` as every
+   host does.
+4. **Grow the shared UI only where both hosts need it.** The next screens are
+   an actor header with follow control, the composer and notifications. Do not
+   move a Nextcloud-only page into the package.
 
 ## Next
 
-The remaining items are host-owned migrations/integrations, the genuinely
-external parts of the two partially done stacks, and explicitly listed
-core-side follow-ups. There is no unlisted local vertical slice hiding in this
-table: the local media catch-up, thread/context, AT Protocol publishing and
-  Mastodon compatibility (including instance metadata/statistics, media
-  management, local favourites, private bookmarks, local mutes, private lists,
-  local boosts/reblogs, reply context, local follow/relationships, local
-  account profiles and follower/following lists, notification listing with
-  dismiss/unread state, local search and poll creation/voting) slices are
-  recorded above.
-
-| Item | Seam |
-| --- | --- |
-| Full Mastodon server API — external remainder (OAuth/authorization/token issuance and app registration, remote timelines and delivery, favourite federation, remote boost federation, remote notifications, streaming infrastructure, remote poll fetching/voting/federation, remote relationship/admin APIs) | `AlohaSocial/social`/standalone host and future compatibility adapters over the existing Mastodon subset; local media management, favourites, private bookmarks, local mutes, private lists, boosts/reblogs, reply context, follow/unfollow, relationships, notification listing with dismiss/unread state, account profiles and local follower/following lists, instance metadata/statistics, local status/actor search and poll creation/voting are done, and the `social_follower.is_local`, `social_bookmark`, `social_mute`, `social_account_list`/`social_account_list_member`, `social_boost`, `social_notification` read-marker plus `social_poll`/`social_poll_vote` migrations remain host steps |
-| AT Protocol account-linking UI/callback and full client/AppView extraction (authorization-code/PAR/revocation and OAuth session refresh are local) | `AlohaSocial/social` host and a future standalone AT Protocol client; the host owns credential storage, PDS selection and the browser flow store, while the core owns the protocol client and metadata validation |
-| Nextcloud posts/follows import and actor-URL parity | `AlohaSocial/social` host migration, using the core schemas and `bin/validate-cutover` |
-| Cutover of posts/timelines, actor surface, follow delivery and inbox | one host feature flag at a time, after the identity gate |
-| Nextcloud `HostBridge` integration and rollout of the shared screens | `AlohaSocial/social` host; the package, contract, FakeBridge and read-only timeline/post-detail screens are done under `ui/` |
-| Migration runner for the standalone | host concern, schemas already exist |
+| Item | Seam | Owner | Done when |
+| --- | --- | --- | --- |
+| Nextcloud OCP adapters, controller and route registration | `social` | `social` | Registered routes equal `bin/export-routes`; the host parity test is green |
+| Nextcloud `HostBridge`, mount pages and navigation | `social` | `social` | `PublicTimeline` and `PostDetail` render against the real bridge; login, 401 and logout work |
+| Nextcloud posts/follows import and actor-URL parity | `social` | `social` | The neutral export passes `bin/validate-cutover`; counts and checksums match the source |
+| Cutover: posts/timelines → actor surface → follows/delivery → inbox → UI | `social` | `social` | One account runs end to end on the core and a flag restores the old path |
+| Standalone repository and its host-owned account/session layer | `server` + ADR 0006 | `server` | A second host boots with its own accounts and the same kernel |
+| Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
+| Shared actor profile/follow, composer and notification screens | `@alohasocial/ui` | `ui` + hosts | Both hosts can complete the screen; the package tests use `FakeHostBridge` |
+| Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
+| Release pipeline: tag, Packagist, npm, changelog | core | core | A host installs a version instead of `dev-main` |
 
 ## Later
 
-- Standalone `HostBridge` once `AlohaSocial/server` has its auth flow.
+- **Locally implementable Mastodon remainder:** hashtags and hashtag search,
+  filters, followed tags, scheduled posts, follow requests/locked accounts and
+  the wider account-management surface. These are product decisions, not
+  protocol blockers; they are not part of the local slice above.
+- **AT Protocol after account linking:** facets, mentions, link cards, media
+  embeds, reply/thread mapping and the full repository/AppView client.
+- **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
+- **Operations:** retention jobs for the thread cache, read notifications and
+  orphaned blobs; backup/restore and monitoring for the standalone host.
+- **Admin UI:** host pages; the core keeps the settings rules.
 
 ## Explicitly not planned
 
@@ -381,3 +192,33 @@ table: the local media catch-up, thread/context, AT Protocol publishing and
 - A public block collection and applying an incoming `Block` as a per-user
   moderation rule: block propagation is outbound, and the optional instance
   policy remains the host seam for instance-wide refusal.
+
+## Compatibility remainder
+
+These parts are implemented by a host or need remote data; they are not hidden
+local gaps. The detailed lists live in the guides.
+
+- **Mastodon:** OAuth authorization/token issuance/revocation and app
+  registration; remote timelines and delivery; favourite federation (outbound
+  `Like`/`Undo` and remote counts); remote boost federation; remote
+  notifications; streaming; remote poll fetching/voting/`Question` federation;
+  remote search; remote relationship/admin APIs. See
+  [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
+- **AT Protocol:** account-linking UI/browser callback, the short-lived flow
+  store, credential storage and PDS selection; a full repository/AppView client
+  (CAR/MST); blob uploads; the firehose; facets and media embeds; migrating the
+  existing Nextcloud implementation. See
+  [AT Protocol publishing](guides/atproto.md#remaining-external-work).
+- **Hosts:** login, sessions, account creation/reset, CSRF, bearer-token
+  issuance, admin settings, navigation, templates, deployment and the worker
+  process. The core never issues tokens or owns a session.
+
+## Release history
+
+| Version | Date | Content |
+| --- | --- | --- |
+| `0.1.0` | 2026-11-11 | Foundation: ports, posts, timelines, ActivityPub, delivery queue, HTTP kernel, route manifest, boundary guard |
+| `0.2.0` | pending | The local social slice: media, remote content, blocks, direct posts, interactions, Mastodon compatibility, AT Protocol foundation, shared UI reads, migration validator |
+
+`0.1.0` has a CHANGELOG entry but no git tag yet. `0.2.0` is the `[Unreleased]`
+block; cutting it is part of M2, not a claim that it already exists.

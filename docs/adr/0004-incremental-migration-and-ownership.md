@@ -193,3 +193,10 @@ The migration order is:
   [the shared UI guide](../guides/shared-ui.md).
 - Add a host parity test that compares registered routes with
   `bin/export-routes` in both host repositories.
+
+## Implementation status
+
+As of 2026-11-13: the contract, the neutral export and `bin/validate-cutover`
+exist; the Nextcloud import, shadow run and cutover have not started. Those are
+M3 in [the roadmap](../roadmap.md). This note records progress; it does not
+change the decision.

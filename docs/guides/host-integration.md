@@ -516,7 +516,8 @@ a host decision.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two
-owners for the same handle.
+owners for the same handle. Milestone order and current status are in the
+[roadmap](../roadmap.md); this guide only describes the mechanics.
 
 ## Adoption order
 

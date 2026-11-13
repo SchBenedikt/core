@@ -191,3 +191,11 @@ stable first.
 - Add a Nextcloud bridge test that proves the request token is attached and
   never exposed to component code.
 - Add a standalone bridge only when `AlohaSocial/server` has an auth flow.
+
+## Implementation status
+
+As of 2026-11-13: the package, `HostBridge`, `FakeHostBridge`, `CoreApi`,
+`PostCard`, `PublicTimeline` and `PostDetail` are implemented under `ui/`.
+Host bridges, mount pages and the shared write screens are open; M5 in
+[the roadmap](../roadmap.md) tracks them. This note records progress; it does
+not change the decision.

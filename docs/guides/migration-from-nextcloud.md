@@ -10,6 +10,10 @@ as `bin/validate-cutover` and `composer migration:validate`. It reads the
 neutral JSON export described below, derives the core identities and writes a
 parity report. It never connects to Nextcloud and contains no host table names.
 
+Current status: the contract is accepted and the validator is implemented,
+but the host import has not started. The phases below are milestone M3 in the
+[roadmap](../roadmap.md); the core repository cannot execute them.
+
 The migration is a strangler migration: the old endpoints stay live until one
 feature has passed its checks. Never import into production and point every
 route at the core in the same deployment.

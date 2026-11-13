@@ -13,6 +13,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0003 — HTTP contract](adr/0003-http-contract.md) | Why one route manifest drives both hosts |
 | [ADR 0004 — incremental migration and ownership](adr/0004-incremental-migration-and-ownership.md) | How existing data moves without changing federation identities, and which repository owns a feature |
 | [ADR 0005 — shared UI](adr/0005-shared-ui.md) | The `@alohasocial/ui` package and its `HostBridge` boundary |
+| [ADR 0006 — accounts stay host-owned](adr/0006-host-owned-accounts.md) | Why the core has no user table or identity port, and where the standalone keeps accounts |
 
 ## Guides
 
@@ -62,7 +63,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | --- | --- |
 | [The standalone host](operations/standalone-host.md) | What the future server has to provide and in which order it boots |
 | [Keys and clocks](operations/keys-and-clocks.md) | Key resolution, caching, clock skew and replay windows |
-| [Roadmap](roadmap.md) | Done, next, later |
+| [Roadmap](roadmap.md) | Goal, current status, milestones and the next steps |
 | [FAQ](faq.md) | Short answers to the questions that keep coming back |
 
 Contributing rules are in [CONTRIBUTING](../CONTRIBUTING.md); security reports

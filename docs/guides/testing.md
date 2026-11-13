@@ -20,7 +20,8 @@ that prints or skips is a failure.
 | `tests/Security` | the secret box |
 | `tests/Jobs` | queue contract, PDO persistence/retry, dead letters and the worker |
 | `tests/Http` | request, response, router, kernel |
-| `tests/Contract` | the route manifest |
+| `tests/Contract` | the route manifest and the documentation consistency check |
+| `tests/Contract/DocumentationTest.php` | the route reference lists every manifest route exactly once, the advertised route counts in the reference, roadmap and README match the manifest, and every `*Schema` class appears in the database guide |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |
 | `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared`, the stored shared inbox and the remote-follow notification read back through the Mastodon route |
 | `tests/Api/InboundTimelineTest.php` | signed inbox request → persistence → authenticated home timeline, including delete, boost, duplicate, unfollowed, policy-blocked and per-user-blocked actors |

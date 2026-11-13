@@ -84,66 +84,27 @@ Do not log request bodies, private keys or sealed payloads.
 
 ## Current scope
 
-Implemented: posts and timelines, the follow graph (including stored peer
-shared inboxes and batched delivery), inbound and outbound ActivityPub (signed
-`POST /inbox` and `/inbox/shared`, signed `Follow`/`Undo` delivery, `Accept`,
-signed `Create`/`Delete`/`Announce` storage), remote posts and boosts with a
-follow-based home timeline, per-user blocks and their timeline filter, the
-public text-only AT Protocol publishing foundation (account/publisher ports,
-deterministic TIDs, XRPC `putRecord`/`deleteRecord`, idempotent publication
-rows, remote delete for published posts, OAuth session refresh and the
-authorization-code/PAR/revocation protocol client with ES256 DPoP proofs and a
-disabled-by-default publish route), the optional disabled-by-default Mastodon
-compatibility subset (instance metadata/statistics, public timeline, status
-read/create/delete with local poll creation/voting, local favourite/unfavourite,
-private local bookmarks, local mutes with optional notification filtering,
-private local account lists with list timelines and the exclusive home filter,
-local boost/reblog, reply context and counts, local
-follow/unfollow and relationship reads, local notification listing with
-dismiss/unread state,
-local status/actor search, media upload/update/delete,
-local account profiles, paged local follower/following lists, account statuses,
-verify credentials; `write:statuses`,
-`write:favourites`, `write:bookmarks`, `write:mutes`, `write:lists`,
-`write:follows`, `write:media`, `write:notifications`, `read:accounts`,
-`read:follows`, `read:bookmarks`, `read:mutes`, `read:lists`,
-`read:notifications` and `read:search`
-scopes, id-aware and offset pagination and `Idempotency-Key`), the
-actor document, followers and following collections, outbox and WebFinger, a
-bounded actor-key cache, an optional `FollowPolicy`, a bounded remote-outbox
-backfill with historical media catch-up, bounded thread/context fetching with
-an idempotent object-id cache, local image upload with validation,
-GD thumbnails, post attachments and public media fetch, guarded remote-media
-ingestion for incoming `Create`/`Announce` attachments, the HTTP contract, the
-platform ports, durable
-`PdoJobQueue`/`PdoActivityLog` and `Application::forHost()` for a real host,
-plus the read-only cutover validator for the neutral migration export.
-The migration and repository-owner contracts are accepted in ADR 0004; the
-actual Nextcloud data import remains host work. The shared-UI contract from ADR
-0005 is implemented as `@alohasocial/ui` under `ui/`; host-specific bridges,
-mount pages and navigation remain in their host repositories.
-Not implemented in the core: the AT Protocol account-linking UI/browser
-callback, credential store and PDS selection (the authorization-code/PAR flow
-and token revocation are implemented), the full
-repository/AppView/media/firehose stack, the external Mastodon server
-remainder (OAuth/token issuance and app registration, remote timelines and
-delivery, favourite federation, remote boost federation, remote notifications,
-streaming, remote poll fetching/voting/federation, remote search, account/admin
-and remote relationship APIs), and an
-object-storage adapter. Local Mastodon notification listing with
-dismiss/unread state, local status/actor search, local poll creation/voting,
-local boosts/reblogs, private bookmarks, local mutes, private account lists
-with list timelines and the exclusive home filter, reply context/counts,
-instance metadata/statistics, local account profiles and paged local
-follower/following lists are done. The rest is
-host migration or external federation work. The local AT Protocol publishing slice is
-documented in `docs/guides/atproto.md`; the local Mastodon compatibility
-subset is in `docs/guides/mastodon-api.md`; the rest is in
-`docs/roadmap.md`. Local
-and remote media, including the SSRF/size limits, failure reasons, switch and
-cleanup contract, are documented in `docs/guides/media.md`; thread/context
-fetching is documented in `docs/guides/remote-threads.md`. See `docs/roadmap.md` before starting a large feature,
-and `docs/guides/host-integration.md` before wiring a host.
+The core implements the complete local social slice: posts and timelines, the
+follow graph (individual and shared inboxes, batched delivery, local follows),
+inbound and outbound ActivityPub, remote posts/boosts with a follow-based home
+timeline, per-user blocks including outbound `Block`/`Undo(Block)`, local and
+guarded remote media, outbox backfill, thread/context fetching, local
+favourites, bookmarks, mutes, account lists, notifications, polls,
+boosts/replies, a disabled-by-default Mastodon compatibility subset (43
+routes), the AT Protocol publishing foundation with OAuth refresh and the
+authorization-code/PAR protocol client, the durable queue and replay log,
+`Application::forHost()` and the read-only cutover validator.
+
+`@alohasocial/ui` under `ui/` provides the `HostBridge` contract, a fake
+bridge and the read-only timeline and post-detail screens.
+
+Not in this repository: Nextcloud adapters/pages/import, the standalone
+bootstrap and accounts, host bridges and write screens, the external Mastodon
+and AT Protocol remainders, an object-storage adapter and the admin UI.
+
+`docs/roadmap.md` is the canonical status and milestone document; do not
+duplicate its status lists. See `docs/guides/host-integration.md` before
+wiring a host.
 
 ## What not to do
 
