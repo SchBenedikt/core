@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
@@ -129,8 +130,20 @@ final class ApplicationHostTest extends TestCase
 
 		self::assertSame(201, $follow->status);
 		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . FollowingSchema::TABLE));
+		self::assertCount(0, $http->requests);
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(1, $app->worker->runOnce());
 		self::assertCount(1, $http->requests);
 		self::assertSame(self::BOB_INBOX, $http->requests[0]['url']);
+
+		$stored = (new PdoFollowingRepository($database))->find('alice', self::BOB);
+		self::assertNotNull($stored);
+		self::assertSame(FollowState::Pending, $stored->state);
+		(new PdoFollowingRepository($database))->updateState(
+			$stored->id,
+			FollowState::Pending,
+			FollowState::Accepted,
+		);
 
 		$collection = $app->handle(new Request('GET', '/@alice/following', ['page' => '1']))->decodedBody();
 		self::assertSame(1, $collection['totalItems']);
@@ -138,6 +151,37 @@ final class ApplicationHostTest extends TestCase
 
 		$timeline = $app->handle(new Request('GET', '/api/v1/timelines/public'))->decodedBody();
 		self::assertSame(1, count($timeline['posts']));
+	}
+
+	public function testForHostRetriesAQueuedFollowThroughTheSqlQueue(): void
+	{
+		$database = $this->database();
+		$http = new FakeHttpClient();
+		$app = $this->host($database, $http);
+
+		$http->queueResponse(new HttpResponse(503));
+		$follow = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/following',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => self::BOB, 'inbox' => self::BOB_INBOX], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $follow->status);
+		self::assertSame(FollowState::Pending->value, $follow->decodedBody()['following']['state']);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . JobSchema::TABLE));
+
+		$this->clock->advance(30);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(0, $app->queue->pendingCount());
+		self::assertCount(2, $http->requests);
+		self::assertSame(
+			FollowState::Pending->value,
+			(new PdoFollowingRepository($database))->find('alice', self::BOB)?->state->value,
+		);
 	}
 
 	public function testForHostRollsBackThePostWhenTheQueueRejectsIt(): void

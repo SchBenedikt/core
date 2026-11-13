@@ -59,23 +59,28 @@ those local actor ids with the outgoing repository's page, and the root
 following URL on its own, and local edges are skipped by remote delivery.
 
 ```
-id            VARCHAR(64)  primary key
-local_user_id VARCHAR(255)
-actor_id      VARCHAR(255) unique with local_user_id
-inbox_url     VARCHAR(512)
-followed_at   VARCHAR(20)  canonical UTC timestamp
+id                 VARCHAR(64)  primary key
+local_user_id      VARCHAR(255)
+actor_id           VARCHAR(255) unique with local_user_id
+inbox_url          VARCHAR(512)
+followed_at        VARCHAR(20)  canonical UTC timestamp
+state              VARCHAR(16)  pending | accepted | rejected
+follow_activity_id VARCHAR(512) unique nullable
 ```
 
 The inbox is stored with the edge because a `Follow` and its later `Undo` have
 to be delivered there. It is not the inbox posts are delivered to: that belongs
-to the incoming follower graph.
+to the incoming follower graph. `follow_activity_id` is the exact id a peer
+may embed in an `Accept` or `Reject`; it is nullable so rows created before the
+lifecycle existed remain readable and default to `accepted`.
 
 The collection id comes from `ActivityFactory::followingId()`, the same
 function the [actor document](../reference/actor-document.md) uses for its
 `following` field. A test fetches `/@alice/following` and compares the
 collection id with the document value, so the two cannot drift apart.
 `FollowingRepository::actorIdsPage()` supplies one page; `count()` supplies the
-root count.
+root count. Both read only `state = accepted`: a pending request is not yet a
+follow, and a rejected request must never appear in the public collection.
 
 ## Writing a follow
 
@@ -88,16 +93,18 @@ Content-Type: application/json
 ```
 
 `201` with `Location: /api/v1/following/{id}` when the edge is new, `200` when
-the actor is already followed:
+the actor is already followed or still pending:
 
 ```json
 {"following": {"id": "…", "actor": "https://remote.example/users/bob",
   "inbox": "https://remote.example/users/bob/inbox",
-  "followed_at": "2026-11-11T10:00:00Z"}}
+  "followed_at": "2026-11-11T10:00:00Z", "state": "pending"}}
 ```
 
-The request stores the edge and delivers a signed ActivityPub `Follow` to the
-supplied inbox:
+The request stores the pending edge and queues a `federation.follow` job. The
+worker delivers the signed ActivityPub `Follow` to the supplied inbox; a
+failed attempt stays queued and is retried with the queue's backoff. The API
+answer does not wait for the peer:
 
 ```json
 {
@@ -113,7 +120,9 @@ supplied inbox:
 The delivery is signed with the local actor's key over `(request-target) host
 date digest`, using the key id the actor document publishes. A repeated
 `POST` sends nothing: the existing edge is returned, and only a changed inbox
-is updated. That keeps a retried request from producing duplicate Follows.
+is updated. That keeps a retried request from producing duplicate Follows. A
+rejected edge is not reused: following again creates a new row and a new
+Follow id, so a late response for the old request cannot match it.
 
 Both `actor` and `inbox` must be absolute http(s) URLs; a bare handle or a
 relative path is a 422 naming the field.
@@ -124,8 +133,9 @@ relative path is a 422 naming the field.
 DELETE /api/v1/following/{id}
 ```
 
-`204` after the peer accepted the `Undo`. The `Undo` embeds the original
-`Follow`, so a peer can match it by id without having stored the activity:
+`204` after the edge was removed and the `Undo` was queued. The `Undo` embeds
+the original `Follow`, so a peer can match it by id without having stored the
+activity:
 
 ```json
 {
@@ -147,30 +157,53 @@ DELETE /api/v1/following/{id}
 An id of another account is answered with 404, not 403: the id alone must not
 reveal that another account follows the actor.
 
-## Delivery semantics
+## Lifecycle and delivery semantics
+
+A new edge starts `pending`. The only transitions are
+`pending → accepted` and `pending → rejected`, and only a signed `Accept` or
+`Reject` from the followed actor can make them. The repository applies the
+transition with `UPDATE … WHERE state = 'pending'`, so duplicate responses, a
+late response after an Unfollow and two competing responses are all safe:
+
+- a duplicate or wrong-order response changes nothing and still answers `202`;
+- `Accept` after `Reject` does not resurrect the edge;
+- an `Accept`/`Reject` for a removed row is a no-op;
+- an embedded Follow must have the local actor as `actor` and the followed
+  actor as `object`; a foreign signer or a mismatched embedded Follow is `403`.
+
+The collection and the home timeline only read accepted rows. A pending edge
+is visible in the write response, but not to peers until accepted. A rejected
+row stays for the lifecycle audit and is removed by following again or by
+unfollowing; it is never in the collection.
 
 | Situation | Local state | Answer |
 | --- | --- | --- |
-| Follow accepted by the peer | edge stored | 201 |
-| Follow already existed | unchanged, no second delivery | 200 |
-| Follow delivery refused or unreachable | edge rolled back | 502 `delivery_failed` |
-| Undo accepted by the peer | edge removed | 204 |
-| Undo delivery refused or unreachable | edge kept, request retryable | 502 `delivery_failed` |
+| New Follow | pending, one `federation.follow` job queued | 201 |
+| Follow already pending or accepted | unchanged, no second job | 200 |
+| Follow after Reject | old row removed, new pending row and job | 201 |
+| Follow delivery refused or unreachable | pending retained, queue retries | 201, then worker retry |
+| Accept | pending → accepted | 202 at the inbox; collection gains the actor |
+| Reject | pending → rejected | 202 at the inbox; collection never had it |
+| Duplicate Accept/Reject | unchanged | 202 |
+| Accept after Unfollow | no row, no change | 202 no-op |
+| Unfollow | row removed, `federation.follow` undo job queued | 204 |
+| Undo delivery refused or unreachable | row already gone, queue retries the Undo | 204, then worker retry |
 | No HTTP client or signing key | nothing written | 503 `federation_not_configured` |
 
-The order is deliberate. A Follow is inserted first and removed again if the
-peer refuses it, because the collection must not claim a follow the peer never
-saw. An Undo is sent first and the edge is removed only after the peer
-accepted it; forgetting the follow locally while the peer still has it would
-be the inconsistent state this path is meant to avoid. A retry of the same
-`DELETE` sends the same `Undo` again.
+The queue is the source of delivery state. `federation.follow` jobs carry the
+exact activity and inbox; a retry sends the same Follow or Undo. Before a
+Follow delivery the worker re-reads the row and skips a job whose edge was
+removed by an Unfollow. That prevents the common race where a queued Follow
+would otherwise arrive after its Undo.
 
 ## What changes it
 
 | Event | Effect |
 | --- | --- |
-| `POST /api/v1/following` | The actor appears at the front |
-| `DELETE /api/v1/following/{id}` | The actor disappears |
+| `POST /api/v1/following` | A pending row is stored at the front; it appears only after Accept |
+| `DELETE /api/v1/following/{id}` | The actor disappears immediately; the Undo is queued |
+| Signed `Accept` at `/inbox` | The pending row becomes accepted |
+| Signed `Reject` at `/inbox` | The pending row becomes rejected |
 | `FollowingService::follow('alice', $actor, $inbox)` | Same as the endpoint, for hosts that call the service directly |
 | `FollowingService::unfollowById('alice', $id)` | Same as the endpoint |
 
@@ -195,7 +228,6 @@ from the reader's next page without deleting the shared remote rows.
 | 404 | `not_found` | Unknown id, or the edge belongs to another account |
 | 404 | `actor_not_found` | Unknown handle on the read route; the message does not echo it |
 | 422 | `validation_failed` | `actor` or `inbox` is not an absolute http(s) URL |
-| 502 | `delivery_failed` | The peer answered non-2xx or could not be reached |
 | 503 | `actor_not_configured` | The read route has no signing key or local actor directory |
 | 503 | `federation_not_configured` | A write has no HTTP client or signing key to deliver with |
 | 503 | `instance_not_configured` | `social/instance.url` is missing |

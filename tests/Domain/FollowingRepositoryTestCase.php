@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
 
@@ -31,7 +33,72 @@ abstract class FollowingRepositoryTestCase extends TestCase
 
 		self::assertSame('f1', $repository->find('alice', 'https://remote.example/users/bob')?->id);
 		self::assertSame('alice', $repository->find('alice', 'https://remote.example/users/bob')?->localUserId);
+		self::assertSame(FollowState::Accepted, $repository->find('alice', 'https://remote.example/users/bob')?->state);
 		self::assertNull($repository->find('alice', 'https://remote.example/users/mallory'));
+	}
+
+	public function testAStateTransitionIsConditionalAndIdempotent(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed(
+			'f1',
+			'alice',
+			'https://remote.example/users/bob',
+			state: FollowState::Pending,
+			followActivityId: 'https://social.example/api/v1/following/f1/follow',
+		));
+
+		self::assertSame(
+			'f1',
+			$repository->findByActivityId('https://social.example/api/v1/following/f1/follow')?->id,
+		);
+		self::assertTrue($repository->updateState('f1', FollowState::Pending, FollowState::Accepted));
+		self::assertSame(FollowState::Accepted, $repository->findById('f1')?->state);
+		self::assertFalse($repository->updateState('f1', FollowState::Pending, FollowState::Rejected));
+		self::assertSame(FollowState::Accepted, $repository->findById('f1')?->state);
+	}
+
+	public function testOnlyAcceptedRowsFeedThePublicReads(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed(
+			'pending',
+			'alice',
+			'https://pending.example/users/one',
+			'2026-11-11T10:02:00Z',
+			state: FollowState::Pending,
+		));
+		$repository->insert($this->followed(
+			'accepted',
+			'alice',
+			'https://accepted.example/users/two',
+			'2026-11-11T10:01:00Z',
+		));
+		$repository->insert($this->followed(
+			'rejected',
+			'alice',
+			'https://rejected.example/users/three',
+			'2026-11-11T10:00:00Z',
+			state: FollowState::Rejected,
+		));
+
+		self::assertSame(['https://accepted.example/users/two'], $repository->actorIds('alice'));
+		self::assertSame(1, $repository->count('alice'));
+		self::assertSame(['accepted'], array_map(
+			static fn (FollowedActor $actor): string => $actor->id,
+			$repository->followedActors('alice'),
+		));
+		self::assertSame(['alice'], $repository->localUserIdsForActor('https://accepted.example/users/two'));
+		self::assertSame([], $repository->localUserIdsForActor('https://pending.example/users/one'));
+	}
+
+	public function testADuplicatePairIsRefused(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed('f1', 'alice', 'https://remote.example/users/bob'));
+
+		$this->expectException(DatabaseException::class);
+		$repository->insert($this->followed('f2', 'alice', 'https://remote.example/users/bob'));
 	}
 
 	public function testFindIsScopedToTheLocalUser(): void
@@ -169,6 +236,8 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		string $actorId,
 		string $followedAt = '2026-11-11T10:00:00Z',
 		?string $inboxUrl = null,
+		FollowState $state = FollowState::Accepted,
+		?string $followActivityId = null,
 	): FollowedActor {
 		return new FollowedActor(
 			$id,
@@ -176,6 +245,8 @@ abstract class FollowingRepositoryTestCase extends TestCase
 			$actorId,
 			$inboxUrl ?? $actorId . '/inbox',
 			Time::parse($followedAt),
+			$state,
+			$followActivityId,
 		);
 	}
 }

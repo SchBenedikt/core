@@ -65,6 +65,7 @@ refused before a claim, and a replay is refused without changing anything.
 | Type | Effect |
 | --- | --- |
 | `Follow` | stores the follower edge when the optional `FollowPolicy` accepts it (idempotently) and queues an `Accept` to the follower's inbox |
+| `Accept` / `Reject` | moves an outgoing pending Follow to accepted/rejected after verifying the signer is its target actor and the embedded Follow matches |
 | `Undo` with an embedded `Follow` or an `Announce` (embedded or by id) | removes the follower edge or soft-deletes the stored boost; an Undo for an already-absent edge/boost is still accepted |
 | `Create` | stores the embedded `Note` in the remote-post store as a post |
 | `Delete` | soft-deletes the matching remote activity/post, if this actor owns it; an unknown target is a successful no-op |
@@ -73,6 +74,27 @@ refused before a claim, and a replay is refused without changing anything.
 Anything else — for example `Like` or `Update` — is refused with 400
 `unsupported_activity`. Accepting an activity we cannot apply would tell a peer
 its delivery succeeded when nothing happened.
+
+## What Accept and Reject do
+
+An incoming `Accept`/`Reject` answers an outgoing Follow from `POST
+/api/v1/following`: the local row is `pending` until the target actor replies.
+The service resolves the embedded Follow id (or the id-only object) against
+`social_following.follow_activity_id`, requires the signing actor to equal the
+stored target actor, and applies a conditional `pending → accepted` or
+`pending → rejected` update. When the original Follow is embedded, its `actor`
+must be the local actor and its `object` the stored target actor.
+
+A duplicate response is re-applied safely: the conditional update affects no
+row, so it cannot flip an accepted edge or resurrect a rejected one. An
+`Accept`/`Reject` after an Unfollow finds no row and is a successful no-op.
+Two competing responses can only produce the first transition. A signature-valid
+foreign actor or a mismatched embedded Follow is `403 actor_mismatch`; an
+unknown Follow id is a no-op because the local request may already be gone.
+
+The public following collection and the follow-based home timeline read only
+accepted rows. A pending row is visible in the Follow write response (`state`),
+but peers do not see it until the Accept arrives.
 
 ## What a Follow does
 

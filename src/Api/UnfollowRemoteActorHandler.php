@@ -22,9 +22,9 @@ use AlohaSocial\Core\Service\FollowingService;
 /**
  * `DELETE /api/v1/following/{id}`
  *
- * Sends the matching `Undo` to the stored inbox and removes the edge only
- * after the peer accepted it. A failed delivery answers 502 and leaves the
- * follow in place, so the same request can be retried safely.
+ * Removes the edge and queues the matching `Undo` to the stored inbox. The
+ * queue retries a failed delivery; because the row is already gone, a late
+ * Accept/Reject cannot bring it back.
  *
  * An id of another account is answered with 404 rather than 403: the id alone
  * must not reveal that another account follows this actor.

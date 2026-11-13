@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowPolicy;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -49,9 +50,11 @@ use function is_string;
  * 7. content types require a local follower; only then does anything change.
  *
  * A Follow creates the follower edge and queues an Accept for the follower's
- * inbox. An Undo(Follow) removes the edge. Create, Delete and Announce are
- * accepted only from an actor followed by at least one local account; they
- * change the remote-post store, which the home timeline reads.
+ * inbox. An Accept/Reject updates an outgoing pending follow only when the
+ * signing actor is its target and the embedded Follow id matches. An
+ * Undo(Follow) removes the edge. Create, Delete and Announce are accepted
+ * only from an actor followed by at least one local account; they change the
+ * remote-post store, which the home timeline reads.
  *
  * Every refusal is an {@see InboxRejectedException} with a stable reason; this
  * class knows nothing about HTTP status codes.
@@ -121,7 +124,21 @@ final class InboxService
 			);
 		}
 
-		if (!$this->replay->claim($activityId, $this->clock->now())) {
+		$claimed = $this->replay->claim($activityId, $this->clock->now());
+		if (!$claimed) {
+			// A duplicate Accept/Reject is a retry of the same response. It
+			// must not be treated as a new state transition, but it is safe
+			// to re-apply because the repository only moves a pending row.
+			if ($type === 'Accept' || $type === 'Reject') {
+				$this->handleFollowResponse(
+					$actor,
+					$activity,
+					$type === 'Accept' ? FollowState::Accepted : FollowState::Rejected,
+				);
+
+				return;
+			}
+
 			throw new InboxRejectedException(
 				'replayed_activity',
 				'This activity has already been accepted.',
@@ -131,6 +148,8 @@ final class InboxService
 		try {
 			match ($type) {
 				'Follow' => $this->handleFollow($actor, $activity),
+				'Accept' => $this->handleFollowResponse($actor, $activity, FollowState::Accepted),
+				'Reject' => $this->handleFollowResponse($actor, $activity, FollowState::Rejected),
 				'Undo' => $this->handleUndo($actor, $activity),
 				'Create' => $this->handleCreate($actor, $activity),
 				'Delete' => $this->handleDelete($actor, $activity),
@@ -300,6 +319,76 @@ final class InboxService
 
 			throw $exception;
 		}
+	}
+
+	/**
+	 * Applies a signed Accept or Reject to an outgoing pending Follow.
+	 *
+	 * The signer must be the actor the local account followed. When the
+	 * original Follow is embedded, its actor and object are checked against
+	 * the stored row as well. An unknown or already removed Follow id is a
+	 * successful no-op: an Unfollow may have raced the response, and a late
+	 * duplicate must not recreate the edge.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleFollowResponse(RemoteActor $actor, array $activity, FollowState $state): void
+	{
+		$object = $activity['object'] ?? null;
+		$follow = null;
+
+		if (is_string($object)) {
+			$followActivityId = trim($object);
+		} elseif (is_array($object)) {
+			if (($object['type'] ?? null) !== 'Follow') {
+				throw new InboxRejectedException('invalid_activity', 'An Accept/Reject needs an embedded Follow or its id.');
+			}
+
+			$follow = $object;
+			$id = $object['id'] ?? null;
+			if (!is_string($id) || trim($id) === '') {
+				throw new InboxRejectedException('invalid_activity', 'An embedded Follow needs an id.');
+			}
+
+			$followActivityId = trim($id);
+		} else {
+			throw new InboxRejectedException('invalid_activity', 'An Accept/Reject needs an embedded Follow or its id.');
+		}
+
+		if ($followActivityId === '') {
+			throw new InboxRejectedException('invalid_activity', 'An Accept/Reject needs a Follow id.');
+		}
+
+		$stored = $this->following->findByActivityId($followActivityId);
+		if ($stored === null) {
+			return;
+		}
+
+		if ($stored->actorId !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'Only the followed actor may accept or reject this Follow.',
+			);
+		}
+
+		if ($follow !== null) {
+			$followActor = $follow['actor'] ?? null;
+			$followObject = $follow['object'] ?? null;
+
+			if (
+				!is_string($followActor)
+				|| $followActor !== $this->activities->actorId($stored->localUserId)
+				|| !is_string($followObject)
+				|| $followObject !== $stored->actorId
+			) {
+				throw new InboxRejectedException(
+					'actor_mismatch',
+					'The embedded Follow does not belong to this outgoing request.',
+				);
+			}
+		}
+
+		$this->following->respondToFollow($followActivityId, $actor->actorId, $state);
 	}
 
 	/**

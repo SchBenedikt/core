@@ -32,6 +32,8 @@ signed `Digest` is refused. For the shared inbox, use
 | `type` | Required fields | Effect |
 | --- | --- | --- |
 | `Follow` | `id`, `actor`, `object` = local actor URL | Creates the follower edge when the optional `FollowPolicy` accepts it; queues `Accept` |
+| `Accept` | `id`, `actor`, `object` = embedded outgoing `Follow` or its id | Moves the matching outgoing pending follow to accepted |
+| `Reject` | `id`, `actor`, `object` = embedded outgoing `Follow` or its id | Moves the matching outgoing pending follow to rejected |
 | `Undo` | `id`, `actor`, `object` = embedded `Follow`, or an `Announce` embedded/by id | Removes the follower edge or soft-deletes the stored boost |
 | `Create` | `id`, `actor`, embedded `object` with `id` and `content` | Stores a remote post |
 | `Delete` | `id`, `actor`, `object` = URI or embedded object with an `id` | Soft-deletes the matching remote post/activity |
@@ -41,6 +43,14 @@ For `Undo(Follow)`, the embedded Follow must satisfy the same rules as a Follow
 and its `actor` must equal the signing actor. For `Undo(Announce)`, the target
 must be a stored boost owned by the signing actor; an absent target is a
 successful no-op.
+
+For `Accept`/`Reject`, the signing actor must be the actor that the local
+account followed. The object is either the exact Follow activity id stored on
+the pending row or an embedded Follow whose `actor` is the local actor and
+whose `object` is the followed actor. A duplicate, a wrong embedded Follow, a
+foreign signer or a response after an Unfollow changes nothing; the duplicate
+and late forms are successful no-ops, while a signature-valid foreign signer
+is `403 actor_mismatch`.
 
 For `Create`, `Delete` and `Announce`, at least one local account must follow
 the signing actor. The object's `attributedTo` (when present) must also be the
@@ -58,8 +68,8 @@ the activity timestamp and then the server clock. An invalid timestamp is
 | --- | --- | --- |
 | 400 | `invalid_json` | Body is not valid JSON or not an object |
 | 400 | `invalid_activity` | `id`, `type` or `actor` missing; the object, content, timestamp or content warning has the wrong shape |
-| 400 | `unsupported_activity` | A type other than Follow/Undo(Follow)/Undo(Announce)/Create/Delete/Announce |
-| 400 | `replayed_activity` | This activity id was already accepted |
+| 400 | `unsupported_activity` | A type other than Follow/Accept/Reject/Undo/Create/Delete/Announce |
+| 400 | `replayed_activity` | This non-Accept/Reject activity id was already accepted |
 | 401 | `signature_required` | No `Signature` header |
 | 401 | `invalid_signature` | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
 | 401 | `signature_expired` | `Date` outside the 300-second window |
@@ -88,7 +98,11 @@ Content-Type: application/json
 `202` means the activity was applied, not merely queued: a Follow's edge or a
 Create/Announce's remote-post row is already in the repository. A `Delete` for
 an unknown object is also accepted, because the peer's intended state is
-already true. `Accept` and other outbound delivery remain asynchronous.
+already true. An `Accept`/`Reject` for an unknown or already removed outgoing
+Follow is likewise a successful no-op. A duplicate `Accept`/`Reject` with the
+same activity id is still `202`, because re-applying a conditional transition
+cannot change the row twice. Outbound Follow/Undo/Accept delivery remains
+asynchronous in the queue.
 
 ## Example: Create
 

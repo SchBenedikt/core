@@ -108,6 +108,18 @@ handler stay one-inbox/one-activity; batching happens at the inbox selection,
 not by inventing a multi-recipient request. Follow, Undo and Accept always use
 the individual inbox. See [shared inboxes](shared-inboxes.md).
 
+## Follow and Undo jobs
+
+Outgoing follows use `federation.follow`, not the generic `federation.deliver`.
+The payload carries `operation` (`follow` or `undo`), `follow_id`, `inbox`,
+`activity` and `key_id`. A `follow` job re-reads the row before every attempt
+and becomes a no-op if the row is gone or no longer pending; that is how an
+Unfollow wins a race against a still-queued Follow. An `undo` job has no local
+row because Unfollow removes it before the job runs. Both are ordinary retried
+jobs: a non-2xx answer or transport failure leaves the same payload queued for
+the next attempt, and the activity id derived from the follow row makes the
+receiver's handling idempotent.
+
 ## Idempotency
 
 A retry must be safe for the receiver. Two things make it so:

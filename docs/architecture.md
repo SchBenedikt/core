@@ -632,23 +632,34 @@ leaving the follow graph and the ActivityPub collections unchanged.
 POST /api/v1/following
   └─ FollowRemoteActorHandler  parse actor + inbox
       └─ FollowingService::follow
-          ├─ FollowingRepository::insert
-          ├─ ActivityFactory::followActor       Follow with derived id
-          └─ FederationDeliveryHandler::deliver
-              ├─ HttpSignature::sign   (request-target) host date digest
-              └─ HttpClient::request   non-2xx → throw, edge rolled back
+          ├─ FollowingRepository::insert            state = pending
+          └─ JobQueue::push federation.follow        exact Follow + inbox
 DELETE /api/v1/following/{id}
   └─ UnfollowRemoteActorHandler
       └─ FollowingService::unfollowById
-          ├─ ActivityFactory::undoFollow       Undo embedding the Follow
-          ├─ FederationDeliveryHandler::deliver
-          └─ FollowingRepository::remove       only after acceptance
+          ├─ JobQueue::push federation.follow        Undo embedding the Follow
+          └─ FollowingRepository::remove              row gone before the worker
+worker: federation.follow
+  └─ FollowingDeliveryHandler
+      ├─ follow: re-read row; skip unless still pending
+      └─ FederationDeliveryHandler::deliver
+          ├─ HttpSignature::sign   (request-target) host date digest
+          └─ HttpClient::request   non-2xx → throw, queue retries
+inbound: Accept/Reject
+  └─ InboxService::handleFollowResponse
+      ├─ verify signer = the followed actor
+      ├─ FollowingRepository::findByActivityId  exact Follow id
+      └─ FollowingRepository::updateState       pending → accepted/rejected
 ```
 
-The delivery is synchronous because the answer decides the local state: a
-refused Follow must not stay in the collection, and a refused Undo must leave
-a retryable edge. Posts still queue their delivery; a Follow cannot, because
-its handler has to know whether the peer accepted it before it answers.
+A Follow is queued rather than sent in the request: the API persists `pending`
+and returns, and the durable worker retries an unreachable peer with the same
+activity. The worker checks the row again before a Follow delivery so an
+Unfollow that removed it turns the stale job into a no-op. Accept/Reject only
+apply to a pending row through a conditional update; duplicates, late
+responses after Unfollow and competing responses therefore cannot resurrect or
+flip an edge. The public following collection and home timeline read accepted
+rows only.
 
 ## Serving an actor
 

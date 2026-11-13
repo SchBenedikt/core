@@ -76,7 +76,8 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' CASE WHEN r.kind = :boost_kind THEN r.actor_id ELSE NULL END AS boosted_by'
 			. ' FROM ' . RemotePostSchema::TABLE . ' r'
 			. ' INNER JOIN ' . FollowingSchema::TABLE . ' f ON f.actor_id = r.actor_id'
-			. ' WHERE f.local_user_id = :remote_user AND r.deleted_at IS NULL'
+			. " WHERE f.local_user_id = :remote_user AND f.state = 'accepted'"
+			. ' AND r.deleted_at IS NULL'
 			. ' AND NOT EXISTS ('
 			. ' SELECT 1 FROM ' . BlockSchema::TABLE . ' b'
 			. ' WHERE b.local_user_id = :block_user'

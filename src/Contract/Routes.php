@@ -333,7 +333,7 @@ final class Routes
 				handler: FollowRemoteActorHandler::class,
 				requiresAuth: true,
 				rateLimit: '30/900',
-				summary: 'Follow a remote actor and deliver a signed Follow to its inbox.',
+				summary: 'Store a pending follow and queue a signed Follow to its inbox.',
 			),
 			new Route(
 				name: 'following.unfollow',
@@ -342,7 +342,7 @@ final class Routes
 				handler: UnfollowRemoteActorHandler::class,
 				requiresAuth: true,
 				rateLimit: '60/900',
-				summary: 'Remove a followed actor and deliver a signed Undo to its inbox.',
+				summary: 'Remove a followed actor and queue a signed Undo to its inbox.',
 			),
 			new Route(
 				name: 'accounts.show',

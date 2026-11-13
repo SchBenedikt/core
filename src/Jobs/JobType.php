@@ -19,6 +19,13 @@ final class JobType
 {
 	public const FEDERATION_DELIVER = 'federation.deliver';
 
+	/**
+	 * Follow and Undo(Follow) for the outgoing graph. Kept separate from a
+	 * generic delivery so a retry can re-check the pending edge and skip a
+	 * stale Follow after an Unfollow.
+	 */
+	public const FEDERATION_FOLLOW = 'federation.follow';
+
 	public const ATPROTO_PUBLISH = 'atproto.publish';
 
 	public const ATPROTO_DELETE = 'atproto.delete';

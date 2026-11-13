@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+
 /**
  * The outgoing follow graph in memory, for tests, the demo and tools.
  *
@@ -24,6 +26,14 @@ final class InMemoryFollowingRepository implements FollowingRepository
 
 	public function insert(FollowedActor $actor): void
 	{
+		if (isset($this->following[$actor->id])) {
+			throw new DatabaseException('The followed actor id is already stored.');
+		}
+
+		if ($this->find($actor->localUserId, $actor->actorId) !== null) {
+			throw new DatabaseException('This local user already follows the actor.');
+		}
+
 		$this->following[$actor->id] = $actor;
 	}
 
@@ -43,11 +53,34 @@ final class InMemoryFollowingRepository implements FollowingRepository
 		return $this->following[$id] ?? null;
 	}
 
+	public function findByActivityId(string $activityId): ?FollowedActor
+	{
+		foreach ($this->following as $followed) {
+			if ($followed->followActivityId === $activityId) {
+				return $followed;
+			}
+		}
+
+		return null;
+	}
+
 	public function updateInbox(FollowedActor $actor): void
 	{
 		if (isset($this->following[$actor->id])) {
 			$this->following[$actor->id] = $actor;
 		}
+	}
+
+	public function updateState(string $id, FollowState $expected, FollowState $state): bool
+	{
+		$stored = $this->following[$id] ?? null;
+		if ($stored === null || $stored->state !== $expected) {
+			return false;
+		}
+
+		$this->following[$id] = $stored->withState($state);
+
+		return true;
 	}
 
 	public function remove(string $localUserId, string $actorId): bool
@@ -67,7 +100,8 @@ final class InMemoryFollowingRepository implements FollowingRepository
 	{
 		$matching = array_values(array_filter(
 			$this->following,
-			static fn (FollowedActor $followed): bool => $followed->localUserId === $localUserId,
+			static fn (FollowedActor $followed): bool => $followed->localUserId === $localUserId
+				&& $followed->state->isAccepted(),
 		));
 
 		usort($matching, static function (FollowedActor $a, FollowedActor $b): int {
@@ -88,7 +122,8 @@ final class InMemoryFollowingRepository implements FollowingRepository
 	{
 		$matching = array_values(array_filter(
 			$this->following,
-			static fn (FollowedActor $followed): bool => $followed->localUserId === $localUserId,
+			static fn (FollowedActor $followed): bool => $followed->localUserId === $localUserId
+				&& $followed->state->isAccepted(),
 		));
 
 		usort($matching, static function (FollowedActor $a, FollowedActor $b): int {
@@ -104,7 +139,7 @@ final class InMemoryFollowingRepository implements FollowingRepository
 	{
 		$count = 0;
 		foreach ($this->following as $followed) {
-			if ($followed->localUserId === $localUserId) {
+			if ($followed->localUserId === $localUserId && $followed->state->isAccepted()) {
 				$count++;
 			}
 		}
@@ -116,7 +151,7 @@ final class InMemoryFollowingRepository implements FollowingRepository
 	{
 		$users = [];
 		foreach ($this->following as $followed) {
-			if ($followed->actorId === $actorId) {
+			if ($followed->actorId === $actorId && $followed->state->isAccepted()) {
 				$users[$followed->localUserId] = true;
 			}
 		}

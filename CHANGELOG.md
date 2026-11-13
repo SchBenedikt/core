@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Complete the outgoing ActivityPub follow lifecycle: a Follow is stored as
+  `pending`, delivered by a durable `federation.follow` queue job with retries,
+  and moved to `accepted` or `rejected` only by a verified Accept/Reject from
+  the target actor. Unfollow queues the Undo and removes the row, so duplicate,
+  late and competing responses are safe no-ops. The public collection and home
+  timeline read accepted rows only.
 - Accept inbound `Undo(Announce)` in both its embedded and id-only forms,
   removing only a boost owned by the signing actor and treating an absent
   target or a retry as an idempotent no-op.
@@ -26,7 +32,7 @@ All notable changes to this project are documented here. The format follows
   the UI suite checks the package pair and accepts or rejects bridge contracts
   and capabilities in both directions. The HostBridge field is optional and an
   omitted value means contract 1, so existing bridges keep working. Test counts
-  are now 123 PHP files (1095 tests, 5174 assertions) and 9 UI files (69 tests).
+  are now 124 PHP files (1110 tests, 5297 assertions) and 9 UI files (69 tests).
 
 ### Changed
 

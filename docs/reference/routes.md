@@ -439,26 +439,29 @@ Content-Type: application/json
 ```
 
 `201` with `Location: /api/v1/following/{id}` when the outgoing edge is new,
-`200` when the actor was already followed and only the inbox may have changed:
+`200` when the actor was already followed or still pending:
 
 ```json
 {"following": {"id": "…", "actor": "https://remote.example/users/bob",
   "inbox": "https://remote.example/users/bob/inbox",
-  "followed_at": "2026-11-11T10:00:00Z"}}
+  "followed_at": "2026-11-11T10:00:00Z", "state": "pending"}}
 ```
 
-The endpoint stores the edge and delivers a signed ActivityPub `Follow` to the
-inbox; a repeated `POST` sends nothing. If the peer refuses the delivery, the
-edge is rolled back and the answer is `502 delivery_failed`.
+The endpoint stores a `pending` edge and queues a `federation.follow` job. The
+worker delivers the signed ActivityPub `Follow`; a failed delivery stays
+queued and is retried, and a repeated `POST` queues nothing. A signed
+`Accept`/`Reject` from the target actor moves the row to `accepted`/`rejected`;
+the public following collection and home timeline read accepted rows only.
 
 ```http
 DELETE /api/v1/following/{id}
 ```
 
-`204` after the peer accepted the `Undo` of the embedded `Follow`. A failed
-`Undo` answers `502 delivery_failed` and keeps the edge, so the same request
-can be retried. An id of another account is `404 not_found`; a write without
-an HTTP client or signing key is `503 federation_not_configured`. See the
+`204` after the edge was removed and the `Undo` of the embedded `Follow` was
+queued. The worker retries a failed `Undo`; the edge stays gone, and an
+`Accept`/`Reject` arriving later is a no-op. An id of another account is `404
+not_found`; a write without an HTTP client or signing key is `503
+federation_not_configured`. See the
 [following collection guide](../guides/following-collection.md).
 
 ## Blocks

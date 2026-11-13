@@ -273,7 +273,7 @@ The core owns the schema classes, not the migration mechanism:
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker and unread index)
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox plus `is_local` for local-to-local follows)
-- `FollowingSchema` → `social_following` (includes `inbox_url`)
+- `FollowingSchema` → `social_following` (includes `inbox_url`, `state` and `follow_activity_id`; accepted rows feed the public collection)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
 - `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`, `social_post_hashtag`
@@ -289,6 +289,12 @@ port is small; see [database](database.md).
 
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.
+For the outgoing follow lifecycle, also add
+`state VARCHAR(16) NOT NULL DEFAULT 'accepted'` and nullable
+`follow_activity_id VARCHAR(512)` with a unique index. Existing rows are
+accepted follows; new rows start pending. The host worker must use the
+`JobHandlerRegistry` returned by `Application`, which already registers
+`federation.follow` (Follow and Undo) next to `federation.deliver`.
 If `social_follower` exists from an earlier core version, add the nullable
 `shared_inbox_url VARCHAR(512) NULL` column. Existing rows need no backfill and
 fall back to their individual inbox; see

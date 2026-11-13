@@ -203,6 +203,7 @@ use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
+use AlohaSocial\Core\Service\Federation\FollowingDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\Federation\RemoteFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
@@ -616,6 +617,8 @@ final readonly class Application
 			$ids,
 			$activities,
 			$federationDelivery,
+			$queue,
+			$transactions,
 		);
 		$instance = new InstanceInfo($config, $localActors, $posts, $remotePosts);
 		$localRelationships = $localActors === null
@@ -873,7 +876,12 @@ final readonly class Application
 
 		$jobHandlers = new JobHandlerRegistry();
 		if ($federationDelivery !== null) {
-			$jobHandlers = $jobHandlers->with(JobType::FEDERATION_DELIVER, $federationDelivery);
+			$jobHandlers = $jobHandlers
+				->with(JobType::FEDERATION_DELIVER, $federationDelivery)
+				->with(
+					JobType::FEDERATION_FOLLOW,
+					new FollowingDeliveryHandler($followingRepository, $federationDelivery),
+				);
 		}
 		$jobHandlers = $jobHandlers
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))

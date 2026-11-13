@@ -29,9 +29,25 @@ interface FollowingRepository
 	public function findById(string $id): ?FollowedActor;
 
 	/**
+	 * Finds the edge whose exact Follow activity id is named by an
+	 * Accept/Reject. A row from before the lifecycle has no activity id and
+	 * is therefore never matched by a response.
+	 */
+	public function findByActivityId(string $activityId): ?FollowedActor;
+
+	/**
 	 * Replaces the stored inbox of an existing edge, keeping its identity.
 	 */
 	public function updateInbox(FollowedActor $actor): void;
+
+	/**
+	 * Applies one conditional lifecycle transition.
+	 *
+	 * The expected state is part of the UPDATE, so two workers processing an
+	 * Accept and a Reject concurrently cannot both win. A duplicate or a
+	 * response after Unfollow changes nothing and returns false.
+	 */
+	public function updateState(string $id, FollowState $expected, FollowState $state): bool;
 
 	/**
 	 * Deletes only if the edge belongs to the given local user.
@@ -41,9 +57,10 @@ interface FollowingRepository
 	public function remove(string $localUserId, string $actorId): bool;
 
 	/**
-	 * The actor ids one local user follows, newest first.
+	 * The actor ids one local user has an accepted follow for, newest first.
 	 *
-	 * This is the following collection: all of them, not a page.
+	 * This is the public following collection: a pending request is not yet a
+	 * follow, and a rejected request must never appear.
 	 *
 	 * @return list<string>
 	 */
@@ -57,7 +74,7 @@ interface FollowingRepository
 	public function actorIdsPage(string $localUserId, int $limit, int $offset): array;
 
 	/**
-	 * The remote edges one local user created, newest first.
+	 * The accepted remote edges one local user created, newest first.
 	 *
 	 * The profile following collection merges these with local-to-local
 	 * edges and needs both the actor id and the follow time.
@@ -69,10 +86,10 @@ interface FollowingRepository
 	public function count(string $localUserId): int;
 
 	/**
-	 * The local users that follow one remote actor, in stable order.
-	 *
-	 * Inbound content is accepted only for an actor that at least one local
-	 * account follows; this is the authorization lookup for that decision.
+	 * The local users with an accepted follow of one remote actor, in stable
+	 * order. Inbound content is accepted only for such an actor; this is the
+	 * authorization lookup for that decision. Pending and rejected edges do
+	 * not grant content access.
 	 *
 	 * @return list<string>
 	 */

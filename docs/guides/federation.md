@@ -80,11 +80,13 @@ target is accepted, and a bounded client pins the addresses that were checked.
 The worker signs each request and treats a non-2xx answer as a retryable
 failure; the queue backs off and eventually dead-letters.
 
-A local `Follow`/`Undo` is not queued: the endpoint has to know whether the
-peer accepted it before it can answer. `FollowingService` signs and delivers
-it synchronously through the same `FederationDeliveryHandler`, rolls a Follow
-back when the peer refuses it, and keeps an edge when an Undo fails so the
-request can be retried. See the [following collection](following-collection.md).
+A local `Follow`/`Undo` is queued as `federation.follow`. The endpoint stores
+the pending state or removes the edge, and the worker sends the signed activity
+through the same `FederationDeliveryHandler`; a failed attempt is retried with
+the queue backoff. Before sending a Follow the worker re-reads the row, so an
+Unfollow removes the edge and the stale Follow job becomes a no-op. A signed
+`Accept`/`Reject` from the followed actor completes the pending request. See
+the [following collection](following-collection.md).
 
 Per-user blocks are queued asynchronously instead. The local block is stored
 before the actor document is resolved; when the actor's inbox is known, a

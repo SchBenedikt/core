@@ -20,6 +20,9 @@ use InvalidArgumentException;
  * an absolute ActivityPub actor URL. The inbox is stored with it because a
  * Follow and its later Undo have to be delivered there; it is not used for
  * incoming delivery, which belongs to the follower graph.
+ *
+ * The state exists only on outgoing edges. Inbound followers are created by a
+ * verified Follow and are therefore already accepted.
  */
 final readonly class FollowedActor
 {
@@ -29,6 +32,8 @@ final readonly class FollowedActor
 		public string $actorId,
 		public string $inboxUrl,
 		public DateTimeImmutable $followedAt,
+		public FollowState $state = FollowState::Accepted,
+		public ?string $followActivityId = null,
 	) {
 		if ($id === '') {
 			throw new InvalidArgumentException('A followed actor needs an id.');
@@ -52,7 +57,28 @@ final readonly class FollowedActor
 	 */
 	public function withInbox(string $inboxUrl): self
 	{
-		return new self($this->id, $this->localUserId, $this->actorId, $inboxUrl, $this->followedAt);
+		return new self(
+			$this->id,
+			$this->localUserId,
+			$this->actorId,
+			$inboxUrl,
+			$this->followedAt,
+			$this->state,
+			$this->followActivityId,
+		);
+	}
+
+	public function withState(FollowState $state): self
+	{
+		return new self(
+			$this->id,
+			$this->localUserId,
+			$this->actorId,
+			$this->inboxUrl,
+			$this->followedAt,
+			$state,
+			$this->followActivityId,
+		);
 	}
 
 	/**
@@ -65,6 +91,7 @@ final readonly class FollowedActor
 			'actor' => $this->actorId,
 			'inbox' => $this->inboxUrl,
 			'followed_at' => Time::format($this->followedAt),
+			'state' => $this->state->value,
 		];
 	}
 }

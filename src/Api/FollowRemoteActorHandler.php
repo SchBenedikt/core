@@ -26,13 +26,12 @@ use function is_string;
 /**
  * `POST /api/v1/following`
  *
- * Follows a remote actor and delivers a signed ActivityPub `Follow` to the
- * inbox supplied with the request. A new edge answers 201 with a Location;
- * repeating the call answers 200 and sends nothing, so a retried request does
- * not produce duplicate Follows.
- *
- * If the peer refuses the delivery, the edge is rolled back before the 502
- * answers: the collection must not claim a follow the peer never accepted.
+ * Follows a remote actor by storing a pending edge and queueing a signed
+ * ActivityPub `Follow`. A new edge answers 201 with a Location and
+ * `state: pending`; repeating the call answers 200 and queues nothing, so a
+ * retried request does not produce duplicate Follows. The worker retries a
+ * failed delivery. The edge becomes accepted or rejected only through a
+ * verified inbound Accept/Reject.
  */
 final class FollowRemoteActorHandler implements Handler
 {

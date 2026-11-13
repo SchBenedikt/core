@@ -52,7 +52,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
-- `src/Domain/Federation/FollowingSchema.php` → `social_following`
+- `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
@@ -73,7 +73,11 @@ hosts add the nullable column and create the recipient table before enabling
 direct posts or replies; rows without a reply/audience need no backfill.
 
 Adding a column means changing the schema class **and** both hosts' migration
-paths in the same release. There is no automatic migration runner in the core:
+paths in the same release. For `social_following`, add
+`state VARCHAR(16) NOT NULL DEFAULT 'accepted'` and nullable
+`follow_activity_id VARCHAR(512)` plus its unique index; old rows remain
+accepted, and the write path inserts pending rows. There is no automatic
+migration runner in the core:
 it would need to know the host's migration mechanism, which is exactly the kind of host concern ports exist to keep out. Existing follower tables need the
 nullable `social_follower.shared_inbox_url VARCHAR(512)` column; rows with
 `NULL` keep delivering to `inbox_url`, so no backfill is required. See

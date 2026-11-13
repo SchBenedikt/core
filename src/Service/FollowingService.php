@@ -11,7 +11,12 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Support\IdGenerator;
@@ -21,10 +26,15 @@ use Throwable;
 /**
  * The outgoing follow graph as a use case.
  *
- * A Follow is stored, sent as a signed ActivityPub activity, and rolled back
- * locally if the peer refuses it. An Undo is sent first and the edge is
- * removed only after the peer accepted it; a failed Undo therefore leaves a
- * retryable follow instead of a local-only unfollow.
+ * A new Follow is stored as pending and queued. The queue retries a failed
+ * delivery without losing the local request. Only a verified Accept/Reject
+ * from the target actor may change the state, and the transition is
+ * conditional on the row still being pending. Unfollow removes the row
+ * instead of adding another state, so a response that arrives after it can
+ * never bring the edge back.
+ *
+ * A direct delivery path remains for a caller that has no queue. Production
+ * assemblies always pass the durable queue.
  */
 final class FollowingService
 {
@@ -39,6 +49,8 @@ final class FollowingService
 		private readonly IdGenerator $ids,
 		private readonly ActivityFactory $activities,
 		private readonly ?FederationDeliveryHandler $delivery,
+		private readonly ?JobQueue $queue = null,
+		private readonly ?TransactionRunner $transactions = null,
 	) {
 	}
 
@@ -71,37 +83,63 @@ final class FollowingService
 		}
 
 		$existing = $this->following->find($localUserId, $actorId);
-		if ($existing !== null) {
-			if ($existing->inboxUrl === $inboxUrl) {
-				return new FollowingResult($existing, false);
+		if ($existing !== null && $existing->state !== FollowState::Rejected) {
+			if ($existing->inboxUrl !== $inboxUrl) {
+				$existing = $existing->withInbox($inboxUrl);
+				$this->following->updateInbox($existing);
 			}
 
-			$updated = $existing->withInbox($inboxUrl);
-			$this->following->updateInbox($updated);
-
-			return new FollowingResult($updated, false);
+			return new FollowingResult($existing, false);
 		}
 
 		if ($this->delivery === null) {
 			throw new FollowingNotConfiguredException();
 		}
 
+		// A rejected request is a new attempt: remove the old row first so a
+		// late Reject for the old Follow id cannot match the new attempt.
+		if ($existing !== null) {
+			$this->following->remove($localUserId, $actorId);
+		}
+
+		$id = $this->ids->generate();
 		$followed = new FollowedActor(
-			id: $this->ids->generate(),
+			id: $id,
 			localUserId: $localUserId,
 			actorId: $actorId,
 			inboxUrl: $inboxUrl,
 			followedAt: Time::toSecondPrecision($this->clock->now()),
+			state: FollowState::Pending,
+			followActivityId: $this->activities->followId($id),
 		);
 
-		$this->following->insert($followed);
-
 		try {
-			$this->deliver($localUserId, $followed, $this->activities->followActor($localUserId, $followed));
+			$this->atomically(function () use ($localUserId, $followed): void {
+				$this->following->insert($followed);
+				$this->enqueueFollow($localUserId, $followed);
+			});
+		} catch (DatabaseException $exception) {
+			$stored = $this->following->find($localUserId, $actorId);
+
+			// Two requests for the same pair raced. The unique index chose
+			// the other row; return it instead of surfacing a storage failure.
+			if ($stored !== null && $stored->id !== $followed->id) {
+				return new FollowingResult($stored, false);
+			}
+
+			// Without a transaction boundary the insert can have succeeded
+			// before the queue push failed. Remove that orphan before retrying.
+			if ($this->transactions === null && $stored?->id === $followed->id) {
+				$this->following->remove($localUserId, $actorId);
+			}
+
+			throw $exception;
 		} catch (Throwable $exception) {
-			// The peer did not accept the Follow. Without this rollback the
-			// collection would claim a follow the remote side never saw.
-			$this->following->remove($localUserId, $actorId);
+			// Without a transaction boundary (an in-memory assembly), undo
+			// the row if the queue push failed so no orphan remains.
+			if ($this->transactions === null) {
+				$this->following->remove($localUserId, $actorId);
+			}
 
 			throw $exception;
 		}
@@ -110,7 +148,7 @@ final class FollowingService
 	}
 
 	/**
-	 * @return bool whether the edge existed and the Undo was accepted
+	 * @return bool whether the edge existed and was removed
 	 */
 	public function unfollow(string $localUserId, string $actorId): bool
 	{
@@ -123,7 +161,10 @@ final class FollowingService
 	}
 
 	/**
-	 * Removes an edge by its local id and sends the matching Undo first.
+	 * Removes an edge by its local id and queues the matching Undo.
+	 *
+	 * The row is removed only after the queue accepted the Undo. A late
+	 * Accept/Reject then finds no row and is an idempotent no-op.
 	 *
 	 * @return bool false when the edge is missing or belongs to another account
 	 */
@@ -137,22 +178,64 @@ final class FollowingService
 			return false;
 		}
 
+		// A rejected request has no remote edge to undo; forgetting it is
+		// already the complete local action.
+		if ($followed->state === FollowState::Rejected) {
+			return $this->following->remove($localUserId, $followed->actorId);
+		}
+
 		if ($this->delivery === null) {
 			throw new FollowingNotConfiguredException();
 		}
 
-		$this->deliver($localUserId, $followed, $this->activities->undoFollow($localUserId, $followed));
+		$undo = $this->activities->undoFollow($localUserId, $followed);
 
-		// The edge is removed only after the Undo was accepted. A failed
-		// delivery leaves the follow in place and can be retried; forgetting
-		// it locally would silently disagree with the peer.
-		$this->following->remove($localUserId, $followed->actorId);
+		if ($this->queue === null) {
+			$this->deliver($localUserId, $followed, $undo);
+			$this->following->remove($localUserId, $followed->actorId);
+
+			return true;
+		}
+
+		$this->atomically(function () use ($localUserId, $followed, $undo): void {
+			$this->enqueueUndo($localUserId, $followed, $undo);
+			$this->following->remove($localUserId, $followed->actorId);
+		});
 
 		return true;
 	}
 
 	/**
-	 * Every followed actor id, newest first, for the public collection.
+	 * Applies an Accept/Reject to the pending edge named by the exact Follow
+	 * activity id. A missing row, a wrong actor and a duplicate response all
+	 * leave the store unchanged and return false.
+	 */
+	public function respondToFollow(string $followActivityId, string $actorId, FollowState $state): bool
+	{
+		if ($state !== FollowState::Accepted && $state !== FollowState::Rejected) {
+			return false;
+		}
+
+		$stored = $this->following->findByActivityId($followActivityId);
+		if ($stored === null || $stored->actorId !== $actorId) {
+			return false;
+		}
+
+		return $this->following->updateState($stored->id, FollowState::Pending, $state);
+	}
+
+	public function find(string $localUserId, string $actorId): ?FollowedActor
+	{
+		return $this->following->find($localUserId, $actorId);
+	}
+
+	public function findByActivityId(string $followActivityId): ?FollowedActor
+	{
+		return $this->following->findByActivityId($followActivityId);
+	}
+
+	/**
+	 * Every accepted followed actor id, newest first, for the public collection.
 	 *
 	 * @return list<string>
 	 */
@@ -162,7 +245,7 @@ final class FollowingService
 	}
 
 	/**
-	 * The remote edges with their follow times, newest first.
+	 * The accepted remote edges with their follow times, newest first.
 	 *
 	 * @return list<FollowedActor>
 	 */
@@ -187,13 +270,64 @@ final class FollowingService
 	}
 
 	/**
-	 * The local accounts that follow an actor; inbound content authorization.
+	 * The local accounts that have an accepted follow of an actor.
 	 *
 	 * @return list<string>
 	 */
 	public function localUserIdsForActor(string $actorId): array
 	{
 		return $this->following->localUserIdsForActor($actorId);
+	}
+
+	/**
+	 * @template T
+	 *
+	 * @param callable(): T $work
+	 *
+	 * @return T
+	 */
+	private function atomically(callable $work): mixed
+	{
+		return $this->transactions === null
+			? $work()
+			: $this->transactions->transaction(static fn (): mixed => $work());
+	}
+
+	private function enqueueFollow(string $localUserId, FollowedActor $followed): void
+	{
+		if ($this->queue !== null) {
+			$this->queue->push(JobType::FEDERATION_FOLLOW, [
+				'operation' => 'follow',
+				'follow_id' => $followed->id,
+				'inbox' => $followed->inboxUrl,
+				'activity' => $this->activities->followActor($localUserId, $followed),
+				'key_id' => $this->activities->keyId($localUserId),
+			]);
+
+			return;
+		}
+
+		$this->deliver($localUserId, $followed, $this->activities->followActor($localUserId, $followed));
+	}
+
+	/**
+	 * @param array<string, mixed> $undo
+	 */
+	private function enqueueUndo(string $localUserId, FollowedActor $followed, array $undo): void
+	{
+		if ($this->queue !== null) {
+			$this->queue->push(JobType::FEDERATION_FOLLOW, [
+				'operation' => 'undo',
+				'follow_id' => $followed->id,
+				'inbox' => $followed->inboxUrl,
+				'activity' => $undo,
+				'key_id' => $this->activities->keyId($localUserId),
+			]);
+
+			return;
+		}
+
+		$this->deliver($localUserId, $followed, $undo);
 	}
 
 	/**

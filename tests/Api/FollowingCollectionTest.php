@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Api;
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Http\Request;
@@ -96,7 +97,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$this->followAndAccept($app);
 
 		$collection = $this->collection($app);
 		self::assertSame(1, $collection['totalItems']);
@@ -140,7 +141,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$this->followAndAccept($app);
 		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
 
 		self::assertSame(1, $this->collection($app)['totalItems']);
@@ -150,7 +151,7 @@ final class FollowingCollectionTest extends TestCase
 	{
 		$app = $this->app();
 
-		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$this->followAndAccept($app);
 
 		$bob = $app->handle(new Request('GET', '/@bob/following'));
 		self::assertSame(404, $bob->status);
@@ -161,7 +162,7 @@ final class FollowingCollectionTest extends TestCase
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice', 'bob']),
 		);
-		$app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$this->followAndAccept($app);
 
 		self::assertSame(0, $this->collection($app, 'bob')['totalItems']);
 		self::assertSame(1, $this->collection($app, 'alice')['totalItems']);
@@ -238,6 +239,16 @@ final class FollowingCollectionTest extends TestCase
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice']),
 			followingRepository: new InMemoryFollowingRepository(),
+		);
+	}
+
+	private function followAndAccept(Application $app): void
+	{
+		$result = $app->following->follow('alice', self::BOB, self::BOB_INBOX);
+		$app->following->respondToFollow(
+			$result->followed->followActivityId,
+			self::BOB,
+			FollowState::Accepted,
 		);
 	}
 

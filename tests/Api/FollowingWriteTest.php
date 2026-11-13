@@ -10,12 +10,12 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
-use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
@@ -49,7 +49,7 @@ final class FollowingWriteTest extends TestCase
 		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 	}
 
-	public function testFollowStoresTheEdgeAndDeliversASignedFollow(): void
+	public function testFollowStoresAPendingEdgeAndQueuesASignedFollow(): void
 	{
 		$http = new FakeHttpClient();
 		$app = $this->app($http);
@@ -61,8 +61,14 @@ final class FollowingWriteTest extends TestCase
 		$id = $body['following']['id'];
 		self::assertSame(self::BOB, $body['following']['actor']);
 		self::assertSame(self::BOB_INBOX, $body['following']['inbox']);
+		self::assertSame(FollowState::Pending->value, $body['following']['state']);
 		self::assertSame('/api/v1/following/' . $id, $response->header('Location'));
 
+		// The request only persists and queues. The worker is the only path
+		// that talks to the peer, so a slow peer cannot hold the API open.
+		self::assertCount(0, $http->requests);
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(1, $app->worker->runOnce());
 		self::assertCount(1, $http->requests);
 		$request = $http->requests[0];
 		self::assertSame('POST', $request['method']);
@@ -83,11 +89,23 @@ final class FollowingWriteTest extends TestCase
 
 		$this->assertSignatureCovers($request);
 
+		// A delivered Follow is still pending until the peer accepts it.
+		self::assertSame(FollowState::Pending->value, $app->following->find('alice', self::BOB)?->state->value);
+		self::assertSame(0, $this->collection($app)['totalItems']);
+
+		$stored = $app->following->find('alice', self::BOB);
+		self::assertNotNull($stored);
+		$app->following->respondToFollow(
+			$stored->followActivityId ?? '',
+			self::BOB,
+			FollowState::Accepted,
+		);
+
 		self::assertSame(1, $this->collection($app)['totalItems']);
 		self::assertSame([self::BOB], $this->collection($app)['orderedItems']);
 	}
 
-	public function testFollowIsIdempotentAndDoesNotDeliverTwice(): void
+	public function testFollowIsIdempotentAndDoesNotQueueTwice(): void
 	{
 		$http = new FakeHttpClient();
 		$app = $this->app($http);
@@ -95,11 +113,13 @@ final class FollowingWriteTest extends TestCase
 		self::assertSame(201, $this->followRequest($app)->status);
 		self::assertSame(200, $this->followRequest($app)->status);
 
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(1, $app->worker->runOnce());
 		self::assertCount(1, $http->requests);
-		self::assertSame(1, $this->collection($app)['totalItems']);
+		self::assertSame(0, $this->collection($app)['totalItems']);
 	}
 
-	public function testUnfollowDeliversAnUndoAndThenRemovesTheEdge(): void
+	public function testUnfollowQueuesAnUndoAndRemovesThePendingEdgeWithoutAStaleFollow(): void
 	{
 		$http = new FakeHttpClient();
 		$app = $this->app($http);
@@ -108,25 +128,31 @@ final class FollowingWriteTest extends TestCase
 		$response = $this->unfollowRequest($app, $created['id']);
 
 		self::assertSame(204, $response->status);
-		self::assertCount(2, $http->requests);
+		self::assertSame(0, $app->following->count('alice'));
+		self::assertSame(2, $app->queue->pendingCount());
 
-		$undo = json_decode($http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		// Both jobs are due. The Follow job sees the removed row and skips;
+		// only the Undo reaches the peer, even if it runs second.
+		self::assertSame(2, $app->worker->runOnce());
+		self::assertCount(1, $http->requests);
+
+		$undo = json_decode($http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('Undo', $undo['type']);
 		self::assertSame(self::ACTOR, $undo['actor']);
 		self::assertSame(self::BOB, $undo['object']['object']);
 		self::assertSame('Follow', $undo['object']['type']);
 		self::assertSame(
-			json_decode($http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR)['id'],
+			'https://localhost:8080/api/v1/following/' . $created['id'] . '/follow',
 			$undo['object']['id'],
 		);
 		self::assertSame([self::BOB], $undo['to']);
 
-		$this->assertSignatureCovers($http->requests[1]);
+		$this->assertSignatureCovers($http->requests[0]);
 
 		self::assertSame(0, $this->collection($app)['totalItems']);
 	}
 
-	public function testAFailedFollowRollsTheEdgeBackAndCanBeRetried(): void
+	public function testAFailedFollowStaysPendingAndIsRetriedByTheWorker(): void
 	{
 		$http = new FakeHttpClient();
 		$app = $this->app($http);
@@ -134,43 +160,43 @@ final class FollowingWriteTest extends TestCase
 		$http->queueResponse(new HttpResponse(503));
 		$response = $this->followRequest($app);
 
-		self::assertSame(502, $response->status);
-		self::assertSame('delivery_failed', $response->decodedBody()['error']['code']);
-		self::assertSame(0, $this->collection($app)['totalItems']);
-		self::assertSame(0, $app->following->count('alice'));
-		self::assertSame([], $app->following->actorIds('alice'));
-
-		$http->queueTransportFailure(new HttpClientException('connection refused'));
-		$response = $this->followRequest($app);
-
-		self::assertSame(502, $response->status);
-		self::assertSame(0, $this->collection($app)['totalItems']);
-
-		$response = $this->followRequest($app);
 		self::assertSame(201, $response->status);
-		self::assertSame(1, $this->collection($app)['totalItems']);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(FollowState::Pending->value, $app->following->find('alice', self::BOB)?->state->value);
+
+		// The same request is idempotent while the retry is pending.
+		self::assertSame(200, $this->followRequest($app)->status);
+		self::assertSame(1, $app->queue->pendingCount());
+
+		$this->clock->advance(30);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(0, $app->queue->pendingCount());
+		self::assertCount(2, $http->requests);
+		self::assertSame(0, $this->collection($app)['totalItems']);
 	}
 
-	public function testAFailedUnfollowKeepsTheEdgeAndCanBeRetried(): void
+	public function testAFailedUndoIsRetriedAfterTheEdgeWasAlreadyRemoved(): void
 	{
 		$http = new FakeHttpClient();
 		$app = $this->app($http);
 
 		$created = $this->followRequest($app)->decodedBody()['following'];
+		$app->worker->runOnce();
 
 		$http->queueResponse(new HttpResponse(503));
 		$response = $this->unfollowRequest($app, $created['id']);
 
-		self::assertSame(502, $response->status);
-		self::assertSame('delivery_failed', $response->decodedBody()['error']['code']);
-		self::assertSame(1, $this->collection($app)['totalItems']);
-		self::assertSame(1, $app->following->count('alice'));
-
-		$response = $this->unfollowRequest($app, $created['id']);
-
 		self::assertSame(204, $response->status);
-		self::assertSame(0, $this->collection($app)['totalItems']);
+		self::assertSame(0, $app->following->count('alice'));
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(1, $app->queue->pendingCount());
+
+		$this->clock->advance(30);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(0, $app->queue->pendingCount());
 		self::assertCount(3, $http->requests);
+		self::assertSame('Undo', json_decode($http->requests[2]['body'], true, 64, JSON_THROW_ON_ERROR)['type']);
 	}
 
 	public function testFollowRejectsAHandWithoutAnAbsoluteActorAndInbox(): void
@@ -232,6 +258,9 @@ final class FollowingWriteTest extends TestCase
 		);
 
 		$created = $this->followRequest($app)->decodedBody()['following'];
+		$stored = $app->following->find('alice', self::BOB);
+		self::assertNotNull($stored);
+		$app->following->respondToFollow($stored->followActivityId ?? '', self::BOB, FollowState::Accepted);
 
 		$response = $this->unfollowRequest($app, $created['id'], 'bob');
 

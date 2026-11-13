@@ -72,19 +72,20 @@ an unfollow removes the edge, so the marker has no separate cleanup lifecycle.
 | `GET` | `/api/v1/followers?limit=&before=` | Followers of the caller, newest first, plus `total` |
 | `POST` | `/api/v1/followers` | Record a follower; `201` when created, `200` when it already existed |
 | `DELETE` | `/api/v1/followers/{id}` | Forget a follower; `204`, or `404` when it is not the caller's |
-| `POST` | `/api/v1/following` | Follow a remote actor and deliver a signed `Follow`; `201` or `200` |
-| `DELETE` | `/api/v1/following/{id}` | Deliver an `Undo`; `204`, or `404` when it is not the caller's |
+| `POST` | `/api/v1/following` | Queue a signed `Follow` and store a pending edge; `201` or `200` |
+| `DELETE` | `/api/v1/following/{id}` | Remove the edge and queue an `Undo`; `204`, or `404` when it is not the caller's |
 
 The `POST` body is `{"actor": "https://remote.example/users/bob", "inbox":
 "https://remote.example/users/bob/inbox", "shared_inbox":
 "https://remote.example/inbox/shared"}`. `shared_inbox` is optional and may be
 omitted or `null`; when present it must be an absolute http(s) URL of at most
 512 characters. `actor` and `inbox` are required and follow the same rules.
-Anything invalid is a 422 naming the field. The response keeps its established
-`id`/`actor`/`inbox`/`followed_at` shape; the stored shared inbox is used for
-delivery, not echoed. The following `POST` uses the same body shape without a
-shared inbox, stores the outgoing edge and delivers a `Follow` instead of
-recording a follower.
+Anything invalid is a 422 naming the field. The follower response keeps its
+established `id`/`actor`/`inbox`/`followed_at` shape; the stored shared inbox
+is used for delivery, not echoed. The outgoing `POST` adds `state`
+(`pending`, `accepted` or `rejected`) to its response, stores the edge and
+queues a `Follow` instead of recording a follower. The public collection reads
+only accepted edges.
 
 Deleting is scoped to the caller: the id alone must not let one account remove
 another account's follower, and the answer is 404 rather than 403 so it does
@@ -128,7 +129,8 @@ an unauthenticated request body. The shared inbox is read from
 missing or malformed value leaves the individual inbox in place.
 
 The outgoing graph is written separately by `POST /api/v1/following`, which
-records whom a local account follows and delivers the matching `Follow`; no
+records whom a local account follows, queues the matching `Follow`, and lets a
+signed `Accept`/`Reject` from that actor complete the lifecycle. No other
 inbound activity can change it.
 
 ## Following graph
@@ -136,20 +138,23 @@ inbound activity can change it.
 `social_following` stores the outgoing edge:
 
 ```
-id            VARCHAR(64)  primary key
-local_user_id VARCHAR(255)
-actor_id      VARCHAR(255) unique with local_user_id
-inbox_url     VARCHAR(512)
-followed_at   VARCHAR(20)  canonical UTC timestamp
+id                 VARCHAR(64)  primary key
+local_user_id      VARCHAR(255)
+actor_id           VARCHAR(255) unique with local_user_id
+inbox_url          VARCHAR(512)
+followed_at        VARCHAR(20)  canonical UTC timestamp
+state              VARCHAR(16)  pending | accepted | rejected
+follow_activity_id VARCHAR(512) unique nullable
 ```
 
 The inbox is stored because the `Follow` and its later `Undo` have to be
 delivered there. It is separate from the follower inbox: one receives posts,
-the other receives follow activities. `FollowingService::follow()` inserts the
-edge and sends a signed `Follow`; `unfollowById()` sends the `Undo` first and
-removes the edge only after the peer accepted it. A refused `Follow` is rolled
-back, a refused `Undo` leaves the edge retryable. See the
-[following collection](following-collection.md).
+the other receives follow activities. `FollowingService::follow()` inserts a
+pending edge and queues `federation.follow`; a worker sends the signed
+`Follow` and retries a failure. A signed `Accept` or `Reject` moves the row
+from pending, conditional on the row still being pending. `unfollowById()`
+queues the `Undo` and removes the row; a late response then finds no row. See
+the [following collection](following-collection.md).
 
 `FollowingRepository::actorIdsPage()` feeds the public collection; the root
 count comes from `count()`. `HomeTimelineRepository` also reads `actorIds()` to

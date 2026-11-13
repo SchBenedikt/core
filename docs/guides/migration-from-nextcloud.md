@@ -254,6 +254,8 @@ actor URL. Do not replace UIDs with generated values.
 | `social_following.actor_id` | Remote actor URL | Copy exactly; must fit 255 characters |
 | `social_following.inbox_url` | Stored inbox | Validate before using it for a signed Follow/Undo; must fit 512 characters |
 | `social_following.followed_at` | Original follow time | Canonical UTC second format |
+| `social_following.state` | Not in the legacy export | Import as `accepted`; legacy rows are already-established follows, not pending requests |
+| `social_following.follow_activity_id` | Derived from the preserved row id | Optional for accepted rows; when set, use `{instance.url}/api/v1/following/{id}/follow` |
 
 Do not copy legacy queue rows into `social_job`. Their payloads and handler
 types belong to the old application. Drain the old queue before cutover, or
