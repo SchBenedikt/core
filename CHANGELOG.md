@@ -32,7 +32,7 @@ All notable changes to this project are documented here. The format follows
   the UI suite checks the package pair and accepts or rejects bridge contracts
   and capabilities in both directions. The HostBridge field is optional and an
   omitted value means contract 1, so existing bridges keep working. Test counts
-  are now 124 PHP files (1110 tests, 5297 assertions) and 9 UI files (69 tests).
+  are now 124 PHP files (1111 tests, 5302 assertions) and 9 UI files (69 tests).
 
 ### Changed
 

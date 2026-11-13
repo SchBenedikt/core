@@ -92,6 +92,23 @@ final class FollowingLifecycleTest extends TestCase
 		self::assertSame(1, $this->collection($app)['totalItems']);
 	}
 
+	public function testAnAcceptThatNamesOnlyTheFollowIdIsApplied(): void
+	{
+		$app = $this->app();
+		$this->follow($app);
+		$followId = $this->pendingFollowId($app);
+
+		$activity = [
+			'id' => 'https://remote.example/activities/accept-id-only',
+			'type' => 'Accept',
+			'actor' => self::BOB,
+			'object' => $followId,
+		];
+
+		self::assertSame(202, $this->deliver($app, $activity, self::BOB_KEY, self::$bobKey)->status);
+		self::assertSame(FollowState::Accepted->value, $app->following->find('alice', self::BOB)?->state->value);
+	}
+
 	public function testRejectMovesPendingToRejectedAndIsIdempotent(): void
 	{
 		$app = $this->app();
