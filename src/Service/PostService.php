@@ -11,6 +11,10 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
+use AlohaSocial\Core\Domain\Moderation\HeldPost;
+use AlohaSocial\Core\Domain\Moderation\HeldPostRepository;
+use AlohaSocial\Core\Domain\Moderation\HeldPostStatus;
+use AlohaSocial\Core\Domain\Moderation\PostHoldPolicy;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostConflictException;
@@ -65,10 +69,12 @@ final class PostService
 		private readonly ?PostRevisionRepository $revisions = null,
 		private readonly ?QuoteService $quotes = null,
 		private readonly ?Config $config = null,
+		private readonly ?HeldPostRepository $heldPosts = null,
+		private readonly ?PostHoldPolicy $holdPolicy = null,
 	) {
 	}
 
-	public function create(CreatePost $command): Post
+	public function create(CreatePost $command, bool $applyHold = true): Post
 	{
 		$content = trim($command->content);
 		$warning = $command->contentWarning === null ? null : trim($command->contentWarning);
@@ -85,6 +91,10 @@ final class PostService
 		$recipientIds = $this->recipientsFor($command, $parent);
 
 		$this->validate($command, $content, $warning, $recipientIds, $parent);
+
+		if ($applyHold) {
+			$this->holdIfNeeded($command, $content, $warning, $inReplyToId);
+		}
 
 		$postId = $command->postId ?? $this->ids->generate();
 		$quotedPostId = $command->quotedPostId === null ? null : trim($command->quotedPostId);
@@ -137,6 +147,47 @@ final class PostService
 		});
 
 		return $post;
+	}
+
+	/**
+	 * A hold policy turns a validated post into a durable review item before
+	 * any Post row, attachment link, notification or delivery job exists.
+	 *
+	 * A poll is not held: the draft shape is the text/attachment composer, and
+	 * silently dropping a poll on approval would change what the author wrote.
+	 */
+	private function holdIfNeeded(CreatePost $command, string $content, ?string $warning, ?string $inReplyToId): void
+	{
+		if ($this->heldPosts === null || $this->holdPolicy === null || $command->poll !== null) {
+			return;
+		}
+
+		$reason = $this->holdPolicy->holdReason($command->authorId, $content);
+		if ($reason === null || trim($reason) === '') {
+			return;
+		}
+
+		$held = new HeldPost(
+			id: $this->ids->generate(),
+			authorId: $command->authorId,
+			draft: [
+				'content' => $content,
+				'visibility' => $command->visibility->value,
+				'content_warning' => $warning,
+				'attachment_ids' => $command->attachmentIds,
+				'recipient_ids' => $command->recipientIds,
+				'in_reply_to_id' => $inReplyToId,
+				'quoted_post_id' => $command->quotedPostId,
+			],
+			reason: trim($reason),
+			status: HeldPostStatus::Pending,
+			postId: null,
+			createdAt: Time::toSecondPrecision($this->clock->now()),
+		);
+
+		$this->heldPosts->insert($held);
+
+		throw new PostHeldException($held);
 	}
 
 	public function get(string $postId): Post

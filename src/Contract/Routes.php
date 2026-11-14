@@ -55,6 +55,7 @@ use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\SubmitReportHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
@@ -166,6 +167,15 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				summary: 'Write a post.',
+			),
+			new Route(
+				name: 'reports.create',
+				method: 'POST',
+				path: $base . '/reports',
+				handler: SubmitReportHandler::class,
+				requiresAuth: true,
+				rateLimit: '20/900',
+				summary: 'Report a visible post, an actor or a domain to the instance moderators.',
 			),
 			new Route(
 				name: 'posts.get',

@@ -37,6 +37,9 @@ use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\AttachmentSchema;
+use AlohaSocial\Core\Domain\Moderation\HeldPostSchema;
+use AlohaSocial\Core\Domain\Moderation\ModerationActionSchema;
+use AlohaSocial\Core\Domain\Moderation\ReportSchema;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
@@ -114,7 +117,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(114, $app->routes->routes());
+		self::assertCount(115, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1167,6 +1170,9 @@ final class ApplicationHostTest extends TestCase
 		JobSchema::create($database);
 		ActivityLogSchema::create($database);
 		AtprotoPublicationSchema::create($database);
+		ReportSchema::create($database);
+		ModerationActionSchema::create($database);
+		HeldPostSchema::create($database);
 
 		return $database;
 	}

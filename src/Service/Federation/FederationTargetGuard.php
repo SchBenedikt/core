@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service\Federation;
 
+use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
 use AlohaSocial\Core\Platform\Network\HostResolver;
 
 use function filter_var;
@@ -44,6 +45,7 @@ final class FederationTargetGuard
 {
 	public function __construct(
 		private readonly ?HostResolver $resolver = null,
+		private readonly ?ModerationPolicy $moderationPolicy = null,
 	) {
 	}
 
@@ -83,6 +85,10 @@ final class FederationTargetGuard
 		}
 
 		$host = rtrim($host, '.');
+
+		if ($this->moderationPolicy?->allowsDomain($host) === false) {
+			throw new RemoteFetchException('moderation_blocked', 'The destination domain is blocked by this instance.');
+		}
 
 		if ($host === 'localhost' || str_ends_with($host, '.localhost')) {
 			throw new RemoteFetchException('ssrf_blocked', 'Local and private addresses are blocked.');

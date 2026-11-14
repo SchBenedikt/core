@@ -110,6 +110,7 @@ use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\SubmitReportHandler;
 use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
@@ -201,6 +202,18 @@ use AlohaSocial\Core\Domain\Post\PdoPostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PollVoteCounter;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
+use AlohaSocial\Core\Domain\Moderation\HeldPostRepository;
+use AlohaSocial\Core\Domain\Moderation\InMemoryHeldPostRepository;
+use AlohaSocial\Core\Domain\Moderation\InMemoryModerationActionRepository;
+use AlohaSocial\Core\Domain\Moderation\InMemoryReportRepository;
+use AlohaSocial\Core\Domain\Moderation\ModerationActionRepository;
+use AlohaSocial\Core\Domain\Moderation\NoPostHolds;
+use AlohaSocial\Core\Domain\Moderation\PdoHeldPostRepository;
+use AlohaSocial\Core\Domain\Moderation\PdoModerationActionRepository;
+use AlohaSocial\Core\Domain\Moderation\PdoReportRepository;
+use AlohaSocial\Core\Domain\Moderation\PostHoldPolicy;
+use AlohaSocial\Core\Domain\Moderation\ReportRepository;
+use AlohaSocial\Core\Domain\Moderation\StoredModerationPolicy;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Scheduling\InMemoryScheduledPostRepository;
@@ -305,6 +318,10 @@ use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\MediaAccess;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
+use AlohaSocial\Core\Platform\Moderation\AdminAuthorization;
+use AlohaSocial\Core\Platform\Moderation\NoAdministrators;
+use AlohaSocial\Core\Service\Moderation\HeldPostService;
+use AlohaSocial\Core\Service\Moderation\ModerationService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Service\TimelineService;
@@ -348,6 +365,8 @@ final readonly class Application
 		public ?AtprotoInteractionService $atprotoInteractions = null,
 		public ?AtprotoProfileService $atprotoProfiles = null,
 		public ?AtprotoTimelineReader $atprotoTimeline = null,
+		public ?ModerationService $moderation = null,
+		public ?HeldPostService $heldPosts = null,
 	) {
 	}
 
@@ -394,6 +413,11 @@ final readonly class Application
 		?QuoteGrantRepository $quoteGrantRepository = null,
 		?MediaProbe $mediaProbe = null,
 		?MediaTranscoder $mediaTranscoder = null,
+		?ReportRepository $reportRepository = null,
+		?ModerationActionRepository $moderationActions = null,
+		?HeldPostRepository $heldPostRepository = null,
+		?AdminAuthorization $adminAuthorization = null,
+		?PostHoldPolicy $postHoldPolicy = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -483,6 +507,11 @@ final readonly class Application
 			quoteGrantRepository: $quoteGrantRepository,
 			mediaProbe: $mediaProbe,
 			mediaTranscoder: $mediaTranscoder,
+			reportRepository: $reportRepository,
+			moderationActions: $moderationActions,
+			heldPostRepository: $heldPostRepository,
+			adminAuthorization: $adminAuthorization,
+			postHoldPolicy: $postHoldPolicy,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -551,6 +580,11 @@ final readonly class Application
 		?PostRevisionRepository $postRevisions = null,
 		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
+		?ReportRepository $reportRepository = null,
+		?ModerationActionRepository $moderationActions = null,
+		?HeldPostRepository $heldPostRepository = null,
+		?AdminAuthorization $adminAuthorization = null,
+		?PostHoldPolicy $postHoldPolicy = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -594,6 +628,11 @@ final readonly class Application
 			followedHashtagRepository: $followedHashtagRepository,
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
+			reportRepository: $reportRepository ?? new PdoReportRepository($database),
+			moderationActions: $moderationActions ?? new PdoModerationActionRepository($database),
+			heldPostRepository: $heldPostRepository ?? new PdoHeldPostRepository($database),
+			adminAuthorization: $adminAuthorization,
+			postHoldPolicy: $postHoldPolicy,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -674,6 +713,11 @@ final readonly class Application
 		?QuoteGrantRepository $quoteGrantRepository = null,
 		?MediaProbe $mediaProbe = null,
 		?MediaTranscoder $mediaTranscoder = null,
+		?ReportRepository $reportRepository = null,
+		?ModerationActionRepository $moderationActions = null,
+		?HeldPostRepository $heldPostRepository = null,
+		?AdminAuthorization $adminAuthorization = null,
+		?PostHoldPolicy $postHoldPolicy = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -685,6 +729,12 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
+		$reportRepository ??= new InMemoryReportRepository();
+		$moderationActions ??= new InMemoryModerationActionRepository();
+		$heldPostRepository ??= new InMemoryHeldPostRepository();
+		$adminAuthorization ??= new NoAdministrators();
+		$postHoldPolicy ??= new NoPostHolds();
+		$moderationPolicy = new StoredModerationPolicy($moderationActions);
 		// Built before the activity factory: a note serializes its media, so
 		// delivery and the outbox use the very same attachment urls.
 		$mediaService = $blobStore === null
@@ -729,7 +779,7 @@ final readonly class Application
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
 		$followedHashtagService = new FollowedHashtagService($followedHashtagRepository, $clock);
 		$remotePostFactory = new RemotePostFactory($clock);
-		$targetGuard = new FederationTargetGuard($hostResolver);
+		$targetGuard = new FederationTargetGuard($hostResolver, $moderationPolicy);
 		if ($actorResolver !== null) {
 			// Even a host-provided resolver must not be asked to fetch a
 			// private actor URL on behalf of an inbound signature. Local
@@ -858,6 +908,23 @@ final readonly class Application
 			revisions: $postRevisions,
 			quotes: $quoteService,
 			config: $config,
+			heldPosts: $heldPostRepository,
+			holdPolicy: $postHoldPolicy,
+		);
+		$moderationService = new ModerationService(
+			$reportRepository,
+			$moderationActions,
+			$adminAuthorization,
+			$postService,
+			$clock,
+			$ids,
+			$localActors,
+		);
+		$heldPostService = new HeldPostService(
+			$heldPostRepository,
+			$postService,
+			$adminAuthorization,
+			$clock,
 		);
 		$scheduledPostService = new ScheduledPostService(
 			$scheduledPostRepository ?? new InMemoryScheduledPostRepository(),
@@ -897,7 +964,7 @@ final readonly class Application
 				$accountListRepository,
 			);
 		}
-		$timelines = new TimelineService($posts, $homeTimeline);
+		$timelines = new TimelineService($posts, $homeTimeline, $moderationPolicy);
 		$mastodonService = new MastodonService(
 			$config,
 			$posts,
@@ -994,6 +1061,8 @@ final readonly class Application
 				$reactionService,
 				$remotePollService,
 				$quoteService,
+				$moderationService,
+				$moderationPolicy,
 			)
 			: null;
 
@@ -1025,6 +1094,7 @@ final readonly class Application
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
+			->with(SubmitReportHandler::class, static fn (): SubmitReportHandler => new SubmitReportHandler($moderationService))
 			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService, $reactionService, $filterService))
 			->with(FiltersHandler::class, static fn (): FiltersHandler => new FiltersHandler($filterService))
 			->with(CreateFilterHandler::class, static fn (): CreateFilterHandler => new CreateFilterHandler($filterService))
@@ -1197,6 +1267,8 @@ final readonly class Application
 			$atprotoInteractions,
 			$atprotoProfiles,
 			$atprotoTimeline,
+			$moderationService,
+			$heldPostService,
 		);
 	}
 

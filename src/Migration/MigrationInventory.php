@@ -289,10 +289,9 @@ final class MigrationInventory
 				'moderation',
 				'reports, domain policy and review queue',
 				self::OWNER_CORE,
-				'open: host-neutral moderation workflow (#11)',
-				self::STATUS_GAP,
+				'social_report, social_moderation_action and social_held_post with the host-neutral review and actor/domain policy services',
+				self::STATUS_SUPPORTED,
 				'inventory-only',
-				gapIssue: '#11',
 			),
 			self::entry(
 				'keyword_filters',

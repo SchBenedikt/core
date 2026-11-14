@@ -24,6 +24,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
+use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
@@ -34,6 +35,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\SignatureException;
 use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Service\Moderation\ModerationService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Support\Time;
@@ -93,6 +95,8 @@ final class InboxService
 		private readonly ?ReactionService $reactions = null,
 		private readonly ?RemotePollService $remotePolls = null,
 		private readonly ?QuoteService $quotes = null,
+		private readonly ?ModerationService $moderation = null,
+		private readonly ?ModerationPolicy $moderationPolicy = null,
 	) {
 	}
 
@@ -139,6 +143,13 @@ final class InboxService
 			);
 		}
 
+		if ($this->moderationPolicy?->allowsActor($actor->actorId) === false) {
+			throw new InboxRejectedException(
+				'moderation_blocked',
+				'This actor is not allowed by the instance moderation policy.',
+			);
+		}
+
 		$claimed = $this->replay->claim($activityId, $this->clock->now());
 		if (!$claimed) {
 			// A duplicate Accept/Reject is a retry of the same response. It
@@ -157,7 +168,7 @@ final class InboxService
 			// Reactions are keyed by identity, not by the activity id, so a
 			// retransmitted Like/EmojiReact/Undo is already applied. Refusing it
 			// would make a peer retry a delivery that can never change state.
-			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo') {
+			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Flag') {
 				return;
 			}
 
@@ -180,6 +191,7 @@ final class InboxService
 				'Update' => $this->handleUpdate($actor, $activity),
 				'Delete' => $this->handleDelete($actor, $activity),
 				'Announce' => $this->handleAnnounce($actor, $activity),
+				'Flag' => $this->handleFlag($actor, $activity),
 				default => throw new InboxRejectedException(
 					'unsupported_activity',
 					'Unsupported activity type "' . $type . '".',
@@ -243,6 +255,30 @@ final class InboxService
 	/**
 	 * @param array<string, mixed> $activity
 	 */
+	/**
+	 * A signed Flag only files a report; it never changes publication state.
+	 * The signer is the reporter, the object is a target URL and the content
+	 * is bounded evidence. Evidence is not delivered anywhere else.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleFlag(RemoteActor $actor, array $activity): void
+	{
+		if ($this->moderation === null) {
+			throw new InboxRejectedException(
+				'moderation_not_configured',
+				'This instance does not accept federated reports.',
+			);
+		}
+
+		$content = $activity['content'] ?? null;
+		$this->moderation->submitRemoteFlag(
+			$actor->actorId,
+			$activity['object'] ?? null,
+			is_string($content) ? $content : null,
+		);
+	}
+
 	private function handleCreate(RemoteActor $actor, array $activity): void
 	{
 		// A vote arrives as a Create(Note) aimed at one of our polls. It is

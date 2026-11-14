@@ -41,6 +41,7 @@ final class InboxHandler implements Handler
 		'unknown_object' => 404,
 		'actor_mismatch' => 403,
 		'blocked_actor' => 403,
+		'moderation_blocked' => 403,
 		'not_followed' => 403,
 		'not_authorized' => 403,
 		'follow_not_accepted' => 403,

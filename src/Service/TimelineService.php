@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Post\Hashtags;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
@@ -34,6 +35,7 @@ final class TimelineService
 	public function __construct(
 		private readonly PostRepository $posts,
 		private readonly HomeTimelineRepository $homeTimeline,
+		private readonly ?ModerationPolicy $moderation = null,
 	) {
 	}
 
@@ -44,7 +46,11 @@ final class TimelineService
 	 */
 	public function home(string $userId, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
 	{
-		return $this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before));
+		return array_values(array_filter(
+			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before)),
+			fn (TimelineEntry $entry): bool => $this->moderation?->allowsActor($entry->authorId) !== false
+				&& ($entry->objectAuthorId === null || $this->moderation?->allowsActor($entry->objectAuthorId) !== false),
+		));
 	}
 
 	/**
@@ -54,7 +60,7 @@ final class TimelineService
 	 */
 	public function public(int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
 	{
-		return $this->posts->publicTimeline($this->clamp($limit), $this->cursor($before));
+		return $this->onlyAllowed($this->posts->publicTimeline($this->clamp($limit), $this->cursor($before)));
 	}
 
 	/**
@@ -72,7 +78,7 @@ final class TimelineService
 			throw new InvalidHashtagException($tag);
 		}
 
-		return $this->posts->hashtagTimeline($normalized, $this->clamp($limit), $this->cursor($before));
+		return $this->onlyAllowed($this->posts->hashtagTimeline($normalized, $this->clamp($limit), $this->cursor($before)));
 	}
 
 	/**
@@ -92,11 +98,28 @@ final class TimelineService
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
 	): array {
-		return $this->posts->followedHashtagTimeline(
+		return $this->onlyAllowed($this->posts->followedHashtagTimeline(
 			$hashtags,
 			$this->clamp($limit),
 			$this->cursor($before),
-		);
+		));
+	}
+
+	/**
+	 * @param list<Post> $posts
+	 *
+	 * @return list<Post>
+	 */
+	private function onlyAllowed(array $posts): array
+	{
+		if ($this->moderation === null) {
+			return $posts;
+		}
+
+		return array_values(array_filter(
+			$posts,
+			fn (Post $post): bool => $this->moderation->allowsActor($post->authorId),
+		));
 	}
 
 	public function clamp(int $limit): int

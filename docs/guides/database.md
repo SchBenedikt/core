@@ -65,6 +65,9 @@ Each table's definition lives next to its repository or adapter:
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 - `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
+- `src/Domain/Moderation/ReportSchema.php` → `social_report` (pending, reviewing, resolved and rejected reports, with the reporter, canonical target and bounded evidence JSON; the service reuses an open report per reporter and target)
+- `src/Domain/Moderation/ModerationActionSchema.php` → `social_moderation_action` (auditable actor, post and domain actions with an optional reversal note; active rows are never deleted)
+- `src/Domain/Moderation/HeldPostSchema.php` → `social_held_post` (the pending first-post draft, its JSON payload, hold reason and the published post id once approved)
 
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can

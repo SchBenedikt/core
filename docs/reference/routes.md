@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 114 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 115 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -37,6 +37,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `remote-posts.unlike` | `DELETE` | `/api/v1/remote-posts/{id}/like` | yes | 60 / 900 s |
 | `remote-posts.react` | `POST` | `/api/v1/remote-posts/{id}/reactions` | yes | 30 / 900 s |
 | `remote-posts.unreact` | `DELETE` | `/api/v1/remote-posts/{id}/reactions/{emoji}` | yes | 60 / 900 s |
+| `reports.create` | `POST` | `/api/v1/reports` | yes | 20 / 900 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `scheduled-posts.list` | `GET` | `/api/v1/scheduled-posts` | yes | 60 / 60 s |
 | `scheduled-posts.create` | `POST` | `/api/v1/scheduled-posts` | yes | 30 / 900 s |
@@ -309,6 +310,44 @@ before the first publication, and the object shown above after it. The route
 stays available when publishing is disabled, so a client can still display an
 existing mirror. A missing, deleted or foreign post is `404 not_found`; an
 anonymous request is `401 authentication_required`.
+
+## Report a post, actor or domain
+
+POST /api/v1/reports
+
+```json
+{
+  "target_type": "post",
+  "target_id": "post-id",
+  "reason": "spam",
+  "comment": "Repeated unsolicited links",
+  "evidence": ["https://remote.example/notes/1"]
+}
+```
+
+The target types are `post`, `actor` and `domain`; reasons are `spam`,
+`harassment`, `hate`, `csam`, `violence`, `misinformation` and `other`. The
+target must be visible or known to the reporter, a post owned by the reporter is
+refused, and at most 20 evidence entries of 500 characters each are stored. An
+offer of the same target, reason and reporter while the first report is open
+returns the existing report instead of opening a duplicate.
+
+A report is created with status `pending` and never changes the reported post
+by itself. Review is not an HTTP route: a host passes its own
+`Platform\Moderation\AdminAuthorization` to the application and calls
+`ModerationService::queue()`, `resolve()` or `reject()`. Resolving applies one
+of `suspend_actor`, `silence_actor`, `block_domain` or `no_action`;
+`suspend_actor`, `silence_actor` and `block_domain` create an auditable action
+that can be reversed by its id. `silence_actor` hides local posts from public
+and tag timelines, while `suspend_actor` additionally refuses inbox activities
+from the actor and outbound delivery to it. A domain block covers the exact
+host; subdomains are not implied.
+
+Inbound ActivityPub `Flag` activities are accepted over the signed inbox and
+become reports with reason `other`, the flagging actor as reporter and a
+bounded excerpt of the activity content as evidence. A replayed activity id is
+acknowledged without creating a second report. A blocked reporter is refused
+with `403 moderation_blocked`.
 
 ## Read a post
 

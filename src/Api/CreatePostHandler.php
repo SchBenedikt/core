@@ -19,6 +19,7 @@ use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\MediaService;
+use AlohaSocial\Core\Service\PostHeldException;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ValidationException;
 use InvalidArgumentException;
@@ -119,6 +120,11 @@ final class CreatePostHandler implements Handler
 				inReplyToId: $inReplyToId,
 				quotedPostId: $quotedPostId,
 			));
+		} catch (PostHeldException $exception) {
+			return Response::json([
+				'held' => true,
+				'held_post' => $exception->heldPost->toArray(),
+			], 202);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
 		} catch (ConfigurationException $exception) {

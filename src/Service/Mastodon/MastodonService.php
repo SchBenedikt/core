@@ -45,6 +45,7 @@ use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
+use AlohaSocial\Core\Service\PostHeldException;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
@@ -493,6 +494,12 @@ final class MastodonService
 				recipientIds: $recipientIds,
 				quotedPostId: $quotedStatusId,
 			));
+		} catch (PostHeldException $exception) {
+			throw new MastodonRequestException(
+				422,
+				'validation_failed',
+				'This status is waiting for moderator review.',
+			);
 		} catch (DatabaseException $exception) {
 			// A repeated idempotency key maps to the same deterministic post id.
 			// The row already exists, so return it instead of inserting a
