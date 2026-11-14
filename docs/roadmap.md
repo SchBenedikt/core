@@ -168,9 +168,9 @@ server or a product decision.
 
 1. **Keep the contract documentation honest.** `DocumentationTest` compares
    `docs/reference/routes.md` with `Routes::manifest()`, checks the advertised
-   counts in the README and this page, and verifies that every `*Schema` class
-   appears in the database guide. Add the configuration reference to the same
-   guard when it drifts again.
+   counts in the README and this page, verifies that every `*Schema` class
+   appears in the database guide and that every configuration key the core reads
+   appears in the [configuration reference](reference/configuration.md).
 2. **Publish the registries.** `0.7.0` is cut and tagged; Packagist and the npm
    registry still need maintainer credentials. A host should be able to install
    a version instead of `dev-main`.

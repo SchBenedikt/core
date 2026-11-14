@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Guard the configuration reference with code. `DocumentationTest` resolves
+every `Config` key the core reads — declared constants and literals alike —
+and fails when `docs/reference/configuration.md` does not name it.
 - Complete the outgoing ActivityPub follow lifecycle: a Follow is stored as
   `pending`, delivered by a durable `federation.follow` queue job with retries,
   and moved to `accepted` or `rejected` only by a verified Accept/Reject from

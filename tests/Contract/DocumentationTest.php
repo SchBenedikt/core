@@ -19,8 +19,9 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * The status documents are part of the contract: a route or schema that exists
- * in code but not in the reference is how the project silently drifts.
+ * The status documents are part of the contract: a route, schema or configuration
+ * key that exists in code but not in the reference is how the project silently
+ * drifts.
  */
 final class DocumentationTest extends TestCase
 {
@@ -100,6 +101,92 @@ final class DocumentationTest extends TestCase
 				'The database guide does not mention ' . $schema . '.',
 			);
 		}
+	}
+
+	public function testEveryConfigurationKeyIsListedInTheConfigurationReference(): void
+	{
+		$keys = $this->configurationKeys();
+
+		self::assertContains('instance.url', $keys, 'The key discovery missed a literal read.');
+		self::assertContains('instance.email', $keys, 'The key discovery missed a fallback read.');
+		self::assertContains('thread.max_depth', $keys, 'The key discovery missed a declared constant.');
+
+		$reference = $this->read('docs/reference/configuration.md');
+		foreach ($keys as $key) {
+			self::assertStringContainsString(
+				'`' . $key . '`',
+				$reference,
+				'The configuration reference does not mention ' . $key . '.',
+			);
+		}
+	}
+
+	/**
+	 * Every `Config` read in `src/` names its app and key as a literal or as a
+	 * same-file constant. Resolving both keeps this guard independent of how a
+	 * service declares its key constants.
+	 *
+	 * @return list<string>
+	 */
+	private function configurationKeys(): array
+	{
+		$root = dirname(__DIR__, 2) . '/src';
+		$iterator = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+		);
+
+		$keys = [];
+		foreach ($iterator as $file) {
+			if (!$file instanceof SplFileInfo || !str_ends_with($file->getFilename(), '.php')) {
+				continue;
+			}
+
+			$source = file_get_contents($file->getPathname());
+			self::assertIsString($source, 'Could not read ' . $file->getFilename());
+
+			preg_match_all("/\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*'([^']*)'/", $source, $constants);
+			$declared = array_combine($constants[1], $constants[2]);
+
+			preg_match_all('/->get(?:Bool|Int|Float)?\(([^()]*)\)/', $source, $calls);
+			foreach ($calls[1] as $arguments) {
+				$parts = array_map('trim', explode(',', $arguments));
+				if (count($parts) < 2) {
+					continue;
+				}
+
+				// Only a read of the `social` app is a core configuration key;
+				// it keeps unrelated `->get()` calls out of the reference guard.
+				if ($this->resolveConfigArgument($parts[0], $declared) !== 'social') {
+					continue;
+				}
+
+				$key = $this->resolveConfigArgument($parts[1], $declared);
+				if ($key !== null) {
+					$keys[$key] = true;
+				}
+			}
+		}
+
+		$keys = array_keys($keys);
+		sort($keys);
+
+		return $keys;
+	}
+
+	/**
+	 * @param array<string, string> $declared
+	 */
+	private function resolveConfigArgument(string $argument, array $declared): ?string
+	{
+		if (preg_match("/^'([^']*)'$/", $argument, $literal) === 1) {
+			return $literal[1];
+		}
+
+		if (preg_match('/^(?:self|static|[A-Za-z_][A-Za-z0-9_]*)::([A-Z][A-Z0-9_]*)$/', $argument, $constant) === 1) {
+			return $declared[$constant[1]] ?? null;
+		}
+
+		return null;
 	}
 
 	private function read(string $relativePath): string

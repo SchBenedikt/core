@@ -19,6 +19,7 @@ the database — the core does not care.
 | `social` | `instance.invites_enabled` | no | Whether invites are enabled; defaults to `false` |
 | `social` | `instance.languages` | no | Comma-separated or JSON array of language codes; defaults to an empty list |
 | `social` | `instance.thumbnail` | no | Public thumbnail URL; defaults to empty |
+| `social` | `federation.enabled` | no | Reported by the instance metadata as whether the instance federates; defaults to `true`. It is a status value, not a switch: the core does not refuse delivery or inbox requests based on it |
 | `social` | `media.max_bytes` | no | Local upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
 | `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
 | `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts and historical posts processed by the outbox backfill; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
