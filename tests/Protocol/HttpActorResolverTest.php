@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Tests\Protocol;
 
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Platform\Network\HostResolver;
+use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
@@ -42,7 +44,12 @@ final class HttpActorResolverTest extends TestCase
 	protected function setUp(): void
 	{
 		$this->http = new FakeHttpClient();
-		$this->resolver = new HttpActorResolver($this->http);
+		$this->resolver = new HttpActorResolver(
+			$this->http,
+			new FederationTargetGuard(new TestHostResolver([
+				'remote.example' => ['93.184.216.34'],
+			])),
+		);
 	}
 
 	public function testResolvesTheActorAndItsKey(): void
@@ -149,6 +156,88 @@ final class HttpActorResolverTest extends TestCase
 		} finally {
 			self::assertSame([], $this->http->requests);
 		}
+	}
+
+	public function testTheDocumentFetchIsBoundedAndPinnedToTheValidatedAddress(): void
+	{
+		$this->http->queueResponse($this->document());
+
+		$this->resolver->resolveByKeyId(self::KEY_ID);
+
+		self::assertCount(1, $this->http->requests);
+		self::assertSame(['93.184.216.34'], $this->http->requests[0]['resolved_ips']);
+		self::assertSame(HttpActorResolver::TIMEOUT_SECONDS, $this->http->requests[0]['timeout']);
+		self::assertSame(HttpActorResolver::MAX_DOCUMENT_BYTES, $this->http->requests[0]['max_bytes']);
+	}
+
+	public function testAGuardWithoutAResolverCannotVouchForAHostname(): void
+	{
+		$resolver = new HttpActorResolver($this->http, new FederationTargetGuard());
+
+		$this->expectException(UnknownActorException::class);
+
+		try {
+			$resolver->resolveByKeyId(self::KEY_ID);
+		} finally {
+			self::assertSame([], $this->http->requests);
+		}
+	}
+
+	public function testWithoutItsOwnGuardTheResolverFetchesNothing(): void
+	{
+		// A resolver used as the entry point has no validated address to pin
+		// the connection to, so it refuses instead of falling back to an
+		// unchecked request.
+		$resolver = new HttpActorResolver($this->http);
+
+		$this->expectException(UnknownActorException::class);
+
+		try {
+			$resolver->resolveByKeyId(self::KEY_ID);
+		} finally {
+			self::assertSame([], $this->http->requests);
+		}
+	}
+
+	public function testTheValidatedAddressesAreNotResolvedASecondTime(): void
+	{
+		$hostResolver = new class implements HostResolver {
+			public int $calls = 0;
+
+			public function resolve(string $host): array
+			{
+				++$this->calls;
+
+				// A rebinding peer answers with a public address first and a
+				// private one for the connection.
+				return $this->calls === 1 ? ['93.184.216.34'] : ['10.0.0.5'];
+			}
+		};
+
+		$guard = new FederationTargetGuard($hostResolver);
+		$resolver = new GuardedActorResolver(new HttpActorResolver($this->http), $guard);
+
+		$this->http->queueResponse($this->document());
+
+		$actor = $resolver->resolveByKeyId(self::KEY_ID);
+
+		self::assertSame(1, $hostResolver->calls);
+		self::assertCount(1, $this->http->requests);
+		self::assertSame(['93.184.216.34'], $this->http->requests[0]['resolved_ips']);
+		self::assertSame(self::INBOX, $actor->inboxUrl);
+	}
+
+	public function testAnOversizedActorDocumentIsUnknown(): void
+	{
+		$this->http->queueResponse(new HttpResponse(
+			200,
+			[],
+			str_repeat('x', HttpActorResolver::MAX_DOCUMENT_BYTES + 1),
+		));
+
+		$this->expectException(UnknownActorException::class);
+
+		$this->resolver->resolveByKeyId(self::KEY_ID);
 	}
 
 	/**

@@ -9,18 +9,27 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Protocol\ActivityPub;
 
-use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Service\Federation\RemoteFetchException;
 use JsonException;
 
+use function filter_var;
+use function in_array;
 use function is_array;
 use function is_string;
+use function mb_strlen;
+use function parse_url;
+use function rtrim;
+use function strpos;
+use function strtolower;
+use function substr;
+use function trim;
 
 /**
  * Resolves a signing key by fetching the actor document.
@@ -30,13 +39,24 @@ use function is_string;
  * against what the request claimed. A document that does not confirm the key
  * id is refused: otherwise any actor could sign with a key it merely mentions.
  *
+ * The fetch is an inbound, peer-controlled request, so it always goes through
+ * the bounded client and connects only to addresses the target guard approved.
+ * There is no unbounded fallback: without a guard, or without a validated
+ * address to pin, the actor stays unknown rather than being fetched unchecked.
+ *
  * There is no cache in this class. Wrap it in {@see CachingActorResolver} to
  * avoid a round trip per signed request while keeping every identity check on
  * a miss; a host may also implement its own cache with the same rules.
  */
-final class HttpActorResolver implements ActorResolver
+final class HttpActorResolver implements PinnedActorResolver
 {
 	public const ACCEPT = 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
+
+	/** The connection and total transfer budget of one actor fetch. */
+	public const TIMEOUT_SECONDS = 10;
+
+	/** The largest actor document accepted, independent of any header. */
+	public const MAX_DOCUMENT_BYTES = 1_048_576;
 
 	public function __construct(
 		private readonly HttpClient $http,
@@ -48,31 +68,32 @@ final class HttpActorResolver implements ActorResolver
 	{
 		$actorId = $this->actorIdFromKeyId($keyId);
 
+		if ($this->targetGuard === null) {
+			// Nothing checked this target, so there is no address to pin the
+			// connection to. Fail closed instead of falling back to a fetch
+			// that could reach the local network.
+			throw new UnknownActorException($keyId);
+		}
+
 		try {
-			$addresses = $this->targetGuard?->addressesFor($actorId) ?? [];
+			$addresses = $this->targetGuard->addressesFor($actorId);
 		} catch (RemoteFetchException) {
 			throw new UnknownActorException($keyId);
 		}
 
-		try {
-			$response = $this->http instanceof BoundedHttpClient && $addresses !== []
-				? $this->http->requestBounded(
-					'GET',
-					$actorId,
-					['Accept' => self::ACCEPT],
-					'',
-					10,
-					1_048_576,
-					$addresses,
-				)
-				: $this->http->request('GET', $actorId, ['Accept' => self::ACCEPT], '', 10);
-		} catch (HttpClientException) {
+		if ($addresses === []) {
+			// The guard only inspected a literal host; a hostname without a
+			// resolver may still point into a private range.
 			throw new UnknownActorException($keyId);
 		}
 
-		if (!$response->isSuccessful()) {
-			throw new UnknownActorException($keyId);
-		}
+		return $this->resolveByKeyIdAtAddresses($keyId, $addresses);
+	}
+
+	public function resolveByKeyIdAtAddresses(string $keyId, array $addresses): RemoteActor
+	{
+		$actorId = $this->actorIdFromKeyId($keyId);
+		$response = $this->fetch($keyId, $actorId, $addresses);
 
 		try {
 			$document = json_decode($response->body, true, 64, JSON_THROW_ON_ERROR);
@@ -112,6 +133,40 @@ final class HttpActorResolver implements ActorResolver
 		}
 
 		return new RemoteActor($actorId, $keyId, $inbox, $publicKeyPem, $sharedInbox);
+	}
+
+	/**
+	 * @param list<string> $addresses validated addresses, or empty for a
+	 *                                caller that deliberately skipped the check
+	 */
+	private function fetch(string $keyId, string $actorId, array $addresses): HttpResponse
+	{
+		if (!$this->http instanceof BoundedHttpClient) {
+			// An unbounded client can buffer a peer-controlled document until
+			// an external limit stops it. That is not acceptable on this path.
+			throw new UnknownActorException($keyId);
+		}
+
+		try {
+			$response = $this->http->requestBounded(
+				'GET',
+				$actorId,
+				['Accept' => self::ACCEPT],
+				'',
+				self::TIMEOUT_SECONDS,
+				self::MAX_DOCUMENT_BYTES,
+				$addresses,
+			);
+		} catch (HttpClientException) {
+			// The bounded client also reports an oversized document here.
+			throw new UnknownActorException($keyId);
+		}
+
+		if (!$response->isSuccessful()) {
+			throw new UnknownActorException($keyId);
+		}
+
+		return $response;
 	}
 
 	/**

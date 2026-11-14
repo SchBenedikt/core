@@ -60,6 +60,7 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Protocol\ActivityPub\HttpActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\RandomIdGenerator;
@@ -1156,6 +1157,40 @@ final class ApplicationHostTest extends TestCase
 		AtprotoPublicationSchema::create($database);
 
 		return $database;
+	}
+
+	/**
+	 * The production wiring, not just the resolver unit: a host supplies a
+	 * plain HttpActorResolver and the assembly's guard hands it the address it
+	 * validated, so the document fetch connects to what was checked.
+	 */
+	public function testTheHostAssemblyPinsTheSigningActorFetchToTheValidatedAddress(): void
+	{
+		$database = $this->database();
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode([
+			'id' => self::BOB,
+			'type' => 'Person',
+			'inbox' => self::BOB_INBOX,
+			'publicKey' => [
+				'id' => 'https://remote.example/users/bob#main-key',
+				'owner' => self::BOB,
+				'publicKeyPem' => self::$remoteKey->publicKeyPem(),
+			],
+		], JSON_THROW_ON_ERROR)));
+
+		$app = $this->host($database, $http, new HttpActorResolver($http));
+
+		$response = $app->handle($this->signedInbox([
+			'id' => 'https://remote.example/activities/follow-pinned',
+			'type' => 'Follow',
+			'actor' => self::BOB,
+			'object' => 'https://localhost:8080/@alice',
+		]));
+
+		self::assertSame(202, $response->status, $response->body);
+		self::assertSame(['93.184.216.34'], $http->requests[0]['resolved_ips']);
+		self::assertSame(HttpActorResolver::MAX_DOCUMENT_BYTES, $http->requests[0]['max_bytes']);
 	}
 
 	private function host(

@@ -63,9 +63,21 @@ so a custom resolver cannot bypass the check. The actor URL of a local account
 under `social/instance.url` is the one deliberate exception: resolving it never
 leaves the instance.
 
+A signing-actor fetch is an inbound, peer-controlled request, so it is also
+bounded and pinned: `GuardedActorResolver` hands the addresses it validated to
+the inner resolver through `PinnedActorResolver`, and `HttpActorResolver` asks
+`BoundedHttpClient::requestBounded()` for the document with a 10-second budget
+and a 1 MiB body limit. The hostname is not resolved a second time, so a peer
+cannot answer with a public address for the check and a private one for the
+connection. There is no unbounded fallback: a resolver without its own guard,
+and a guard without a resolver that yields no validated address, leave the
+actor unknown instead of fetching it unchecked.
+
 The production `Application::forHost()` defaults to `DnsHostResolver`; the
 in-memory assembly without a resolver still blocks localhost and literal
-private addresses, but cannot judge a hostname until a resolver is supplied.
+private addresses, but cannot judge a hostname until a resolver is supplied —
+and an `HttpActorResolver` on that assembly refuses to fetch a remote actor for
+that reason.
 
 ## Transport
 

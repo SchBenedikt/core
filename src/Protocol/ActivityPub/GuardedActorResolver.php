@@ -28,6 +28,10 @@ use function substr;
  * inbound security boundary, so it must not be bypassed just because the host
  * chose a custom resolver: the key id is an actor URL and is checked before
  * that resolver can fetch it.
+ *
+ * The addresses are checked here and handed to a {@see PinnedActorResolver}
+ * so the fetch connects to what was validated. Resolving the name again inside
+ * the resolver would reopen the rebinding window this guard exists to close.
  */
 final class GuardedActorResolver implements ActorResolver
 {
@@ -50,15 +54,31 @@ final class GuardedActorResolver implements ActorResolver
 			? null
 			: rtrim($this->localBaseUrl, '/');
 		if (is_string($local) && $local !== '' && str_starts_with($actorId, $local . '/')) {
-			return $this->inner->resolveByKeyId($keyId);
+			// A local actor never leaves the instance; the bounded fetch still
+			// applies, but there is no remote address to validate.
+			return $this->inner instanceof PinnedActorResolver
+				? $this->inner->resolveByKeyIdAtAddresses($keyId, [])
+				: $this->inner->resolveByKeyId($keyId);
 		}
 
 		try {
-			$this->guard->addressesFor($actorId);
+			$addresses = $this->guard->addressesFor($actorId);
 		} catch (RemoteFetchException) {
 			throw new UnknownActorException($keyId);
 		}
 
+		if ($this->inner instanceof PinnedActorResolver) {
+			// Without a resolver the guard could only reject literals, so
+			// there is no validated address to pin a remote fetch to.
+			if ($addresses === []) {
+				throw new UnknownActorException($keyId);
+			}
+
+			return $this->inner->resolveByKeyIdAtAddresses($keyId, $addresses);
+		}
+
+		// A host resolver that does not fetch (an in-memory actor map, for
+		// example) has no connection to pin; the guard above still ran.
 		return $this->inner->resolveByKeyId($keyId);
 	}
 }

@@ -32,12 +32,18 @@ validated actor by the **full key id**:
 
 ```php
 $resolver = new CachingActorResolver(
-	new HttpActorResolver($http),
+	new HttpActorResolver($http, new FederationTargetGuard(new DnsHostResolver())),
 	$clock,
 	ttlSeconds: 300,   // default
 	maxEntries: 512,   // default
 );
 ```
+
+The guard is not optional for a direct resolver: without it there is no
+validated address to pin the connection to, so `resolveByKeyId()` leaves the
+actor unknown instead of issuing an unbounded request. Inside an `Application`
+the assembly's `GuardedActorResolver` passes its checked addresses to the
+resolver, which fetches with a 10-second budget and a 1 MiB document limit.
 
 A hit avoids the HTTP round trip; a miss still performs every identity check.
 Failures are not cached, so a transient network error does not keep an actor

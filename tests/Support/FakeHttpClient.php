@@ -23,7 +23,7 @@ use AlohaSocial\Core\Platform\Http\ResponseLimitExceededException;
 final class FakeHttpClient implements BoundedHttpClient
 {
 	/**
-	 * @var list<array{method: string, url: string, headers: array<string, string>, body: string, timeout: int}>
+	 * @var list<array{method: string, url: string, headers: array<string, string>, body: string, timeout: int, max_bytes: int, resolved_ips: list<string>}>
 	 */
 	public array $requests = [];
 
@@ -49,7 +49,7 @@ final class FakeHttpClient implements BoundedHttpClient
 		string $body = '',
 		int $timeoutSeconds = 10,
 	): HttpResponse {
-		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, PHP_INT_MAX);
+		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, PHP_INT_MAX, []);
 	}
 
 	public function requestBounded(
@@ -61,7 +61,7 @@ final class FakeHttpClient implements BoundedHttpClient
 		int $maxBytes = 1_048_576,
 		array $resolvedIps = [],
 	): HttpResponse {
-		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, $maxBytes);
+		return $this->answer($method, $url, $headers, $body, $timeoutSeconds, $maxBytes, $resolvedIps);
 	}
 
 	private function answer(
@@ -71,6 +71,7 @@ final class FakeHttpClient implements BoundedHttpClient
 		string $body,
 		int $timeoutSeconds,
 		int $maxBytes,
+		array $resolvedIps,
 	): HttpResponse {
 		$this->requests[] = [
 			'method' => $method,
@@ -78,6 +79,10 @@ final class FakeHttpClient implements BoundedHttpClient
 			'headers' => $headers,
 			'body' => $body,
 			'timeout' => $timeoutSeconds,
+			// The bounded path is what a signing-key fetch must use, so the
+			// fake records the limits and the pinned addresses it was given.
+			'max_bytes' => $maxBytes,
+			'resolved_ips' => $resolvedIps,
 		];
 
 		$answer = array_shift($this->answers);
