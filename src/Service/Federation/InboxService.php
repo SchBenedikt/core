@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
@@ -88,6 +89,7 @@ final class InboxService
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?PendingRemoteUpdateStore $pendingUpdates = null,
 		private readonly ?ReactionService $reactions = null,
+		private readonly ?RemotePollService $remotePolls = null,
 	) {
 	}
 
@@ -239,9 +241,25 @@ final class InboxService
 	 */
 	private function handleCreate(RemoteActor $actor, array $activity): void
 	{
+		// A vote arrives as a Create(Note) aimed at one of our polls. It is
+		// checked before the follow gate: any signed actor may vote on a
+		// public poll, and the vote is recorded rather than imported as a
+		// reply. An ordinary reply returns false and keeps the normal path.
+		$object = $activity['object'] ?? null;
+		if ($this->remotePolls !== null && is_array($object)
+			&& $this->remotePolls->recordInboundVote($actor, $object, Time::toSecondPrecision($this->clock->now()))
+		) {
+			return;
+		}
+
 		$this->requireFollowedContent($actor);
 
 		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity);
+
+		if ($this->remotePolls !== null && is_array($object) && $post->objectType === RemoteObjectType::Question) {
+			$this->remotePolls->importQuestion($post, $object, $post->activityId, Time::toSecondPrecision($this->clock->now()));
+		}
+
 		$this->insertRemotePost($post);
 
 		// Import after the post is durable. The importer isolates every
@@ -304,6 +322,16 @@ final class InboxService
 			$updated->contentWarning,
 			$updated->updatedAt ?? Time::toSecondPrecision($this->clock->now()),
 		);
+
+		$object = $activity['object'] ?? null;
+		if ($this->remotePolls !== null && is_array($object) && $updated->objectType->value === 'question') {
+			$this->remotePolls->importQuestion(
+				$updated,
+				$object,
+				$updated->activityId,
+				$updated->updatedAt ?? Time::toSecondPrecision($this->clock->now()),
+			);
+		}
 	}
 
 	private function applyPendingUpdate(RemotePost $post, RemoteActor $actor): void

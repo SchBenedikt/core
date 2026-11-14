@@ -56,6 +56,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
+- `src/Domain/Federation/RemotePollSchema.php` → `social_remote_poll` (peer-owned Question options and counts as JSON) and `social_remote_poll_vote` (one optimistic local vote per viewer, with its queue state)
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` (including nullable `updated_at`, bounded `object_type` and optional `object_metadata` JSON) and `social_remote_post_attachment`
 - `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`

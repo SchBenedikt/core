@@ -38,6 +38,12 @@ final class JobType
 	 */
 	public const SCHEDULED_POST_PUBLISH = 'scheduled.post.publish';
 
+	/**
+	 * Marks one remote poll closed at its scheduled end. The payload carries
+	 * the question object id.
+	 */
+	public const POLL_CLOSE = 'poll.close';
+
 	private function __construct()
 	{
 	}

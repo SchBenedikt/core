@@ -138,6 +138,32 @@ and applies each reader's private block list; see [blocks](blocks.md).
 See [inbound federation](inbound-federation.md) for the order of checks and
 [inbox activities](../reference/inbox-activities.md) for the refusal table.
 
+## Remote polls
+
+An ActivityPub `Question` is imported beside its `Create` activity. The store
+keeps the peer's option titles and counts, whether the question is `oneOf`
+(single choice) or `anyOf` (multiple choice), the `endTime` and an explicit
+`closed` timestamp. Option counts come from `replies.totalItems`; our own
+votes live in a separate table and are added when the poll is presented, so a
+later peer update cannot double-count them.
+
+The neutral API is `GET /api/v1/remote-polls/{id}` and
+`POST /api/v1/remote-polls/{id}/votes` with `choices` as option positions. A
+vote is refused after `endTime` or `closed`, for an unknown option, for more
+than one option in a single-choice poll and for a second, different vote by
+the same account. An identical retry is idempotent. The stored vote is
+optimistic: `delivery` is `queued` once one signed `Create(Note)` per choice
+has been handed to the delivery queue, or `failed` when queueing did not work
+and the retry path may try again.
+
+Inbound votes on local polls use the Mastodon convention: a signed
+`Create(Note)` whose `inReplyTo` is the local post URL and whose `name` is one
+of the option titles. The activity is recorded in the local vote table and
+is not imported as a reply; a replay of the same choice is a no-op and a
+different choice is refused. A scheduled `poll.close` job marks an imported
+Question closed at its end time, while a local poll derives its expired state
+from its own stored expiry.
+
 ## Discovery
 
 A local account is described by its [actor document](../reference/actor-document.md)

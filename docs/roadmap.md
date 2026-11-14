@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 110 routes, 53 of them under the Mastodon prefix |
+| HTTP contract | 112 routes, 53 of them under the Mastodon prefix |
 | Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 156 PHP test files (1481 tests, 7486 assertions) and 9 UI test files (69 tests) |
+| Tests | 162 PHP test files (1513 tests, 7618 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -82,13 +82,21 @@ the host that serves it. See
   [posts and timelines](guides/posts-and-timelines.md).
 - **Social interactions** — local favourites, private bookmarks, local mutes,
   private account lists and list timelines, notifications (favourite, follow,
-  mention, reblog) with dismiss/unread state, polls with local voting, local
+  mention, reblog) with dismiss/unread state, polls with local voting and
+  imported remote Questions, local
   follow/unfollow and relationship reads, plus federated `Like` and
   `EmojiReact` on remote posts with their `Undo` and inbound reaction counts.
   Mastodon-shaped interaction routes live under the optional compatibility
   prefix; the remote reaction routes live under `/api/v1`. See
   [Mastodon-compatible API](guides/mastodon-api.md) and the
   [route reference](reference/routes.md#remote-reactions).
+- **Remote Question polling** — an ActivityPub `Question` is imported with
+  its `oneOf`/`anyOf` options, counts, schedule and `closed` marker into a
+  separate remote-poll store. A local vote is stored optimistically, answered
+  with the viewer's own choices and delivery state, and queued as one signed
+  `Create(Note)` per choice to the author's inbox. Signed votes on local polls
+  are recorded idempotently after checking the poll, the option title and the
+  actor; a scheduled job marks an imported poll closed at its end time.
 - **Typed remote objects** — `Article`, `Page`, `Event`, `Question`, `Audio`
   and `Video` are stored with their bounded metadata (title, event schedule,
   place, participation link, status, duration, thumbnail and keyed sources)

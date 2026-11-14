@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Post\Boost;
+use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -411,6 +412,46 @@ final class ActivityFactory
 			'sha256',
 			$localUserId . "\0" . $objectId . "\0" . $emoji,
 		), 0, 32));
+	}
+
+	/**
+	 * A signed vote on a remote Question.
+	 *
+	 * Mastodon sends one `Note` per selected choice, with the option title as
+	 * `name` and the question URL as `inReplyTo`. The activity id is derived
+	 * from the voter, the question and the choice, so retrying the same vote
+	 * cannot count twice on the receiving side.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function pollVote(string $localUserId, RemotePoll $poll, int $position, DateTimeImmutable $at): array
+	{
+		$title = $poll->optionTitle($position);
+		if ($title === null) {
+			throw new InvalidArgumentException('The poll has no such option.');
+		}
+
+		$actorId = $this->actorId($localUserId);
+		$digest = substr(hash('sha256', $poll->objectId . "\n" . $localUserId . "\n" . $title), 0, 32);
+		$noteId = $this->baseUrl() . '/api/v1/poll-votes/' . $digest;
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $noteId . '/activity',
+			'type' => 'Create',
+			'actor' => $actorId,
+			'published' => Time::format($at),
+			'to' => [$poll->actorId],
+			'object' => [
+				'id' => $noteId,
+				'type' => 'Note',
+				'attributedTo' => $actorId,
+				'inReplyTo' => $poll->objectId,
+				'name' => $title,
+				'to' => [$poll->actorId],
+				'published' => Time::format($at),
+			],
+		];
 	}
 
 	public function boostId(Boost $boost): string

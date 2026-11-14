@@ -257,7 +257,7 @@ final class MigrationInventory
 				'polls',
 				'Polls and local votes',
 				self::OWNER_CORE,
-				'social_poll, social_poll_option, social_poll_vote; remote polling is open (#6)',
+				'social_poll for local polls plus social_remote_poll/social_remote_poll_vote for imported Questions and signed votes',
 				self::STATUS_PARTIAL,
 				'inventory-only',
 				gapIssue: '#6',

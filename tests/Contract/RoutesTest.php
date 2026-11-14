@@ -23,7 +23,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(110, $manifest->routes());
+		self::assertCount(112, $manifest->routes());
 		self::assertNotNull($manifest->find('posts.create'));
 		self::assertNotNull($manifest->find('posts.boost'));
 		self::assertNotNull($manifest->find('posts.unboost'));
@@ -235,7 +235,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(110, $decoded['routes']);
+		self::assertCount(112, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -245,6 +245,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(110, $app->routes->routes());
+		self::assertCount(112, $app->routes->routes());
 	}
 }

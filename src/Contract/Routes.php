@@ -48,6 +48,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ReactToRemotePostHandler;
+use AlohaSocial\Core\Api\RemotePollHandler;
 use AlohaSocial\Core\Api\ShowRemotePostHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
@@ -58,6 +59,7 @@ use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UnlikeRemotePostHandler;
+use AlohaSocial\Core\Api\VoteRemotePollHandler;
 use AlohaSocial\Core\Api\UnreactFromRemotePostHandler;
 use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
@@ -215,6 +217,24 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '120/60',
 				summary: 'Read one stored remote post with the signed-in account\'s reaction state.',
+			),
+			new Route(
+				name: 'remote-polls.get',
+				method: 'GET',
+				path: $base . '/remote-polls/{id}',
+				handler: RemotePollHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read an imported remote poll with the viewer\'s own choices.',
+			),
+			new Route(
+				name: 'remote-polls.vote',
+				method: 'POST',
+				path: $base . '/remote-polls/{id}/votes',
+				handler: VoteRemotePollHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Vote in a remote poll; stores the choice optimistically and queues signed vote Notes.',
 			),
 			new Route(
 				name: 'remote-posts.like',

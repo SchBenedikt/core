@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 110 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 112 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -29,6 +29,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `atproto.publication` | `GET` | `/api/v1/posts/{id}/atproto` | yes | 120 / 60 s |
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
 | `remote-posts.get` | `GET` | `/api/v1/remote-posts/{id}` | yes | 120 / 60 s |
+| `remote-polls.get` | `GET` | `/api/v1/remote-polls/{id}` | yes | 120 / 60 s |
+| `remote-polls.vote` | `POST` | `/api/v1/remote-polls/{id}/votes` | yes | 30 / 900 s |
 | `remote-posts.like` | `POST` | `/api/v1/remote-posts/{id}/like` | yes | 30 / 900 s |
 | `remote-posts.unlike` | `DELETE` | `/api/v1/remote-posts/{id}/like` | yes | 60 / 900 s |
 | `remote-posts.react` | `POST` | `/api/v1/remote-posts/{id}/reactions` | yes | 30 / 900 s |

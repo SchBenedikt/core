@@ -23,7 +23,9 @@ use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
 use AlohaSocial\Core\Api\ScheduledPostsHandler;
 use AlohaSocial\Core\Api\ShowFilterHandler;
 use AlohaSocial\Core\Api\ShowScheduledPostHandler;
+use AlohaSocial\Core\Api\RemotePollHandler;
 use AlohaSocial\Core\Api\UpdateFilterHandler;
+use AlohaSocial\Core\Api\VoteRemotePollHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
@@ -156,8 +158,14 @@ use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryPendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\PdoPendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\PdoRemotePollRepository;
+use AlohaSocial\Core\Domain\Federation\PdoRemotePollVoteRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
@@ -261,6 +269,8 @@ use AlohaSocial\Core\Service\Federation\RemoteFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaService;
 use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
+use AlohaSocial\Core\Service\Federation\RemotePollCloseHandler;
+use AlohaSocial\Core\Service\Federation\RemotePollService;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Service\Federation\RemoteThreadFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteThreadService;
@@ -371,6 +381,8 @@ final readonly class Application
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ScheduledPostRepository $scheduledPostRepository = null,
 		?FilterRuleRepository $filterRuleRepository = null,
+		?RemotePollRepository $remotePollRepository = null,
+		?RemotePollVoteRepository $remotePollVoteRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -407,6 +419,8 @@ final readonly class Application
 		$pendingRemoteUpdates ??= new InMemoryPendingRemoteUpdateStore();
 		$scheduledPostRepository ??= new InMemoryScheduledPostRepository();
 		$filterRuleRepository ??= new InMemoryFilterRuleRepository();
+		$remotePollRepository ??= new InMemoryRemotePollRepository();
+		$remotePollVoteRepository ??= new InMemoryRemotePollVoteRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -452,6 +466,8 @@ final readonly class Application
 			pendingRemoteUpdates: $pendingRemoteUpdates,
 			scheduledPostRepository: $scheduledPostRepository,
 			filterRuleRepository: $filterRuleRepository,
+			remotePollRepository: $remotePollRepository,
+			remotePollVoteRepository: $remotePollVoteRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -565,6 +581,8 @@ final readonly class Application
 			pendingRemoteUpdates: $pendingRemoteUpdates,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
+			remotePollRepository: new PdoRemotePollRepository($database),
+			remotePollVoteRepository: new PdoRemotePollVoteRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -635,6 +653,8 @@ final readonly class Application
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ScheduledPostRepository $scheduledPostRepository = null,
 		?FilterRuleRepository $filterRuleRepository = null,
+		?RemotePollRepository $remotePollRepository = null,
+		?RemotePollVoteRepository $remotePollVoteRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -742,13 +762,24 @@ final readonly class Application
 			? null
 			: new XrpcAtprotoTimelineReader($httpClient, $atprotoDpop);
 		$followerService = new FollowerService($followers, $clock, $ids);
+		$actorInboxResolver = $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
 		$blockService = new BlockService(
 			$blockRepository,
 			$clock,
 			$ids,
 			$queue,
 			$activities,
-			$httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard),
+			$actorInboxResolver,
+		);
+		$remotePollService = new RemotePollService(
+			$remotePollRepository ?? new InMemoryRemotePollRepository(),
+			$remotePollVoteRepository ?? new InMemoryRemotePollVoteRepository(),
+			$pollVoteRepository,
+			$posts,
+			$activities,
+			$queue,
+			$actorInboxResolver,
+			$clock,
 		);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock, $targetGuard)
@@ -928,6 +959,7 @@ final readonly class Application
 				$notificationService,
 				$pendingRemoteUpdates,
 				$reactionService,
+				$remotePollService,
 			)
 			: null;
 
@@ -965,6 +997,8 @@ final readonly class Application
 			->with(ShowFilterHandler::class, static fn (): ShowFilterHandler => new ShowFilterHandler($filterService))
 			->with(UpdateFilterHandler::class, static fn (): UpdateFilterHandler => new UpdateFilterHandler($filterService))
 			->with(DeleteFilterHandler::class, static fn (): DeleteFilterHandler => new DeleteFilterHandler($filterService))
+			->with(RemotePollHandler::class, static fn (): RemotePollHandler => new RemotePollHandler($remotePollService))
+			->with(VoteRemotePollHandler::class, static fn (): VoteRemotePollHandler => new VoteRemotePollHandler($remotePollService, $clock))
 			->with(ShowRemotePostHandler::class, static fn (): ShowRemotePostHandler => new ShowRemotePostHandler($reactionService))
 			->with(LikeRemotePostHandler::class, static fn (): LikeRemotePostHandler => new LikeRemotePostHandler($reactionService))
 			->with(UnlikeRemotePostHandler::class, static fn (): UnlikeRemotePostHandler => new UnlikeRemotePostHandler($reactionService))
@@ -1079,6 +1113,7 @@ final readonly class Application
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
 			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
 			->with(JobType::CLEANUP, new CleanupJobHandler($cleanup, $logger))
+			->with(JobType::POLL_CLOSE, new RemotePollCloseHandler($remotePollService, $clock))
 			->with(JobType::SCHEDULED_POST_PUBLISH, new ScheduledPostPublishHandler($scheduledPostService));
 
 		$routes = Routes::manifest(MastodonApiConfig::prefix($config));

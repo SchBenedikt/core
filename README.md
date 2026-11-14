@@ -62,14 +62,14 @@ The full mapping, guarantees and the path to a real bridge are in
 | Area | Implemented here |
 | --- | --- |
 | Posts and timelines | create, read, edit and soft-delete local posts, with author-only edits, revision history and ActivityPub `Update` delivery; replies with `in_reply_to_id`; direct posts with local recipients; public, home, hashtag and followed-hashtag timelines; cursor pagination; post visibility, including followers-only reads by accepted local followers; post attachments |
-| Social interactions | local favourites, private bookmarks, local mutes, private account lists, private followed hashtags and notifications with dismiss/unread state; polls with local voting; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; federated `Like`/`EmojiReact` in both directions with separate counts and idempotent `Undo`; local follow/unfollow and relationship reads |
+| Social interactions | local favourites, private bookmarks, local mutes, private account lists, private followed hashtags and notifications with dismiss/unread state; polls with local voting and imported remote Questions; per-user blocks with outbound ActivityPub `Block`/`Undo(Block)`; federated `Like`/`EmojiReact` in both directions with separate counts and idempotent `Undo`; local follow/unfollow and relationship reads |
 | Follow graph | incoming and outgoing edges with persistent `pending`/`accepted`/`rejected` outgoing state, retried queued Follow/Undo delivery, verified Accept/Reject, individual and shared inboxes, batched delivery, optional follow policy, local-to-local follows and local-follow home timeline |
 | Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Accept`/`Reject`/`Undo`/`Create`/`Update`/`Delete`/`Announce`, `Like`/`Undo(Like)` and `EmojiReact`/`Undo(EmojiReact)`; outbound `Follow`/`Undo(Follow)`, `Block`/`Undo(Block)`, `Like`/`Undo(Like)`, `EmojiReact`/`Undo(EmojiReact)`, local `Announce`/`Undo(Announce)` and `Update` for edits |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
 | AT Protocol | account/record primitives, deterministic TIDs, bearer or DPoP-bound XRPC `putRecord`/`deleteRecord`, byte-offset tag/mention/link facets, reply references with a `getRecord` CID lookup, image/video blob uploads with `app.bsky.embed.images`/`#video` embeds, likes and reposts as `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record, an AppView timeline read port, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/edit/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
-| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (110 routes; 53 under the compatibility prefix) |
+| HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (112 routes; 53 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table; `TransactionRunner` for atomic multi-repository writes |
 | Operations | core `cleanup` worker job and service for unreferenced media older than a retention window, read notifications and thread caches; dry run, per-kind limits, idempotent deletes, stable payload reasons and host scheduling |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
@@ -212,7 +212,7 @@ credentials gap and remaining steps are in
 composer install
 composer check          # lint, core boundary, attribution, links, PHP tests
 php bin/core-demo       # real HTTP requests through the in-memory assembly
-php bin/export-routes   # the HTTP contract as JSON (110 routes)
+php bin/export-routes   # the HTTP contract as JSON (112 routes)
 php bin/export-openapi  # the same contract as OpenAPI 3.1
 
 cd ui
