@@ -78,16 +78,36 @@ update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), remote boost federation, remote notifications,
-streaming, voting on or fetching remote polls, filters, followed tags,
-OAuth authorization/token endpoints, remote search, remote profile fetching,
-admin APIs or the full account management surface. Scheduled statuses are
+streaming, voting on or fetching remote polls, followed tags, OAuth
+authorization/token endpoints, remote search, remote profile fetching, admin
+APIs or the full account management surface. Keyword filters are supported
+locally (see below). Scheduled statuses are
 supported locally (see below). Lists are limited to known local account ids; remote list membership
 is external.
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. The locally implementable remainder —
-hashtags and hashtag search, filters, followed tags, follow requests/locked
-accounts and the wider account-management surface — is a product follow-up listed as Later in the [roadmap](../roadmap.md); everything
+hashtags and hashtag search, followed tags, follow requests/locked accounts
+and the wider account-management surface — is a product follow-up listed as Later in the [roadmap](../roadmap.md); everything
 else needs a host or remote data. See the section at the end.
+
+## Keyword filters
+
+The v2 filter routes are `GET /filters`, `POST /filters`,
+`GET /filters/{id}`, `PUT /filters/{id}` and `DELETE /filters/{id}`. A filter
+has a `title`, one or more `context` values (`home`, `public`,
+`notifications`, `thread`, `account`), a `filter_action` of `hide` or `warn`,
+an optional `expires_in` and a keyword list (`keywords_attributes`). The
+legacy single `phrase` field is accepted as one whole-word keyword. `PUT`
+replaces the whole rule, including its keyword list.
+
+Filtering is reader-private: a rule never changes stored posts, federation or
+another account's view. `hide` removes an object from the reader's timelines
+and answers 404 for its detail route; `warn` keeps it with a `filtered`
+evidence array and redacts the text until the request carries
+`include_filtered=true`. Matching is Unicode-normalized and case-insensitive,
+with optional whole-word boundaries, and covers post text, content warnings,
+poll options and media descriptions. An expired rule stops matching without a
+cleanup job.
 
 ## Scheduled statuses
 
@@ -111,7 +131,7 @@ keeps the row as `failed` with a reason and is visible to the owner.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all forty-eight routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all fifty-three routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must

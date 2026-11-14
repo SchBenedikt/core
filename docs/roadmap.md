@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 100 routes, 48 of them under the Mastodon prefix |
+| HTTP contract | 110 routes, 53 of them under the Mastodon prefix |
 | Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 152 PHP test files (1424 tests, 7206 assertions) and 9 UI test files (69 tests) |
+| Tests | 155 PHP test files (1460 tests, 7413 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -89,6 +89,11 @@ the host that serves it. See
   prefix; the remote reaction routes live under `/api/v1`. See
   [Mastodon-compatible API](guides/mastodon-api.md) and the
   [route reference](reference/routes.md#remote-reactions).
+- **Reader-side keyword filters** — private `hide`/`warn` rules with contexts,
+  whole-word matching, expiry and Unicode-safe matching across post text,
+  content warnings, poll options and media descriptions; warnings redact until
+  the reader explicitly asks for the content. CRUD is exposed under both the
+  neutral and the Mastodon v2 filter routes.
 - **Follow graph and federation** — incoming and outgoing edges, individual
   and shared inboxes, batched delivery, optional follow policy, local-to-local
   follows, signed `Follow`/`Undo`, inbound `Follow`/`Undo`/`Create`/`Delete`/
@@ -232,8 +237,8 @@ server or a product decision.
 
 ## Later
 
-- **Locally implementable Mastodon remainder:** filters, follow requests/locked
-  accounts and the wider account-management surface. These are product decisions, not
+- **Locally implementable Mastodon remainder:** follow requests/locked accounts
+  and the wider account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
   CAR/MST repository access.

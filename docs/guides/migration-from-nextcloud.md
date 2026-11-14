@@ -305,7 +305,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `scheduled_posts` | core | supported | — | `social_scheduled_post` with the reserved post id and the publisher job |
 | `stories` | core | gap | — | story model and expiry (#18) |
 | `moderation` | core | gap | — | reports, domain policy, review queue (#11) |
-| `keyword_filters` | core | gap | — | filter rules and contexts (#21) |
+| `keyword_filters` | core | supported | — | `social_filter` rules with contexts, action and keyword list |
 | `direct_messages` | core | gap | — | conversations and delivery (#19) |
 | `search_index` | core | partial | — | local post search; remote index #13 |
 | `atproto_publications` | core | partial | — | publication rows; inbound relay #22 |

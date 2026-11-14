@@ -343,6 +343,43 @@ final class MediaService implements AttachmentPresenter
 	}
 
 	/**
+	 * Alternative texts of several posts, keyed by post id.
+	 *
+	 * A keyword filter has to see the description as well as the body; doing
+	 * it here reuses the one batched attachment query the presenter already
+	 * needs instead of loading each attachment separately.
+	 *
+	 * @param list<Post> $posts
+	 *
+	 * @return array<string, list<string>>
+	 */
+	public function altTextsForPosts(array $posts): array
+	{
+		$ids = [];
+		foreach ($posts as $post) {
+			foreach ($post->attachmentIds as $attachmentId) {
+				$ids[$attachmentId] = true;
+			}
+		}
+
+		$attachments = $this->forIds(array_keys($ids));
+		$result = [];
+		foreach ($posts as $post) {
+			$texts = [];
+			foreach ($post->attachmentIds as $attachmentId) {
+				$altText = $attachments[$attachmentId]->altText ?? null;
+				if ($altText !== null && $altText !== '') {
+					$texts[] = $altText;
+				}
+			}
+
+			$result[$post->id] = $texts;
+		}
+
+		return $result;
+	}
+
+	/**
 	 * @param list<Post> $posts
 	 *
 	 * @return list<array<string, mixed>>

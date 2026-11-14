@@ -47,6 +47,7 @@ use AlohaSocial\Core\Domain\Timeline\FollowedHashtagSchema;
 use AlohaSocial\Core\Domain\Post\BookmarkSchema;
 use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Interaction\ReactionSchema;
+use AlohaSocial\Core\Domain\Filter\FilterSchema;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostSchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PollSchema;
@@ -111,7 +112,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(100, $app->routes->routes());
+		self::assertCount(110, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1148,6 +1149,7 @@ final class ApplicationHostTest extends TestCase
 		FavouriteSchema::create($database);
 		ReactionSchema::create($database);
 		ScheduledPostSchema::create($database);
+		FilterSchema::create($database);
 		NotificationSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);

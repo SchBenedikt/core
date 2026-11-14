@@ -9,40 +9,47 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Api;
 
+use AlohaSocial\Core\Domain\Filter\FilterContext;
 use AlohaSocial\Core\Domain\Post\Hashtags;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Service\FilterService;
 use AlohaSocial\Core\Service\InvalidCursorException;
 use AlohaSocial\Core\Service\InvalidHashtagException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
 
 /**
- * `GET /api/v1/timelines/tag/{tag}?limit=&before=`
+ * `GET /api/v1/timelines/tag/{tag}?limit=&before=&include_filtered=`
  *
  * A public tag timeline. Followers-only and direct posts are never included,
  * so the route needs no viewer and cannot leak a restricted post through a
- * guessed tag.
+ * guessed tag. A signed-in reader's `public` rules apply before projection.
  */
 final class HashtagTimelineHandler implements Handler
 {
+	private readonly ?PostFilterPresenter $presenter;
+
 	public function __construct(
 		private readonly TimelineService $timelines,
 		private readonly ?MediaService $media = null,
+		?FilterService $filters = null,
 	) {
+		$this->presenter = $filters === null ? null : new PostFilterPresenter($filters, $media);
 	}
 
 	public function handle(Request $request): Response
 	{
 		$rawTag = (string) $request->attribute('tag', '');
+		$limit = $request->queryInt('limit', TimelineService::DEFAULT_LIMIT, 1, TimelineService::MAX_LIMIT);
 
 		try {
 			$posts = $this->timelines->tag(
 				$rawTag,
-				$request->queryInt('limit', TimelineService::DEFAULT_LIMIT, 1, TimelineService::MAX_LIMIT),
+				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
 			);
 		} catch (InvalidHashtagException $exception) {
@@ -51,11 +58,22 @@ final class HashtagTimelineHandler implements Handler
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());
 		}
 
+		if ($this->presenter === null || $request->userId === null) {
+			$presented = $this->media === null
+				? array_map(static fn (Post $post): array => $post->toArray(), $posts)
+				: $this->media->presentPosts($posts);
+		} else {
+			$presented = $this->presenter->present(
+				$request->userId,
+				FilterContext::Public,
+				$posts,
+				FilterRequestParser::includeFiltered($request),
+			);
+		}
+
 		return Response::json([
 			'tag' => Hashtags::normalize($rawTag) ?? '',
-			'posts' => $this->media === null
-				? array_map(static fn (Post $post): array => $post->toArray(), $posts)
-				: $this->media->presentPosts($posts),
+			'posts' => array_slice($presented, 0, $limit),
 		]);
 	}
 }

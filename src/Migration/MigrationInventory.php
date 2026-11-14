@@ -301,10 +301,9 @@ final class MigrationInventory
 				'keyword_filters',
 				'per-reader keyword filters',
 				self::OWNER_CORE,
-				'open: filter rules and context-specific behaviour (#21)',
-				self::STATUS_GAP,
-				'inventory-only',
-				gapIssue: '#21',
+				'social_filter rows with owner, action, contexts and keyword list',
+				self::STATUS_SUPPORTED,
+				'v2',
 			),
 			self::entry(
 				'direct_messages',

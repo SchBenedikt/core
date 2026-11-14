@@ -15,10 +15,15 @@ use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
+use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteFilterHandler;
+use AlohaSocial\Core\Api\FiltersHandler;
 use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
 use AlohaSocial\Core\Api\ScheduledPostsHandler;
+use AlohaSocial\Core\Api\ShowFilterHandler;
 use AlohaSocial\Core\Api\ShowScheduledPostHandler;
+use AlohaSocial\Core\Api\UpdateFilterHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
@@ -48,11 +53,16 @@ use AlohaSocial\Core\Api\Mastodon\MastodonAddListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarksHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonClearNotificationsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateFilterHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteFilterHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFiltersHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonShowFilterHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateFilterHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateScheduledStatusHandler;
@@ -136,6 +146,9 @@ use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
+use AlohaSocial\Core\Domain\Filter\FilterRuleRepository;
+use AlohaSocial\Core\Domain\Filter\InMemoryFilterRuleRepository;
+use AlohaSocial\Core\Domain\Filter\PdoFilterRuleRepository;
 use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
 use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
@@ -265,6 +278,8 @@ use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
+use AlohaSocial\Core\Service\FilterService;
+use AlohaSocial\Core\Service\Mastodon\MastodonFilterPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonScheduledStatusPresenter;
 use AlohaSocial\Core\Service\ScheduledPostService;
 use AlohaSocial\Core\Service\Scheduling\ScheduledPostPublishHandler;
@@ -355,6 +370,7 @@ final readonly class Application
 		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ScheduledPostRepository $scheduledPostRepository = null,
+		?FilterRuleRepository $filterRuleRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -390,6 +406,7 @@ final readonly class Application
 		$postRevisions ??= new InMemoryPostRevisionRepository();
 		$pendingRemoteUpdates ??= new InMemoryPendingRemoteUpdateStore();
 		$scheduledPostRepository ??= new InMemoryScheduledPostRepository();
+		$filterRuleRepository ??= new InMemoryFilterRuleRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -434,6 +451,7 @@ final readonly class Application
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
 			scheduledPostRepository: $scheduledPostRepository,
+			filterRuleRepository: $filterRuleRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -546,6 +564,7 @@ final readonly class Application
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
+			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -615,6 +634,7 @@ final readonly class Application
 		?TransactionRunner $transactions = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ScheduledPostRepository $scheduledPostRepository = null,
+		?FilterRuleRepository $filterRuleRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -786,6 +806,12 @@ final readonly class Application
 			$config,
 		);
 		$scheduledPresenter = new MastodonScheduledStatusPresenter();
+		$filterService = new FilterService(
+			$filterRuleRepository ?? new InMemoryFilterRuleRepository(),
+			$clock,
+			$ids,
+		);
+		$filterPresenter = new MastodonFilterPresenter();
 		$boostService = new BoostService(
 			$postService,
 			$boostRepository,
@@ -933,7 +959,12 @@ final readonly class Application
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
-			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService, $reactionService))
+			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService, $reactionService, $filterService))
+			->with(FiltersHandler::class, static fn (): FiltersHandler => new FiltersHandler($filterService))
+			->with(CreateFilterHandler::class, static fn (): CreateFilterHandler => new CreateFilterHandler($filterService))
+			->with(ShowFilterHandler::class, static fn (): ShowFilterHandler => new ShowFilterHandler($filterService))
+			->with(UpdateFilterHandler::class, static fn (): UpdateFilterHandler => new UpdateFilterHandler($filterService))
+			->with(DeleteFilterHandler::class, static fn (): DeleteFilterHandler => new DeleteFilterHandler($filterService))
 			->with(ShowRemotePostHandler::class, static fn (): ShowRemotePostHandler => new ShowRemotePostHandler($reactionService))
 			->with(LikeRemotePostHandler::class, static fn (): LikeRemotePostHandler => new LikeRemotePostHandler($reactionService))
 			->with(UnlikeRemotePostHandler::class, static fn (): UnlikeRemotePostHandler => new UnlikeRemotePostHandler($reactionService))
@@ -953,13 +984,13 @@ final readonly class Application
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
 			->with(BoostPostHandler::class, static fn (): BoostPostHandler => new BoostPostHandler($boostService))
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
-			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService))
-			->with(HashtagTimelineHandler::class, static fn (): HashtagTimelineHandler => new HashtagTimelineHandler($timelines, $mediaService))
-			->with(FollowedHashtagTimelineHandler::class, static fn (): FollowedHashtagTimelineHandler => new FollowedHashtagTimelineHandler($followedHashtagService, $timelines, $mediaService))
+			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService, $filterService))
+			->with(HashtagTimelineHandler::class, static fn (): HashtagTimelineHandler => new HashtagTimelineHandler($timelines, $mediaService, $filterService))
+			->with(FollowedHashtagTimelineHandler::class, static fn (): FollowedHashtagTimelineHandler => new FollowedHashtagTimelineHandler($followedHashtagService, $timelines, $mediaService, $filterService))
 			->with(FollowedTagsHandler::class, static fn (): FollowedTagsHandler => new FollowedTagsHandler($followedHashtagService))
 			->with(FollowHashtagHandler::class, static fn (): FollowHashtagHandler => new FollowHashtagHandler($followedHashtagService))
 			->with(UnfollowHashtagHandler::class, static fn (): UnfollowHashtagHandler => new UnfollowHashtagHandler($followedHashtagService))
-			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService))
+			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService, $filterService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(BlocksHandler::class, static fn (): BlocksHandler => new BlocksHandler($blockService))
@@ -971,7 +1002,7 @@ final readonly class Application
 			->with(ShowLocalAccountHandler::class, static fn (): ShowLocalAccountHandler => new ShowLocalAccountHandler($localAccounts))
 			->with(FollowLocalAccountHandler::class, static fn (): FollowLocalAccountHandler => new FollowLocalAccountHandler($localAccounts))
 			->with(UnfollowLocalAccountHandler::class, static fn (): UnfollowLocalAccountHandler => new UnfollowLocalAccountHandler($localAccounts))
-			->with(NotificationsHandler::class, static fn (): NotificationsHandler => new NotificationsHandler($localAccounts))
+			->with(NotificationsHandler::class, static fn (): NotificationsHandler => new NotificationsHandler($localAccounts, $filterService, $posts))
 			->with(NotificationUnreadCountHandler::class, static fn (): NotificationUnreadCountHandler => new NotificationUnreadCountHandler($localAccounts))
 			->with(DismissNotificationHandler::class, static fn (): DismissNotificationHandler => new DismissNotificationHandler($localAccounts))
 			->with(ClearNotificationsHandler::class, static fn (): ClearNotificationsHandler => new ClearNotificationsHandler($localAccounts))
@@ -997,6 +1028,11 @@ final readonly class Application
 			->with(MastodonSearchHandler::class, static fn (): MastodonSearchHandler => new MastodonSearchHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService, $scheduledPostService, $scheduledPresenter))
 			->with(MastodonScheduledStatusesHandler::class, static fn (): MastodonScheduledStatusesHandler => new MastodonScheduledStatusesHandler($scheduledPostService, $scheduledPresenter))
+			->with(MastodonFiltersHandler::class, static fn (): MastodonFiltersHandler => new MastodonFiltersHandler($filterService, $filterPresenter, $clock))
+			->with(MastodonCreateFilterHandler::class, static fn (): MastodonCreateFilterHandler => new MastodonCreateFilterHandler($filterService, $filterPresenter, $clock))
+			->with(MastodonShowFilterHandler::class, static fn (): MastodonShowFilterHandler => new MastodonShowFilterHandler($filterService, $filterPresenter, $clock))
+			->with(MastodonUpdateFilterHandler::class, static fn (): MastodonUpdateFilterHandler => new MastodonUpdateFilterHandler($filterService, $filterPresenter, $clock))
+			->with(MastodonDeleteFilterHandler::class, static fn (): MastodonDeleteFilterHandler => new MastodonDeleteFilterHandler($filterService, $filterPresenter, $clock))
 			->with(MastodonScheduledStatusHandler::class, static fn (): MastodonScheduledStatusHandler => new MastodonScheduledStatusHandler($scheduledPostService, $scheduledPresenter))
 			->with(MastodonUpdateScheduledStatusHandler::class, static fn (): MastodonUpdateScheduledStatusHandler => new MastodonUpdateScheduledStatusHandler($scheduledPostService, $scheduledPresenter))
 			->with(MastodonDeleteScheduledStatusHandler::class, static fn (): MastodonDeleteScheduledStatusHandler => new MastodonDeleteScheduledStatusHandler($scheduledPostService, $scheduledPresenter))

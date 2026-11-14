@@ -15,10 +15,15 @@ use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
+use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteFilterHandler;
+use AlohaSocial\Core\Api\FiltersHandler;
 use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
 use AlohaSocial\Core\Api\ScheduledPostsHandler;
+use AlohaSocial\Core\Api\ShowFilterHandler;
 use AlohaSocial\Core\Api\ShowScheduledPostHandler;
+use AlohaSocial\Core\Api\UpdateFilterHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
@@ -71,7 +76,12 @@ use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonCreateFilterHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteFilterHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFiltersHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonShowFilterHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateFilterHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateScheduledStatusHandler;
@@ -294,6 +304,51 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				summary: 'Cancel a pending scheduled post without publishing it.',
+			),
+			new Route(
+				name: 'filters.list',
+				method: 'GET',
+				path: $base . '/filters',
+				handler: FiltersHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'List the signed-in reader\'s keyword filters, newest first.',
+			),
+			new Route(
+				name: 'filters.create',
+				method: 'POST',
+				path: $base . '/filters',
+				handler: CreateFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Create a private keyword filter with hide or warn behaviour and optional expiry.',
+			),
+			new Route(
+				name: 'filters.get',
+				method: 'GET',
+				path: $base . '/filters/{id}',
+				handler: ShowFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read one of the signed-in reader\'s keyword filters.',
+			),
+			new Route(
+				name: 'filters.update',
+				method: 'PATCH',
+				path: $base . '/filters/{id}',
+				handler: UpdateFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Replace a keyword filter\'s name, action, contexts, keywords and expiry.',
+			),
+			new Route(
+				name: 'filters.delete',
+				method: 'DELETE',
+				path: $base . '/filters/{id}',
+				handler: DeleteFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Delete one of the signed-in reader\'s keyword filters.',
 			),
 			new Route(
 				name: 'posts.boost',
@@ -711,6 +766,56 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Cancel a scheduled status without publishing it.',
+			),
+			new Route(
+				name: 'mastodon.filters.list',
+				method: 'GET',
+				path: $mastodon . '/filters',
+				handler: MastodonFiltersHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:filters'],
+				summary: 'Keyword filters of the signed-in reader in the Mastodon v2 shape.',
+			),
+			new Route(
+				name: 'mastodon.filters.create',
+				method: 'POST',
+				path: $mastodon . '/filters',
+				handler: MastodonCreateFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:filters'],
+				summary: 'Create a keyword filter through the Mastodon v2 API.',
+			),
+			new Route(
+				name: 'mastodon.filters.show',
+				method: 'GET',
+				path: $mastodon . '/filters/{id}',
+				handler: MastodonShowFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				requiredScopes: ['read:filters'],
+				summary: 'Read one keyword filter in the Mastodon v2 shape.',
+			),
+			new Route(
+				name: 'mastodon.filters.update',
+				method: 'PUT',
+				path: $mastodon . '/filters/{id}',
+				handler: MastodonUpdateFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:filters'],
+				summary: 'Replace a keyword filter through the Mastodon v2 API.',
+			),
+			new Route(
+				name: 'mastodon.filters.delete',
+				method: 'DELETE',
+				path: $mastodon . '/filters/{id}',
+				handler: MastodonDeleteFilterHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:filters'],
+				summary: 'Delete a keyword filter through the Mastodon v2 API.',
 			),
 			new Route(
 				name: 'mastodon.statuses.reblog',
