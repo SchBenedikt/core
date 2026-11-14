@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service\Atproto;
 
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
@@ -23,7 +24,12 @@ use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoFacetException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoPostRecord;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyRef;
 use AlohaSocial\Core\Protocol\Atproto\Tid;
 use AlohaSocial\Core\Support\Time;
 
@@ -50,6 +56,8 @@ final class AtprotoPublishService
 		private readonly JobQueue $queue,
 		private readonly Clock $clock,
 		private readonly ?AtprotoDeleter $deleter = null,
+		private readonly ?AtprotoFacets $facets = null,
+		private readonly ?AtprotoReplyBuilder $replies = null,
 	) {
 	}
 
@@ -210,7 +218,7 @@ final class AtprotoPublishService
 		$uri = $this->publisher?->publish(
 			$account,
 			$rkey,
-			AtprotoPostRecord::fromPost($post),
+			$this->record($post, $account),
 		);
 
 		if ($uri === null) {
@@ -252,6 +260,56 @@ final class AtprotoPublishService
 		return $this->accounts !== null && $this->deleter !== null;
 	}
 
+	/**
+	 * Builds the record for one post: its reply reference and the facets that
+	 * the text produces. Both need the PDS, so a post that cannot be resolved
+	 * is refused instead of published with a partial record.
+	 *
+	 * @return array<string, mixed>
+	 *
+	 * @throws AtprotoPostRejectedException
+	 */
+	private function record(Post $post, AtprotoAccount $account): array
+	{
+		$reply = $this->replyReference($post, $account);
+		$facets = [];
+
+		if ($this->facets !== null) {
+			try {
+				$facets = $this->facets->build($post->content, $account->pdsUrl);
+			} catch (AtprotoFacetException $exception) {
+				throw new AtprotoPostRejectedException($exception->reason);
+			}
+		}
+
+		return AtprotoPostRecord::fromPost($post, $reply, $facets);
+	}
+
+	/**
+	 * @throws AtprotoPostRejectedException
+	 */
+	private function replyReference(Post $post, AtprotoAccount $account): ?AtprotoReplyRef
+	{
+		if ($post->inReplyToId === null) {
+			return null;
+		}
+
+		$parent = $this->publications->findForPost($post->authorId, $post->inReplyToId);
+		if ($parent === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED);
+		}
+
+		if ($this->replies === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::REPLIES_UNSUPPORTED);
+		}
+
+		try {
+			return $this->replies->build($account->pdsUrl, $parent->uri);
+		} catch (AtprotoReplyException $exception) {
+			throw new AtprotoPostRejectedException($exception->reason);
+		}
+	}
+
 	private function rejectionReason(Post $post): ?string
 	{
 		if ($post->visibility !== Visibility::Public) {
@@ -264,6 +322,18 @@ final class AtprotoPublishService
 
 		if (!AtprotoPostRecord::acceptsText($post->content)) {
 			return AtprotoPostRejectedException::TEXT_TOO_LONG;
+		}
+
+		if ($post->inReplyToId !== null) {
+			if ($this->replies === null) {
+				return AtprotoPostRejectedException::REPLIES_UNSUPPORTED;
+			}
+
+			// Only a parent that was itself published to AT Protocol has a
+			// record to reply to; a local-only parent has no AT URI.
+			if ($this->publications->findForPost($post->authorId, $post->inReplyToId) === null) {
+				return AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED;
+			}
 		}
 
 		return null;

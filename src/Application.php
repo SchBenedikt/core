@@ -194,8 +194,12 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
 use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoIdentityResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
@@ -592,6 +596,8 @@ final readonly class Application
 				remotePosts: $remotePosts,
 			);
 
+		// Facets and reply references need the PDS of the publishing account;
+		// both adapters reuse the host's HTTP client instead of adding one.
 		$atprotoService = new AtprotoPublishService(
 			$config,
 			$posts,
@@ -601,6 +607,8 @@ final readonly class Application
 			$queue,
 			$clock,
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
+			$httpClient === null ? null : new AtprotoFacets(new XrpcAtprotoIdentityResolver($httpClient)),
+			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 		);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$blockService = new BlockService(

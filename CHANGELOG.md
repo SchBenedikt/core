@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Complete AT Protocol post records. `AtprotoFacets` derives `#tag`, `#mention`
+  and `#link` facets with UTF-8 **byte** offsets, drops overlapping candidates
+  and resolves mention handles to DIDs through
+  `com.atproto.identity.resolveHandle` (`AtprotoIdentityResolver`); an
+  unresolvable handle refuses the post instead of writing a mention without a
+  DID. `AtprotoReplyBuilder` builds `reply.root`/`reply.parent` from a parent AT
+  URI, inherits the thread root of a parent that is itself a reply and looks up
+  a missing CID with `com.atproto.repo.getRecord` (`AtprotoRecordResolver`).
+  `AtprotoPostRecord::fromText()` assembles the record from text, an optional
+  reply reference and facets. Publishing a reply now needs a parent that was
+  itself published from this instance; the new refusal reasons are
+  `reply_parent_not_published`, `replies_unsupported`, `reply_parent_unresolvable`,
+  `reply_root_unresolvable` and `mention_unresolved`.
 - DPoP-bound PDS requests. `XrpcAtprotoPublisher` accepts an optional
   `DpopResourceProofProvider` (`Es256DpopProofProvider` implements it with the
   RFC 9449 `ath` binding) and then sends `Authorization: DPoP` with a fresh

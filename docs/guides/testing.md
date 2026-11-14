@@ -36,6 +36,10 @@ that prints or skips is a failure.
 | `tests/Domain/AtprotoOAuthSessionTest.php` | DID, token endpoint, client id, rotating tokens, mandatory `atproto` scope and the refresh leeway |
 | `tests/Domain/InMemoryAtprotoSessionStoreTest.php` | the `AtprotoSessionStoreTestCase` contract: round trip, replacement, per-user isolation and empty lookup |
 | `tests/Protocol/XrpcAtprotoSessionRefresherTest.php` | exact form-encoded token request, refresh-token rotation, DPoP nonce retry, terminal `invalid_grant`, retryable server/transport failures, missing nonce, wrong `sub`/scope and malformed responses |
+| `tests/Protocol/AtprotoFacetsTest.php` | byte offsets with umlauts and emoji, tag/mention/link boundaries, trailing punctuation, overlap suppression, handle resolution success and refusal, a mention without a resolver and facet ordering |
+| `tests/Protocol/AtprotoReplyBuilderTest.php` | parent as root, inherited root without a second fetch, CID lookup for a root without one, unreadable parent, unreadable root and a non-`at://` inherited root |
+| `tests/Protocol/XrpcAtprotoIdentityResolverTest.php` | the exact `resolveHandle` GET, a resolved DID, unknown handle, transport failure, malformed DID and an invalid handle that is never sent |
+| `tests/Protocol/XrpcAtprotoRecordResolverTest.php` | the exact `getRecord` GET with uri and cid, a missing record, a record without a CID, transport failure and a malformed body |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, the `ath`-bound resource proof, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
 | `tests/Domain/PollVoteRepositoryTestCase.php` | Shared poll-vote contract for the in-memory and PDO stores: viewer scoping, duplicate votes, multiple choices, atomic poll/option counters and missing polls/options. |

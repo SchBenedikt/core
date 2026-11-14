@@ -780,6 +780,9 @@ AT Protocol has four domain-level host ports instead of new platform methods:
 one record, `AtprotoDeleter` removes it again and `AtprotoSessionStore` holds
 the host-owned OAuth session. `XrpcAtprotoPublisher` is the default adapter for
 both record transports over `HttpClient`; fakes cover the network in tests.
+`AtprotoFacets` and `AtprotoReplyBuilder` turn text, mentions and a parent URI
+into the record's `facets` and `reply` objects through `AtprotoIdentityResolver`
+and `AtprotoRecordResolver`, over the same client.
 Account linking UI/callback, credential storage and PDS selection remain
 host-owned, so remote delete can only act on an account the host resolves. The
 protocol side of linking is local: `AtprotoOAuthMetadataResolver` fetches and

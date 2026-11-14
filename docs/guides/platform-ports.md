@@ -97,6 +97,10 @@ AT Protocol adds four domain-level ports rather than new `Platform` methods:
 local user (or `null`), `Domain\Atproto\AtprotoPublisher` writes one record to
 a PDS, `Domain\Atproto\AtprotoDeleter` removes a record this core published, and
 `Domain\Atproto\AtprotoSessionStore` persists the host-owned OAuth session.
+Two protocol-level resolvers sit beside them: `Protocol\Atproto\AtprotoIdentityResolver`
+turns a mention handle into a DID and `Protocol\Atproto\AtprotoRecordResolver`
+reads a record with its CID for a reply reference. Both are optional, reuse
+`HttpClient`, and are wired automatically by the standard assemblies.
 `XrpcAtprotoPublisher` is the production record adapter over the existing
 `HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
 OAuth refresh collaborators. `AtprotoOAuthMetadataResolver` and

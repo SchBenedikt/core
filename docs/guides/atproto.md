@@ -72,10 +72,10 @@ must provide.
 Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
-truncated. There is no partial record, blob upload, image embed, edit,
-thread/reply, facet/link detection, AppView read, firehose consumer or CAR/MST
-repository implementation in this slice. Remote delete is implemented for
-records the core itself published; deleting arbitrary PDS records is not.
+truncated. Facets and reply references are implemented (see below); a blob
+upload, image embed, edit, AppView read, firehose consumer or CAR/MST
+repository is not. Remote delete is implemented for records the core itself
+published; deleting arbitrary PDS records is not.
 
 OAuth session refresh and the authorization-code/PAR/revocation protocol are
 implemented. The browser redirect, the short-lived flow store keyed by state,
@@ -87,6 +87,42 @@ host-owned identity boundary in [ADR 0006](../adr/0006-host-owned-accounts.md).
 A host
 that has no resolver still serves the publish route, but it answers `503
 atproto_not_configured`.
+
+## Facets and replies
+
+`Protocol\Atproto\AtprotoFacets` derives the record's `facets` from the post
+text: `app.bsky.richtext.facet#tag`, `#mention` and `#link`. Offsets are
+**byte** offsets in the UTF-8 text because the lexicon indexes bytes; a
+character index would point inside an umlaut or an emoji. Links are detected
+first, then mentions, then tags, and a candidate that overlaps an accepted span
+is dropped, so a `#tag` inside a URL path cannot become a second facet. Links
+lose trailing sentence punctuation and closing brackets, tags need a word
+boundary and stop at punctuation, and an `@handle` only counts with a dot and
+outside an email address or a URL.
+
+A mention needs its DID. `AtprotoIdentityResolver` is the port;
+`XrpcAtprotoIdentityResolver` calls `com.atproto.identity.resolveHandle` on the
+publishing account's PDS. A handle that does not resolve — or an assembly
+without a resolver — refuses the post with the stable reason
+`mention_unresolved`: the core never writes a mention facet without a DID. The
+automatic hook skips such a post and logs it; the explicit route answers `422`.
+
+`Protocol\Atproto\AtprotoReplyBuilder` builds the `reply` object from the
+parent AT URI. The parent is read with `com.atproto.repo.getRecord`
+(`XrpcAtprotoRecordResolver`) because its `cid` cannot be derived from the URI.
+A parent that is itself a reply carries its own `root`; that root is inherited,
+so a deep thread keeps one root instead of re-rooting at the direct parent.
+Only a root reference without a usable `cid` is looked up separately. An
+unreadable parent or root refuses the post with `reply_parent_unresolvable` or
+`reply_root_unresolvable`. The service only replies to a parent that was itself
+published from this instance (`social_atproto_publication`): a local-only parent
+is `reply_parent_not_published`, and an assembly without a reply builder is
+`replies_unsupported`.
+
+`AtprotoPostRecord::fromText($text, $publishedAt, $contentWarning, $reply,
+$facets)` and `fromPost($post, $reply, $facets)` assemble the record that
+`AtprotoPublishService` hands to the publisher, so a caller supplies the text,
+an optional parent URI and the facet inputs rather than a pre-built payload.
 
 ## Configuration
 
@@ -243,7 +279,8 @@ retryable; OAuth refusals expose a safe `errorCode` and are retryable only for
 1. `PostService::create()` stores the post, then calls
    `AtprotoPublishService::schedule()`. Scheduling is a no-op when the feature
    is disabled, the assembly is incomplete, the post is not public, it has
-   attachments, its text is too long, or the author has no linked account.
+   attachments, its text is too long, it replies to a parent that was never
+   published to AT Protocol, or the author has no linked account.
 2. When eligible, a durable `atproto.publish` job with `{user_id, post_id}` is
    queued after the post row exists. `PostService` never performs the network
    write inline.
@@ -354,7 +391,12 @@ non-public posts and long text plus disabled/not-configured deletion;
 `XrpcAtprotoPublisherTest` checks the exact XRPC requests, the DPoP resource
 request with its `ath` binding, the single nonce retry and malformed/refused
 responses; `TidTest` and the repository contract cover the protocol and
-persistence primitives. `AtprotoOAuthSessionTest` covers session validation and
+persistence primitives. `AtprotoFacetsTest` covers byte offsets with umlauts and
+emoji, the tag/mention/link boundaries, overlap suppression and a handle that
+resolves or is refused; `AtprotoReplyBuilderTest` covers root inheritance, the
+CID lookup, an unreadable parent and an unreadable root;
+`XrpcAtprotoIdentityResolverTest` and `XrpcAtprotoRecordResolverTest` cover the
+XRPC adapters and their failure answers. `AtprotoOAuthSessionTest` covers session validation and
 the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
 rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
 `Es256DpopProofProviderTest` verifies the JWS signature, the RFC 7638
@@ -374,8 +416,8 @@ The full AT Protocol stack is still host/app work:
   authorization-server discovery are implemented locally);
 - a full repository client (CAR/MST, arbitrary record listing/update),
   AppView reads, firehose consumption and blob upload;
-- media embeds and image processing for AT Protocol;
-- reply/thread mapping, facets, mentions and link cards;
+- media embeds, blob uploads and image processing for AT Protocol;
+- link cards and richer mention/facet targets;
 - migrating the existing AT Protocol implementation out of the Nextcloud app.
 
 Remote delete for records published by this core is implemented locally, and
@@ -384,7 +426,7 @@ are implemented locally. Deleting records created outside this core, the
 account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
-The remaining protocol follow-ups after account linking — facets, mentions,
-link cards, media embeds and reply/thread mapping — are listed as Later in the
-[roadmap](../roadmap.md). The rest is tracked there as the compatibility
+The remaining protocol follow-ups after this publishing slice — link cards,
+media embeds and blob uploads, plus the AppView/firehose side — are listed as
+Later in the [roadmap](../roadmap.md). The rest is tracked there as the compatibility
 remainder (M6), not as part of this publishing foundation.

@@ -95,8 +95,9 @@ the host that serves it. See
   immediately and a failed completion is logged rather than retried. See
   [jobs and delivery](guides/jobs-and-delivery.md).
 - **AT Protocol** — public text-only publishing through bearer or DPoP-bound
-  XRPC `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
-  a read of the stored publication state, remote delete, OAuth session refresh
+  XRPC `putRecord`/`deleteRecord`, deterministic TIDs, byte-offset tag/mention/link
+  facets, reply references with a `getRecord` CID lookup, idempotent publication
+  rows, a read of the stored publication state, remote delete, OAuth session refresh
   and the authorization-code/PAR/revocation protocol client. Account linking
   UI, credential storage and PDS selection stay with the host. See
   [AT Protocol publishing](guides/atproto.md) and
@@ -206,8 +207,8 @@ server or a product decision.
   scheduled posts, follow requests/locked accounts and the wider
   account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
-- **AT Protocol after account linking:** facets, mentions, link cards, media
-  embeds, reply/thread mapping and the full repository/AppView client.
+- **AT Protocol after this publishing slice:** link cards, media embeds, blob
+  uploads and the full repository/AppView client.
 - **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
 - **Operations:** backup/restore and monitoring for the standalone host,
   plus an S3-compatible blob store whose layout can be swept independently of
@@ -240,7 +241,7 @@ local gaps. The detailed lists live in the guides.
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
   store, credential storage and PDS selection; a full repository/AppView client
-  (CAR/MST); blob uploads; the firehose; facets and media embeds; migrating the
+  (CAR/MST); blob uploads; the firehose; media embeds and link cards; migrating the
   existing Nextcloud implementation. See
   [AT Protocol publishing](guides/atproto.md#remaining-external-work).
 - **Hosts:** login, sessions, account creation/reset, CSRF, bearer-token

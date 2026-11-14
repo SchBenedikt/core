@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Protocol\Atproto;
 
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 use InvalidArgumentException;
 
 /**
@@ -30,23 +31,52 @@ final class AtprotoPostRecord
 	public const MAX_TEXT_BYTES = 3000;
 
 	/**
+	 * @param list<array<string, mixed>> $facets
+	 *
 	 * @return array<string, mixed>
 	 */
-	public static function fromPost(Post $post): array
+	public static function fromPost(Post $post, ?AtprotoReplyRef $reply = null, array $facets = []): array
 	{
+		return self::fromText($post->content, $post->publishedAt, $post->contentWarning, $reply, $facets);
+	}
+
+	/**
+	 * Builds the record from what a caller actually has: the text, an optional
+	 * reply reference and the facets derived from the text.
+	 *
+	 * @param list<array<string, mixed>> $facets record-ready facet objects; their
+	 *                                           offsets are byte offsets in `$text`
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function fromText(
+		string $text,
+		DateTimeImmutable $publishedAt,
+		?string $contentWarning = null,
+		?AtprotoReplyRef $reply = null,
+		array $facets = [],
+	): array {
 		$record = [
 			'$type' => self::COLLECTION,
-			'text' => $post->content,
-			'createdAt' => Time::format($post->publishedAt),
+			'text' => $text,
+			'createdAt' => Time::format($publishedAt),
 		];
 
-		if ($post->contentWarning !== null) {
+		if ($contentWarning !== null) {
 			$record['labels'] = [
 				'$type' => 'com.atproto.label.defs#selfLabels',
 				'values' => [
 					['val' => 'content-warning'],
 				],
 			];
+		}
+
+		if ($reply !== null) {
+			$record['reply'] = $reply->toArray();
+		}
+
+		if ($facets !== []) {
+			$record['facets'] = $facets;
 		}
 
 		return $record;
