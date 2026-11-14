@@ -7,6 +7,20 @@ this page says what exists, what is next and which repository owns it. If a
 guide and this page disagree, the route manifest, the schemas and the tests
 win — and the disagreement is a documentation bug.
 
+```mermaid
+timeline
+    title Aloha Social core
+    2026-11-11 : 0.1.0 foundation
+    2026-11-13 : 0.2.0 local social slice
+    2026-11-13 : 0.3.0 neutral interactions
+    2026-11-13 : 0.4.0 hashtag timelines
+    2026-11-13 : 0.5.0 followed hashtags
+    2026-11-13 : 0.6.0 retention cleanup
+    2026-11-13 : 0.7.0 transactions and job errors
+    2026-11-14 : AT Protocol media, replies, facets, likes/reposts, profile, AppView read
+    next : standalone server
+```
+
 ## Goal
 
 `alohasocial/core` is the host-neutral core of Aloha Social: domain, services,

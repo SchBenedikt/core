@@ -44,9 +44,11 @@ flowchart LR
 | Reply | `in_reply_to` | strong-ref reply | core |
 | Profile | actor document | `app.bsky.actor.profile` | core |
 
-The AT Protocol side is complete as a library: records, facets, replies,
-media, likes, reposts, profile and an AppView timeline read. What is not here
-is the host that drives it — linking, credentials, PDS choice and the UI.
+The AT Protocol write/read library is complete for everything except the
+follow record: posts, facets, replies, media, likes, reposts, profile and an
+AppView timeline read. What is not here is the host that drives it — linking,
+credentials, PDS choice and the UI; the
+[server blueprint](docs/guides/server-architecture.md) covers that part.
 
 "Both" means one local post can be delivered to ActivityPub followers and
 mirrored to the author's PDS at the same time, with independent failures. The
@@ -179,22 +181,9 @@ and services. See [architecture](docs/architecture.md) and
 
 ## Status and history
 
-```mermaid
-timeline
-    title Aloha Social core
-    2026-11-11 : 0.1.0 foundation
-    2026-11-13 : 0.2.0 local social slice
-    2026-11-13 : 0.3.0 neutral interactions
-    2026-11-13 : 0.4.0 hashtag timelines
-    2026-11-13 : 0.5.0 followed hashtags
-    2026-11-13 : 0.6.0 retention cleanup
-    2026-11-13 : 0.7.0 transactions and job errors
-    next : Nextcloud cutover
-         : standalone host
-```
-
-The canonical status, milestone table and open decisions are in the
-[roadmap](docs/roadmap.md). Release notes are in the [changelog](CHANGELOG.md).
+Release history, milestones and the next steps are in the
+[roadmap](docs/roadmap.md) (with its release timeline); release notes are in
+the [changelog](CHANGELOG.md).
 
 ## Requirements
 
