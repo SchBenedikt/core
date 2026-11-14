@@ -81,7 +81,9 @@ does not have to download every post to reach the older ones.
   the note id plus `/activity`.
 - `totalItems` — the full number of visible posts, not just the current page.
 
-Only publicly visible posts (`public`, `unlisted`) appear. The route is
+Only `public` posts appear. Unlisted posts are readable by their note URL but
+never enumerated, so a visitor cannot discover them from the collection. The
+route is
 unauthenticated; listing a `followers`-only or `direct` post here would hand
 its content to anyone who knows the actor URL. Deleted posts are omitted.
 This is a visibility filter on one repository query, not a second store.

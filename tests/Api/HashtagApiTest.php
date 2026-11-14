@@ -57,13 +57,15 @@ final class HashtagApiTest extends TestCase
 
 		self::assertSame(200, $response->status);
 		self::assertSame('devops', $response->decodedBody()['tag']);
+		// Unlisted is readable by link but never listed by a tag.
 		self::assertSame(
-			[$unlisted, $old],
+			[$old],
 			array_column($response->decodedBody()['posts'], 'id'),
 		);
+		self::assertSame(200, $this->app->handle(new Request('GET', '/api/v1/posts/' . $unlisted))->status);
 
 		$limited = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops', ['limit' => '1']));
-		self::assertSame([$unlisted], array_column($limited->decodedBody()['posts'], 'id'));
+		self::assertSame([$old], array_column($limited->decodedBody()['posts'], 'id'));
 
 		$page = $this->app->handle(new Request(
 			'GET',
@@ -75,7 +77,7 @@ final class HashtagApiTest extends TestCase
 		$cased = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/%23DevOps'));
 		self::assertSame(200, $cased->status);
 		self::assertSame('devops', $cased->decodedBody()['tag']);
-		self::assertSame([$unlisted, $old], array_column($cased->decodedBody()['posts'], 'id'));
+		self::assertSame([$old], array_column($cased->decodedBody()['posts'], 'id'));
 	}
 
 	public function testMalformedAndUnknownTagsAreEmptyOrRejected(): void

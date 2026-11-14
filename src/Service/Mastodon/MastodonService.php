@@ -2338,7 +2338,7 @@ final class MastodonService
 	private function cursorPost(string $id): Post
 	{
 		$post = $this->posts->find($id);
-		if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
+		if ($post === null || $post->isDeleted() || !$post->visibility->mayListPublicly()) {
 			throw new MastodonRequestException(404, 'not_found', 'Status cursor not found.');
 		}
 

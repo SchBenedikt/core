@@ -63,8 +63,9 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->insert($this->post('gone', 'alice', Visibility::Public, '2026-11-11T10:04:00Z'));
 		$repository->softDelete('gone', Time::parse('2026-11-11T11:00:00Z'));
 
+		// Unlisted is readable by link but never enumerated.
 		self::assertSame(
-			['unlisted', 'public'],
+			['public'],
 			array_map(static fn (Post $post): string => $post->id, $repository->publicTimeline(10)),
 		);
 	}
@@ -167,7 +168,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->softDelete('a-gone', Time::parse('2026-11-11T11:00:00Z'));
 
 		self::assertSame(
-			['a-new', 'a-old'],
+			['a-old'],
 			array_map(static fn (Post $post): string => $post->id, $repository->authorPosts('alice')),
 		);
 		self::assertSame([], $repository->authorPosts('nobody'));
@@ -188,11 +189,11 @@ abstract class PostRepositoryTestCase extends TestCase
 			array_map(static fn (Post $post): string => $post->id, $repository->authorPostsPage('alice', 2, 0)),
 		);
 		self::assertSame(
-			['a3', 'a1'],
+			['a1'],
 			array_map(static fn (Post $post): string => $post->id, $repository->authorPostsPage('alice', 2, 2)),
 		);
 		self::assertSame([], $repository->authorPostsPage('alice', 2, 9));
-		self::assertSame(4, $repository->authorPostCount('alice'));
+		self::assertSame(3, $repository->authorPostCount('alice'));
 		self::assertSame(1, $repository->authorPostCount('bob'));
 		self::assertSame(0, $repository->authorPostCount('nobody'));
 	}
@@ -348,7 +349,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame(2, $repository->countLive());
 	}
 
-	public function testSearchFindsOnlyLivePublicAndUnlistedContent(): void
+	public function testSearchFindsOnlyLivePublicContent(): void
 	{
 		$repository = $this->searchRepository();
 		$repository->insert($this->post('public', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', content: 'Hello World'));
@@ -359,7 +360,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->softDelete('gone', Time::parse('2026-11-11T11:00:00Z'));
 
 		self::assertSame(
-			['unlisted', 'public'],
+			['public'],
 			array_map(static fn (Post $post): string => $post->id, $repository->search('HELLO', 10, 0)),
 		);
 		self::assertSame([], $repository->search('hello', 10, 0, []));
@@ -467,14 +468,14 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->softDelete('t5', Time::parse('2026-11-11T11:00:00Z'));
 
 		self::assertSame(
-			['t2', 't1'],
+			['t1'],
 			array_column($repository->hashtagTimeline('devops', 10), 'id'),
 		);
 		self::assertSame(
 			['t1'],
 			array_column($repository->hashtagTimeline('devops', 10, Time::parse('2026-11-11T10:01:00Z'), 't2'), 'id'),
 		);
-		self::assertSame(['t2'], array_column($repository->hashtagTimeline('devops', 1), 'id'));
+		self::assertSame(['t1'], array_column($repository->hashtagTimeline('devops', 1), 'id'));
 		self::assertSame([], $repository->hashtagTimeline('missing', 10));
 	}
 
@@ -491,11 +492,11 @@ abstract class PostRepositoryTestCase extends TestCase
 		$repository->softDelete('m7', Time::parse('2026-11-11T11:00:00Z'));
 
 		self::assertSame(
-			['m4', 'm3', 'm2', 'm1'],
+			['m3', 'm2', 'm1'],
 			array_column($repository->followedHashtagTimeline(['devops', 'php'], 10), 'id'),
 		);
 		self::assertSame(
-			['m4', 'm3'],
+			['m3', 'm2'],
 			array_column($repository->followedHashtagTimeline(['devops', 'php'], 2), 'id'),
 		);
 		self::assertSame(

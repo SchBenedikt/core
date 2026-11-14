@@ -93,10 +93,12 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
 	): array {
+		// Unlisted posts are readable by link but never enumerated; only public
+		// rows belong in the public timeline.
 		return $this->slice(
 			array_values(array_filter(
 				$this->posts,
-				static fn (Post $post): bool => !$post->isDeleted() && $post->visibility->isPubliclyVisible(),
+				static fn (Post $post): bool => !$post->isDeleted() && $post->visibility->mayListPublicly(),
 			)),
 			$limit,
 			$before,
@@ -116,7 +118,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
-					&& $post->visibility->isPubliclyVisible()
+					&& $post->visibility->mayListPublicly()
 					&& in_array($hashtag, Hashtags::extract($post->content), true),
 			)),
 			$limit,
@@ -139,7 +141,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
-					&& $post->visibility->isPubliclyVisible()
+					&& $post->visibility->mayListPublicly()
 					&& array_intersect($hashtags, Hashtags::extract($post->content)) !== [],
 			)),
 			$limit,
@@ -179,7 +181,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
 				&& $post->authorId === $userId
-				&& $post->visibility->isPubliclyVisible(),
+				&& $post->visibility->mayListPublicly(),
 		));
 
 		usort($posts, static function (Post $a, Post $b): int {
@@ -369,7 +371,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$matches = array_values(array_filter(
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
-				&& $post->visibility->isPubliclyVisible()
+				&& $post->visibility->mayListPublicly()
 				&& ($allowed === null || isset($allowed[$post->authorId]))
 				&& mb_stripos($post->content, $query) !== false,
 		));

@@ -779,7 +779,7 @@ GET {prefix}/search?q=hello&type=statuses&limit=20&following=true
 and accepts `accounts`, `statuses` or `hashtags`; any other value is `422
 validation_failed`. Without `type`, all three collections are returned.
 `hashtags` is always an empty array because the core has no hashtag model.
-Status matches are case-insensitive over live, public/unlisted
+Status matches are case-insensitive over live, `public`
 `social_post.content`; private, direct and soft-deleted posts never appear,
 and the projected status keeps the normal viewer flags and attachment shape.
 Account matches are case-insensitive over the host's local account directory

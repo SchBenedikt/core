@@ -92,7 +92,7 @@ for the host's cleanup policy; the post itself is no longer served.
 | Visibility | Public timeline | Home timeline | Single post |
 | --- | --- | --- | --- |
 | `public` | yes | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | anyone |
-| `unlisted` | yes | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | anyone |
+| `unlisted` | no (link only) | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | anyone with the link |
 | `followers` | no | own posts and boosts; local followers-only posts from followed local accounts | author and accepted local followers |
 | `direct` | no | own posts and direct posts addressed to the reader | author and recipients |
 
@@ -113,17 +113,23 @@ serialized with `visibility: null`.
 The single-post rule is enforced by `PostService::getVisible()`: a non-public
 post answers 404 to anyone but its author, except that a followers-only post
 is also readable by an accepted local follower and a direct post by one of its
-recipients. The home timeline and the detail route therefore agree. `unlisted`
-is publicly readable by design — it is only hidden from timelines.
+recipients. The home timeline and the detail route therefore agree.
+
+Readability and discoverability are separate rules. `unlisted` is readable by
+anyone with its link, by design, but it is never enumerated: not in the public
+timeline, a hashtag or followed-hashtag timeline, local or Mastodon search, or
+the actor outbox. `Visibility::isPubliclyVisible()` answers the link question,
+`Visibility::mayListPublicly()` the listing question, and only `public` passes
+the second. Unlisted posts stay in the author's own and home timelines.
 
 ## Timelines
 
-`GET /api/v1/timelines/public` returns local `public` and `unlisted` posts,
-newest first, with the id as the tie-break. Remote posts are not copied into
-the public timeline.
+`GET /api/v1/timelines/public` returns local `public` posts, newest first, with
+the id as the tie-break. Unlisted posts are deliberately absent and remote
+posts are not copied into the public timeline.
 
-`GET /api/v1/timelines/tag/{tag}` returns the same public/unlisted posts whose
-content carries that exact hashtag. Tags are extracted when a post is stored,
+`GET /api/v1/timelines/tag/{tag}` returns the same `public` posts whose content
+carries that exact hashtag. Tags are extracted when a post is stored,
 normalized to lower case and deduplicated; the route accepts an optional
 leading `#` and returns the normalized tag next to the page. Matching is
 exact (`#devops` does not match `#devops_extra`), and followers-only, direct
@@ -135,8 +141,8 @@ the other timelines; an empty or malformed tag is `400 invalid_tag`.
 /api/v1/followed_tags/{tag}` unfollows it. Tags are normalized exactly like
 post tags, the list is newest-first with an exclusive `before`/`before_tag`
 cursor, and an account may follow at most 100 tags. `GET
-/api/v1/timelines/followed_tags` then returns public and unlisted posts
-carrying any followed tag, using the same `limit` and `before` cursor as the
+/api/v1/timelines/followed_tags` then returns `public` posts carrying any
+followed tag, using the same `limit` and `before` cursor as the
 public tag timeline. A post with two followed tags is one entry, not two; the
 response repeats the followed tag list next to `posts`.
 

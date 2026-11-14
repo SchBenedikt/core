@@ -513,13 +513,13 @@ index or a remote resolver:
 GET {mastodon.prefix}/search?q=…&type=…&offset=…
   └─ MastodonSearchHandler
       └─ MastodonService::search
-          ├─ PostSearchRepository::search   live public/unlisted posts, lower(content) LIKE
+          ├─ PostSearchRepository::search   live public posts, lower(content) LIKE
           │   └─ optional authorIds for following=true
           ├─ LocalActorSearch::search       host's local account directory ids
           └─ MastodonPresenter::account/statuses
 ```
 
-Status search is case-insensitive, matches only live public/unlisted rows and
+Status search is case-insensitive, matches only live public rows and
 uses the stored publish time plus id for stable order; the query's `%` and `_`
 are escaped, so they are literal text. No table or index is added. Account
 search is optional because a host may not expose a searchable directory; the

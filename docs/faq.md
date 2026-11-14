@@ -77,7 +77,7 @@ key, the inbox and the outbox. See [WebFinger](guides/webfinger.md) and
 
 ### Where does a peer get my posts?
 
-`GET /@{handle}/outbox` lists the account's public and unlisted posts as
+`GET /@{handle}/outbox` lists the account's `public` posts as
 `Create` activities, newest first. The collection id is the same `outbox` URL
 the actor document advertises. Followers-only posts are not listed, because
 the route is public. See [outbox](guides/outbox.md).

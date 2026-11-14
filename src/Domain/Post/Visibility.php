@@ -17,6 +17,11 @@ use InvalidArgumentException;
  * The values are the ones the API and the client use; they are not a
  * federation concept by themselves, {@see \AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory}
  * maps them onto `to`/`cc`.
+ *
+ * Readability and discoverability are two different questions:
+ * {@see self::isPubliclyVisible()} answers "may this be fetched by link?" and
+ * {@see self::mayListPublicly()} answers "may this appear in a listing?".
+ * Unlisted is the case where the two differ.
  */
 enum Visibility: string
 {
@@ -26,12 +31,26 @@ enum Visibility: string
 	case Direct = 'direct';
 
 	/**
-	 * Whether the post may appear in public timelines and be fetched by
-	 * anybody, signed in or not.
+	 * Whether anybody with the URL may read the post, signed in or not.
+	 *
+	 * This is about dereferenceability, not discovery: an unlisted post is
+	 * readable by link while deliberately staying out of every listing.
 	 */
 	public function isPubliclyVisible(): bool
 	{
 		return $this === self::Public || $this === self::Unlisted;
+	}
+
+	/**
+	 * Whether the post may be enumerated: public timelines, hashtag and
+	 * followed-hashtag timelines, search and the actor outbox.
+	 *
+	 * Unlisted is readable but not discoverable, followers-only and direct are
+	 * neither, so only a public post is listed.
+	 */
+	public function mayListPublicly(): bool
+	{
+		return $this === self::Public;
 	}
 
 	/**

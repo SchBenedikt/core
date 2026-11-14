@@ -47,6 +47,9 @@ interface PostRepository
 	/**
 	 * Everything the public timelines may show.
 	 *
+	 * Only `public` posts: unlisted is dereferenceable but must not be
+	 * enumerated, so it never appears here.
+	 *
 	 * @return list<Post>
 	 */
 	public function publicTimeline(
@@ -58,10 +61,12 @@ interface PostRepository
 	): array;
 
 	/**
-	 * Publicly visible posts carrying exactly one hashtag, newest first.
+	 * Public posts carrying exactly one hashtag, newest first.
 	 *
-	 * The tag is already normalized by the caller. Followers-only and direct
-	 * posts are never returned: a tag timeline is a public surface.
+	 * The tag is already normalized by the caller. Unlisted, followers-only
+	 * and direct posts are never returned: a tag timeline is a discoverable
+	 * public surface, and listing an unlisted post there would undo its
+	 * omission from discovery.
 	 *
 	 * @return list<Post>
 	 */
@@ -73,10 +78,11 @@ interface PostRepository
 	): array;
 
 	/**
-	 * Publicly visible posts carrying any of the supplied normalized tags,
-	 * newest first, with the same id-aware cursor as the single-tag timeline.
-	 * A post with two followed tags appears once. Followers-only and direct
-	 * posts are never returned.
+	 * Public posts carrying any of the supplied normalized tags, newest first,
+	 * with the same id-aware cursor as the single-tag timeline. A post with
+	 * two followed tags appears once. Unlisted, followers-only and direct
+	 * posts are never returned: following a tag does not make an unlisted post
+	 * discoverable.
 	 *
 	 * @param list<string> $hashtags
 	 *
@@ -110,11 +116,12 @@ interface PostRepository
 	): array;
 
 	/**
-	 * Every publicly visible post of one author, newest first, for the outbox.
+	 * Every `public` post of one author, newest first, for the outbox.
 	 *
-	 * Only public and unlisted posts are returned: the outbox is a public
-	 * endpoint, and listing a followers-only post there would leak it to
-	 * anyone who can guess the actor URL.
+	 * The outbox is an enumerable public endpoint, so neither a followers-only
+	 * post nor an unlisted one belongs in it: a follower-only row would leak
+	 * and an unlisted row would defeat its omission from discovery. The note
+	 * URL of an unlisted post stays fetchable.
 	 *
 	 * @return list<Post>
 	 */

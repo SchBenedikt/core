@@ -365,7 +365,8 @@ that is not a canonical timestamp is `400 invalid_cursor`. `GET
 the tag by stripping one leading `#` and lowercasing it, and returns
 `{"tag": "devops", "posts": […]}`. Tags are extracted from post content when
 the post is stored; matching is exact, so `#devops` does not match `#devops_extra`.
-Only public and unlisted posts appear. A tag that is empty or contains anything
+Only `public` posts appear; unlisted posts are readable by link but never
+listed. A tag that is empty or contains anything
 other than letters, digits or underscores is `400 invalid_tag`. The public timeline
 contains local posts; the home timeline contains the caller's own local posts,
 remote posts and boosts from followed remote actors, and live local posts from
@@ -404,7 +405,7 @@ and `before_tag` breaks an equal-timestamp tie. An account may follow at most
 100 tags; the next new follow is `400 followed_tag_limit`.
 
 `GET /api/v1/timelines/followed_tags` returns
-`{"tags": ["devops", …], "posts": […]}` for every public or unlisted post
+`{"tags": ["devops", …], "posts": […]}` for every `public` post
 carrying any followed tag. It uses the same `limit` (1–40) and exclusive
 `before` timestamp cursor as the public tag timeline, and a post carrying two
 followed tags appears once. Followers-only, direct and deleted posts never
@@ -701,7 +702,8 @@ GET /@alice/outbox
 `200` with a paged `OrderedCollection` whose `id` is exactly the `outbox` URL
 of the [actor document](actor-document.md). Add `?page=1` for an
 `OrderedCollectionPage`; items are the same `Create` activities outbound
-delivery sends, newest first, and only public and unlisted posts appear. See
+delivery sends, newest first, and only `public` posts appear: unlisted stays
+out of the enumerable collection. See
 the [outbox guide](../guides/outbox.md). An unknown handle is `404
 actor_not_found`; an instance without a key or a local directory is `503
 actor_not_configured`.

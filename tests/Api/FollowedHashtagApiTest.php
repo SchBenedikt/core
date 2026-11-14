@@ -22,7 +22,8 @@ use PHPUnit\Framework\TestCase;
  * `followed_tags` and `GET /api/v1/timelines/followed_tags`.
  *
  * Follows are private, normalized and idempotent; the timeline includes only
- * public/unlisted posts matching a followed tag exactly.
+ * public posts matching a followed tag exactly, since a followed tag must not
+ * turn an unlisted post into a discoverable one.
  */
 final class FollowedHashtagApiTest extends TestCase
 {
@@ -140,9 +141,10 @@ final class FollowedHashtagApiTest extends TestCase
 		self::assertSame(200, $timeline->status);
 		self::assertSame(['php', 'devops'], $timeline->decodedBody()['tags']);
 		self::assertSame(
-			[$unlisted, $old],
+			[$old],
 			array_column($timeline->decodedBody()['posts'], 'id'),
 		);
+		self::assertSame(200, $this->app->handle(new Request('GET', '/api/v1/posts/' . $unlisted))->status);
 
 		$limited = $this->app->handle(new Request(
 			'GET',
@@ -150,7 +152,7 @@ final class FollowedHashtagApiTest extends TestCase
 			['limit' => '1'],
 			userId: 'alice',
 		));
-		self::assertSame([$unlisted], array_column($limited->decodedBody()['posts'], 'id'));
+		self::assertSame([$old], array_column($limited->decodedBody()['posts'], 'id'));
 
 		$latest = $this->app->handle(new Request(
 			'GET',
@@ -163,7 +165,7 @@ final class FollowedHashtagApiTest extends TestCase
 			['before' => $latest],
 			userId: 'alice',
 		));
-		self::assertSame([$old], array_column($page->decodedBody()['posts'], 'id'));
+		self::assertSame([], array_column($page->decodedBody()['posts'], 'id'));
 
 		$this->app->handle(new Request('DELETE', '/api/v1/followed_tags/devops', userId: 'alice'));
 		$phpOnly = $this->app->handle(new Request(
@@ -172,7 +174,7 @@ final class FollowedHashtagApiTest extends TestCase
 			userId: 'alice',
 		));
 		self::assertSame(['php'], $phpOnly->decodedBody()['tags']);
-		self::assertSame([$unlisted, $old], array_column($phpOnly->decodedBody()['posts'], 'id'));
+		self::assertSame([$old], array_column($phpOnly->decodedBody()['posts'], 'id'));
 
 		$bobEmpty = $this->app->handle(new Request(
 			'GET',

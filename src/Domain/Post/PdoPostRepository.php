@@ -230,11 +230,12 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
 	): array {
+		// Unlisted posts are readable by link but never enumerated; only
+		// public rows belong in the public timeline.
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND visibility IN (:public, :unlisted)';
+			. ' WHERE deleted_at IS NULL AND visibility = :public';
 		$parameters = [
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 		];
 
 		if ($before !== null) {
@@ -270,11 +271,10 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
-			. ' WHERE p.deleted_at IS NULL AND p.visibility IN (:public, :unlisted)'
+			. ' WHERE p.deleted_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag = :hashtag';
 		$parameters = [
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 			'hashtag' => $hashtag,
 		];
 
@@ -306,7 +306,6 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$placeholders = [];
 		$parameters = [
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 		];
 		foreach (array_values($hashtags) as $index => $hashtag) {
 			$name = 'hashtag_' . $index;
@@ -316,7 +315,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 
 		$sql = 'SELECT DISTINCT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
-			. ' WHERE p.deleted_at IS NULL AND p.visibility IN (:public, :unlisted)'
+			. ' WHERE p.deleted_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag IN (' . implode(', ', $placeholders) . ')';
 
 		if ($before !== null) {
@@ -385,13 +384,12 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND author_id = :author'
-			. ' AND visibility IN (:public, :unlisted)'
+			. ' AND visibility = :public'
 			. ' ORDER BY published_at DESC, id DESC';
 
 		return $this->hydrateAll($this->db->fetchAll($sql, [
 			'author' => $userId,
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 		]));
 	}
 
@@ -399,7 +397,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND author_id = :author'
-			. ' AND visibility IN (:public, :unlisted)'
+			. ' AND visibility = :public'
 			. ' ORDER BY published_at DESC, id DESC'
 			. ' LIMIT ' . $this->limit($limit)
 			. ' OFFSET ' . $this->offset($offset);
@@ -407,7 +405,6 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		return $this->hydrateAll($this->db->fetchAll($sql, [
 			'author' => $userId,
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 		]));
 	}
 
@@ -416,11 +413,10 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$value = $this->db->fetchValue(
 			'SELECT COUNT(*) FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND author_id = :author'
-			. ' AND visibility IN (:public, :unlisted)',
+			. ' AND visibility = :public',
 			[
 				'author' => $userId,
 				'public' => Visibility::Public->value,
-				'unlisted' => Visibility::Unlisted->value,
 			],
 		);
 
@@ -563,12 +559,11 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 
 		$parameters = [
 			'public' => Visibility::Public->value,
-			'unlisted' => Visibility::Unlisted->value,
 			'query' => '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($query)) . '%',
 		];
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL'
-			. ' AND visibility IN (:public, :unlisted)'
+			. ' AND visibility = :public'
 			. " AND LOWER(content) LIKE :query ESCAPE '!'";
 
 		if ($authorIds !== null) {

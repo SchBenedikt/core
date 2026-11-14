@@ -57,4 +57,24 @@ final class VisibilityTest extends TestCase
 		yield 'followers' => [Visibility::Followers, false];
 		yield 'direct' => [Visibility::Direct, false];
 	}
+
+	#[DataProvider('discoveryMatrix')]
+	public function testMayListPublicly(Visibility $visibility, bool $expected): void
+	{
+		self::assertSame($expected, $visibility->mayListPublicly());
+	}
+
+	/**
+	 * Only a public post is enumerable; an unlisted one is readable by link but
+	 * stays out of every listing.
+	 *
+	 * @return iterable<string, array{Visibility, bool}>
+	 */
+	public static function discoveryMatrix(): iterable
+	{
+		yield 'public' => [Visibility::Public, true];
+		yield 'unlisted' => [Visibility::Unlisted, false];
+		yield 'followers' => [Visibility::Followers, false];
+		yield 'direct' => [Visibility::Direct, false];
+	}
 }
