@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 123 routes, 53 of them under the Mastodon prefix |
-| Persistence | 25 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 173 PHP test files (1572 tests, 8126 assertions) and 9 UI test files (69 tests) |
+| HTTP contract | 125 routes, 53 of them under the Mastodon prefix |
+| Persistence | 27 schema classes, in-memory and PDO adapters behind shared contract tests |
+| Tests | 181 PHP test files (1599 tests, 8279 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -295,7 +295,8 @@ local gaps. The detailed lists live in the guides.
   registration; remote timelines and delivery; remote counts for an outbound
   `Like` (the count itself lives on the remote instance); remote boost
   federation; remote notifications; streaming; remote poll
-  fetching/voting/`Question` federation; remote search; remote
+  fetching/voting/`Question` federation; search across a global remote corpus
+  (exact remote handle lookup and a bounded local/cached index exist); remote
   relationship/admin APIs. See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow

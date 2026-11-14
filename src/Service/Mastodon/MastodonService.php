@@ -31,6 +31,7 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Search\TrendRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountList;
 use AlohaSocial\Core\Domain\Timeline\AccountListNotFoundException;
 use AlohaSocial\Core\Domain\Timeline\ListRepliesPolicy;
@@ -104,6 +105,7 @@ final class MastodonService
 		private readonly ?BookmarkRepository $bookmarks = null,
 		private readonly ?MuteService $mutes = null,
 		private readonly ?AccountListService $lists = null,
+		private readonly ?TrendRepository $trends = null,
 	) {
 	}
 
@@ -1375,6 +1377,18 @@ final class MastodonService
 
 		$accounts = [];
 		$statuses = [];
+		$hashtags = [];
+
+		if (($type === null || $type === 'hashtags') && $this->trends !== null) {
+			$since = $this->now()->modify('-7 days');
+			foreach ($this->trends->top($since, $limit, $query) as $trend) {
+				$hashtags[] = [
+					'name' => $trend->hashtag,
+					'url' => $this->baseUrl() . '/tags/' . rawurlencode($trend->hashtag),
+					'history' => [],
+				];
+			}
+		}
 
 		if ($type === null || $type === 'accounts') {
 			if ($this->searchActors === null) {
@@ -1409,7 +1423,7 @@ final class MastodonService
 		return [
 			'accounts' => $accounts,
 			'statuses' => $statuses,
-			'hashtags' => [],
+			'hashtags' => $hashtags,
 		];
 	}
 

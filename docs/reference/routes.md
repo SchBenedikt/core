@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 123 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 125 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -77,6 +77,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `notifications.requests.accept` | `POST` | `/api/v1/notifications/requests/{id}/accept` | yes | 30 / 900 s |
 | `notifications.requests.dismiss` | `POST` | `/api/v1/notifications/requests/{id}/dismiss` | yes | 30 / 900 s |
 | `notifications.requests.revoke` | `DELETE` | `/api/v1/notifications/requests/{id}` | yes | 30 / 900 s |
+| `search` | `GET` | `/api/v1/search` | no; an optional token applies the viewer's blocks and mutes | 60 / 60 s |
+| `trends` | `GET` | `/api/v1/trends` | no | 60 / 60 s |
 | `conversations.mute` | `POST` | `/api/v1/conversations/{id}/mute` | yes | 30 / 900 s |
 | `conversations.unmute` | `DELETE` | `/api/v1/conversations/{id}/mute` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
@@ -788,6 +790,29 @@ missing mute on delete is a successful no-op. The notification list and unread
 count apply the visible status before pagination, filters and Mastodon
 notification projections; held and dropped rows stay available to the policy
 audit and cleanup.
+
+## Search and trends
+
+```http
+GET /api/v1/search?q=hello&type=statuses&limit=20&cursor=…
+GET /api/v1/trends?limit=20&window=604800
+```
+
+Search reads the bounded discovery index, never the post or actor tables.
+`type` is `accounts`, `statuses` or `hashtags`; an omitted type returns accounts
+and statuses together. Only public records are indexed. A handle query may make
+one WebFinger and one actor request through the SSRF-guarded federation
+fetcher; the remote profile is then cached in the index. A remote failure is
+reported as `partial: true` with a stable `remote_error`, while local and
+cached results stay available. The opaque cursor is bound to the query and
+rejected with `400 invalid_cursor` when it is stale or belongs to another
+query.
+
+`trends` aggregates `social_search_trend` rows over `window` seconds, capped at
+30 days, and returns `{hashtag, count}` entries. It never scans post content.
+The Mastodon `GET /api/v1/search?type=hashtags` projection uses the same
+records; its `history` array stays empty because the core does not claim
+per-day account counts it does not store.
 
 ## Inbox
 

@@ -273,6 +273,7 @@ The core owns the schema classes, not the migration mechanism:
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker, policy status/audit columns and unread index)
 - `NotificationPolicySchema`, `NotificationSenderSchema` and `ConversationMuteSchema` → policy overrides, held sender requests and private thread mutes
+- `SearchIndexSchema` and `TrendSchema` → public discovery records with aliases/cache timestamps and bounded time-window hashtag rows
 - `AttachmentSchema` → `social_attachment` (metadata, including nullable `source_url` with its unique index; bytes are in `BlobStore`)
 - `FollowerSchema` → `social_follower` (includes the individual and nullable shared inbox plus `is_local` for local-to-local follows)
 - `FollowingSchema` → `social_following` (includes `inbox_url`, `state` and `follow_activity_id`; accepted rows feed the public collection)

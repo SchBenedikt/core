@@ -72,6 +72,8 @@ use AlohaSocial\Core\Api\UnreactFromRemotePostHandler;
 use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
+use AlohaSocial\Core\Api\SearchHandler;
+use AlohaSocial\Core\Api\TrendsHandler;
 use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
@@ -456,6 +458,24 @@ final class Routes
 				handler: HashtagTimelineHandler::class,
 				requiresAuth: false,
 				summary: 'Public posts carrying a hashtag, newest first.',
+			),
+			new Route(
+				name: 'search',
+				method: 'GET',
+				path: $base . '/search',
+				handler: SearchHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Bounded local index search with exact remote handle lookup.',
+			),
+			new Route(
+				name: 'trends',
+				method: 'GET',
+				path: $base . '/trends',
+				handler: TrendsHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Hashtag counts over a bounded time window.',
 			),
 			new Route(
 				name: 'timelines.followed_tags',

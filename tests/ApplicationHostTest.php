@@ -44,6 +44,8 @@ use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\ConversationMuteSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationPolicySchema;
+use AlohaSocial\Core\Domain\Search\SearchIndexSchema;
+use AlohaSocial\Core\Domain\Search\TrendSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSenderSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
@@ -120,7 +122,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(123, $app->routes->routes());
+		self::assertCount(125, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -132,6 +134,11 @@ final class ApplicationHostTest extends TestCase
 
 		self::assertSame(201, $post->status);
 		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+
+		$search = $app->handle(new Request('GET', '/api/v1/search', ['q' => 'from a host']));
+		self::assertSame(200, $search->status);
+		self::assertCount(1, $search->decodedBody()['statuses']);
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . SearchIndexSchema::TABLE));
 
 		$follow = $app->handle(new Request(
 			method: 'POST',
@@ -1164,6 +1171,8 @@ final class ApplicationHostTest extends TestCase
 		NotificationPolicySchema::create($database);
 		NotificationSenderSchema::create($database);
 		ConversationMuteSchema::create($database);
+		SearchIndexSchema::create($database);
+		TrendSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);

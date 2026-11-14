@@ -307,7 +307,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `moderation` | core | supported | — | reports, domain policy, review queue and first-post holds |
 | `keyword_filters` | core | supported | — | `social_filter` rules with contexts, action and keyword list |
 | `direct_messages` | core | gap | — | conversations and delivery (#19) |
-| `search_index` | core | partial | — | local post search; remote index #13 |
+| `search_index` | core | supported | — | `social_search_index`, `social_search_trend`; local post search remains |
 | `atproto_publications` | core | partial | — | publication rows; inbound relay #22 |
 | `queue` | core | supported | v1 | `social_job` |
 | `activity_log` | core | supported | v1 | `social_activity_log` |

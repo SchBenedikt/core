@@ -31,6 +31,7 @@ use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
+use AlohaSocial\Core\Service\Search\SearchIndexer;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 use Closure;
@@ -71,6 +72,7 @@ final class PostService
 		private readonly ?Config $config = null,
 		private readonly ?HeldPostRepository $heldPosts = null,
 		private readonly ?PostHoldPolicy $holdPolicy = null,
+		private readonly ?SearchIndexer $searchIndexer = null,
 	) {
 	}
 
@@ -145,6 +147,8 @@ final class PostService
 			$this->recordMentions($post, $parent);
 			$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
 		});
+
+		$this->searchIndexer?->indexPost($post);
 
 		return $post;
 	}
@@ -263,6 +267,8 @@ final class PostService
 
 			$this->enqueueDelivery($post, fn (): array => $this->activities->deleteNote($post, $deletedAt));
 		});
+
+		$this->searchIndexer?->removePost($postId, $post->authorId);
 	}
 
 	/**
@@ -356,6 +362,8 @@ final class PostService
 				);
 			}
 		});
+
+		$this->searchIndexer?->indexPost($edited);
 
 		return $edited;
 	}

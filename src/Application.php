@@ -95,6 +95,8 @@ use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
+use AlohaSocial\Core\Api\SearchHandler;
+use AlohaSocial\Core\Api\TrendsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
@@ -238,6 +240,13 @@ use AlohaSocial\Core\Domain\Moderation\ReportRepository;
 use AlohaSocial\Core\Domain\Moderation\StoredModerationPolicy;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
+use AlohaSocial\Core\Domain\Search\InMemorySearchIndex;
+use AlohaSocial\Core\Domain\Search\InMemoryTrendRepository;
+use AlohaSocial\Core\Domain\Search\PdoSearchIndex;
+use AlohaSocial\Core\Domain\Search\PdoTrendRepository;
+use AlohaSocial\Core\Domain\Search\RemoteActorSearch;
+use AlohaSocial\Core\Domain\Search\SearchIndex;
+use AlohaSocial\Core\Domain\Search\TrendRepository;
 use AlohaSocial\Core\Domain\Scheduling\InMemoryScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\PdoScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
@@ -308,6 +317,9 @@ use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Service\Federation\FollowingDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\InboxService;
 use AlohaSocial\Core\Service\Federation\RemoteFetcher;
+use AlohaSocial\Core\Service\Search\SearchIndexer;
+use AlohaSocial\Core\Service\Search\SearchService;
+use AlohaSocial\Core\Service\Search\WebFingerRemoteActorSearch;
 use AlohaSocial\Core\Service\Federation\RemoteMediaFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteMediaService;
 use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
@@ -393,6 +405,7 @@ final readonly class Application
 		public ?ModerationService $moderation = null,
 		public ?HeldPostService $heldPosts = null,
 		public ?NotificationService $notifications = null,
+		public ?SearchService $search = null,
 	) {
 	}
 
@@ -452,6 +465,10 @@ final readonly class Application
 		?HeldPostRepository $heldPostRepository = null,
 		?AdminAuthorization $adminAuthorization = null,
 		?PostHoldPolicy $postHoldPolicy = null,
+		?SearchIndex $searchIndex = null,
+		?TrendRepository $trends = null,
+		?RemoteActorSearch $remoteActorSearch = null,
+		?SearchService $search = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -554,6 +571,10 @@ final readonly class Application
 			heldPostRepository: $heldPostRepository,
 			adminAuthorization: $adminAuthorization,
 			postHoldPolicy: $postHoldPolicy,
+			searchIndex: $searchIndex,
+			trends: $trends,
+			remoteActorSearch: $remoteActorSearch,
+			search: $search,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -635,6 +656,10 @@ final readonly class Application
 		?HeldPostRepository $heldPostRepository = null,
 		?AdminAuthorization $adminAuthorization = null,
 		?PostHoldPolicy $postHoldPolicy = null,
+		?SearchIndex $searchIndex = null,
+		?TrendRepository $trends = null,
+		?RemoteActorSearch $remoteActorSearch = null,
+		?SearchService $search = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -691,6 +716,10 @@ final readonly class Application
 			heldPostRepository: $heldPostRepository ?? new PdoHeldPostRepository($database),
 			adminAuthorization: $adminAuthorization,
 			postHoldPolicy: $postHoldPolicy,
+			searchIndex: $searchIndex ?? new PdoSearchIndex($database),
+			trends: $trends ?? new PdoTrendRepository($database),
+			remoteActorSearch: $remoteActorSearch,
+			search: $search,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -784,6 +813,10 @@ final readonly class Application
 		?HeldPostRepository $heldPostRepository = null,
 		?AdminAuthorization $adminAuthorization = null,
 		?PostHoldPolicy $postHoldPolicy = null,
+		?SearchIndex $searchIndex = null,
+		?TrendRepository $trends = null,
+		?RemoteActorSearch $remoteActorSearch = null,
+		?SearchService $search = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -795,6 +828,9 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
+		$searchIndex ??= new InMemorySearchIndex();
+		$trends ??= new InMemoryTrendRepository();
+		$searchIndexer = new SearchIndexer($searchIndex, $trends, $clock, $logger);
 		$reportRepository ??= new InMemoryReportRepository();
 		$moderationActions ??= new InMemoryModerationActionRepository();
 		$heldPostRepository ??= new InMemoryHeldPostRepository();
@@ -1007,6 +1043,7 @@ final readonly class Application
 			config: $config,
 			heldPosts: $heldPostRepository,
 			holdPolicy: $postHoldPolicy,
+			searchIndexer: $searchIndexer,
 		);
 		$moderationService = new ModerationService(
 			$reportRepository,
@@ -1081,6 +1118,7 @@ final readonly class Application
 			$bookmarkRepository,
 			$muteService,
 			$accountListService,
+			$trends,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -1089,6 +1127,18 @@ final readonly class Application
 		// capability. A plain HttpClient is enough for delivery and actor
 		// resolution, but not for fetching untrusted image bytes.
 		$resolver = $hostResolver ?? new DnsHostResolver();
+		$remoteActorSearch ??= $httpClient instanceof BoundedHttpClient
+			? new WebFingerRemoteActorSearch(new RemoteFetcher($httpClient, $resolver), $clock)
+			: null;
+		$searchService = $search ?? new SearchService(
+			$searchIndex,
+			$clock,
+			$remoteActorSearch,
+			$trends,
+			$localRelationships,
+			$muteService,
+			$moderationPolicy,
+		);
 		$remoteMedia = ($mediaService !== null && $httpClient instanceof BoundedHttpClient)
 			? new RemoteMediaService(
 				new RemoteMediaFetcher(
@@ -1243,6 +1293,8 @@ final readonly class Application
 			->with(NotificationUnreadCountHandler::class, static fn (): NotificationUnreadCountHandler => new NotificationUnreadCountHandler($localAccounts))
 			->with(DismissNotificationHandler::class, static fn (): DismissNotificationHandler => new DismissNotificationHandler($localAccounts))
 			->with(ClearNotificationsHandler::class, static fn (): ClearNotificationsHandler => new ClearNotificationsHandler($localAccounts))
+			->with(SearchHandler::class, static fn (): SearchHandler => new SearchHandler($searchService))
+			->with(TrendsHandler::class, static fn (): TrendsHandler => new TrendsHandler($searchService))
 			->with(NotificationPolicyHandler::class, static fn (): NotificationPolicyHandler => new NotificationPolicyHandler($notificationService))
 			->with(NotificationRequestsHandler::class, static fn (): NotificationRequestsHandler => new NotificationRequestsHandler($notificationService))
 			->with(NotificationRequestActionHandler::class, static fn (): NotificationRequestActionHandler => new NotificationRequestActionHandler($notificationService))
@@ -1372,6 +1424,7 @@ final readonly class Application
 			$moderationService,
 			$heldPostService,
 			$notificationService,
+			$searchService,
 		);
 	}
 

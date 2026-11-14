@@ -66,8 +66,9 @@ full documentation index is `docs/README.md`.
 - Every new behaviour needs a test that fails without it. Every new port
   implementation must pass the existing contract test (`BlobStoreTestCase`,
   `PostRepositoryTestCase`, `AttachmentRepositoryTestCase`,
-  `JobQueueTestCase`, `ActivityLogTestCase`); the optional instance-count
-  capabilities are checked by the post and remote-post contracts.
+  `JobQueueTestCase`, `ActivityLogTestCase`, `SearchIndexRepositoryTestCase`);
+  the optional instance-count capabilities are checked by the post and
+  remote-post contracts.
 - Conventional Commits with a scope: `feat(posts): …`, `fix(signature): …`.
 - Commits carry no tool or AI attribution trailers; the author is the human
   who submits the work.

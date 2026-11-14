@@ -311,12 +311,11 @@ final class MigrationInventory
 			),
 			self::entry(
 				'search_index',
-				'local search plus remote discovery',
+				'local search plus bounded remote discovery',
 				self::OWNER_CORE,
-				'PostRepository::search for local public posts; remote index and trends are open (#13)',
-				self::STATUS_PARTIAL,
+				'social_search_index and social_search_trend; local post search remains available',
+				self::STATUS_SUPPORTED,
 				'inventory-only',
-				gapIssue: '#13',
 			),
 			self::entry(
 				'atproto_publications',
