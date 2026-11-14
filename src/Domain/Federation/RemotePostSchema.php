@@ -36,6 +36,8 @@ final class RemotePostSchema
 	{
 		return [
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN updated_at VARCHAR(20) NULL',
+			"ALTER TABLE " . self::TABLE . " ADD COLUMN object_type VARCHAR(16) NOT NULL DEFAULT 'note'",
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN object_metadata TEXT NULL',
 		];
 	}
 
@@ -51,6 +53,8 @@ final class RemotePostSchema
 			. ' object_author_id VARCHAR(255) NULL,'
 			. ' actor_id VARCHAR(255) NOT NULL,'
 			. ' kind VARCHAR(16) NOT NULL,'
+			. " object_type VARCHAR(16) NOT NULL DEFAULT 'note',"
+			. ' object_metadata TEXT NULL,'
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'

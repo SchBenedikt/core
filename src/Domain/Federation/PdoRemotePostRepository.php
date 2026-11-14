@@ -27,7 +27,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 	public const MAX_ATTACHMENTS = 4;
 
 	private const COLUMNS = 'activity_id, object_id, object_author_id, actor_id, kind,'
-		. ' content, content_warning, published_at, updated_at, deleted_at';
+		. ' object_type, object_metadata, content, content_warning, published_at, updated_at, deleted_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -41,13 +41,15 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 				'INSERT INTO ' . RemotePostSchema::TABLE
 				. ' (' . self::COLUMNS . ')'
 				. ' VALUES (:activity_id, :object_id, :object_author_id, :actor_id, :kind,'
-				. ' :content, :content_warning, :published_at, :updated_at, :deleted_at)',
+				. ' :object_type, :object_metadata, :content, :content_warning, :published_at, :updated_at, :deleted_at)',
 				[
 					'activity_id' => $post->activityId,
 					'object_id' => $post->objectId,
 					'object_author_id' => $post->objectAuthorId,
 					'actor_id' => $post->actorId,
 					'kind' => $post->kind->value,
+					'object_type' => $post->objectType->value,
+					'object_metadata' => $post->metadata?->toJson(),
 					'content' => $post->content,
 					'content_warning' => $post->contentWarning,
 					'published_at' => Time::format($post->publishedAt),
@@ -298,6 +300,10 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 			objectAuthorId: $row['object_author_id'] === null ? null : (string) $row['object_author_id'],
 			deletedAt: $row['deleted_at'] === null ? null : Time::parse((string) $row['deleted_at']),
 			updatedAt: ($row['updated_at'] ?? null) === null ? null : Time::parse((string) $row['updated_at']),
+			objectType: RemoteObjectType::tryFrom((string) ($row['object_type'] ?? 'note')) ?? RemoteObjectType::Note,
+			metadata: RemoteObjectMetadata::fromStored(
+				isset($row['object_metadata']) && is_string($row['object_metadata']) ? $row['object_metadata'] : null,
+			),
 		);
 	}
 }

@@ -56,7 +56,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
-- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` (including nullable `updated_at`) and `social_remote_post_attachment`
+- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` (including nullable `updated_at`, bounded `object_type` and optional `object_metadata` JSON) and `social_remote_post_attachment`
 - `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
@@ -115,7 +115,10 @@ Protocol delete job and the delivery jobs in the same boundary.
 followed remote actors. Its primary key is the activity id, which makes a
 duplicate delivery impossible even after the 24-hour activity-log window. It
 keeps the object id, object author, signing actor, kind (`post`/`boost`),
-content, optional content warning, published time and `deleted_at`. The home
+object type, typed metadata JSON, content, optional content warning,
+published time and `deleted_at`. The metadata JSON is decoded leniently on
+read, so a malformed or older value degrades the card instead of hiding the
+row. The home
 timeline joins the table to `social_following`; remote rows are shared by all
 local followers and the join, rather than a per-user copy, scopes visibility.
 `social_remote_post_attachment` is the ordered link between a remote activity

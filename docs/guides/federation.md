@@ -28,6 +28,38 @@ unescaped string would be a cross-server XSS. A reply adds the parent URL as
 `inReplyTo`.
 
 A `Block` has the blocked actor URL as its `object` and `to: [actor]`.
+
+## Typed remote objects
+
+Not every remote object is a plain Note. The remote store keeps a bounded
+`object_type` — `note`, `article`, `page`, `question`, `event`, `audio` or
+`video` — separately from the boost kind, so an `Announce` of an Event stays a
+boost and a media-only Video is still a Video. The neutral projection returns
+`object_type` and an optional `metadata` object; clients should prefer it over
+sniffing the body.
+
+| Type | Preserved metadata |
+| --- | --- |
+| `article`, `page`, `event` | plain-text `title` |
+| `event` | `name`, `starts_at`, `ends_at`, `location`, `participation_url`, `status` |
+| `audio`, `video` | `duration_seconds`, `thumbnail_url`, keyed `sources` |
+| `question` | `title`; the vote lifecycle itself is tracked separately |
+
+An object may arrive with an empty body when it has typed metadata: a
+Mobilizon or Gancio Event, an Article and a PeerTube Video are all renderable
+without text. An object with neither body nor metadata is still refused.
+
+Validation happens in `RemotePostFactory`, shared by the inbox and outbox
+backfill: titles and locations are stripped of HTML, event timestamps must be
+RFC 3339 and an end before the start is refused, and every URL — including a
+Mobilizon `externalParticipationUrl` — must be absolute `http(s)` with no
+credentials. A `javascript:` link therefore cannot reach a participation
+button. An unknown `eventStatus` is ignored (the card simply shows no status)
+and a cancelled event stays a stored post: cancellation is metadata, not a
+`Delete`. Durations are parsed from ISO 8601 and an out-of-range or malformed
+one is dropped rather than failing the delivery. An edit keeps the stored
+type and metadata and applies only the updated text; a boost without an
+embedded object inherits the target's type and metadata.
 `Undo(Block)` wraps that activity. Both use the same signed delivery queue as
 posts, but no post audience is involved.
 
@@ -100,6 +132,7 @@ verify the signature of a remote actor, apply `Follow`/`Undo(Follow)` and
 followed by at least one local
 account. The actor document advertises the shared route under
 `endpoints.sharedInbox`; see [shared inboxes](shared-inboxes.md).
+Rich objects are imported with their typed metadata as described above.
 The home timeline reads those remote rows through the outgoing follow graph
 and applies each reader's private block list; see [blocks](blocks.md).
 See [inbound federation](inbound-federation.md) for the order of checks and

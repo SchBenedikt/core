@@ -42,6 +42,8 @@ final readonly class RemotePost
 		public ?string $objectAuthorId = null,
 		public ?DateTimeImmutable $deletedAt = null,
 		public ?DateTimeImmutable $updatedAt = null,
+		public RemoteObjectType $objectType = RemoteObjectType::Note,
+		public ?RemoteObjectMetadata $metadata = null,
 	) {
 		if ($activityId === '' || $objectId === '' || $actorId === '') {
 			throw new InvalidArgumentException('A remote post needs an activity, an object and an actor.');
@@ -76,6 +78,8 @@ final readonly class RemotePost
 			'object_author_id' => $this->objectAuthorId,
 			'actor_id' => $this->actorId,
 			'kind' => $this->kind->value,
+			'object_type' => $this->objectType->value,
+			'metadata' => $this->metadata?->toArray(),
 			'content' => $this->content,
 			'content_warning' => $this->contentWarning,
 			'published_at' => Time::format($this->publishedAt),

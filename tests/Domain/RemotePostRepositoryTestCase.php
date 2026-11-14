@@ -10,6 +10,11 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Federation\RemoteDomainCount;
+use AlohaSocial\Core\Domain\Federation\RemoteEventMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteEventStatus;
+use AlohaSocial\Core\Domain\Federation\RemoteMediaMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
@@ -40,6 +45,57 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		self::assertSame('2026-11-11T10:00:00Z', Time::format($found->publishedAt));
 		self::assertNull($found->deletedAt);
 		self::assertNull($repository->findByActivityId('missing'));
+	}
+
+	public function testTypedMetadataSurvivesStorage(): void
+	{
+		$repository = $this->repository();
+		$repository->insert(new RemotePost(
+			activityId: 'event-activity',
+			objectId: 'https://gancio.example/events/1',
+			actorId: 'https://gancio.example',
+			kind: RemotePostKind::Post,
+			content: '',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T10:00:00Z'),
+			objectAuthorId: 'https://gancio.example',
+			objectType: RemoteObjectType::Event,
+			metadata: new RemoteObjectMetadata(
+				title: 'Concert',
+				event: new RemoteEventMetadata(
+					name: 'Concert',
+					startsAt: Time::parse('2026-12-01T18:00:00Z'),
+					endsAt: Time::parse('2026-12-01T20:00:00Z'),
+					location: 'Town hall',
+					participationUrl: 'https://mobilizon.example/events/1/participate',
+					status: RemoteEventStatus::Confirmed,
+				),
+				media: new RemoteMediaMetadata(durationSeconds: 90, sources: ['video/mp4' => 'https://cdn.example/v.mp4']),
+			),
+		));
+
+		$found = $repository->findByActivityId('event-activity');
+
+		self::assertNotNull($found);
+		self::assertSame(RemoteObjectType::Event, $found->objectType);
+		self::assertSame('Concert', $found->metadata?->title);
+		self::assertSame('Town hall', $found->metadata?->event?->location);
+		self::assertSame(RemoteEventStatus::Confirmed, $found->metadata?->event?->status);
+		self::assertSame('2026-12-01T18:00:00Z', Time::format($found->metadata->event->startsAt));
+		self::assertSame(90, $found->metadata?->media?->durationSeconds);
+		self::assertSame(['video/mp4' => 'https://cdn.example/v.mp4'], $found->metadata?->media?->sources);
+	}
+
+	public function testAPostWithoutMetadataStaysANote(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+
+		$found = $repository->findByActivityId('activity-1');
+
+		self::assertNotNull($found);
+		self::assertSame(RemoteObjectType::Note, $found->objectType);
+		self::assertNull($found->metadata);
 	}
 
 	public function testCountsDistinctDomainsFromLiveRemoteActors(): void

@@ -11,6 +11,11 @@ namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdate;
+use AlohaSocial\Core\Domain\Federation\RemoteEventMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteEventStatus;
+use AlohaSocial\Core\Domain\Federation\RemoteMediaMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectMetadata;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Platform\Clock\Clock;
@@ -18,8 +23,18 @@ use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Exception;
 
+use function array_is_list;
+use function count;
+use function html_entity_decode;
+use function in_array;
 use function is_array;
 use function is_string;
+use function mb_strlen;
+use function parse_url;
+use function preg_match;
+use function strip_tags;
+use function strtolower;
+use function trim;
 
 /**
  * Turns a validated ActivityPub Create/Announce into a RemotePost.
@@ -56,9 +71,17 @@ final class RemotePostFactory
 			);
 		}
 
-		$content = $object['content'] ?? null;
-		if (!is_string($content) || trim($content) === '') {
-			throw new InboxRejectedException('invalid_activity', 'A created Note needs string content.');
+		$content = $this->optionalContent($object);
+		$objectType = RemoteObjectType::fromActivityType($object['type'] ?? null);
+		$metadata = $this->metadata($object, $objectType ?? RemoteObjectType::Note);
+
+		// A media-only Video, an Event card or an Article may legitimately have
+		// no body. Refuse only an object that has nothing to render at all.
+		if (($content === null || trim($content) === '') && $metadata === null) {
+			throw new InboxRejectedException(
+				'invalid_activity',
+				'A created object needs content or typed metadata.',
+			);
 		}
 
 		return new RemotePost(
@@ -66,10 +89,12 @@ final class RemotePostFactory
 			objectId: $objectId,
 			actorId: $actorId,
 			kind: RemotePostKind::Post,
-			content: $content,
+			content: $content ?? '',
 			contentWarning: $this->contentWarning($object),
 			publishedAt: $this->publishedAt($object['published'] ?? null, $activity['published'] ?? null),
 			objectAuthorId: $objectActor,
+			objectType: $objectType ?? RemoteObjectType::Note,
+			metadata: $metadata,
 		);
 	}
 
@@ -85,6 +110,8 @@ final class RemotePostFactory
 		$embedded = is_array($object) ? $object : [];
 		$content = $this->optionalContent($embedded);
 		$contentWarning = $this->contentWarning($embedded);
+		$objectType = RemoteObjectType::fromActivityType($embedded['type'] ?? null) ?? $target?->objectType ?? RemoteObjectType::Note;
+		$metadata = $this->metadata($embedded, $objectType) ?? $target?->metadata;
 
 		return new RemotePost(
 			activityId: $activityId,
@@ -99,6 +126,8 @@ final class RemotePostFactory
 				$target === null ? null : Time::format($target->publishedAt),
 			),
 			objectAuthorId: $this->announcedObjectAuthor($embedded) ?? $target?->objectAuthorId,
+			objectType: $objectType,
+			metadata: $metadata,
 		);
 	}
 
@@ -156,6 +185,8 @@ final class RemotePostFactory
 			objectAuthorId: $target->objectAuthorId,
 			deletedAt: $target->deletedAt,
 			updatedAt: $updated['updatedAt'],
+			objectType: $target->objectType,
+			metadata: $target->metadata,
 		);
 	}
 
@@ -356,6 +387,231 @@ final class RemotePostFactory
 		}
 
 		return $author;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function metadata(array $object, RemoteObjectType $type): ?RemoteObjectMetadata
+	{
+		$title = $this->title($object);
+		$event = $type === RemoteObjectType::Event ? $this->event($object, $title) : null;
+		$media = $type->isMedia() ? $this->media($object) : null;
+
+		if ($title === null && $event === null && $media === null) {
+			return null;
+		}
+
+		return new RemoteObjectMetadata($title, $event, $media);
+	}
+
+	/**
+	 * A title is plain text. Peers send HTML in `name`, and a card must not
+	 * turn that into markup, so the tags are stripped before storage.
+	 *
+	 * @param array<string, mixed> $object
+	 */
+	private function title(array $object): ?string
+	{
+		$name = $object['name'] ?? null;
+		if ($name === null) {
+			return null;
+		}
+
+		if (!is_string($name)) {
+			throw new InboxRejectedException('invalid_activity', 'A name must be a string.');
+		}
+
+		$title = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		if ($title === '') {
+			return null;
+		}
+
+		if (mb_strlen($title) > RemoteObjectMetadata::MAX_TITLE_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The title is too long.');
+		}
+
+		return $title;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function event(array $object, ?string $title): RemoteEventMetadata
+	{
+		$name = $title ?? $this->title($object);
+		if ($name === null) {
+			throw new InboxRejectedException('invalid_activity', 'An event needs a name.');
+		}
+
+		$startsAt = $this->eventTime($object['startTime'] ?? null);
+		if ($startsAt === null) {
+			throw new InboxRejectedException('invalid_activity', 'An event needs a valid startTime.');
+		}
+
+		try {
+			return new RemoteEventMetadata(
+				name: $name,
+				startsAt: $startsAt,
+				endsAt: $this->eventTime($object['endTime'] ?? null),
+				location: $this->location($object['location'] ?? null),
+				participationUrl: $this->url($object['externalParticipationUrl'] ?? null, 'externalParticipationUrl'),
+				status: RemoteEventStatus::fromActivityValue($object['eventStatus'] ?? null),
+			);
+		} catch (\InvalidArgumentException $exception) {
+			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
+		}
+	}
+
+	private function eventTime(mixed $value): ?DateTimeImmutable
+	{
+		if ($value === null) {
+			return null;
+		}
+
+		if (!is_string($value) || trim($value) === '') {
+			throw new InboxRejectedException('invalid_activity', 'An event timestamp must be a string.');
+		}
+
+		$value = trim($value);
+		if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1) {
+			throw new InboxRejectedException('invalid_activity', 'An event timestamp is not RFC 3339.');
+		}
+
+		try {
+			return Time::toSecondPrecision(new DateTimeImmutable($value));
+		} catch (Exception) {
+			throw new InboxRejectedException('invalid_activity', 'An event timestamp is invalid.');
+		}
+	}
+
+	private function location(mixed $value): ?string
+	{
+		if ($value === null) {
+			return null;
+		}
+
+		$name = is_array($value) ? ($value['name'] ?? null) : $value;
+		if ($name === null) {
+			return null;
+		}
+
+		if (!is_string($name)) {
+			throw new InboxRejectedException('invalid_activity', 'An event location must be a string or a place name.');
+		}
+
+		$location = trim(html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		if ($location === '') {
+			return null;
+		}
+
+		if (mb_strlen($location) > RemoteEventMetadata::MAX_LOCATION_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The event location is too long.');
+		}
+
+		return $location;
+	}
+
+	/**
+	 * @param array<string, mixed> $object
+	 */
+	private function media(array $object): ?RemoteMediaMetadata
+	{
+		$duration = $this->durationSeconds($object['duration'] ?? null);
+		$thumbnail = $this->url($object['icon'] ?? ($object['image'] ?? null), 'icon');
+
+		$sources = [];
+		$rawSources = $object['url'] ?? null;
+		if (is_string($rawSources) || (is_array($rawSources) && !array_is_list($rawSources))) {
+			$rawSources = [$rawSources];
+		}
+
+		if (is_array($rawSources)) {
+			foreach ($rawSources as $index => $source) {
+				$url = $this->url($source, 'url');
+				if ($url === null) {
+					continue;
+				}
+
+				$label = is_array($source) && is_string($source['mediaType'] ?? null) && trim($source['mediaType']) !== ''
+					? trim($source['mediaType'])
+					: 'source' . $index;
+				$sources[$label] = $url;
+
+				if (count($sources) >= RemoteMediaMetadata::MAX_SOURCES) {
+					break;
+				}
+			}
+		}
+
+		if ($duration === null && $thumbnail === null && $sources === []) {
+			return null;
+		}
+
+		try {
+			return new RemoteMediaMetadata($duration, $thumbnail, $sources);
+		} catch (\InvalidArgumentException $exception) {
+			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
+		}
+	}
+
+	private function durationSeconds(mixed $value): ?int
+	{
+		if (!is_string($value) || preg_match('/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/D', trim($value), $matches) !== 1) {
+			return null;
+		}
+
+		$days = isset($matches[1]) && $matches[1] !== '' ? (int) $matches[1] : 0;
+		$hours = isset($matches[2]) && $matches[2] !== '' ? (int) $matches[2] : 0;
+		$minutes = isset($matches[3]) && $matches[3] !== '' ? (int) $matches[3] : 0;
+		$seconds = isset($matches[4]) && $matches[4] !== '' ? (int) $matches[4] : 0;
+		$total = $days * 86_400 + $hours * 3_600 + $minutes * 60 + $seconds;
+
+		if ($total < 1 || $total > RemoteMediaMetadata::MAX_DURATION_SECONDS) {
+			return null;
+		}
+
+		return $total;
+	}
+
+	/**
+	 * A URL from a string or an ActivityStreams Link object. Only absolute
+	 * http(s) URLs are accepted; a peer cannot smuggle a `javascript:` link
+	 * into a card or a participation button.
+	 */
+	private function url(mixed $value, string $field): ?string
+	{
+		if ($value === null) {
+			return null;
+		}
+
+		$url = is_array($value) ? ($value['href'] ?? ($value['url'] ?? null)) : $value;
+		if ($url === null) {
+			return null;
+		}
+
+		if (!is_string($url)) {
+			throw new InboxRejectedException('invalid_activity', 'The ' . $field . ' must be a URL string.');
+		}
+
+		$url = trim($url);
+		if ($url === '') {
+			return null;
+		}
+
+		if (mb_strlen($url) > RemoteMediaMetadata::MAX_URL_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The ' . $field . ' is too long.');
+		}
+
+		$scheme = parse_url($url, PHP_URL_SCHEME);
+		$host = parse_url($url, PHP_URL_HOST);
+		if (!is_string($scheme) || !in_array(strtolower($scheme), ['http', 'https'], true)
+			|| !is_string($host) || $host === ''
+		) {
+			throw new InboxRejectedException('invalid_activity', 'The ' . $field . ' must be an absolute http(s) URL.');
+		}
+
+		return $url;
 	}
 
 	private function publishedAt(mixed ...$values): DateTimeImmutable
