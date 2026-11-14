@@ -71,6 +71,32 @@ final class AtprotoPostRecordTest extends TestCase
 		self::assertSame('hello #tag', $record['text']);
 	}
 
+	public function testAnEmbedIsPartOfTheRecord(): void
+	{
+		$embed = [
+			'$type' => 'app.bsky.embed.images',
+			'images' => [[
+				'image' => ['$type' => 'blob', 'ref' => ['$link' => 'bafy-img'], 'mimeType' => 'image/png', 'size' => 3],
+				'alt' => '',
+			]],
+		];
+
+		$record = AtprotoPostRecord::fromText(
+			'hello',
+			Time::parse('2026-11-11T10:00:00Z'),
+			null,
+			null,
+			[],
+			$embed,
+		);
+
+		self::assertSame($embed, $record['embed']);
+		self::assertArrayNotHasKey(
+			'embed',
+			AtprotoPostRecord::fromText('hello', Time::parse('2026-11-11T10:00:00Z')),
+		);
+	}
+
 	public function testFromTextBuildsTheSameRecordAsFromPost(): void
 	{
 		self::assertSame(

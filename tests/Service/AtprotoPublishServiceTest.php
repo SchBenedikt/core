@@ -20,11 +20,15 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoBlobException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoIdentityResolver;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoRecord;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoRecordResolver;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoMedia;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoBlobUploader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishDisabledException;
@@ -254,6 +258,100 @@ final class AtprotoPublishServiceTest extends TestCase
 			'root' => ['uri' => $parentUri, 'cid' => 'bafy-parent'],
 			'parent' => ['uri' => $parentUri, 'cid' => 'bafy-parent'],
 		], $record['reply']);
+		self::assertArrayNotHasKey('embed', $record);
+	}
+
+	public function testMediaIsUploadedAndEmbedded(): void
+	{
+		$post = $this->post(content: 'look');
+		$this->posts->insert($post);
+		$this->http->queueResponse($this->blobResponse('bafy-img', 'image/png', 3));
+		$this->http->queueResponse($this->published(self::URI));
+
+		$this->serviceWith()->publish('alice', $post->id, [
+			new AtprotoMedia('image/png', 'png', 'a cat', 800, 600),
+		]);
+
+		self::assertSame(
+			'https://pds.example/xrpc/com.atproto.repo.uploadBlob',
+			$this->http->requests[0]['url'],
+		);
+		self::assertSame('png', $this->http->requests[0]['body']);
+		self::assertSame('image/png', $this->http->requests[0]['headers']['Content-Type']);
+
+		$record = $this->publishedRecord();
+		self::assertSame('app.bsky.embed.images', $record['embed']['$type']);
+		self::assertSame(['$link' => 'bafy-img'], $record['embed']['images'][0]['image']['ref']);
+		self::assertSame('a cat', $record['embed']['images'][0]['alt']);
+		self::assertSame(['width' => 800, 'height' => 600], $record['embed']['images'][0]['aspectRatio']);
+	}
+
+	public function testAVideoIsEmbedded(): void
+	{
+		$post = $this->post(content: 'watch');
+		$this->posts->insert($post);
+		$this->http->queueResponse($this->blobResponse('bafy-video', 'video/mp4', 4));
+		$this->http->queueResponse($this->published(self::URI));
+
+		$this->serviceWith()->publish('alice', $post->id, [
+			new AtprotoMedia('video/mp4', 'mp4', 'a clip'),
+		]);
+
+		$embed = $this->publishedRecord()['embed'];
+		self::assertSame('app.bsky.embed.video', $embed['$type']);
+		self::assertSame(['$link' => 'bafy-video'], $embed['video']['ref']);
+		self::assertSame('a clip', $embed['alt']);
+	}
+
+	public function testAnUnsupportedMediaTypeEndsWithoutAnyRequest(): void
+	{
+		$post = $this->post(content: 'look');
+		$this->posts->insert($post);
+
+		try {
+			$this->serviceWith()->publish('alice', $post->id, [
+				new AtprotoMedia('image/gif', 'gif', 'alt'),
+			]);
+			self::fail('An unsupported media type should have been refused.');
+		} catch (AtprotoPostRejectedException $exception) {
+			self::assertSame(AtprotoBlobException::MIME_UNSUPPORTED, $exception->reason);
+		}
+
+		self::assertCount(0, $this->http->requests);
+		self::assertCount(0, $this->queue->pending());
+	}
+
+	public function testAFailedUploadLeavesNoRecord(): void
+	{
+		$post = $this->post(content: 'look');
+		$this->posts->insert($post);
+		$this->http->queueResponse(new HttpResponse(500, [], '{"error":"InternalServerError"}'));
+
+		try {
+			$this->serviceWith()->publish('alice', $post->id, [
+				new AtprotoMedia('image/png', 'png', 'alt'),
+			]);
+			self::fail('A failed upload should have refused the post.');
+		} catch (AtprotoPostRejectedException $exception) {
+			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+		}
+
+		self::assertCount(1, $this->http->requests);
+		self::assertStringContainsString('com.atproto.repo.uploadBlob', $this->http->requests[0]['url']);
+		self::assertNull($this->publications->findForPost('alice', $post->id));
+	}
+
+	public function testAPlainTextPostStillHasNoEmbed(): void
+	{
+		$post = $this->post(content: 'hello');
+		$this->posts->insert($post);
+		$this->http->queueResponse($this->published(self::URI));
+
+		$this->serviceWith()->publish('alice', $post->id);
+
+		self::assertCount(1, $this->http->requests);
+		self::assertStringContainsString('com.atproto.repo.putRecord', $this->http->requests[0]['url']);
+		self::assertArrayNotHasKey('embed', $this->publishedRecord());
 	}
 
 	public function testAReplyToAnUnpublishedParentIsSkippedAndRefused(): void
@@ -313,6 +411,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			null,
 			new AtprotoFacets($identities),
 			new AtprotoReplyBuilder($this->recordResolver()),
+			new AtprotoEmbed(new XrpcAtprotoBlobUploader($this->http)),
 		);
 	}
 
@@ -340,6 +439,18 @@ final class AtprotoPublishServiceTest extends TestCase
 				return $this->dids[$handle] ?? null;
 			}
 		};
+	}
+
+	private function blobResponse(string $cid, string $mimeType, int $size): HttpResponse
+	{
+		return new HttpResponse(200, [], json_encode([
+			'blob' => [
+				'$type' => 'blob',
+				'ref' => ['$link' => $cid],
+				'mimeType' => $mimeType,
+				'size' => $size,
+			],
+		], JSON_THROW_ON_ERROR));
 	}
 
 	private function published(string $uri): HttpResponse

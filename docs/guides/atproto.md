@@ -72,10 +72,10 @@ must provide.
 Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
-truncated. Facets and reply references are implemented (see below); a blob
-upload, image embed, edit, AppView read, firehose consumer or CAR/MST
-repository is not. Remote delete is implemented for records the core itself
-published; deleting arbitrary PDS records is not.
+truncated. Facets, reply references and image/video embeds are implemented (see
+below); an edit, AppView read, firehose consumer or CAR/MST repository is not.
+Remote delete is implemented for records the core itself published; deleting
+arbitrary PDS records is not, and so is deleting an uploaded blob.
 
 OAuth session refresh and the authorization-code/PAR/revocation protocol are
 implemented. The browser redirect, the short-lived flow store keyed by state,
@@ -123,6 +123,45 @@ is `reply_parent_not_published`, and an assembly without a reply builder is
 $facets)` and `fromPost($post, $reply, $facets)` assemble the record that
 `AtprotoPublishService` hands to the publisher, so a caller supplies the text,
 an optional parent URI and the facet inputs rather than a pre-built payload.
+
+## Media embeds
+
+`Protocol\Atproto\AtprotoBlobUploader` is the upload port;
+`XrpcAtprotoBlobUploader` sends the raw bytes to
+`com.atproto.repo.uploadBlob` with the media type as the request Content-Type,
+over the same bearer/DPoP transport as the record writer, and reads the blob
+reference (`$type: blob`, `ref.$link`, `mimeType`, `size`) from the answer.
+`AtprotoEmbed` validates everything before the first upload and then builds
+`app.bsky.embed.images` or `app.bsky.embed.video`.
+
+| Rule | Value | Refusal reason |
+| --- | --- | --- |
+| Image types | `image/jpeg`, `image/png`, `image/webp` | `blob_mime_unsupported` |
+| Video types | `video/mp4` | `blob_mime_unsupported` |
+| Image size | at most 1,000,000 bytes | `blob_too_large` |
+| Video size | at most 50,000,000 bytes | `blob_too_large` |
+| Empty file | never uploaded | `blob_missing` |
+| Images per post | at most 4 | `embed_too_many_images` |
+| Videos per post | at most 1 | `embed_too_many_videos` |
+| Images and video together | never | `embed_mixed_media` |
+| Alt text per image | required, may be empty | `embed_alt_missing` |
+| Alt text length | at most 2000 characters | `embed_alt_too_long` |
+| Aspect ratio | both dimensions, 1–10000 | `embed_aspect_ratio_invalid` |
+
+An empty alt text is allowed and means the image is decorative; a *missing*
+alt text refuses the record, so a caller cannot forget it by accident. A
+video's alt text is optional in the lexicon and is omitted when absent.
+`aspectRatio` is emitted only when both dimensions are present. Alt text and
+aspect ratio are the caller's data: the core does not guess either from the
+bytes.
+
+`AtprotoPublishService::publish($userId, $postId, $media)` takes the media
+list. The automatic hook still refuses a post with local `attachmentIds`,
+because it has no bytes to read; a caller that wants those attachments on AT
+Protocol passes them explicitly. Every refusal above ends the whole post: no
+record and no partial embed is written. A blob uploaded before a later upload
+failed stays on the PDS without a record — the core does not delete it, because
+it never deletes a blob the account might use elsewhere.
 
 ## Configuration
 
@@ -396,7 +435,10 @@ emoji, the tag/mention/link boundaries, overlap suppression and a handle that
 resolves or is refused; `AtprotoReplyBuilderTest` covers root inheritance, the
 CID lookup, an unreadable parent and an unreadable root;
 `XrpcAtprotoIdentityResolverTest` and `XrpcAtprotoRecordResolverTest` cover the
-XRPC adapters and their failure answers. `AtprotoOAuthSessionTest` covers session validation and
+XRPC adapters and their failure answers. `XrpcAtprotoBlobUploaderTest` covers
+the upload request, the DPoP variant, a refused upload, a transport failure and
+a success without a blob reference; `AtprotoEmbedTest` covers 1–4 images, a
+video, mixed media, every refusal above and the aspect-ratio pass-through. `AtprotoOAuthSessionTest` covers session validation and
 the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
 rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
 `Es256DpopProofProviderTest` verifies the JWS signature, the RFC 7638
@@ -415,8 +457,9 @@ The full AT Protocol stack is still host/app work:
   credential store and per-account PDS selection (the protocol client and
   authorization-server discovery are implemented locally);
 - a full repository client (CAR/MST, arbitrary record listing/update),
-  AppView reads, firehose consumption and blob upload;
-- media embeds, blob uploads and image processing for AT Protocol;
+  AppView reads and firehose consumption;
+- video transcoding and image processing for AT Protocol (the core uploads
+  bytes the caller already prepared);
 - link cards and richer mention/facet targets;
 - migrating the existing AT Protocol implementation out of the Nextcloud app.
 

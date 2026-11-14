@@ -21,22 +21,15 @@ use JsonException;
 use function is_array;
 use function is_string;
 use function strlen;
-use function trim;
 
 /**
  * The authenticated XRPC write used for a Bluesky post.
  *
  * `com.atproto.repo.putRecord` is an upsert: a retry with the same rkey
  * updates the same record instead of creating a duplicate. The PDS is the
- * only remote service this class talks to, and the access token is sent only
- * in the Authorization header.
- *
- * With a `DpopResourceProofProvider` every request is a DPoP resource request
- * (`Authorization: DPoP <token>` plus a proof carrying `ath`), which is what an
- * AT Protocol OAuth token needs; without one the adapter keeps sending the
- * host's bearer token so an app-password-style host is unchanged. Exactly one
- * `use_dpop_nonce` challenge is retried with the server's nonce. Neither a
- * token nor a proof is ever logged or echoed in an exception.
+ * only remote service this class talks to, and the request transport (bearer
+ * or DPoP, nonce retry) comes from `AtprotoPdsRequest`. Neither a token nor a
+ * proof is ever logged or echoed in an exception.
  */
 final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 {
@@ -44,12 +37,15 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 
 	public const DELETE_ENDPOINT = '/xrpc/com.atproto.repo.deleteRecord';
 
-	public const TIMEOUT_SECONDS = 20;
+	public const TIMEOUT_SECONDS = AtprotoPdsRequest::TIMEOUT_SECONDS;
+
+	private readonly AtprotoPdsRequest $requests;
 
 	public function __construct(
-		private readonly HttpClient $http,
-		private readonly ?DpopResourceProofProvider $dpop = null,
+		HttpClient $http,
+		?DpopResourceProofProvider $dpop = null,
 	) {
+		$this->requests = new AtprotoPdsRequest($http, $dpop);
 	}
 
 	public function publish(AtprotoAccount $account, string $rkey, array $record): string
@@ -114,81 +110,13 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 
 	private function send(string $url, AtprotoAccount $account, string $body): HttpResponse
 	{
-		$nonce = null;
-		for ($attempt = 0; $attempt < 2; $attempt++) {
-			try {
-				$response = $this->http->request(
-					'POST',
-					$url,
-					$this->headers($url, $account, $nonce),
-					$body,
-					self::TIMEOUT_SECONDS,
-				);
-			} catch (HttpClientException) {
-				throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
-			}
-
-			if ($this->dpop === null || $attempt === 1) {
-				return $response;
-			}
-
-			$nextNonce = $this->nonce($response);
-			if ($nextNonce === null
-				|| ($response->status !== 400 && $response->status !== 401)
-				|| $this->errorCode($response) !== 'use_dpop_nonce'
-			) {
-				return $response;
-			}
-
-			$nonce = $nextNonce;
-		}
-
-		throw new AtprotoPublishFailedException(401, 'The AT Protocol PDS kept refusing the DPoP proof.');
-	}
-
-	/**
-	 * @return array<string, string>
-	 */
-	private function headers(string $url, AtprotoAccount $account, ?string $nonce): array
-	{
-		$headers = [
-			'Content-Type' => 'application/json',
-			'Accept' => 'application/json',
-		];
-
-		if ($this->dpop === null) {
-			$headers['Authorization'] = 'Bearer ' . $account->accessToken;
-
-			return $headers;
-		}
-
-		return [
-			'Authorization' => 'DPoP ' . $account->accessToken,
-			'DPoP' => $this->dpop->proofForResource('POST', $url, $account->accessToken, $nonce),
-			...$headers,
-		];
-	}
-
-	private function nonce(HttpResponse $response): ?string
-	{
-		$nonce = $response->header('DPoP-Nonce');
-		if (!is_string($nonce) || trim($nonce) === '') {
-			return null;
-		}
-
-		return trim($nonce);
-	}
-
-	private function errorCode(HttpResponse $response): string
-	{
 		try {
-			$decoded = json_decode($response->body, true, 64, JSON_THROW_ON_ERROR);
-		} catch (JsonException) {
-			return 'unexpected';
+			return $this->requests->send('POST', $url, $account, $body, [
+				'Content-Type' => 'application/json',
+				'Accept' => 'application/json',
+			]);
+		} catch (HttpClientException) {
+			throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
 		}
-
-		$error = is_array($decoded) ? ($decoded['error'] ?? null) : null;
-
-		return is_string($error) && $error !== '' && strlen($error) <= 64 ? $error : 'unexpected';
 	}
 }

@@ -194,9 +194,11 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
 use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoBlobUploader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoIdentityResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
@@ -396,6 +398,7 @@ final readonly class Application
 			ids: $ids,
 			logger: $logger,
 			debug: $debug,
+			atprotoDpop: $atprotoDpop,
 		);
 	}
 
@@ -499,6 +502,7 @@ final readonly class Application
 			logger: $logger,
 			debug: $debug,
 			transactions: $transactions ?? ($database instanceof TransactionRunner ? $database : null),
+			atprotoDpop: $atprotoDpop,
 		);
 	}
 
@@ -545,6 +549,7 @@ final readonly class Application
 		?LoggerInterface $logger,
 		bool $debug,
 		?TransactionRunner $transactions = null,
+		?DpopResourceProofProvider $atprotoDpop = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -609,6 +614,7 @@ final readonly class Application
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
 			$httpClient === null ? null : new AtprotoFacets(new XrpcAtprotoIdentityResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
+			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
 		);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$blockService = new BlockService(

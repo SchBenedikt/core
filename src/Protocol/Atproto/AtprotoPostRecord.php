@@ -35,9 +35,20 @@ final class AtprotoPostRecord
 	 *
 	 * @return array<string, mixed>
 	 */
-	public static function fromPost(Post $post, ?AtprotoReplyRef $reply = null, array $facets = []): array
-	{
-		return self::fromText($post->content, $post->publishedAt, $post->contentWarning, $reply, $facets);
+	public static function fromPost(
+		Post $post,
+		?AtprotoReplyRef $reply = null,
+		array $facets = [],
+		?array $embed = null,
+	): array {
+		return self::fromText(
+			$post->content,
+			$post->publishedAt,
+			$post->contentWarning,
+			$reply,
+			$facets,
+			$embed,
+		);
 	}
 
 	/**
@@ -46,6 +57,8 @@ final class AtprotoPostRecord
 	 *
 	 * @param list<array<string, mixed>> $facets record-ready facet objects; their
 	 *                                           offsets are byte offsets in `$text`
+	 * @param array<string, mixed>|null  $embed  an `app.bsky.embed.images` or
+	 *                                           `app.bsky.embed.video` object
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -55,6 +68,7 @@ final class AtprotoPostRecord
 		?string $contentWarning = null,
 		?AtprotoReplyRef $reply = null,
 		array $facets = [],
+		?array $embed = null,
 	): array {
 		$record = [
 			'$type' => self::COLLECTION,
@@ -77,6 +91,10 @@ final class AtprotoPostRecord
 
 		if ($facets !== []) {
 			$record['facets'] = $facets;
+		}
+
+		if ($embed !== null) {
+			$record['embed'] = $embed;
 		}
 
 		return $record;

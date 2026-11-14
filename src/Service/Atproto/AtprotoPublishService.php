@@ -24,8 +24,12 @@ use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoBlobException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbedException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacetException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoMedia;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoPostRecord;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyException;
@@ -58,6 +62,7 @@ final class AtprotoPublishService
 		private readonly ?AtprotoDeleter $deleter = null,
 		private readonly ?AtprotoFacets $facets = null,
 		private readonly ?AtprotoReplyBuilder $replies = null,
+		private readonly ?AtprotoEmbed $embeds = null,
 	) {
 	}
 
@@ -184,7 +189,10 @@ final class AtprotoPublishService
 	 * @throws PostNotFoundException
 	 * @throws \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException
 	 */
-	public function publish(string $localUserId, string $postId): AtprotoPublication
+	/**
+	 * @param list<AtprotoMedia> $media images or one video to upload and embed
+	 */
+	public function publish(string $localUserId, string $postId, array $media = []): AtprotoPublication
 	{
 		if (!$this->isEnabled()) {
 			throw new AtprotoPublishDisabledException();
@@ -199,7 +207,7 @@ final class AtprotoPublishService
 			throw new PostNotFoundException($postId);
 		}
 
-		$rejection = $this->rejectionReason($post);
+		$rejection = $this->rejectionReason($post, $media);
 		if ($rejection !== null) {
 			throw new AtprotoPostRejectedException($rejection);
 		}
@@ -218,7 +226,7 @@ final class AtprotoPublishService
 		$uri = $this->publisher?->publish(
 			$account,
 			$rkey,
-			$this->record($post, $account),
+			$this->record($post, $account, $media),
 		);
 
 		if ($uri === null) {
@@ -269,10 +277,11 @@ final class AtprotoPublishService
 	 *
 	 * @throws AtprotoPostRejectedException
 	 */
-	private function record(Post $post, AtprotoAccount $account): array
+	private function record(Post $post, AtprotoAccount $account, array $media = []): array
 	{
 		$reply = $this->replyReference($post, $account);
 		$facets = [];
+		$embed = null;
 
 		if ($this->facets !== null) {
 			try {
@@ -282,7 +291,19 @@ final class AtprotoPublishService
 			}
 		}
 
-		return AtprotoPostRecord::fromPost($post, $reply, $facets);
+		if ($media !== []) {
+			if ($this->embeds === null) {
+				throw new AtprotoPostRejectedException(AtprotoPostRejectedException::MEDIA_UNSUPPORTED);
+			}
+
+			try {
+				$embed = $this->embeds->build($media, $account);
+			} catch (AtprotoBlobException | AtprotoEmbedException $exception) {
+				throw new AtprotoPostRejectedException($exception->reason);
+			}
+		}
+
+		return AtprotoPostRecord::fromPost($post, $reply, $facets, $embed);
 	}
 
 	/**
@@ -310,14 +331,24 @@ final class AtprotoPublishService
 		}
 	}
 
-	private function rejectionReason(Post $post): ?string
+	/**
+	 * @param list<AtprotoMedia> $media
+	 */
+	private function rejectionReason(Post $post, array $media = []): ?string
 	{
 		if ($post->visibility !== Visibility::Public) {
 			return AtprotoPostRejectedException::NOT_PUBLIC;
 		}
 
-		if ($post->attachmentIds !== []) {
+		// Local attachments are not read here: a caller that wants them on
+		// AT Protocol passes the bytes explicitly. Without media the local
+		// attachment list still refuses the post, as before.
+		if ($post->attachmentIds !== [] && $media === []) {
 			return AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED;
+		}
+
+		if ($media !== [] && $this->embeds === null) {
+			return AtprotoPostRejectedException::MEDIA_UNSUPPORTED;
 		}
 
 		if (!AtprotoPostRecord::acceptsText($post->content)) {

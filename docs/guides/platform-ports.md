@@ -99,8 +99,10 @@ a PDS, `Domain\Atproto\AtprotoDeleter` removes a record this core published, and
 `Domain\Atproto\AtprotoSessionStore` persists the host-owned OAuth session.
 Two protocol-level resolvers sit beside them: `Protocol\Atproto\AtprotoIdentityResolver`
 turns a mention handle into a DID and `Protocol\Atproto\AtprotoRecordResolver`
-reads a record with its CID for a reply reference. Both are optional, reuse
-`HttpClient`, and are wired automatically by the standard assemblies.
+reads a record with its CID for a reply reference. `Protocol\Atproto\AtprotoBlobUploader`
+stores one image or video on the PDS (`XrpcAtprotoBlobUploader`). All three are
+optional, reuse `HttpClient` (and the DPoP proof provider for an OAuth
+account), and are wired automatically by the standard assemblies.
 `XrpcAtprotoPublisher` is the production record adapter over the existing
 `HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
 OAuth refresh collaborators. `AtprotoOAuthMetadataResolver` and

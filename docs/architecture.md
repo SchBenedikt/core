@@ -782,7 +782,11 @@ the host-owned OAuth session. `XrpcAtprotoPublisher` is the default adapter for
 both record transports over `HttpClient`; fakes cover the network in tests.
 `AtprotoFacets` and `AtprotoReplyBuilder` turn text, mentions and a parent URI
 into the record's `facets` and `reply` objects through `AtprotoIdentityResolver`
-and `AtprotoRecordResolver`, over the same client.
+and `AtprotoRecordResolver`, over the same client. `AtprotoEmbed` uploads images
+or one video through `AtprotoBlobUploader` (`XrpcAtprotoBlobUploader` calls
+`com.atproto.repo.uploadBlob`) and builds the `app.bsky.embed.images` or
+`app.bsky.embed.video` object; uploads and record writes share
+`AtprotoPdsRequest` for bearer/DPoP auth and the nonce retry.
 Account linking UI/callback, credential storage and PDS selection remain
 host-owned, so remote delete can only act on an account the host resolves. The
 protocol side of linking is local: `AtprotoOAuthMetadataResolver` fetches and

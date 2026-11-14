@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service\Atproto;
 
+use AlohaSocial\Core\Protocol\Atproto\AtprotoBlobException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbedException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacetException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyException;
 use RuntimeException;
@@ -37,6 +39,8 @@ final class AtprotoPostRejectedException extends RuntimeException
 
 	public const MENTION_UNRESOLVED = AtprotoFacetException::MENTION_UNRESOLVED;
 
+	public const MEDIA_UNSUPPORTED = 'media_unsupported';
+
 	public function __construct(
 		public readonly string $reason,
 	) {
@@ -49,6 +53,17 @@ final class AtprotoPostRejectedException extends RuntimeException
 			self::REPLY_PARENT_UNRESOLVABLE => 'The reply parent could not be read from the PDS.',
 			self::REPLY_ROOT_UNRESOLVABLE => 'The reply root could not be read from the PDS.',
 			self::MENTION_UNRESOLVED => 'A mentioned handle does not resolve to an AT Protocol DID.',
+			self::MEDIA_UNSUPPORTED => 'Attachments are not configured on this instance.',
+			AtprotoBlobException::MIME_UNSUPPORTED => 'The attached media type is not supported by AT Protocol.',
+			AtprotoBlobException::TOO_LARGE => 'The attached media is too large for AT Protocol.',
+			AtprotoBlobException::MISSING => 'The AT Protocol PDS returned no blob reference.',
+			AtprotoBlobException::UPLOAD_FAILED => 'The media could not be uploaded to the PDS.',
+			AtprotoEmbedException::MIXED_MEDIA => 'A post cannot embed images and a video at the same time.',
+			AtprotoEmbedException::TOO_MANY_IMAGES => 'A post can embed at most four images.',
+			AtprotoEmbedException::TOO_MANY_VIDEOS => 'A post can embed at most one video.',
+			AtprotoEmbedException::ALT_MISSING => 'Every embedded image needs an alt text; an empty one is allowed.',
+			AtprotoEmbedException::ALT_TOO_LONG => 'An alt text is too long for AT Protocol.',
+			AtprotoEmbedException::ASPECT_RATIO_INVALID => 'The aspect ratio is incomplete or out of range.',
 			default => 'This post cannot be published to AT Protocol.',
 		};
 

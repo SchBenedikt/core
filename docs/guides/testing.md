@@ -40,6 +40,8 @@ that prints or skips is a failure.
 | `tests/Protocol/AtprotoReplyBuilderTest.php` | parent as root, inherited root without a second fetch, CID lookup for a root without one, unreadable parent, unreadable root and a non-`at://` inherited root |
 | `tests/Protocol/XrpcAtprotoIdentityResolverTest.php` | the exact `resolveHandle` GET, a resolved DID, unknown handle, transport failure, malformed DID and an invalid handle that is never sent |
 | `tests/Protocol/XrpcAtprotoRecordResolverTest.php` | the exact `getRecord` GET with uri and cid, a missing record, a record without a CID, transport failure and a malformed body |
+| `tests/Protocol/XrpcAtprotoBlobUploaderTest.php` | the exact `uploadBlob` POST with media Content-Type and raw body, the bearer and DPoP variants, local metadata fallback, a refused upload, transport failure and a success without a blob reference |
+| `tests/Protocol/AtprotoEmbedTest.php` | one to four images, a video, images-plus-video as a refusal, the missing/empty/long alt cases, unsupported type, oversized and empty files, a second video, incomplete aspect ratio and no media |
 | `tests/Protocol/Es256DpopProofProviderTest.php` | verifiable ES256 JWS, `dpop+jwt` header, public JWK, `htu` normalization, nonce claim, fresh `jti`, the `ath`-bound resource proof, RSA-key and invalid-method rejection |
 | `tests/Service/AtprotoSessionServiceTest.php` | a valid session is reused, an expiring session is refreshed and saved, an unknown user is null, a failed refresh keeps the old session and a changed DID is rejected |
 | `tests/Domain/PollVoteRepositoryTestCase.php` | Shared poll-vote contract for the in-memory and PDO stores: viewer scoping, duplicate votes, multiple choices, atomic poll/option counters and missing polls/options. |

@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Image and video embeds. `XrpcAtprotoBlobUploader` uploads raw bytes through
+  `com.atproto.repo.uploadBlob` with the media type as Content-Type over the
+  shared bearer/DPoP request layer (`AtprotoPdsRequest`, also used by the record
+  writer), and reads the blob reference from the answer. `AtprotoEmbed`
+  validates before uploading and builds `app.bsky.embed.images` (1–4 images,
+  alt text required but allowed to be empty, optional aspect ratio) or
+  `app.bsky.embed.video` (one video, mp4, optional alt/aspect ratio). Refusals
+  are `blob_mime_unsupported`, `blob_too_large`, `blob_missing`,
+  `blob_upload_failed`, `embed_mixed_media`, `embed_too_many_images`,
+  `embed_too_many_videos`, `embed_alt_missing`, `embed_alt_too_long` and
+  `embed_aspect_ratio_invalid`; `AtprotoPublishService::publish()` accepts the
+  media list and writes no record when one of them fails.
 - Complete AT Protocol post records. `AtprotoFacets` derives `#tag`, `#mention`
   and `#link` facets with UTF-8 **byte** offsets, drops overlapping candidates
   and resolves mention handles to DIDs through
