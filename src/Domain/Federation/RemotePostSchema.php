@@ -25,6 +25,21 @@ final class RemotePostSchema
 	public const ATTACHMENT_TABLE = 'social_remote_post_attachment';
 
 	/**
+	 * Columns an existing installation has to add.
+	 *
+	 * `updated_at` records the last applied `Update`; a null value is a post
+	 * that has only ever been seen in its created form.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN updated_at VARCHAR(20) NULL',
+		];
+	}
+
+	/**
 	 * @return list<string>
 	 */
 	public static function statements(): array
@@ -39,6 +54,7 @@ final class RemotePostSchema
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
+			. ' updated_at VARCHAR(20) NULL,'
 			. ' deleted_at VARCHAR(20) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE

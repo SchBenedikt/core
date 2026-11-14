@@ -41,7 +41,7 @@ timestamp, and anything else is refused.
 
 Each table's definition lives next to its repository or adapter:
 
-- `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment`, ordered `social_post_recipient` and normalized `social_post_hashtag` rows
+- `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment`, ordered `social_post_recipient`, normalized `social_post_hashtag` rows and the `social_post_revision` history of edits
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
@@ -53,7 +53,8 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
-- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` and `social_remote_post_attachment`
+- `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` (including nullable `updated_at`) and `social_remote_post_attachment`
+- `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Jobs/JobSchema.php` → `social_job`

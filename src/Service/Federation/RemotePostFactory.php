@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdate;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Platform\Clock\Clock;
@@ -122,6 +123,122 @@ final class RemotePostFactory
 		}
 
 		return $id;
+	}
+
+	/**
+	 * The updated version of a stored post.
+	 *
+	 * The embedded object must be the stored one and written by the same
+	 * actor; the timestamp is the peer's version marker, used to refuse an
+	 * older update after a newer one has been applied.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	public function fromUpdate(RemotePost $target, array $activity): RemotePost
+	{
+		$updated = $this->updatedObject($target->actorId, $activity);
+
+		if ($updated['objectId'] !== $target->objectId) {
+			throw new InboxRejectedException(
+				'invalid_activity',
+				'The updated object does not match the stored post.',
+			);
+		}
+
+		return new RemotePost(
+			activityId: $target->activityId,
+			objectId: $target->objectId,
+			actorId: $target->actorId,
+			kind: $target->kind,
+			content: $updated['content'],
+			contentWarning: $updated['contentWarning'],
+			publishedAt: $target->publishedAt,
+			objectAuthorId: $target->objectAuthorId,
+			deletedAt: $target->deletedAt,
+			updatedAt: $updated['updatedAt'],
+		);
+	}
+
+	/**
+	 * The same validated edit, held until its post arrives.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	public function pendingUpdate(string $actorId, array $activity, DateTimeImmutable $receivedAt): PendingRemoteUpdate
+	{
+		$updated = $this->updatedObject($actorId, $activity);
+		$activityId = $activity['id'] ?? null;
+
+		return new PendingRemoteUpdate(
+			objectId: $updated['objectId'],
+			actorId: $actorId,
+			activityId: is_string($activityId) ? $activityId : $updated['objectId'],
+			content: $updated['content'],
+			contentWarning: $updated['contentWarning'],
+			updatedAt: $updated['updatedAt'],
+			receivedAt: $receivedAt,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 *
+	 * @return array{objectId: string, content: string, contentWarning: ?string, updatedAt: DateTimeImmutable}
+	 */
+	private function updatedObject(string $actorId, array $activity): array
+	{
+		$object = $activity['object'] ?? null;
+		if (!is_array($object)) {
+			throw new InboxRejectedException('invalid_activity', 'An Update needs an embedded object.');
+		}
+
+		$objectAuthor = $this->objectAuthor($object, $actorId);
+		if ($objectAuthor !== $actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'The updated object belongs to another actor.',
+			);
+		}
+
+		$content = $object['content'] ?? null;
+		if (!is_string($content) || trim($content) === '') {
+			throw new InboxRejectedException('invalid_activity', 'An updated Note needs string content.');
+		}
+
+		if (mb_strlen($content) > PendingRemoteUpdate::MAX_CONTENT_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The updated content is too long.');
+		}
+
+		return [
+			'objectId' => $this->objectId($object, 'Update'),
+			'content' => $content,
+			'contentWarning' => $this->contentWarning($object),
+			'updatedAt' => $this->updatedAt($object, $activity['published'] ?? null),
+		];
+	}
+
+	/**
+	 * The peer's version marker for an update.
+	 *
+	 * `updated` is the ActivityStreams property for a modified object. A peer
+	 * that omits it still gets a monotonic value from its activity, and a
+	 * malformed one falls back to the clock rather than rejecting an edit whose
+	 * identity checks passed.
+	 *
+	 * @param array<string, mixed> $object
+	 */
+	private function updatedAt(array $object, mixed $activityPublished): DateTimeImmutable
+	{
+		$value = $object['updated'] ?? $activityPublished;
+		if (is_string($value) && trim($value) !== '') {
+			try {
+				return Time::toSecondPrecision(new DateTimeImmutable(trim($value)));
+			} catch (Exception) {
+				// Fall through to the clock.
+			}
+		}
+
+		return Time::toSecondPrecision($this->clock->now());
 	}
 
 	/**

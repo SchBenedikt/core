@@ -38,6 +38,7 @@ use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
+use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
@@ -89,6 +90,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
@@ -144,6 +146,15 @@ final class Routes
 				handler: ShowPostHandler::class,
 				requiresAuth: false,
 				summary: 'Read one post.',
+			),
+			new Route(
+				name: 'posts.update',
+				method: 'PATCH',
+				path: $base . '/posts/{id}',
+				handler: UpdatePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Edit a post you wrote; only the author may, and an edit cannot widen its audience.',
 			),
 			new Route(
 				name: 'atproto.publish',
@@ -536,6 +547,16 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Write a local status through the Mastodon shape, optionally with a poll.',
+			),
+			new Route(
+				name: 'mastodon.statuses.update',
+				method: 'PUT',
+				path: $mastodon . '/statuses/{id}',
+				handler: MastodonUpdateStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Edit one of the signed-in account\'s statuses through the Mastodon shape.',
 			),
 			new Route(
 				name: 'mastodon.statuses.delete',

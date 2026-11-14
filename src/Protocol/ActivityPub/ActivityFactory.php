@@ -165,6 +165,52 @@ final class ActivityFactory
 	 */
 	public function createNote(Post $post): array
 	{
+		$audience = $this->audience($post);
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->noteId($post) . '/activity',
+			'type' => 'Create',
+			'actor' => $this->actorId($post->authorId),
+			'published' => Time::format($post->publishedAt),
+			'to' => $audience['to'],
+			'cc' => $audience['cc'],
+			'object' => $this->note($post),
+		];
+	}
+
+	/**
+	 * An Update of the same note.
+	 *
+	 * The object keeps the id its Create used, and the activity id carries the
+	 * revision: a retried delivery of one edit is one activity for the peer,
+	 * while the next edit is a version it has not applied yet.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function updateNote(Post $post, DateTimeImmutable $at): array
+	{
+		$audience = $this->audience($post);
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->noteId($post) . '/update/' . $post->revision,
+			'type' => 'Update',
+			'actor' => $this->actorId($post->authorId),
+			'published' => Time::format($at),
+			'to' => $audience['to'],
+			'cc' => $audience['cc'],
+			'object' => $this->note($post),
+		];
+	}
+
+	/**
+	 * The note document itself, shared by Create and Update.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function note(Post $post): array
+	{
 		$actor = $this->actorId($post->authorId);
 		$noteId = $this->noteId($post);
 		$audience = $this->audience($post);
@@ -200,16 +246,7 @@ final class ActivityFactory
 			$note['attachment'] = $attachments;
 		}
 
-		return [
-			'@context' => self::CONTEXT,
-			'id' => $noteId . '/activity',
-			'type' => 'Create',
-			'actor' => $actor,
-			'published' => Time::format($post->publishedAt),
-			'to' => $audience['to'],
-			'cc' => $audience['cc'],
-			'object' => $note,
-		];
+		return $note;
 	}
 
 	/**

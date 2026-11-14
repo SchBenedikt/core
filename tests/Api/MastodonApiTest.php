@@ -2702,6 +2702,80 @@ final class MastodonApiTest extends TestCase
 		self::assertSame($reply['id'], $notification->decodedBody()[0]['status']['id']);
 	}
 
+	public function testEditingAStatusChangesTheTextAndTheSpoiler(): void
+	{
+		$app = $this->app();
+		$created = $this->createStatus($app, ['status' => 'first']);
+		$id = (string) $created->decodedBody()['id'];
+
+		$edited = $this->editStatus($app, $id, ['status' => 'second', 'spoiler_text' => 'cw']);
+
+		self::assertSame(200, $edited->status);
+		self::assertSame($id, $edited->decodedBody()['id']);
+		self::assertArrayHasKey('edited_at', $edited->decodedBody());
+		self::assertNotNull($edited->decodedBody()['edited_at']);
+
+		$post = $app->handle(new Request('GET', '/api/v1/posts/' . $id))->decodedBody()['post'];
+		self::assertSame('second', $post['content']);
+		self::assertSame('cw', $post['content_warning']);
+		self::assertSame(2, $post['revision']);
+	}
+
+	public function testSensitiveWithoutASpoilerGetsADefaultWarning(): void
+	{
+		$app = $this->app();
+		$id = (string) $this->createStatus($app, ['status' => 'first'])->decodedBody()['id'];
+
+		$edited = $this->editStatus($app, $id, ['status' => 'second', 'sensitive' => '1']);
+
+		self::assertSame(200, $edited->status);
+		$post = $app->handle(new Request('GET', '/api/v1/posts/' . $id))->decodedBody()['post'];
+		self::assertSame('Sensitive', $post['content_warning']);
+	}
+
+	public function testEditingAnotherAccountsStatusIsNotFound(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$id = (string) $this->createStatus($app, ['status' => 'first'])->decodedBody()['id'];
+
+		$response = $this->editStatus($app, $id, ['status' => 'hijacked'], userId: 'bob');
+
+		self::assertSame(404, $response->status);
+		self::assertSame('not_found', $response->decodedBody()['error']['code']);
+		$post = $app->handle(new Request('GET', '/api/v1/posts/' . $id))->decodedBody()['post'];
+		self::assertSame('first', $post['content']);
+	}
+
+	public function testEditingAnUnknownStatusIsNotFound(): void
+	{
+		$response = $this->editStatus($this->app(), 'does-not-exist', ['status' => 'text']);
+
+		self::assertSame(404, $response->status);
+		self::assertSame('not_found', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAStatusEditWithoutTextIsRefused(): void
+	{
+		$app = $this->app();
+		$id = (string) $this->createStatus($app, ['status' => 'first'])->decodedBody()['id'];
+
+		$response = $this->editStatus($app, $id, []);
+
+		self::assertSame(422, $response->status);
+		self::assertSame('validation_failed', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAStatusEditNeedsTheWriteScope(): void
+	{
+		$app = $this->app();
+		$id = (string) $this->createStatus($app, ['status' => 'first'])->decodedBody()['id'];
+
+		$response = $this->editStatus($app, $id, ['status' => 'second'], scopes: ['read:statuses']);
+
+		self::assertSame(403, $response->status);
+		self::assertSame('insufficient_scope', $response->decodedBody()['error']['code']);
+	}
+
 	private function app(
 		bool $enabled = true,
 		string $prefix = MastodonApiConfig::DEFAULT_PREFIX,
@@ -3096,6 +3170,27 @@ final class MastodonApiTest extends TestCase
 			query: $query,
 			headers: $fields === [] ? [] : ['Content-Type' => 'application/x-www-form-urlencoded'],
 			body: $fields === [] ? '' : http_build_query($fields),
+			userId: $userId,
+			scopes: $scopes,
+		));
+	}
+
+	/**
+	 * @param array<string, string> $fields
+	 * @param list<string>          $scopes
+	 */
+	private function editStatus(
+		Application $app,
+		string $statusId,
+		array $fields,
+		array $scopes = ['write:statuses'],
+		?string $userId = 'alice',
+	): Response {
+		return $app->handle(new Request(
+			method: 'PUT',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/statuses/' . rawurlencode($statusId),
+			headers: ['Content-Type' => 'application/x-www-form-urlencoded'],
+			body: http_build_query($fields),
 			userId: $userId,
 			scopes: $scopes,
 		));

@@ -37,6 +37,23 @@ interface RemotePostRepository
 	public function findPostByObjectId(string $objectId): ?RemotePost;
 
 	/**
+	 * Applies an author's edit to the stored post for an object.
+	 *
+	 * Only a live `Post` row of that actor is changed; a boost snapshot of the
+	 * same object is a different row and keeps what it announced. The caller
+	 * has already checked ownership and ordering.
+	 *
+	 * @return bool whether a row was updated
+	 */
+	public function updatePostContent(
+		string $objectId,
+		string $actorId,
+		string $content,
+		?string $contentWarning,
+		DateTimeImmutable $updatedAt,
+	): bool;
+
+	/**
 	 * Soft-deletes one activity if the actor owns it.
 	 *
 	 * @return bool whether a live row was removed

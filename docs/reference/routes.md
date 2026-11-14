@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 84 routes in total; 43 use the
+defaults to `/api/mastodon/v1`). There are 86 routes in total; 44 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -22,6 +22,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
+| `posts.update` | `PATCH` | `/api/v1/posts/{id}` | yes | 30 / 900 s |
 | `posts.boost` | `POST` | `/api/v1/posts/{id}/boost` | yes | 30 / 900 s |
 | `posts.unboost` | `DELETE` | `/api/v1/posts/{id}/boost` | yes | 60 / 900 s |
 | `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |
@@ -67,6 +68,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.polls.show` | `GET` | `/api/mastodon/v1/polls/{id}` | no | 120 / 60 s |
 | `mastodon.polls.vote` | `POST` | `/api/mastodon/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.statuses.update` | `PUT` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.reblog` | `POST` | `/api/mastodon/v1/statuses/{id}/reblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.unreblog` | `POST` | `/api/mastodon/v1/statuses/{id}/unreblog` | yes, `write:statuses` | 30 / 900 s |
@@ -278,6 +280,26 @@ GET /api/v1/posts/{id}
 write response. A missing, deleted or non-public post answers `404`, except
 that a followers-only post is also readable by an accepted local follower; see
 [posts and timelines](../guides/posts-and-timelines.md).
+
+## Edit a post
+
+```http
+PATCH /api/v1/posts/{id}
+```
+
+A patch: an absent field is left alone, `content_warning: null` clears the
+warning. `content`, `content_warning`, `attachment_ids` and `visibility` are
+accepted; send `revision` (the value a read returned) to get `409
+post_revision_conflict` instead of overwriting a concurrent edit. `200` with
+the updated `{"post": …}`, its new `revision` and a non-null `edited_at`.
+Errors: `401 authentication_required`, `403 forbidden` for somebody else's
+post, `404 not_found` for a missing or deleted one, `422 validation_failed`
+with `error.fields` when the new text, warning, attachment ids or visibility
+are refused. An edit can narrow an audience but never widen it, and a direct
+post keeps its recipients. The replaced version is kept in
+`social_post_revision`; every read sees the current one, and a non-direct post
+with remote followers gets an ActivityPub `Update` carrying exactly the note a
+`Create` would. See [posts and timelines](../guides/posts-and-timelines.md).
 
 ## Delete a post
 
@@ -942,8 +964,8 @@ table without `read_at`).
 ## Cleanup job (no route)
 
 The retention cleanup from `0.6.0` is a worker job (`cleanup`), not an HTTP
-route. It has no path, method, auth rule or rate limit, so the route manifest
-stays at 84 routes and the OpenAPI export keeps its 70 paths. The payload and
+route. It has no path, method, auth rule or rate limit, so it adds neither a
+manifest route nor an OpenAPI path. The payload and
 report are documented in
 [retention cleanup](../guides/retention-cleanup.md); the stable reasons are
 listed in the [error code reference](error-codes.md#cleanup-job-reasons). The
@@ -960,8 +982,8 @@ and terminal worker errors are dead-lettered immediately. The worker codes
 (`invalid_job_type`, `invalid_job_payload`, `unknown_job_type`,
 `job_handler_failed`, `job_completion_failed`) are log/operator codes, never
 response bodies; see [jobs and delivery](../guides/jobs-and-delivery.md) and
-the [error code reference](error-codes.md#worker-and-queue-failure-codes). The
-contract remains 84 routes and 70 OpenAPI paths.
+the [error code reference](error-codes.md#worker-and-queue-failure-codes). It
+adds no HTTP route and no OpenAPI path either.
 
 ## Route parameters
 

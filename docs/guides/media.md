@@ -105,6 +105,16 @@ Post and attachment links are written in one transaction by the SQL adapter.
 same `attachments` array; a post without attachments keeps its old shape
 exactly (the key is omitted).
 
+An edit replaces the whole attachment list when `attachment_ids` is sent: the
+new ids must belong to the author, the count limit is the same as on creation,
+and a rejected id leaves the post and its previous attachments untouched. An
+`Update` delivered to a peer therefore carries the attachments of the current
+version.
+
+Remote edits do not re-import media: an inbound `Update` changes text and
+content warning, while the attachments announced by the `Create` stay attached
+with their existing blobs and links.
+
 ## Outgoing federation
 
 `MediaService` is the note's attachment presenter, so the `Create(Note)` that

@@ -277,6 +277,130 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
 	}
 
+	public function testAnUpdateReplacesTheStoredVersion(): void
+	{
+		$app = $this->app();
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-1',
+			self::NOTE_1,
+			'first version',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertSame(202, $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-1',
+			self::NOTE_1,
+			'edited version',
+			'2026-11-11T10:05:00Z',
+		))->status);
+
+		$posts = $this->feed($app)->decodedBody()['posts'];
+		self::assertCount(1, $posts);
+		self::assertSame('edited version', $posts[0]['content']);
+	}
+
+	public function testAnUpdateThatArrivesBeforeItsCreateIsAppliedWhenThePostArrives(): void
+	{
+		$app = $this->app();
+
+		self::assertSame(202, $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-early',
+			self::NOTE_2,
+			'already edited',
+			'2026-11-11T10:05:00Z',
+		))->status);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-1',
+			self::NOTE_2,
+			'original text',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		$posts = $this->feed($app)->decodedBody()['posts'];
+		self::assertCount(1, $posts);
+		self::assertSame('already edited', $posts[0]['content']);
+	}
+
+	public function testAnOlderUpdateDoesNotOverwriteANewerOne(): void
+	{
+		$app = $this->app();
+		$this->deliver($app, $this->create(
+			'https://remote.example/activities/create-1',
+			self::NOTE_1,
+			'first version',
+			'2026-11-11T10:01:00Z',
+		));
+
+		self::assertSame(202, $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-2',
+			self::NOTE_1,
+			'newest version',
+			'2026-11-11T10:09:00Z',
+		))->status);
+		self::assertSame(202, $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-1',
+			self::NOTE_1,
+			'stale version',
+			'2026-11-11T10:05:00Z',
+		))->status);
+
+		self::assertSame('newest version', $this->feed($app)->decodedBody()['posts'][0]['content']);
+	}
+
+	public function testAnUpdateForSomebodyElsesObjectIsRefused(): void
+	{
+		$app = $this->app();
+		$update = $this->update(
+			'https://remote.example/activities/update-1',
+			self::NOTE_1,
+			'not mine',
+			'2026-11-11T10:05:00Z',
+		);
+		$update['object']['attributedTo'] = 'https://mallory.example/users/eve';
+
+		$response = $this->deliver($app, $update);
+
+		self::assertSame(403, $response->status);
+		self::assertSame('actor_mismatch', $response->decodedBody()['error']['code']);
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+	}
+
+	public function testAnUpdateWithoutAnObjectIsRefused(): void
+	{
+		$response = $this->deliver($this->app(), [
+			'id' => 'https://remote.example/activities/update-1',
+			'type' => 'Update',
+			'actor' => self::BOB,
+		]);
+
+		self::assertSame(400, $response->status);
+		self::assertSame('invalid_activity', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnUpdateWithEmptyContentIsRefused(): void
+	{
+		$app = $this->app();
+		$this->deliver($app, $this->create(
+			'https://remote.example/activities/create-1',
+			self::NOTE_1,
+			'first version',
+			'2026-11-11T10:01:00Z',
+		));
+
+		$response = $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-1',
+			self::NOTE_1,
+			'   ',
+			'2026-11-11T10:05:00Z',
+		));
+
+		self::assertSame(400, $response->status);
+		self::assertSame('invalid_activity', $response->decodedBody()['error']['code']);
+		self::assertSame('first version', $this->feed($app)->decodedBody()['posts'][0]['content']);
+	}
+
 	private function app(
 		?InMemoryFollowingRepository $following = null,
 		?BlockedActorPolicy $blockedActors = null,
@@ -364,6 +488,27 @@ final class InboundTimelineTest extends TestCase
 				'attributedTo' => self::BOB,
 				'content' => $content,
 				'published' => $publishedAt,
+			],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function update(string $activityId, string $noteId, string $content, string $updatedAt): array
+	{
+		return [
+			'id' => $activityId,
+			'type' => 'Update',
+			'actor' => self::BOB,
+			'published' => $updatedAt,
+			'object' => [
+				'id' => $noteId,
+				'type' => 'Note',
+				'attributedTo' => self::BOB,
+				'content' => $content,
+				'published' => '2026-11-11T10:01:00Z',
+				'updated' => $updatedAt,
 			],
 		];
 	}

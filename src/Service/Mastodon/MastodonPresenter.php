@@ -139,7 +139,7 @@ final class MastodonPresenter
 			'replies_count' => $repliesCount ?? ($this->posts?->replyCount($post->id) ?? 0),
 			'reblogs_count' => $reblogsCount ?? ($this->boosts?->countForPost($post->id) ?? 0),
 			'favourites_count' => $favouritesCount ?? ($this->favourites?->countForPost($post->id) ?? 0),
-			'edited_at' => null,
+			'edited_at' => $post->editedAt?->format('Y-m-d\TH:i:s.000\Z'),
 			'content' => $this->html($post->content),
 			'reblog' => null,
 			'application' => null,

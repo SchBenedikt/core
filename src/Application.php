@@ -75,6 +75,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonUnbookmarkStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfavouriteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUpdateMediaHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
@@ -83,6 +84,7 @@ use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
+use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
@@ -126,6 +128,9 @@ use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryPendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\PdoPendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
@@ -148,6 +153,9 @@ use AlohaSocial\Core\Domain\Post\PdoBoostRepository;
 use AlohaSocial\Core\Domain\Post\PdoFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryPostRevisionRepository;
+use AlohaSocial\Core\Domain\Post\PdoPostRevisionRepository;
+use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PollVoteCounter;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
@@ -317,6 +325,8 @@ final readonly class Application
 		?MuteRepository $muteRepository = null,
 		?AccountListRepository $accountListRepository = null,
 		?FollowedHashtagRepository $followedHashtagRepository = null,
+		?PostRevisionRepository $postRevisions = null,
+		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 	): self {
 		$clock ??= new SystemClock();
@@ -349,6 +359,8 @@ final readonly class Application
 		$muteRepository ??= new InMemoryMuteRepository();
 		$accountListRepository ??= new InMemoryAccountListRepository();
 		$followedHashtagRepository ??= new InMemoryFollowedHashtagRepository();
+		$postRevisions ??= new InMemoryPostRevisionRepository();
+		$pendingRemoteUpdates ??= new InMemoryPendingRemoteUpdateStore();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -389,6 +401,8 @@ final readonly class Application
 			muteRepository: $muteRepository,
 			accountListRepository: $accountListRepository,
 			followedHashtagRepository: $followedHashtagRepository,
+			postRevisions: $postRevisions,
+			pendingRemoteUpdates: $pendingRemoteUpdates,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -453,6 +467,8 @@ final readonly class Application
 		?AccountListRepository $accountListRepository = null,
 		?FollowedHashtagRepository $followedHashtagRepository = null,
 		?TransactionRunner $transactions = null,
+		?PostRevisionRepository $postRevisions = null,
+		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 	): self {
 		$clock ??= new SystemClock();
@@ -470,6 +486,8 @@ final readonly class Application
 		$muteRepository ??= new PdoMuteRepository($database);
 		$accountListRepository ??= new PdoAccountListRepository($database);
 		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
+		$postRevisions ??= new PdoPostRevisionRepository($database);
+		$pendingRemoteUpdates ??= new PdoPendingRemoteUpdateStore($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -492,6 +510,8 @@ final readonly class Application
 			muteRepository: $muteRepository,
 			accountListRepository: $accountListRepository,
 			followedHashtagRepository: $followedHashtagRepository,
+			postRevisions: $postRevisions,
+			pendingRemoteUpdates: $pendingRemoteUpdates,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -539,6 +559,8 @@ final readonly class Application
 		MuteRepository $muteRepository,
 		AccountListRepository $accountListRepository,
 		FollowedHashtagRepository $followedHashtagRepository,
+		PostRevisionRepository $postRevisions,
+		PendingRemoteUpdateStore $pendingRemoteUpdates,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -701,6 +723,7 @@ final readonly class Application
 			$localRelationships,
 			$notificationService,
 			transactions: $transactions,
+			revisions: $postRevisions,
 		);
 		$boostService = new BoostService(
 			$postService,
@@ -816,6 +839,7 @@ final readonly class Application
 				$followPolicy,
 				$remoteMedia,
 				$notificationService,
+				$pendingRemoteUpdates,
 			)
 			: null;
 
@@ -844,6 +868,7 @@ final readonly class Application
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
 			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService))
+			->with(UpdatePostHandler::class, static fn (): UpdatePostHandler => new UpdatePostHandler($postService, $mediaService))
 			->with(PublishAtprotoHandler::class, static fn (): PublishAtprotoHandler => new PublishAtprotoHandler($atprotoService))
 			->with(ShowAtprotoPublicationHandler::class, static fn (): ShowAtprotoPublicationHandler => new ShowAtprotoPublicationHandler($atprotoService))
 			->with(ShowRemoteThreadHandler::class, static fn (): ShowRemoteThreadHandler => new ShowRemoteThreadHandler($remoteThreadService))
@@ -896,6 +921,7 @@ final readonly class Application
 			->with(MastodonSearchHandler::class, static fn (): MastodonSearchHandler => new MastodonSearchHandler($mastodonService))
 			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
+			->with(MastodonUpdateStatusHandler::class, static fn (): MastodonUpdateStatusHandler => new MastodonUpdateStatusHandler($mastodonService))
 			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))
 			->with(MastodonFollowAccountHandler::class, static fn (): MastodonFollowAccountHandler => new MastodonFollowAccountHandler($mastodonService))
 			->with(MastodonUnfollowAccountHandler::class, static fn (): MastodonUnfollowAccountHandler => new MastodonUnfollowAccountHandler($mastodonService))

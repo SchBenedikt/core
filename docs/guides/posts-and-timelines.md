@@ -25,6 +25,36 @@ remote inboxes; the author and those recipients can read it, and it is never
 delivered to followers or remote actors. An empty recipient list, the author as
 recipient, an unknown local id and a recipient on a non-direct post are `422`.
 
+## Editing
+
+Only the author edits a post, through `PATCH /api/v1/posts/{id}` (or
+`PUT {prefix}/statuses/{id}` on the Mastodon surface). An edit is a patch: an
+absent field keeps its value, `content_warning: null` removes the warning, and
+`attachment_ids` replaces the attachment list with ids the author owns. The
+text rules are the ones from creation — at most 5000 characters, a warning of
+at most 200 — and the same attachment ownership check runs again.
+
+An edit can narrow an audience but never widen it: `public` → `unlisted` →
+`followers` is allowed, the reverse is `422`. A direct post keeps its
+recipients entirely; moving one into or out of the direct model would address a
+different audience than the one the recipients agreed to.
+
+Every edit bumps `revision` on the live row, sets `edited_at`, and copies the
+replaced version into `social_post_revision` (content, warning, visibility,
+attachment ids). Reads only ever return the live row. Passing the `revision` a
+client read makes the write optimistic: a concurrent edit answers `409
+post_revision_conflict` instead of being overwritten.
+
+A non-direct post with remote followers gets one ActivityPub `Update` per
+inbox, built from the same note serializer as its `Create` and carrying
+`/update/{revision}` as its activity id, so a retried delivery is one activity
+for the peer while the next edit is a new version. Narrowing the audience stays
+local: an `Update` cannot re-address a note that was already delivered.
+
+Publishing to AT Protocol is not repeated by an edit; the `app.bsky.feed.post`
+record keeps the text it was written with. That remainder is tracked in the
+roadmap rather than silently rewritten.
+
 ## Replies
 
 `in_reply_to_id` stores the parent post id and is returned as the same field.

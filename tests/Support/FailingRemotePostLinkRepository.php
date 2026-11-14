@@ -39,6 +39,16 @@ final class FailingRemotePostLinkRepository implements RemotePostRepository
 		return $this->inner->findPostByObjectId($objectId);
 	}
 
+	public function updatePostContent(
+		string $objectId,
+		string $actorId,
+		string $content,
+		?string $contentWarning,
+		DateTimeImmutable $updatedAt,
+	): bool {
+		return $this->inner->updatePostContent($objectId, $actorId, $content, $contentWarning, $updatedAt);
+	}
+
 	public function softDeleteByActivityId(
 		string $activityId,
 		string $actorId,

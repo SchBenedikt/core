@@ -156,6 +156,28 @@ every local account that follows the actor and disappears for a reader who
 unfollows. A per-user block is an additional `NOT EXISTS` filter on the same
 query, so it hides the actor only for the reader who blocked it.
 
+## What an Update does
+
+An `Update` replaces the text and content warning of a stored remote post. The
+embedded object must carry the id of a post the signing actor wrote: an object
+of another actor, or an object id that belongs to somebody else's row, is `403
+actor_mismatch`. Content is required and bounded to 10000 characters; a missing
+object or empty content is `400 invalid_activity`.
+
+The version marker is the object's `updated` timestamp (falling back to the
+activity's `published`, then to the receive time). It is stored as
+`updated_at`; an `Update` whose marker is not newer than the applied one is
+accepted with `202` and ignored, so retries and out-of-order deliveries settle
+on the newest version instead of flapping.
+
+An `Update` that arrives before its `Create` is held in
+`social_remote_pending_update` — one row per object, 24 hours, at most 256 rows
+— and applied when the post is stored, so the first version a follower sees is
+the one the author last wrote. An entry for an actor that does not own the
+object is never written, and a consumed entry cannot be replayed. Attachments
+announced by the `Create` stay attached; an `Update` changes text and warning
+only.
+
 ## What a Delete does
 
 The target may be a URI or an embedded object with an `id`. The service first

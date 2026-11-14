@@ -47,6 +47,16 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$this->posts[$post->id] = $post;
 	}
 
+	public function update(Post $post): void
+	{
+		$stored = $this->posts[$post->id] ?? null;
+		if ($stored === null || $stored->isDeleted()) {
+			return;
+		}
+
+		$this->posts[$post->id] = $post;
+	}
+
 	public function find(string $id): ?Post
 	{
 		return $this->posts[$id] ?? null;
@@ -71,6 +81,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			$post->poll,
 			$post->recipientIds,
 			$post->inReplyToId,
+			editedAt: $post->editedAt,
+			revision: $post->revision,
 		);
 	}
 
@@ -320,6 +332,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			),
 			recipientIds: $post->recipientIds,
 			inReplyToId: $post->inReplyToId,
+			editedAt: $post->editedAt,
+			revision: $post->revision,
 		);
 	}
 

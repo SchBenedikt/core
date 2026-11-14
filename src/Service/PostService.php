@@ -13,8 +13,11 @@ use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
+use AlohaSocial\Core\Domain\Post\PostConflictException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\PostRevision;
+use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
@@ -53,6 +56,7 @@ final class PostService
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?TransactionRunner $transactions = null,
+		private readonly ?PostRevisionRepository $revisions = null,
 	) {
 	}
 
@@ -181,6 +185,97 @@ final class PostService
 	}
 
 	/**
+	 * Edits a post the actor wrote.
+	 *
+	 * The author check comes first, then the optimistic one: a caller that read
+	 * revision N gets a conflict instead of overwriting an edit that happened
+	 * in between. Only the live version is readable afterwards; the replaced
+	 * version is appended to the revision history.
+	 *
+	 * @throws PostNotFoundException     when the post is missing or deleted
+	 * @throws PostAccessDeniedException when somebody else wrote it
+	 * @throws PostConflictException     when the caller's revision is stale
+	 * @throws ValidationException       when the new content or audience is refused
+	 */
+	public function edit(string $actorId, string $postId, UpdatePost $command): Post
+	{
+		$post = $this->get($postId);
+
+		if ($post->authorId !== $actorId) {
+			throw new PostAccessDeniedException($postId, $actorId);
+		}
+
+		if ($command->expectedRevision !== null && $command->expectedRevision !== $post->revision) {
+			throw new PostConflictException($postId, $post->revision);
+		}
+
+		$content = $command->content === null ? $post->content : trim($command->content);
+
+		$warning = $post->contentWarning;
+		if ($command->contentWarningProvided) {
+			$warning = $command->contentWarning === null ? null : trim($command->contentWarning);
+			if ($warning === '') {
+				$warning = null;
+			}
+		}
+
+		$visibility = $command->visibility ?? $post->visibility;
+		$attachmentIds = $command->attachmentIds ?? $post->attachmentIds;
+
+		$this->validateAudienceChange($post, $visibility);
+
+		// The reply target cannot change on an edit, but the parent still
+		// decides whether the new visibility is allowed at all.
+		$parent = $post->inReplyToId === null ? null : $this->posts->find($post->inReplyToId);
+		$this->validateEdit($post, $content, $warning, $attachmentIds, $visibility, $parent);
+
+		$editedAt = Time::toSecondPrecision($this->clock->now());
+		$edited = new Post(
+			id: $post->id,
+			authorId: $post->authorId,
+			content: $content,
+			visibility: $visibility,
+			publishedAt: $post->publishedAt,
+			contentWarning: $warning,
+			attachmentIds: $attachmentIds,
+			poll: $post->poll,
+			recipientIds: $post->recipientIds,
+			inReplyToId: $post->inReplyToId,
+			editedAt: $editedAt,
+			revision: $post->revision + 1,
+		);
+
+		$snapshot = new PostRevision(
+			postId: $post->id,
+			revision: $post->revision,
+			content: $post->content,
+			contentWarning: $post->contentWarning,
+			visibility: $post->visibility,
+			attachmentIds: $post->attachmentIds,
+			editedAt: $post->editedAt ?? $post->publishedAt,
+		);
+
+		// An Update is only valid while the object keeps its audience. An
+		// audience change stays local: re-addressing the note could widen it
+		// or strand the previous delivery, and direct posts never federate.
+		$deliver = $visibility === $post->visibility && $visibility !== Visibility::Direct;
+
+		$this->runWrite(function () use ($edited, $snapshot, $editedAt, $deliver): void {
+			$this->posts->update($edited);
+			$this->revisions?->add($snapshot);
+
+			if ($deliver) {
+				$this->enqueueDelivery(
+					$edited,
+					fn (): array => $this->activities->updateNote($edited, $editedAt),
+				);
+			}
+		});
+
+		return $edited;
+	}
+
+	/**
 	 * Resolves a reply target through the same visibility check as a read.
 	 *
 	 * A missing parent and a parent the author may not see are the same 422:
@@ -292,6 +387,83 @@ final class PostService
 			$errors['author'] = 'A post needs an author.';
 		}
 
+		$errors += $this->contentErrors($content, $warning);
+		$errors += $this->attachmentErrors($command->attachmentIds, $command->authorId);
+		$errors += $this->parentErrors($parent, $command->visibility);
+
+		if ($command->visibility === Visibility::Direct && $recipientIds === []) {
+			$errors['recipient_ids'] = 'A direct post needs at least one local recipient.';
+		}
+
+		if ($errors !== []) {
+			throw new ValidationException($errors);
+		}
+	}
+
+	/**
+	 * The validation an edit shares with a create, so the two cannot drift.
+	 *
+	 * @param list<string> $attachmentIds
+	 */
+	private function validateEdit(
+		Post $post,
+		string $content,
+		?string $warning,
+		array $attachmentIds,
+		Visibility $visibility,
+		?Post $parent,
+	): void {
+		$errors = $this->contentErrors($content, $warning)
+			+ $this->attachmentErrors($attachmentIds, $post->authorId)
+			+ $this->parentErrors($parent, $visibility);
+
+		if ($errors !== []) {
+			throw new ValidationException($errors);
+		}
+	}
+
+	/**
+	 * An edit must not widen who can see the post.
+	 *
+	 * Direct posts are excluded entirely: their audience is an explicit list
+	 * of local recipients that an edit cannot change, so moving one into or
+	 * out of the direct model would change a different audience than the one
+	 * the recipients agreed to.
+	 */
+	private function validateAudienceChange(Post $post, Visibility $target): void
+	{
+		if ($target === $post->visibility) {
+			return;
+		}
+
+		if ($post->visibility === Visibility::Direct || $target === Visibility::Direct) {
+			throw new ValidationException([
+				'visibility' => 'A direct post keeps its audience; its recipients cannot be edited.',
+			]);
+		}
+
+		if ($this->audienceRank($target) > $this->audienceRank($post->visibility)) {
+			throw new ValidationException(['visibility' => 'An edit cannot widen the audience of a post.']);
+		}
+	}
+
+	private function audienceRank(Visibility $visibility): int
+	{
+		return match ($visibility) {
+			Visibility::Direct => 0,
+			Visibility::Followers => 1,
+			Visibility::Unlisted => 2,
+			Visibility::Public => 3,
+		};
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	private function contentErrors(string $content, ?string $warning): array
+	{
+		$errors = [];
+
 		if (mb_strlen($content) === 0) {
 			$errors['content'] = 'A post needs text.';
 		} elseif (mb_strlen($content) > self::MAX_CONTENT_LENGTH) {
@@ -303,51 +475,64 @@ final class PostService
 				. self::MAX_CONTENT_WARNING_LENGTH . ' characters long.';
 		}
 
-		if (!array_is_list($command->attachmentIds)) {
-			$errors['attachment_ids'] = 'Attachments must be a list of ids.';
-		} elseif (count($command->attachmentIds) > Post::MAX_ATTACHMENTS) {
-			$errors['attachment_ids'] = 'A post may have at most ' . Post::MAX_ATTACHMENTS . ' attachments.';
-		} else {
-			$seen = [];
-			foreach ($command->attachmentIds as $attachmentId) {
-				if (!is_string($attachmentId) || $attachmentId === '') {
-					$errors['attachment_ids'] = 'An attachment id must be a non-empty string.';
-					break;
-				}
+		return $errors;
+	}
 
-				if (isset($seen[$attachmentId])) {
-					$errors['attachment_ids'] = 'An attachment cannot be used twice.';
-					break;
-				}
+	/**
+	 * @param array<mixed> $attachmentIds
+	 *
+	 * @return array<string, string>
+	 */
+	private function attachmentErrors(array $attachmentIds, string $authorId): array
+	{
+		if (!array_is_list($attachmentIds)) {
+			return ['attachment_ids' => 'Attachments must be a list of ids.'];
+		}
 
-				$seen[$attachmentId] = true;
-				$attachment = $this->attachments->find($attachmentId);
-				if ($attachment === null || $attachment->ownerId !== $command->authorId) {
-					$errors['attachment_ids'] = 'An attachment does not exist for this account.';
-					break;
-				}
+		if (count($attachmentIds) > Post::MAX_ATTACHMENTS) {
+			return ['attachment_ids' => 'A post may have at most ' . Post::MAX_ATTACHMENTS . ' attachments.'];
+		}
+
+		$seen = [];
+		foreach ($attachmentIds as $attachmentId) {
+			if (!is_string($attachmentId) || $attachmentId === '') {
+				return ['attachment_ids' => 'An attachment id must be a non-empty string.'];
+			}
+
+			if (isset($seen[$attachmentId])) {
+				return ['attachment_ids' => 'An attachment cannot be used twice.'];
+			}
+
+			$seen[$attachmentId] = true;
+			$attachment = $this->attachments->find($attachmentId);
+			if ($attachment === null || $attachment->ownerId !== $authorId) {
+				return ['attachment_ids' => 'An attachment does not exist for this account.'];
 			}
 		}
 
-		if ($parent !== null) {
-			if ($parent->visibility === Visibility::Direct && $command->visibility !== Visibility::Direct) {
-				$errors['in_reply_to_id'] = 'A reply to a direct post must also be direct.';
-			}
+		return [];
+	}
 
-			if ($parent->visibility === Visibility::Followers
-				&& ($command->visibility === Visibility::Public || $command->visibility === Visibility::Unlisted)
-			) {
-				$errors['in_reply_to_id'] = 'A reply to a followers-only post cannot be public or unlisted.';
-			}
+	/**
+	 * @return array<string, string>
+	 */
+	private function parentErrors(?Post $parent, Visibility $visibility): array
+	{
+		if ($parent === null) {
+			return [];
 		}
 
-		if ($command->visibility === Visibility::Direct && $recipientIds === []) {
-			$errors['recipient_ids'] = 'A direct post needs at least one local recipient.';
+		if ($parent->visibility === Visibility::Direct && $visibility !== Visibility::Direct) {
+			return ['in_reply_to_id' => 'A reply to a direct post must also be direct.'];
 		}
 
-		if ($errors !== []) {
-			throw new ValidationException($errors);
+		if ($parent->visibility === Visibility::Followers
+			&& ($visibility === Visibility::Public || $visibility === Visibility::Unlisted)
+		) {
+			return ['in_reply_to_id' => 'A reply to a followers-only post cannot be public or unlisted.'];
 		}
+
+		return [];
 	}
 
 	/**

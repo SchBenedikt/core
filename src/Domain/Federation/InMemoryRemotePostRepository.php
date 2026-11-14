@@ -60,6 +60,41 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 		return null;
 	}
 
+	public function updatePostContent(
+		string $objectId,
+		string $actorId,
+		string $content,
+		?string $contentWarning,
+		DateTimeImmutable $updatedAt,
+	): bool {
+		foreach ($this->posts as $activityId => $post) {
+			if ($post->kind !== RemotePostKind::Post
+				|| $post->objectId !== $objectId
+				|| $post->actorId !== $actorId
+				|| $post->deletedAt !== null
+			) {
+				continue;
+			}
+
+			$this->posts[$activityId] = new RemotePost(
+				activityId: $post->activityId,
+				objectId: $post->objectId,
+				actorId: $post->actorId,
+				kind: $post->kind,
+				content: $content,
+				contentWarning: $contentWarning,
+				publishedAt: $post->publishedAt,
+				objectAuthorId: $post->objectAuthorId,
+				deletedAt: $post->deletedAt,
+				updatedAt: $updatedAt,
+			);
+
+			return true;
+		}
+
+		return false;
+	}
+
 	public function softDeleteByActivityId(
 		string $activityId,
 		string $actorId,
@@ -185,6 +220,7 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 			$post->publishedAt,
 			$post->objectAuthorId,
 			$deletedAt,
+			updatedAt: $post->updatedAt,
 		);
 	}
 }

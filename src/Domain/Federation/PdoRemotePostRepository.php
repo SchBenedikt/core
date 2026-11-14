@@ -27,7 +27,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 	public const MAX_ATTACHMENTS = 4;
 
 	private const COLUMNS = 'activity_id, object_id, object_author_id, actor_id, kind,'
-		. ' content, content_warning, published_at, deleted_at';
+		. ' content, content_warning, published_at, updated_at, deleted_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -41,7 +41,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 				'INSERT INTO ' . RemotePostSchema::TABLE
 				. ' (' . self::COLUMNS . ')'
 				. ' VALUES (:activity_id, :object_id, :object_author_id, :actor_id, :kind,'
-				. ' :content, :content_warning, :published_at, :deleted_at)',
+				. ' :content, :content_warning, :published_at, :updated_at, :deleted_at)',
 				[
 					'activity_id' => $post->activityId,
 					'object_id' => $post->objectId,
@@ -51,6 +51,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 					'content' => $post->content,
 					'content_warning' => $post->contentWarning,
 					'published_at' => Time::format($post->publishedAt),
+					'updated_at' => $post->updatedAt === null ? null : Time::format($post->updatedAt),
 					'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
 				],
 			);
@@ -84,6 +85,29 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 		);
 
 		return $row === null ? null : $this->hydrate($row);
+	}
+
+	public function updatePostContent(
+		string $objectId,
+		string $actorId,
+		string $content,
+		?string $contentWarning,
+		DateTimeImmutable $updatedAt,
+	): bool {
+		return $this->db->execute(
+			'UPDATE ' . RemotePostSchema::TABLE
+			. ' SET content = :content, content_warning = :content_warning, updated_at = :updated_at'
+			. ' WHERE object_id = :object_id AND actor_id = :actor_id'
+			. ' AND kind = :kind AND deleted_at IS NULL',
+			[
+				'object_id' => $objectId,
+				'actor_id' => $actorId,
+				'content' => $content,
+				'content_warning' => $contentWarning,
+				'updated_at' => Time::format($updatedAt),
+				'kind' => RemotePostKind::Post->value,
+			],
+		) > 0;
 	}
 
 	public function softDeleteByActivityId(
@@ -273,6 +297,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 			publishedAt: Time::parse((string) $row['published_at']),
 			objectAuthorId: $row['object_author_id'] === null ? null : (string) $row['object_author_id'],
 			deletedAt: $row['deleted_at'] === null ? null : Time::parse((string) $row['deleted_at']),
+			updatedAt: ($row['updated_at'] ?? null) === null ? null : Time::parse((string) $row['updated_at']),
 		);
 	}
 }

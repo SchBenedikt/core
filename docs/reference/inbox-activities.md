@@ -36,6 +36,7 @@ signed `Digest` is refused. For the shared inbox, use
 | `Reject` | `id`, `actor`, `object` = embedded outgoing `Follow` or its id | Moves the matching outgoing pending follow to rejected |
 | `Undo` | `id`, `actor`, `object` = embedded `Follow`, or an `Announce` embedded/by id | Removes the follower edge or soft-deletes the stored boost |
 | `Create` | `id`, `actor`, embedded `object` with `id` and `content` | Stores a remote post |
+| `Update` | `id`, `actor`, embedded `object` with `id`, `content` and optional `updated` | Replaces the stored post with the author's newer version, or holds it until the `Create` arrives |
 | `Delete` | `id`, `actor`, `object` = URI or embedded object with an `id` | Soft-deletes the matching remote post/activity |
 | `Announce` | `id`, `actor`, `object` = URI or embedded object with an `id` | Stores a remote boost |
 
@@ -52,7 +53,7 @@ foreign signer or a response after an Unfollow changes nothing; the duplicate
 and late forms are successful no-ops, while a signature-valid foreign signer
 is `403 actor_mismatch`.
 
-For `Create`, `Delete` and `Announce`, at least one local account must follow
+For `Create`, `Update`, `Delete` and `Announce`, at least one local account must follow
 the signing actor. The object's `attributedTo` (when present) must also be the
 signing actor for a `Create`; an embedded Announce author is recorded when
 present. `Delete` only accepts a target owned by the signing actor. A remote
@@ -68,14 +69,14 @@ the activity timestamp and then the server clock. An invalid timestamp is
 | --- | --- | --- |
 | 400 | `invalid_json` | Body is not valid JSON or not an object |
 | 400 | `invalid_activity` | `id`, `type` or `actor` missing; the object, content, timestamp or content warning has the wrong shape |
-| 400 | `unsupported_activity` | A type other than Follow/Accept/Reject/Undo/Create/Delete/Announce |
+| 400 | `unsupported_activity` | A type other than Follow/Accept/Reject/Undo/Create/Update/Delete/Announce |
 | 400 | `replayed_activity` | This non-Accept/Reject activity id was already accepted |
 | 401 | `signature_required` | No `Signature` header |
 | 401 | `invalid_signature` | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
 | 401 | `signature_expired` | `Date` outside the 300-second window |
-| 403 | `actor_mismatch` | Valid signature, but the activity claims another actor, a created object belongs to another actor, or a Delete targets another actor's row |
+| 403 | `actor_mismatch` | Valid signature, but the activity claims another actor, a created or updated object belongs to another actor, or a Delete/Update targets another actor's row |
 | 403 | `blocked_actor` | The host's blocked-actor policy refuses this actor |
-| 403 | `not_followed` | `Create`/`Delete`/`Announce`/`Undo(Announce)` from an actor no local account follows |
+| 403 | `not_followed` | `Create`/`Update`/`Delete`/`Announce`/`Undo(Announce)` from an actor no local account follows |
 | 403 | `follow_not_accepted` | A valid Follow is refused by the host's `FollowPolicy` |
 | 404 | `unknown_actor` | The `keyid` does not resolve to a usable actor |
 | 404 | `unknown_object` | A Follow does not address an actor on this instance |

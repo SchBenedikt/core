@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateSchema;
 use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -108,7 +109,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(84, $app->routes->routes());
+		self::assertCount(86, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1147,6 +1148,7 @@ final class ApplicationHostTest extends TestCase
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);
+		PendingRemoteUpdateSchema::create($database);
 		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
 		MuteSchema::create($database);

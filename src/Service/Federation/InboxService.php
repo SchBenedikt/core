@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
@@ -78,6 +79,7 @@ final class InboxService
 		private readonly ?FollowPolicy $followPolicy = null,
 		private readonly ?RemoteMediaService $remoteMedia = null,
 		private readonly ?NotificationService $notifications = null,
+		private readonly ?PendingRemoteUpdateStore $pendingUpdates = null,
 	) {
 	}
 
@@ -152,6 +154,7 @@ final class InboxService
 				'Reject' => $this->handleFollowResponse($actor, $activity, FollowState::Rejected),
 				'Undo' => $this->handleUndo($actor, $activity),
 				'Create' => $this->handleCreate($actor, $activity),
+				'Update' => $this->handleUpdate($actor, $activity),
 				'Delete' => $this->handleDelete($actor, $activity),
 				'Announce' => $this->handleAnnounce($actor, $activity),
 				default => throw new InboxRejectedException(
@@ -227,6 +230,84 @@ final class InboxService
 		// Import after the post is durable. The importer isolates every
 		// attachment, so a slow or broken image never discards the post.
 		$this->remoteMedia?->import($post, $activity['object'] ?? null);
+
+		// An Update that arrived before this Create is applied now, so the
+		// first version the timeline shows is the one the author last wrote.
+		$this->applyPendingUpdate($post, $actor);
+	}
+
+	/**
+	 * Applies an author's edit to a stored post, or holds it until the post
+	 * arrives.
+	 *
+	 * Ownership is the stored row's actor, not just the signer: an Update may
+	 * only change the object its own author wrote. A version that is not newer
+	 * than the applied one is ignored, so retries and out-of-order deliveries
+	 * converge on the newest version instead of flapping between them.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleUpdate(RemoteActor $actor, array $activity): void
+	{
+		$this->requireFollowedContent($actor);
+
+		$target = $this->remotePosts->findPostByObjectId(
+			$this->remotePostFactory->targetId($activity['object'] ?? null, 'Update'),
+		);
+
+		if ($target === null) {
+			// The Create may still be in flight. Holding the edit is what
+			// keeps an out-of-order pair from publishing superseded text. The
+			// factory validates ownership and content before anything is held.
+			$this->pendingUpdates?->store($this->remotePostFactory->pendingUpdate(
+				$actor->actorId,
+				$activity,
+				Time::toSecondPrecision($this->clock->now()),
+			));
+
+			return;
+		}
+
+		if ($target->actorId !== $actor->actorId) {
+			throw new InboxRejectedException('actor_mismatch', 'An actor may only update its own post.');
+		}
+
+		$updated = $this->remotePostFactory->fromUpdate($target, $activity);
+
+		if ($target->updatedAt !== null && $updated->updatedAt !== null && $updated->updatedAt <= $target->updatedAt) {
+			// A replay or an older version delivered late: the applied version
+			// stays, and the peer's next newer edit will still apply.
+			return;
+		}
+
+		$this->remotePosts->updatePostContent(
+			$updated->objectId,
+			$actor->actorId,
+			$updated->content,
+			$updated->contentWarning,
+			$updated->updatedAt ?? Time::toSecondPrecision($this->clock->now()),
+		);
+	}
+
+	private function applyPendingUpdate(RemotePost $post, RemoteActor $actor): void
+	{
+		$pending = $this->pendingUpdates?->take(
+			$post->objectId,
+			$actor->actorId,
+			Time::toSecondPrecision($this->clock->now()),
+		);
+
+		if ($pending === null) {
+			return;
+		}
+
+		$this->remotePosts->updatePostContent(
+			$post->objectId,
+			$actor->actorId,
+			$pending->content,
+			$pending->contentWarning,
+			$pending->updatedAt,
+		);
 	}
 
 	/**

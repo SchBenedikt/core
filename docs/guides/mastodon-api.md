@@ -20,6 +20,7 @@ Locally implemented (core):
 - `GET /polls/{id}`
 - `POST /polls/{id}/votes`
 - `POST /statuses`
+- `PUT /statuses/{id}`
 - `POST /statuses/{id}/favourite`
 - `POST /statuses/{id}/unfavourite`
 - `POST /statuses/{id}/bookmark`
@@ -56,6 +57,16 @@ Locally implemented (core):
 - `POST /notifications/clear`
 - `GET /notifications/unread_count`
 - `GET /search`
+
+`PUT /statuses/{id}` is Mastodon's status edit: `status`, `spoiler_text`,
+`sensitive` and `media_ids`. Visibility and the reply target are not editable
+there, and they are not part of this route either — the neutral
+`PATCH /api/v1/posts/{id}` is the one that can narrow an audience. The call
+shares the local edit service, so the author check, the validation and the
+revision history are the same; the answer is the updated status with a non-null
+`edited_at`. Another account's status and an unknown id both answer `404
+not_found`, invalid input is `422 validation_failed`, and the route needs
+`write:statuses`.
 
 The local subset covers public/unlisted/followers-only text posts, local poll
 creation on an own status, local favourite/unfavourite, private bookmark and
@@ -121,6 +132,7 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/polls/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/polls/{id}/votes` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
+| `PUT {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `DELETE {prefix}/statuses/{id}` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/favourite` | yes | `write:favourites` | 30 / 900 s |
 | `POST {prefix}/statuses/{id}/unfavourite` | yes | `write:favourites` | 30 / 900 s |

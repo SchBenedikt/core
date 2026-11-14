@@ -27,7 +27,8 @@ use function implode;
  */
 final class PdoPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
-	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, deleted_at';
+	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id,'
+		. ' published_at, edited_at, revision, deleted_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -40,8 +41,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$this->db->transaction(function () use ($post): void {
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
-					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, deleted_at)'
-					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :deleted_at)',
+					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at)'
+					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at)',
 					[
 						'id' => $post->id,
 						'author_id' => $post->authorId,
@@ -50,6 +51,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'visibility' => $post->visibility->value,
 						'in_reply_to_id' => $post->inReplyToId,
 						'published_at' => Time::format($post->publishedAt),
+						'edited_at' => $post->editedAt === null ? null : Time::format($post->editedAt),
+						'revision' => $post->revision,
 						'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
 					],
 				);
@@ -121,6 +124,74 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			});
 		} catch (PDOException $exception) {
 			throw new DatabaseException('The post could not be stored.', 0, $exception);
+		}
+	}
+
+	public function update(Post $post): void
+	{
+		try {
+			$this->db->transaction(function () use ($post): void {
+				$row = $this->db->fetchOne(
+					'SELECT deleted_at FROM ' . PostSchema::TABLE . ' WHERE id = :id',
+					['id' => $post->id],
+				);
+
+				// A tombstone is final: an edit must not revive a deleted post.
+				if ($row === null || $row['deleted_at'] !== null) {
+					return;
+				}
+
+				$this->db->execute(
+					'UPDATE ' . PostSchema::TABLE
+					. ' SET content = :content, content_warning = :content_warning, visibility = :visibility,'
+					. ' revision = :revision, edited_at = :edited_at'
+					. ' WHERE id = :id',
+					[
+						'id' => $post->id,
+						'content' => $post->content,
+						'content_warning' => $post->contentWarning,
+						'visibility' => $post->visibility->value,
+						'revision' => $post->revision,
+						'edited_at' => $post->editedAt === null ? null : Time::format($post->editedAt),
+					],
+				);
+
+				// The search, tag and media indices have to describe the new
+				// content, so the link rows are rebuilt in the same transaction.
+				$this->db->execute(
+					'DELETE FROM ' . PostSchema::ATTACHMENT_TABLE . ' WHERE post_id = :post_id',
+					['post_id' => $post->id],
+				);
+				foreach ($post->attachmentIds as $position => $attachmentId) {
+					$this->db->execute(
+						'INSERT INTO ' . PostSchema::ATTACHMENT_TABLE
+						. ' (post_id, attachment_id, position) VALUES (:post_id, :attachment_id, :position)',
+						[
+							'post_id' => $post->id,
+							'attachment_id' => $attachmentId,
+							'position' => $position,
+						],
+					);
+				}
+
+				$this->db->execute(
+					'DELETE FROM ' . PostSchema::HASHTAG_TABLE . ' WHERE post_id = :post_id',
+					['post_id' => $post->id],
+				);
+				foreach (Hashtags::extract($post->content) as $position => $hashtag) {
+					$this->db->execute(
+						'INSERT INTO ' . PostSchema::HASHTAG_TABLE
+						. ' (post_id, hashtag, position) VALUES (:post_id, :hashtag, :position)',
+						[
+							'post_id' => $post->id,
+							'hashtag' => $hashtag,
+							'position' => $position,
+						],
+					);
+				}
+			});
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The post could not be updated.', 0, $exception);
 		}
 	}
 
@@ -713,6 +784,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			poll: $poll,
 			recipientIds: $recipientIds,
 			inReplyToId: $row['in_reply_to_id'] === null ? null : (string) $row['in_reply_to_id'],
+			editedAt: $row['edited_at'] === null ? null : Time::parse((string) $row['edited_at']),
+			revision: (int) ($row['revision'] ?? 1),
 		);
 	}
 }

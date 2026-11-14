@@ -26,6 +26,17 @@ interface PostRepository
 	 */
 	public function insert(Post $post): void;
 
+	/**
+	 * Replaces the editable fields of a live post.
+	 *
+	 * Content, warning, visibility, revision and `edited_at` are written and
+	 * the attachment and hashtag links are rebuilt, so the indices agree with
+	 * the new content. The row keeps its id, author, publication time and
+	 * recipients. A deleted post is not revived and an unknown id is a no-op;
+	 * the caller has already loaded and authorised the post.
+	 */
+	public function update(Post $post): void;
+
 	public function find(string $id): ?Post;
 
 	/**

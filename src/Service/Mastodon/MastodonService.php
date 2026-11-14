@@ -26,6 +26,7 @@ use AlohaSocial\Core\Domain\Post\PollVote;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
+use AlohaSocial\Core\Domain\Post\PostConflictException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
@@ -48,6 +49,7 @@ use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -521,6 +523,44 @@ final class MastodonService
 		} catch (PostNotFoundException|PostAccessDeniedException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 		}
+	}
+
+	/**
+	 * Edits one of the caller's statuses.
+	 *
+	 * Mastodon treats an edit of a status the caller cannot see as "not
+	 * found", so a foreign post and a missing one share the 404. The audience
+	 * is not part of a Mastodon edit; only the neutral PATCH route narrows it.
+	 *
+	 * @param list<string>|null $mediaIds
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function updateStatus(
+		string $userId,
+		string $postId,
+		string $content,
+		bool $spoilerProvided,
+		?string $spoilerText,
+		?array $mediaIds,
+	): array {
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		try {
+			$post = $this->postService->edit($userId, $postId, new UpdatePost(
+				content: $content,
+				contentWarning: $spoilerText,
+				contentWarningProvided: $spoilerProvided,
+				attachmentIds: $mediaIds,
+			));
+		} catch (PostNotFoundException|PostAccessDeniedException) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		} catch (PostConflictException) {
+			throw new MastodonRequestException(409, 'conflict', 'The status was edited concurrently.');
+		}
+
+		return $this->presenter->status($post, $userId);
 	}
 
 	/**

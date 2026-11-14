@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 84 routes, 43 of them under the Mastodon prefix |
-| Persistence | 18 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 135 PHP test files (1220 tests, 6072 assertions) and 9 UI test files (69 tests) |
+| HTTP contract | 86 routes, 44 of them under the Mastodon prefix |
+| Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
+| Tests | 139 PHP test files (1276 tests, 6290 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -71,7 +71,9 @@ the host that serves it. See
 
 ### Implemented in the core
 
-- **Posts and timelines** — create, read, soft-delete, visibility, replies,
+- **Posts and timelines** — create, read, edit (author-only, optimistic
+  revision, stored revision history and outbound ActivityPub `Update`),
+  soft-delete, visibility, replies,
   local direct posts with `recipient_ids`, public, follow-based home, hashtag
   and private followed-hashtag timelines with stable cursors, blocks, mutes,
   exclusive lists and boosts. See
@@ -121,7 +123,7 @@ the host that serves it. See
   UI, credential storage and PDS selection stay with the host. See
   [AT Protocol publishing](guides/atproto.md) and
   [two protocols, one model](guides/dual-protocol.md).
-- **Mastodon compatibility** — 43 local routes behind a configurable,
+- **Mastodon compatibility** — 44 local routes behind a configurable,
   disabled-by-default prefix: instance metadata/statistics, public and list
   timelines, status read/create/delete, reblogs, context, polls, favourites,
   bookmarks, mutes, lists, notifications, local search, media management,

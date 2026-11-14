@@ -30,6 +30,31 @@ final class PostSchema
 	public const HASHTAG_TABLE = 'social_post_hashtag';
 
 	/**
+	 * Superseded versions of a post, written by an edit.
+	 *
+	 * The live row keeps the current version; this table is append-only and
+	 * keyed by (post_id, revision), so an edit history cannot be rewritten.
+	 */
+	public const REVISION_TABLE = 'social_post_revision';
+
+	/**
+	 * Columns an existing installation has to add to keep up with this schema.
+	 *
+	 * Migrations are host-owned: a fresh install runs {@see statements()}, an
+	 * existing one runs these. `CREATE TABLE IF NOT EXISTS` keeps the revision
+	 * table additive for both.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN revision INTEGER NOT NULL DEFAULT 1',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN edited_at VARCHAR(20) NULL',
+		];
+	}
+
+	/**
 	 * @return list<string>
 	 */
 	public static function statements(): array
@@ -43,6 +68,8 @@ final class PostSchema
 			. ' visibility VARCHAR(16) NOT NULL,'
 			. ' in_reply_to_id VARCHAR(64) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
+			. ' edited_at VARCHAR(20) NULL,'
+			. ' revision INTEGER NOT NULL DEFAULT 1,'
 			. ' deleted_at VARCHAR(20) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
@@ -70,6 +97,17 @@ final class PostSchema
 			. ' PRIMARY KEY (post_id, hashtag)'
 			. ')',
 			'CREATE INDEX ' . self::HASHTAG_TABLE . '_tag ON ' . self::HASHTAG_TABLE . ' (hashtag, post_id)',
+			'CREATE TABLE ' . self::REVISION_TABLE . ' ('
+			. ' post_id VARCHAR(64) NOT NULL,'
+			. ' revision INTEGER NOT NULL,'
+			. ' content TEXT NOT NULL,'
+			. ' content_warning VARCHAR(255) NULL,'
+			. ' visibility VARCHAR(16) NOT NULL,'
+			. ' attachment_ids TEXT NOT NULL,'
+			. ' edited_at VARCHAR(20) NOT NULL,'
+			. ' PRIMARY KEY (post_id, revision)'
+			. ')',
+			'CREATE INDEX ' . self::REVISION_TABLE . '_post ON ' . self::REVISION_TABLE . ' (post_id, revision)',
 		];
 	}
 
