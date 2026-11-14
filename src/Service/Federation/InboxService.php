@@ -14,6 +14,8 @@ use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Post\QuoteState;
+use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
@@ -90,6 +92,7 @@ final class InboxService
 		private readonly ?PendingRemoteUpdateStore $pendingUpdates = null,
 		private readonly ?ReactionService $reactions = null,
 		private readonly ?RemotePollService $remotePolls = null,
+		private readonly ?QuoteService $quotes = null,
 	) {
 	}
 
@@ -169,8 +172,9 @@ final class InboxService
 				'Follow' => $this->handleFollow($actor, $activity),
 				'Like' => $this->requireReactions()->receiveLike($actor, $activity),
 				'EmojiReact' => $this->requireReactions()->receiveEmojiReact($actor, $activity),
-				'Accept' => $this->handleFollowResponse($actor, $activity, FollowState::Accepted),
-				'Reject' => $this->handleFollowResponse($actor, $activity, FollowState::Rejected),
+				'Accept' => $this->handleFollowOrQuoteResponse($actor, $activity, FollowState::Accepted),
+				'Reject' => $this->handleFollowOrQuoteResponse($actor, $activity, FollowState::Rejected),
+				'QuoteRequest' => $this->handleQuoteRequest($actor, $activity),
 				'Undo' => $this->handleUndo($actor, $activity),
 				'Create' => $this->handleCreate($actor, $activity),
 				'Update' => $this->handleUpdate($actor, $activity),
@@ -445,6 +449,37 @@ final class InboxService
 
 			throw $exception;
 		}
+	}
+
+	/**
+	 * A quote response first, a Follow response second: both use Accept and
+	 * Reject, and the embedded object says which request is answered.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleFollowOrQuoteResponse(RemoteActor $actor, array $activity, FollowState $state): void
+	{
+		if ($this->quotes?->handleResponse(
+			$actor->actorId,
+			$activity,
+			$state === FollowState::Accepted ? QuoteState::Accepted : QuoteState::Rejected,
+		) === true) {
+			return;
+		}
+
+		$this->handleFollowResponse($actor, $activity, $state);
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleQuoteRequest(RemoteActor $actor, array $activity): void
+	{
+		if ($this->quotes === null) {
+			throw new InboxRejectedException('unsupported_activity', 'Quote requests are not configured.');
+		}
+
+		$this->quotes->handleQuoteRequest($actor->actorId, $actor->inboxUrl, $activity);
 	}
 
 	/**

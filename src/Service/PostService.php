@@ -57,6 +57,7 @@ final class PostService
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?TransactionRunner $transactions = null,
 		private readonly ?PostRevisionRepository $revisions = null,
+		private readonly ?QuoteService $quotes = null,
 	) {
 	}
 
@@ -78,8 +79,23 @@ final class PostService
 
 		$this->validate($command, $content, $warning, $recipientIds, $parent);
 
+		$postId = $command->postId ?? $this->ids->generate();
+		$quotedPostId = $command->quotedPostId === null ? null : trim($command->quotedPostId);
+		if ($quotedPostId === '') {
+			$quotedPostId = null;
+		}
+
+		$quote = null;
+		if ($quotedPostId !== null) {
+			if ($this->quotes === null) {
+				throw new ValidationException(['quoted_post_id' => 'Quote posts are not configured on this instance.']);
+			}
+
+			$quote = $this->quotes->prepare($command->authorId, $postId, $quotedPostId);
+		}
+
 		$post = new Post(
-			id: $command->postId ?? $this->ids->generate(),
+			id: $postId,
 			authorId: $command->authorId,
 			content: $content,
 			visibility: $command->visibility,
@@ -89,6 +105,10 @@ final class PostService
 			poll: $command->poll,
 			recipientIds: $recipientIds,
 			inReplyToId: $inReplyToId,
+			quotedObjectId: $quote?->quotedObjectId,
+			quoteState: $quote?->state,
+			quoteAuthorizationId: $quote?->authorizationId,
+			quoteRequestId: $quote?->requestId,
 		);
 
 		// The post row, its attachments/hashtags/poll, the scheduled AT
@@ -99,8 +119,11 @@ final class PostService
 		// Notifications remain best-effort by contract: a storage failure is
 		// logged by NotificationService and does not roll back the primary
 		// write, while a successful insert joins this transaction.
-		$this->runWrite(function () use ($post, $parent): void {
+		$this->runWrite(function () use ($post, $parent, $quote, $command): void {
 			$this->posts->insert($post);
+			if ($quote !== null) {
+				$this->quotes?->commit($quote, $command->authorId);
+			}
 			$this->atproto?->schedule($post);
 			$this->recordMentions($post, $parent);
 			$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
@@ -243,6 +266,10 @@ final class PostService
 			inReplyToId: $post->inReplyToId,
 			editedAt: $editedAt,
 			revision: $post->revision + 1,
+			quotedObjectId: $post->quotedObjectId,
+			quoteState: $post->quoteState,
+			quoteAuthorizationId: $post->quoteAuthorizationId,
+			quoteRequestId: $post->quoteRequestId,
 		);
 
 		$snapshot = new PostRevision(

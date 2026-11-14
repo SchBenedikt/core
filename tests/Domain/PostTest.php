@@ -40,6 +40,10 @@ final class PostTest extends TestCase
 			'deleted_at' => null,
 			'poll' => null,
 			'in_reply_to_id' => null,
+			'quoted_object_id' => null,
+			'quote_state' => null,
+			'quote_authorization_id' => null,
+			'quote_request_id' => null,
 			'recipient_ids' => [],
 		], $post->toArray());
 	}

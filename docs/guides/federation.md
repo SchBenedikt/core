@@ -138,6 +138,40 @@ and applies each reader's private block list; see [blocks](blocks.md).
 See [inbound federation](inbound-federation.md) for the order of checks and
 [inbox activities](../reference/inbox-activities.md) for the refusal table.
 
+## Quote posts and FEP-044f
+
+A quote is stored on the post itself: `quoted_object_id`, `quote_state`
+(`pending`, `accepted`, `rejected`, `revoked`), the authorization URI and the
+request id. Only a live public or unlisted target may be quoted, and a blocked
+remote author is refused before anything is written.
+
+Two local posts are granted synchronously. The grant lives in
+`social_quote_grant` and its id is derived from the quoted and quoting object,
+so the same quote can never hold two grants. The document at
+`GET /api/v1/quote-authorizations/{id}` is the dereferenceable
+`QuoteAuthorization`; `DELETE` on the same route lets the quoted author revoke
+it, while a second revoke is a successful no-op. After a revoke, or once the
+target is deleted or no longer public, the document answers 404 and the status
+renders a null preview — the original content is never shown from a withdrawn
+grant.
+
+A quote of a stored remote post starts pending. A signed `QuoteRequest` with
+`object` and `instrument` is delivered to the quoted author; their `Accept`
+(with the embedded request and a `result` authorization) or `Reject` updates
+the stored state. Only the author of the quoted remote post can answer. An
+inbound `QuoteRequest` for a local public or unlisted post is answered by
+policy, not by a human: a grant is stored and an `Accept` is delivered; a
+private target, a block or an already revoked grant produces a signed
+`Reject`. A foreign `QuoteRequest` that does not name one of our posts is
+refused.
+
+Incoming Notes carry `quote` (FEP-044f, string or object id) or the legacy
+`quoteUrl`; the reference is preserved for display but a peer's claim is never
+trusted as a grant. The outgoing Note includes `quote`, the legacy `quoteUrl`
+and `quoteAuthorization` only while the local quote is accepted. The Mastodon
+projection (`quoted_status_id` on create, `quote` object on a status) exposes
+the state and nests the target only when it is publicly visible.
+
 ## Remote polls
 
 An ActivityPub `Question` is imported beside its `Create` activity. The store

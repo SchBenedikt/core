@@ -40,6 +40,15 @@ interface PostRepository
 	public function find(string $id): ?Post;
 
 	/**
+	 * Applies the answer to an outgoing quote to the stored post.
+	 *
+	 * The quote target itself and the request id stay; only the state and, for
+	 * an acceptance, the authorization id change. Rejected and revoked stay
+	 * final, so a late Accept cannot revive a withdrawn grant.
+	 */
+	public function updateQuoteState(string $postId, QuoteState $state, ?string $authorizationId = null): void;
+
+	/**
 	 * Marks a post as deleted. Deleting an unknown id is a no-op.
 	 */
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void;

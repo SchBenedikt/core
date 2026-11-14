@@ -32,6 +32,7 @@ final readonly class CreatePost
 		/** @var list<string> local recipient ids for a direct post */
 		public array $recipientIds = [],
 		public ?string $inReplyToId = null,
+		public ?string $quotedPostId = null,
 	) {
 	}
 }

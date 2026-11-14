@@ -95,6 +95,7 @@ final class RemotePostFactory
 			objectAuthorId: $objectActor,
 			objectType: $objectType ?? RemoteObjectType::Note,
 			metadata: $metadata,
+			quotedObjectId: $this->quotedObjectId($object),
 		);
 	}
 
@@ -128,6 +129,7 @@ final class RemotePostFactory
 			objectAuthorId: $this->announcedObjectAuthor($embedded) ?? $target?->objectAuthorId,
 			objectType: $objectType,
 			metadata: $metadata,
+			quotedObjectId: $this->quotedObjectId($embedded) ?? $target?->quotedObjectId,
 		);
 	}
 
@@ -187,6 +189,7 @@ final class RemotePostFactory
 			updatedAt: $updated['updatedAt'],
 			objectType: $target->objectType,
 			metadata: $target->metadata,
+			quotedObjectId: $target->quotedObjectId,
 		);
 	}
 
@@ -332,6 +335,41 @@ final class RemotePostFactory
 		}
 
 		return $summary;
+	}
+
+	/**
+	 * The quoted object of a Note.
+	 *
+	 * FEP-044f sends `quote` (a string or an object with an id); older peers
+	 * send only the legacy `quoteUrl`. The reference is stored as a target
+	 * only: a foreign authorization is never trusted, and this instance does
+	 * not render the quoted content from a peer's word alone.
+	 *
+	 * @param array<string, mixed> $object
+	 */
+	private function quotedObjectId(array $object): ?string
+	{
+		$value = $object['quote'] ?? ($object['quoteUrl'] ?? null);
+		if ($value === null) {
+			return null;
+		}
+
+		$id = is_array($value) ? ($value['id'] ?? ($value['href'] ?? null)) : $value;
+		if (!is_string($id) || trim($id) === '') {
+			return null;
+		}
+
+		$id = trim($id);
+		if (mb_strlen($id) > RemotePost::MAX_ID_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The quoted object id is too long.');
+		}
+
+		$scheme = parse_url($id, PHP_URL_SCHEME);
+		if ($scheme !== 'http' && $scheme !== 'https') {
+			throw new InboxRejectedException('invalid_activity', 'The quoted object must be an http(s) URL.');
+		}
+
+		return $id;
 	}
 
 	/**

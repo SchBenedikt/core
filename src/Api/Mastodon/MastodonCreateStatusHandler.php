@@ -95,6 +95,15 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 
 		$inReplyToId = $inReplyToId === null || trim($inReplyToId) === '' ? null : trim($inReplyToId);
 
+		// Mastodon 4.5 clients send the quoted status id. Older clients never
+		// set it, so the absence is not a compatibility problem.
+		$quotedStatusId = $body['quoted_status_id'] ?? null;
+		if ($quotedStatusId !== null && !is_string($quotedStatusId)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'quoted_status_id must be a string or null.');
+		}
+
+		$quotedStatusId = $quotedStatusId === null || trim($quotedStatusId) === '' ? null : trim($quotedStatusId);
+
 		$recipientIds = $this->recipientIds($body['recipient_ids'] ?? []);
 		if ($visibility === Visibility::Direct && $recipientIds === []) {
 			$recipientIds = $this->mentionedLocalIds($content);
@@ -122,6 +131,10 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 
 			if ($poll !== null) {
 				throw new MastodonRequestException(422, 'validation_failed', 'A poll cannot be scheduled.');
+			}
+
+			if ($quotedStatusId !== null) {
+				throw new MastodonRequestException(422, 'validation_failed', 'A scheduled status cannot quote another status.');
 			}
 
 			try {
@@ -155,6 +168,7 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			$poll,
 			$inReplyToId,
 			$recipientIds,
+			$quotedStatusId,
 		));
 	}
 

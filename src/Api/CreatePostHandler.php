@@ -92,6 +92,11 @@ final class CreatePostHandler implements Handler
 			throw HttpException::validationFailed(['in_reply_to_id' => 'in_reply_to_id must be a string or null.']);
 		}
 
+		$quotedPostId = $body['quoted_post_id'] ?? null;
+		if ($quotedPostId !== null && !is_string($quotedPostId)) {
+			throw HttpException::validationFailed(['quoted_post_id' => 'quoted_post_id must be a string or null.']);
+		}
+
 		$rawVisibility = $body['visibility'] ?? Visibility::Public->value;
 		if (!is_string($rawVisibility)) {
 			throw HttpException::validationFailed(['visibility' => 'visibility must be a string.']);
@@ -112,6 +117,7 @@ final class CreatePostHandler implements Handler
 				attachmentIds: $attachmentIds,
 				recipientIds: $recipientIds,
 				inReplyToId: $inReplyToId,
+				quotedPostId: $quotedPostId,
 			));
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());

@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\QuoteGrant;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Config\Config;
@@ -37,6 +38,8 @@ final class ActivityFactory
 	public const CONTEXT = 'https://www.w3.org/ns/activitystreams';
 
 	public const PUBLIC_COLLECTION = 'https://www.w3.org/ns/activitystreams#Public';
+
+	public const FEP_044F_CONTEXT = 'https://w3id.org/fep/044f';
 
 	public const CONFIG_APP = 'social';
 
@@ -164,6 +167,125 @@ final class ActivityFactory
 	}
 
 	/**
+	 * The reverse of {@see noteIdFor()}, for activities that name one of our
+	 * posts. A foreign URL, an extra path segment or another base is not ours.
+	 */
+	public function postIdFromUrl(string $url): ?string
+	{
+		$prefix = $this->baseUrl() . '/api/v1/posts/';
+		if (!str_starts_with($url, $prefix)) {
+			return null;
+		}
+
+		$id = rawurldecode(substr($url, strlen($prefix)));
+		if ($id === '' || str_contains($id, '/') || str_contains($id, '?')) {
+			return null;
+		}
+
+		return $id;
+	}
+
+	/**
+	 * The FEP-044f QuoteRequest id of one local quoting post.
+	 */
+	public function quoteRequestId(string $quotePostId): string
+	{
+		return $this->noteIdFor($quotePostId) . '/quote-request';
+	}
+
+	/**
+	 * The dereferenceable authorization document id of a quote grant.
+	 */
+	public function quoteAuthorizationId(string $grantId): string
+	{
+		return $this->baseUrl() . '/api/v1/quote-authorizations/' . rawurlencode($grantId);
+	}
+
+	/**
+	 * A FEP-044f QuoteRequest: the quoting post asks to quote the object.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function quoteRequest(
+		string $localUserId,
+		string $quotePostId,
+		string $quotedObjectId,
+		string $targetActorId,
+	): array {
+		return [
+			'@context' => [self::CONTEXT, self::FEP_044F_CONTEXT],
+			'id' => $this->quoteRequestId($quotePostId),
+			'type' => 'QuoteRequest',
+			'actor' => $this->actorId($localUserId),
+			'object' => $quotedObjectId,
+			'instrument' => $this->noteIdFor($quotePostId),
+			'to' => [$targetActorId],
+		];
+	}
+
+	/**
+	 * The quoted author's Accept, embedding the request it answers.
+	 *
+	 * `result` is the authorization document itself, so the requester can
+	 * check the exact grant before it publishes the quote.
+	 *
+	 * @param array<string, mixed> $request
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function acceptQuoteRequest(string $localUserId, array $request, QuoteGrant $grant): array
+	{
+		$activity = [
+			'@context' => [self::CONTEXT, self::FEP_044F_CONTEXT],
+			'id' => $this->quoteAuthorizationId($grant->id) . '/accept',
+			'type' => 'Accept',
+			'actor' => $this->actorId($localUserId),
+			'object' => $request,
+			'result' => $this->quoteAuthorization($grant),
+		];
+
+		if ($grant->actorId !== '') {
+			$activity['to'] = [$grant->actorId];
+		}
+
+		return $activity;
+	}
+
+	/**
+	 * @param array<string, mixed> $request
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function rejectQuoteRequest(string $localUserId, array $request, string $targetActorId): array
+	{
+		return [
+			'@context' => [self::CONTEXT, self::FEP_044F_CONTEXT],
+			'id' => (string) ($request['id'] ?? $this->baseUrl()) . '/reject',
+			'type' => 'Reject',
+			'actor' => $this->actorId($localUserId),
+			'object' => $request,
+			'to' => [$targetActorId],
+		];
+	}
+
+	/**
+	 * The dereferenceable FEP-044f QuoteAuthorization.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function quoteAuthorization(QuoteGrant $grant): array
+	{
+		return [
+			'@context' => [self::CONTEXT, self::FEP_044F_CONTEXT],
+			'id' => $this->quoteAuthorizationId($grant->id),
+			'type' => 'QuoteAuthorization',
+			'attributedTo' => $grant->quotedActorId,
+			'interactingObject' => $grant->interactingObjectId,
+			'interactionTarget' => $grant->quotedObjectId,
+		];
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	public function createNote(Post $post): array
@@ -239,6 +361,17 @@ final class ActivityFactory
 		if ($post->inReplyToId !== null) {
 			$note['inReplyTo'] = $this->baseUrl()
 				. '/api/v1/posts/' . rawurlencode($post->inReplyToId);
+		}
+
+		// Only an accepted quote is advertised. A pending or rejected quote
+		// must not make a peer render an unapproved reference, and the
+		// authorization is what lets the quoted author verify the grant.
+		if ($post->quotedObjectId !== null && $post->quoteState?->isAccepted() === true) {
+			$note['quote'] = $post->quotedObjectId;
+			$note['quoteUrl'] = $post->quotedObjectId;
+			if ($post->quoteAuthorizationId !== null) {
+				$note['quoteAuthorization'] = $post->quoteAuthorizationId;
+			}
 		}
 
 		// The same serialized note is what delivery and the outbox send, so

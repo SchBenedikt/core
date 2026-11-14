@@ -41,6 +41,10 @@ final readonly class Post
 		public ?string $inReplyToId = null,
 		public ?DateTimeImmutable $editedAt = null,
 		public int $revision = 1,
+		public ?string $quotedObjectId = null,
+		public ?QuoteState $quoteState = null,
+		public ?string $quoteAuthorizationId = null,
+		public ?string $quoteRequestId = null,
 	) {
 		if ($revision < 1) {
 			throw new InvalidArgumentException('A post revision starts at one.');
@@ -99,6 +103,32 @@ final readonly class Post
 		if ($inReplyToId !== null && trim($inReplyToId) === '') {
 			throw new InvalidArgumentException('A reply target needs an id.');
 		}
+
+		if ($quotedObjectId !== null && trim($quotedObjectId) === '') {
+			throw new InvalidArgumentException('A quote target needs an id.');
+		}
+
+		if ($quotedObjectId !== null && mb_strlen($quotedObjectId) > 1024) {
+			throw new InvalidArgumentException('A quote target id is too long.');
+		}
+
+		if (($quotedObjectId === null) !== ($quoteState === null)) {
+			throw new InvalidArgumentException('A quote target and its state belong together.');
+		}
+
+		if ($quoteState === QuoteState::Pending && $quoteAuthorizationId !== null) {
+			throw new InvalidArgumentException('A pending quote has no authorization yet.');
+		}
+
+		if ($quoteAuthorizationId !== null && $quoteState !== QuoteState::Accepted) {
+			throw new InvalidArgumentException('Only an accepted quote carries an authorization.');
+		}
+
+		foreach (['quoteAuthorizationId' => $quoteAuthorizationId, 'quoteRequestId' => $quoteRequestId] as $name => $value) {
+			if ($value !== null && mb_strlen($value) > 1024) {
+				throw new InvalidArgumentException('The ' . $name . ' is too long.');
+			}
+		}
 	}
 
 	public function isDeleted(): bool
@@ -125,6 +155,10 @@ final readonly class Post
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
 			'poll' => $this->poll?->toArray(),
 			'in_reply_to_id' => $this->inReplyToId,
+			'quoted_object_id' => $this->quotedObjectId,
+			'quote_state' => $this->quoteState?->value,
+			'quote_authorization_id' => $this->quoteAuthorizationId,
+			'quote_request_id' => $this->quoteRequestId,
 			'recipient_ids' => $this->recipientIds,
 		];
 	}

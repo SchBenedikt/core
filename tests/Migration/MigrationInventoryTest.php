@@ -91,8 +91,8 @@ final class MigrationInventoryTest extends TestCase
 			self::assertSame('v2', $byFeature[$feature]['validation'], $feature);
 		}
 
-		self::assertSame('gap', $byFeature['quotes']['status']);
-		self::assertSame('#7', $byFeature['quotes']['gap_issue']);
+		self::assertSame('supported', $byFeature['quotes']['status']);
+		self::assertNull($byFeature['quotes']['gap_issue']);
 		self::assertSame('supported', $byFeature['emoji_reactions']['status']);
 		self::assertNull($byFeature['emoji_reactions']['gap_issue']);
 		self::assertSame('supported', $byFeature['favourites']['status']);

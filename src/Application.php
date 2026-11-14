@@ -26,6 +26,8 @@ use AlohaSocial\Core\Api\ShowScheduledPostHandler;
 use AlohaSocial\Core\Api\RemotePollHandler;
 use AlohaSocial\Core\Api\UpdateFilterHandler;
 use AlohaSocial\Core\Api\VoteRemotePollHandler;
+use AlohaSocial\Core\Api\QuoteAuthorizationHandler;
+use AlohaSocial\Core\Api\RevokeQuoteAuthorizationHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
@@ -192,6 +194,9 @@ use AlohaSocial\Core\Domain\Post\PdoFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRevisionRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryQuoteGrantRepository;
+use AlohaSocial\Core\Domain\Post\PdoQuoteGrantRepository;
+use AlohaSocial\Core\Domain\Post\QuoteGrantRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PollVoteCounter;
@@ -299,6 +304,7 @@ use AlohaSocial\Core\Service\MediaAccess;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Service\TimelineService;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\RandomIdGenerator;
@@ -383,6 +389,7 @@ final readonly class Application
 		?FilterRuleRepository $filterRuleRepository = null,
 		?RemotePollRepository $remotePollRepository = null,
 		?RemotePollVoteRepository $remotePollVoteRepository = null,
+		?QuoteGrantRepository $quoteGrantRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -421,6 +428,7 @@ final readonly class Application
 		$filterRuleRepository ??= new InMemoryFilterRuleRepository();
 		$remotePollRepository ??= new InMemoryRemotePollRepository();
 		$remotePollVoteRepository ??= new InMemoryRemotePollVoteRepository();
+		$quoteGrantRepository ??= new InMemoryQuoteGrantRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -468,6 +476,7 @@ final readonly class Application
 			filterRuleRepository: $filterRuleRepository,
 			remotePollRepository: $remotePollRepository,
 			remotePollVoteRepository: $remotePollVoteRepository,
+			quoteGrantRepository: $quoteGrantRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -583,6 +592,7 @@ final readonly class Application
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
 			remotePollVoteRepository: new PdoRemotePollVoteRepository($database),
+			quoteGrantRepository: new PdoQuoteGrantRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -655,6 +665,7 @@ final readonly class Application
 		?FilterRuleRepository $filterRuleRepository = null,
 		?RemotePollRepository $remotePollRepository = null,
 		?RemotePollVoteRepository $remotePollVoteRepository = null,
+		?QuoteGrantRepository $quoteGrantRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -781,6 +792,16 @@ final readonly class Application
 			$actorInboxResolver,
 			$clock,
 		);
+		$quoteService = new QuoteService(
+			$posts,
+			$remotePosts,
+			$quoteGrantRepository ?? new InMemoryQuoteGrantRepository(),
+			$queue,
+			$activities,
+			$clock,
+			$actorInboxResolver,
+			$blockService,
+		);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock, $targetGuard)
 			: null;
@@ -825,6 +846,7 @@ final readonly class Application
 			$notificationService,
 			transactions: $transactions,
 			revisions: $postRevisions,
+			quotes: $quoteService,
 		);
 		$scheduledPostService = new ScheduledPostService(
 			$scheduledPostRepository ?? new InMemoryScheduledPostRepository(),
@@ -960,6 +982,7 @@ final readonly class Application
 				$pendingRemoteUpdates,
 				$reactionService,
 				$remotePollService,
+				$quoteService,
 			)
 			: null;
 
@@ -999,6 +1022,8 @@ final readonly class Application
 			->with(DeleteFilterHandler::class, static fn (): DeleteFilterHandler => new DeleteFilterHandler($filterService))
 			->with(RemotePollHandler::class, static fn (): RemotePollHandler => new RemotePollHandler($remotePollService))
 			->with(VoteRemotePollHandler::class, static fn (): VoteRemotePollHandler => new VoteRemotePollHandler($remotePollService, $clock))
+			->with(QuoteAuthorizationHandler::class, static fn (): QuoteAuthorizationHandler => new QuoteAuthorizationHandler($quoteService))
+			->with(RevokeQuoteAuthorizationHandler::class, static fn (): RevokeQuoteAuthorizationHandler => new RevokeQuoteAuthorizationHandler($quoteService))
 			->with(ShowRemotePostHandler::class, static fn (): ShowRemotePostHandler => new ShowRemotePostHandler($reactionService))
 			->with(LikeRemotePostHandler::class, static fn (): LikeRemotePostHandler => new LikeRemotePostHandler($reactionService))
 			->with(UnlikeRemotePostHandler::class, static fn (): UnlikeRemotePostHandler => new UnlikeRemotePostHandler($reactionService))

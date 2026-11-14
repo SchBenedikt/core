@@ -153,6 +153,7 @@ final class MastodonPresenter
 			'emojis' => [],
 			'card' => null,
 			'poll' => $this->poll($post, $viewerId, $viewerVote, $viewerVoteLoaded),
+			'quote' => $this->quote($post, $viewerId),
 			'favourited' => $favourited
 				?? ($viewerId !== null && ($this->favourites?->exists($viewerId, $post->id) ?? false)),
 			'reblogged' => $reblogged
@@ -211,6 +212,40 @@ final class MastodonPresenter
 			),
 			'emojis' => [],
 		];
+	}
+
+	/**
+	 * The Mastodon quote entity.
+	 *
+	 * Only an accepted quote exposes the nested status, and only while the
+	 * quoted post is publicly visible. A private, deleted or revoked target
+	 * becomes a null preview, so a quote cannot leak what its author hid.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private function quote(Post $post, ?string $viewerId): ?array
+	{
+		if ($post->quotedObjectId === null || $post->quoteState === null) {
+			return null;
+		}
+
+		$state = $post->quoteState->value;
+		$quotedPostId = $this->activities->postIdFromUrl($post->quotedObjectId);
+		$target = $quotedPostId === null ? null : $this->posts?->find($quotedPostId);
+
+		if ($target === null || $target->isDeleted()) {
+			return ['state' => 'deleted', 'quoted_status' => null];
+		}
+
+		if (!$post->quoteState->isAccepted()) {
+			return ['state' => $state, 'quoted_status' => null];
+		}
+
+		if (!$target->visibility->isPubliclyVisible()) {
+			return ['state' => 'unauthorized', 'quoted_status' => null];
+		}
+
+		return ['state' => $state, 'quoted_status' => $this->status($target, $viewerId)];
 	}
 
 	/**

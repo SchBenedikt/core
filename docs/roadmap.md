@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 112 routes, 53 of them under the Mastodon prefix |
+| HTTP contract | 114 routes, 53 of them under the Mastodon prefix |
 | Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 162 PHP test files (1513 tests, 7618 assertions) and 9 UI test files (69 tests) |
+| Tests | 166 PHP test files (1531 tests, 7713 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -90,6 +90,15 @@ the host that serves it. See
   prefix; the remote reaction routes live under `/api/v1`. See
   [Mastodon-compatible API](guides/mastodon-api.md) and the
   [route reference](reference/routes.md#remote-reactions).
+- **Quote posts and FEP-044f authorization** — a local quote of a public or
+  unlisted local post is accepted synchronously with a stable authorization
+  document; a quote of a remote post starts pending and delivers a
+  QuoteRequest. Accept/Reject updates the stored quote, the quoted author can
+  revoke, and the authorization route refuses a withdrawn or now-private
+  target. Inbound QuoteRequests are answered by policy; only public/unlisted
+  targets are granted. A private, deleted or revoked target renders as a null
+  preview instead of leaking the original, and the Mastodon projection carries
+  the state plus the nested quoted status when it is visible.
 - **Remote Question polling** — an ActivityPub `Question` is imported with
   its `oneOf`/`anyOf` options, counts, schedule and `closed` marker into a
   separate remote-poll store. A local vote is stored optimistically, answered

@@ -92,7 +92,8 @@ timeline, per-user blocks including outbound `Block`/`Undo(Block)`, local and
 guarded remote media, outbox backfill, thread/context fetching, local
 favourites, bookmarks, mutes, account lists, notifications, polls,
 boosts/replies, typed remote Event/Article/Video objects with validated
-metadata, remote Question polling with signed votes, per-reader keyword filters with hide/warn and contexts, a
+metadata, remote Question polling with signed votes, quote posts with FEP-044f
+authorization and revocation, per-reader keyword filters with hide/warn and contexts, a
 disabled-by-default Mastodon compatibility subset (53 routes), the AT Protocol publishing foundation with OAuth refresh and the
 authorization-code/PAR protocol client, author-only post editing with revision
 history and ActivityPub `Update` ingestion/delivery, federated `Like` and

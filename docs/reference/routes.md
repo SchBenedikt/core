@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 112 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 114 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -23,6 +23,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
 | `posts.update` | `PATCH` | `/api/v1/posts/{id}` | yes | 30 / 900 s |
+| `quote-authorizations.get` | `GET` | `/api/v1/quote-authorizations/{id}` | no | 120 / 60 s |
+| `quote-authorizations.revoke` | `DELETE` | `/api/v1/quote-authorizations/{id}` | yes | 30 / 900 s |
 | `posts.boost` | `POST` | `/api/v1/posts/{id}/boost` | yes | 30 / 900 s |
 | `posts.unboost` | `DELETE` | `/api/v1/posts/{id}/boost` | yes | 60 / 900 s |
 | `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |

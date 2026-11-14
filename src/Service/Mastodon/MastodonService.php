@@ -470,6 +470,7 @@ final class MastodonService
 		?array $poll = null,
 		?string $inReplyToId = null,
 		array $recipientIds = [],
+		?string $quotedStatusId = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -490,6 +491,7 @@ final class MastodonService
 				poll: $pollModel,
 				inReplyToId: $inReplyToId,
 				recipientIds: $recipientIds,
+				quotedPostId: $quotedStatusId,
 			));
 		} catch (DatabaseException $exception) {
 			// A repeated idempotency key maps to the same deterministic post id.

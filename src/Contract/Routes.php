@@ -60,6 +60,8 @@ use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
 use AlohaSocial\Core\Api\UnlikeRemotePostHandler;
 use AlohaSocial\Core\Api\VoteRemotePollHandler;
+use AlohaSocial\Core\Api\QuoteAuthorizationHandler;
+use AlohaSocial\Core\Api\RevokeQuoteAuthorizationHandler;
 use AlohaSocial\Core\Api\UnreactFromRemotePostHandler;
 use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
@@ -226,6 +228,24 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '120/60',
 				summary: 'Read an imported remote poll with the viewer\'s own choices.',
+			),
+			new Route(
+				name: 'quote-authorizations.get',
+				method: 'GET',
+				path: $base . '/quote-authorizations/{id}',
+				handler: QuoteAuthorizationHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Dereference a FEP-044f quote authorization; a revoked grant is not found.',
+			),
+			new Route(
+				name: 'quote-authorizations.revoke',
+				method: 'DELETE',
+				path: $base . '/quote-authorizations/{id}',
+				handler: RevokeQuoteAuthorizationHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Revoke a quote authorization as the quoted post author.',
 			),
 			new Route(
 				name: 'remote-polls.vote',

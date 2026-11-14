@@ -51,6 +51,10 @@ final class PostSchema
 		return [
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN revision INTEGER NOT NULL DEFAULT 1',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN edited_at VARCHAR(20) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quoted_object_id VARCHAR(1024) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_state VARCHAR(16) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_authorization_id VARCHAR(1024) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_request_id VARCHAR(1024) NULL',
 		];
 	}
 
@@ -70,11 +74,16 @@ final class PostSchema
 			. ' published_at VARCHAR(20) NOT NULL,'
 			. ' edited_at VARCHAR(20) NULL,'
 			. ' revision INTEGER NOT NULL DEFAULT 1,'
-			. ' deleted_at VARCHAR(20) NULL'
+			. ' deleted_at VARCHAR(20) NULL,'
+			. ' quoted_object_id VARCHAR(1024) NULL,'
+			. ' quote_state VARCHAR(16) NULL,'
+			. ' quote_authorization_id VARCHAR(1024) NULL,'
+			. ' quote_request_id VARCHAR(1024) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_reply ON ' . self::TABLE . ' (in_reply_to_id, published_at)',
+			'CREATE INDEX ' . self::TABLE . '_quote ON ' . self::TABLE . ' (quoted_object_id, published_at)',
 			'CREATE TABLE ' . self::ATTACHMENT_TABLE . ' ('
 			. ' post_id VARCHAR(64) NOT NULL,'
 			. ' attachment_id VARCHAR(64) NOT NULL,'

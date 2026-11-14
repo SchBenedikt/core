@@ -83,6 +83,42 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			$post->inReplyToId,
 			editedAt: $post->editedAt,
 			revision: $post->revision,
+			quotedObjectId: $post->quotedObjectId,
+			quoteState: $post->quoteState,
+			quoteAuthorizationId: $post->quoteAuthorizationId,
+			quoteRequestId: $post->quoteRequestId,
+		);
+	}
+
+	public function updateQuoteState(string $postId, QuoteState $state, ?string $authorizationId = null): void
+	{
+		$post = $this->posts[$postId] ?? null;
+		if ($post === null || $post->isDeleted() || $post->quotedObjectId === null || $post->quoteState === null) {
+			return;
+		}
+
+		if ($post->quoteState->isFinal()) {
+			return;
+		}
+
+		$this->posts[$postId] = new Post(
+			$post->id,
+			$post->authorId,
+			$post->content,
+			$post->visibility,
+			$post->publishedAt,
+			$post->contentWarning,
+			$post->deletedAt,
+			$post->attachmentIds,
+			$post->poll,
+			$post->recipientIds,
+			$post->inReplyToId,
+			editedAt: $post->editedAt,
+			revision: $post->revision,
+			quotedObjectId: $post->quotedObjectId,
+			quoteState: $state,
+			quoteAuthorizationId: $authorizationId,
+			quoteRequestId: $post->quoteRequestId,
 		);
 	}
 
@@ -336,6 +372,10 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			inReplyToId: $post->inReplyToId,
 			editedAt: $post->editedAt,
 			revision: $post->revision,
+			quotedObjectId: $post->quotedObjectId,
+			quoteState: $post->quoteState,
+			quoteAuthorizationId: $post->quoteAuthorizationId,
+			quoteRequestId: $post->quoteRequestId,
 		);
 	}
 

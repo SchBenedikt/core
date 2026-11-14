@@ -89,6 +89,7 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 				updatedAt: $updatedAt,
 				objectType: $post->objectType,
 				metadata: $post->metadata,
+				quotedObjectId: $post->quotedObjectId,
 			);
 
 			return true;
@@ -225,6 +226,7 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 			updatedAt: $post->updatedAt,
 			objectType: $post->objectType,
 			metadata: $post->metadata,
+			quotedObjectId: $post->quotedObjectId,
 		);
 	}
 }

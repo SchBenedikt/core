@@ -28,7 +28,8 @@ use function implode;
 final class PdoPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id,'
-		. ' published_at, edited_at, revision, deleted_at';
+		. ' published_at, edited_at, revision, deleted_at, quoted_object_id, quote_state,'
+		. ' quote_authorization_id, quote_request_id';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -41,8 +42,10 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$this->db->transaction(function () use ($post): void {
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
-					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at)'
-					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at)',
+					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at,'
+					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id)'
+					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at,'
+					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id)',
 					[
 						'id' => $post->id,
 						'author_id' => $post->authorId,
@@ -54,6 +57,10 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'edited_at' => $post->editedAt === null ? null : Time::format($post->editedAt),
 						'revision' => $post->revision,
 						'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
+						'quoted_object_id' => $post->quotedObjectId,
+						'quote_state' => $post->quoteState?->value,
+						'quote_authorization_id' => $post->quoteAuthorizationId,
+						'quote_request_id' => $post->quoteRequestId,
 					],
 				);
 
@@ -193,6 +200,21 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		} catch (PDOException $exception) {
 			throw new DatabaseException('The post could not be updated.', 0, $exception);
 		}
+	}
+
+	public function updateQuoteState(string $postId, QuoteState $state, ?string $authorizationId = null): void
+	{
+		$this->db->execute(
+			'UPDATE ' . PostSchema::TABLE
+			. ' SET quote_state = :state, quote_authorization_id = :authorization_id'
+			. " WHERE id = :id AND deleted_at IS NULL AND quoted_object_id IS NOT NULL"
+			. " AND quote_state IN ('pending', 'accepted')",
+			[
+				'id' => $postId,
+				'state' => $state->value,
+				'authorization_id' => $authorizationId,
+			],
+		);
 	}
 
 	public function find(string $id): ?Post
@@ -791,6 +813,10 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			inReplyToId: $row['in_reply_to_id'] === null ? null : (string) $row['in_reply_to_id'],
 			editedAt: $row['edited_at'] === null ? null : Time::parse((string) $row['edited_at']),
 			revision: (int) ($row['revision'] ?? 1),
+			quotedObjectId: ($row['quoted_object_id'] ?? null) === null ? null : (string) $row['quoted_object_id'],
+			quoteState: ($row['quote_state'] ?? null) === null ? null : QuoteState::from((string) $row['quote_state']),
+			quoteAuthorizationId: ($row['quote_authorization_id'] ?? null) === null ? null : (string) $row['quote_authorization_id'],
+			quoteRequestId: ($row['quote_request_id'] ?? null) === null ? null : (string) $row['quote_request_id'],
 		);
 	}
 }
