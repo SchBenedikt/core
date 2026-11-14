@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Protocol;
 
 use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -91,6 +92,34 @@ final class ActivityFactoryTest extends TestCase
 		self::assertSame('text/plain', $activity['object']['mediaType']);
 		self::assertFalse($activity['object']['sensitive']);
 		self::assertArrayNotHasKey('summary', $activity['object']);
+		self::assertArrayNotHasKey('attachment', $activity['object']);
+	}
+
+	public function testTheNoteCarriesThePresentedAttachments(): void
+	{
+		$presenter = new class implements AttachmentPresenter {
+			public function presentActivityAttachments(Post $post): array
+			{
+				return [[
+					'type' => 'Image',
+					'url' => 'https://social.example/api/v1/media/a1',
+					'mediaType' => 'image/png',
+				]];
+			}
+		};
+
+		$factory = new ActivityFactory(
+			new ArrayConfig(['social' => ['instance.url' => 'https://social.example']]),
+			$presenter,
+		);
+
+		$activity = $factory->createNote($this->post('p1', Visibility::Public));
+
+		self::assertSame([[
+			'type' => 'Image',
+			'url' => 'https://social.example/api/v1/media/a1',
+			'mediaType' => 'image/png',
+		]], $activity['object']['attachment']);
 	}
 
 	public function testAContentWarningBecomesSensitiveAndSummary(): void

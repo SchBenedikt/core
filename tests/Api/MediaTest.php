@@ -213,6 +213,52 @@ final class MediaTest extends TestCase
 		);
 	}
 
+	public function testAFederatedNoteOfAPublicPostCarriesItsImage(): void
+	{
+		$uploaded = $this->upload($this->png(900, 600), 'a blue banner')->decodedBody()['attachment'];
+		$post = $this->publishMediaPost($uploaded['id'], 'public');
+
+		$media = $this->app->media;
+		self::assertNotNull($media);
+
+		self::assertSame([[
+			'type' => 'Image',
+			'url' => $uploaded['url'],
+			'mediaType' => 'image/png',
+			'width' => 900,
+			'height' => 600,
+			'name' => 'a blue banner',
+		]], $media->presentActivityAttachments($this->app->posts->get($post->decodedBody()['post']['id'])));
+	}
+
+	public function testAFollowersOnlyPostDoesNotPublishAttachmentUrls(): void
+	{
+		$uploaded = $this->upload($this->png(200, 200))->decodedBody()['attachment'];
+		$post = $this->publishMediaPost($uploaded['id'], 'followers');
+
+		$media = $this->app->media;
+		self::assertNotNull($media);
+
+		$presented = $media->presentActivityAttachments($this->app->posts->get($post->decodedBody()['post']['id']));
+
+		self::assertSame([], $presented);
+	}
+
+	private function publishMediaPost(string $attachmentId, string $visibility): Response
+	{
+		return $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode([
+				'content' => 'with media',
+				'visibility' => $visibility,
+				'attachment_ids' => [$attachmentId],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+	}
+
 	private function upload(string $bytes, ?string $altText = null): Response
 	{
 		$boundary = '----AlohaSocial' . bin2hex(random_bytes(8));

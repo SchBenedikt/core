@@ -12,9 +12,12 @@ namespace AlohaSocial\Core\Tests\Api;
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\Time;
@@ -102,6 +105,44 @@ final class OutboxTest extends TestCase
 		self::assertSame($post['published_at'], $create['published']);
 	}
 
+	public function testAPublicPostPublishesItsAttachmentInTheOutbox(): void
+	{
+		$attachments = new InMemoryAttachmentRepository();
+		$attachments->insert(new Attachment(
+			id: 'att-1',
+			ownerId: 'alice',
+			storageKey: 'media/att-1/original.png',
+			thumbnailKey: 'media/att-1/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 2048,
+			altText: 'outbox alt',
+			createdAt: Time::parse('2026-11-11T10:00:00Z'),
+		));
+
+		$app = Application::inMemory(
+			clock: $this->clock,
+			signingKey: self::$localKey,
+			localActors: new InMemoryActorDirectory(['alice']),
+			attachmentRepository: $attachments,
+			blobStore: new InMemoryBlobStore(),
+		);
+
+		self::assertSame(201, $this->publish($app, 'with a picture', 'public', ['att-1'])->status);
+
+		$create = $this->collection($app)['orderedItems'][0];
+
+		self::assertSame([[
+			'type' => 'Image',
+			'url' => 'https://localhost:8080/api/v1/media/att-1',
+			'mediaType' => 'image/png',
+			'width' => 800,
+			'height' => 600,
+			'name' => 'outbox alt',
+		]], $create['object']['attachment']);
+	}
+
 	public function testAFollowersOnlyPostIsNotPublishedInThePublicOutbox(): void
 	{
 		$app = $this->app();
@@ -166,16 +207,28 @@ final class OutboxTest extends TestCase
 		return $app->handle(new Request('GET', '/@alice/outbox', ['page' => '1']))->decodedBody();
 	}
 
-	private function publish(Application $app, string $content, string $visibility): Response
-	{
+	/**
+	 * @param list<string> $attachmentIds
+	 */
+	private function publish(
+		Application $app,
+		string $content,
+		string $visibility,
+		array $attachmentIds = [],
+	): Response {
+		$body = [
+			'content' => $content,
+			'visibility' => $visibility,
+		];
+		if ($attachmentIds !== []) {
+			$body['attachment_ids'] = $attachmentIds;
+		}
+
 		return $app->handle(new Request(
 			method: 'POST',
 			path: '/api/v1/posts',
 			headers: ['Content-Type' => 'application/json'],
-			body: json_encode([
-				'content' => $content,
-				'visibility' => $visibility,
-			], JSON_THROW_ON_ERROR),
+			body: json_encode($body, JSON_THROW_ON_ERROR),
 			userId: 'alice',
 		));
 	}

@@ -568,7 +568,21 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
-		$activities = new ActivityFactory($config);
+		// Built before the activity factory: a note serializes its media, so
+		// delivery and the outbox use the very same attachment urls.
+		$mediaService = $blobStore === null
+			? null
+			: new MediaService(
+				attachments: $attachmentRepository,
+				posts: $posts,
+				blobs: $blobStore,
+				images: $imageProcessor,
+				config: $config,
+				clock: $clock,
+				ids: $ids,
+				remotePosts: $remotePosts,
+			);
+		$activities = new ActivityFactory($config, $mediaService);
 		$cleanup = new CleanupService(
 			$attachmentRepository,
 			$notificationRepository,
@@ -594,19 +608,6 @@ final readonly class Application
 				is_string($localBaseUrl) ? $localBaseUrl : null,
 			);
 		}
-
-		$mediaService = $blobStore === null
-			? null
-			: new MediaService(
-				attachments: $attachmentRepository,
-				posts: $posts,
-				blobs: $blobStore,
-				images: $imageProcessor,
-				config: $config,
-				clock: $clock,
-				ids: $ids,
-				remotePosts: $remotePosts,
-			);
 
 		// Facets and reply references need the PDS of the publishing account;
 		// both adapters reuse the host's HTTP client instead of adding one.

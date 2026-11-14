@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
@@ -39,7 +40,7 @@ use function trim;
  * at any later step removes both blobs and leaves no metadata row, so a
  * client never gets a half-created attachment.
  */
-final class MediaService
+final class MediaService implements AttachmentPresenter
 {
 	public const CONFIG_APP = 'social';
 
@@ -295,6 +296,46 @@ final class MediaService
 		}
 
 		return $data;
+	}
+
+	/**
+	 * The note attachments of a post, in link order.
+	 *
+	 * A public or unlisted post may reference its media from a federated
+	 * document: the binary route is public so a peer can fetch it, and the id
+	 * is unguessable. A followers-only or direct post stays out of reach of an
+	 * unauthenticated URL and therefore sends no attachment links at all.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function presentActivityAttachments(Post $post): array
+	{
+		if (!$post->visibility->isPubliclyVisible()) {
+			return [];
+		}
+
+		$attachments = $this->forIds($post->attachmentIds);
+
+		$presented = [];
+		foreach ($attachments as $attachment) {
+			$entry = [
+				'type' => 'Image',
+				'url' => $this->url($attachment),
+				'mediaType' => $attachment->mimeType,
+				'width' => $attachment->width,
+				'height' => $attachment->height,
+			];
+
+			// An absent alternative text is not the same as an empty one; only
+			// send the property when the author supplied a description.
+			if ($attachment->altText !== null) {
+				$entry['name'] = $attachment->altText;
+			}
+
+			$presented[] = $entry;
+		}
+
+		return $presented;
 	}
 
 	/**

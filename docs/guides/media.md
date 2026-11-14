@@ -105,6 +105,18 @@ Post and attachment links are written in one transaction by the SQL adapter.
 same `attachments` array; a post without attachments keeps its old shape
 exactly (the key is omitted).
 
+## Outgoing federation
+
+`MediaService` is the note's attachment presenter, so the `Create(Note)` that
+delivery enqueues and the item the outbox serves carry the same `attachment`
+array: one `Image` per linked attachment, in link order, with `url`
+(`/api/v1/media/{id}`), `mediaType`, `width`, `height` and `name` when the
+author wrote alt text. A post without media keeps no `attachment` key.
+
+Only public and unlisted posts publish these links. The media route is
+unauthenticated, so a followers-only or direct post sends no attachment entries
+rather than a blob URL that whoever holds it can open.
+
 ## Remote attachments from incoming posts
 
 When a followed remote actor delivers a signed `Create` or `Announce` with an

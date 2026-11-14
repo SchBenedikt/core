@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Protocol\ActivityPub;
 
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -40,6 +41,7 @@ final class ActivityFactory
 
 	public function __construct(
 		private readonly Config $config,
+		private readonly ?AttachmentPresenter $attachments = null,
 	) {
 	}
 
@@ -188,6 +190,14 @@ final class ActivityFactory
 		if ($post->inReplyToId !== null) {
 			$note['inReplyTo'] = $this->baseUrl()
 				. '/api/v1/posts/' . rawurlencode($post->inReplyToId);
+		}
+
+		// The same serialized note is what delivery and the outbox send, so
+		// the attachment url is built once from the media service and every
+		// consumer sees the identical entry.
+		$attachments = $this->attachments?->presentActivityAttachments($post) ?? [];
+		if ($attachments !== []) {
+			$note['attachment'] = $attachments;
 		}
 
 		return [
