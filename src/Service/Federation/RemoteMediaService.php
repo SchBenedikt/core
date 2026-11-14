@@ -44,7 +44,7 @@ use function trim;
  */
 final class RemoteMediaService
 {
-	public const MAX_ATTACHMENTS = 4;
+	public const MAX_ATTACHMENTS = 10;
 
 	private const MAX_INSPECTED_ATTACHMENTS = 64;
 

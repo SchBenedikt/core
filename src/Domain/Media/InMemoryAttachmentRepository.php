@@ -67,6 +67,16 @@ final class InMemoryAttachmentRepository implements AttachmentRepository
 		$this->attachments[$id] = $attachment->withAltText($altText);
 	}
 
+	public function updateFocus(string $id, ?float $focusX, ?float $focusY): void
+	{
+		$attachment = $this->attachments[$id] ?? null;
+		if ($attachment === null) {
+			return;
+		}
+
+		$this->attachments[$id] = $attachment->withFocus($focusX, $focusY);
+	}
+
 	public function findBySourceUrl(string $sourceUrl): ?Attachment
 	{
 		foreach ($this->attachments as $attachment) {

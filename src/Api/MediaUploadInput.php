@@ -33,6 +33,7 @@ final readonly class MediaUploadInput
 	public function __construct(
 		public string $bytes,
 		public ?string $altText,
+		public ?string $declaredMimeType = null,
 	) {
 	}
 
@@ -43,7 +44,7 @@ final readonly class MediaUploadInput
 	 */
 	public static function fromRequest(Request $request, array $altFields = ['alt_text']): self
 	{
-		if (strlen($request->body) > Attachment::MAX_BYTES + self::REQUEST_OVERHEAD_BYTES) {
+		if (strlen($request->body) > Attachment::MAX_REQUEST_BYTES + self::REQUEST_OVERHEAD_BYTES) {
 			throw new HttpException(413, 'payload_too_large', 'The upload is too large.');
 		}
 
@@ -68,6 +69,8 @@ final readonly class MediaUploadInput
 			$altText = null;
 		}
 
-		return new self($file->contents, $altText);
+		$declared = trim($file->contentType);
+
+		return new self($file->contents, $altText, $declared === '' ? null : $declared);
 	}
 }

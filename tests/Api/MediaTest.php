@@ -182,7 +182,7 @@ final class MediaTest extends TestCase
 
 	public function testAnOversizedUploadIsRejectedBeforeItIsParsed(): void
 	{
-		$response = $this->upload(str_repeat('a', Attachment::MAX_BYTES + 200_000));
+		$response = $this->upload(str_repeat('a', Attachment::MAX_REQUEST_BYTES + 200_000));
 
 		self::assertSame(413, $response->status);
 		self::assertSame('payload_too_large', $response->decodedBody()['error']['code']);

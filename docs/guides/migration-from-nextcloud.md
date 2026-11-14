@@ -287,7 +287,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `profile_metadata` | core | partial | — | actor metadata (#15); avatar/banner bytes travel as media |
 | `posts` | core | supported | v1 | `social_post`, derived note/Create/Delete ids |
 | `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
-| `attachments` | core | partial | v2 | `social_attachment` + `BlobStore` (#9) |
+| `attachments` | core | supported | v2 | `social_attachment` + `BlobStore`, with image, video and audio metadata |
 | `media_processing` | core | supported | — | derived thumbnails, converted not copied |
 | `favourites` | core | supported | v2 | `social_favourite` plus inbound/outbound `Like` state |
 | `emoji_reactions` | core | supported | v2 | `social_reaction` emoji rows with separate counts |

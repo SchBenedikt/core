@@ -27,6 +27,9 @@ final class MastodonUpdateMediaHandler extends MastodonHandler
 			(string) $request->attribute('id', ''),
 			$input->hasDescription,
 			$input->description,
+			$input->hasFocus,
+			$input->focusX,
+			$input->focusY,
 		));
 	}
 }

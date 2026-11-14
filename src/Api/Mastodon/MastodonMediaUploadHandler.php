@@ -41,6 +41,7 @@ final class MastodonMediaUploadHandler extends MastodonHandler
 			$input->bytes,
 			$input->altText,
 			$idempotencyKey === '' ? null : $idempotencyKey,
+			$input->declaredMimeType,
 		));
 	}
 }

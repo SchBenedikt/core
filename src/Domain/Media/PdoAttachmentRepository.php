@@ -28,7 +28,8 @@ use function array_map;
  */
 final class PdoAttachmentRepository implements AttachmentRepository
 {
-	private const COLUMNS = 'id, owner_id, storage_key, thumbnail_key, mime_type, width, height, byte_size, alt_text, created_at, source_url';
+	private const COLUMNS = 'id, owner_id, storage_key, thumbnail_key, mime_type, width, height, byte_size, alt_text,'
+		. ' created_at, source_url, media_kind, duration_seconds, animated, focus_x, focus_y';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -50,7 +51,8 @@ final class PdoAttachmentRepository implements AttachmentRepository
 			'INSERT INTO ' . AttachmentSchema::TABLE
 			. ' (' . self::COLUMNS . ')'
 			. ' VALUES (:id, :owner_id, :storage_key, :thumbnail_key, :mime_type,'
-			. ' :width, :height, :byte_size, :alt_text, :created_at, :source_url)',
+			. ' :width, :height, :byte_size, :alt_text, :created_at, :source_url,'
+			. ' :media_kind, :duration_seconds, :animated, :focus_x, :focus_y)',
 			[
 				'id' => $attachment->id,
 				'owner_id' => $attachment->ownerId,
@@ -63,6 +65,11 @@ final class PdoAttachmentRepository implements AttachmentRepository
 				'alt_text' => $attachment->altText,
 				'created_at' => Time::format($attachment->createdAt),
 				'source_url' => $attachment->sourceUrl,
+				'media_kind' => $attachment->kind->value,
+				'duration_seconds' => $attachment->durationSeconds,
+				'animated' => $attachment->animated ? 1 : 0,
+				'focus_x' => $attachment->focusX,
+				'focus_y' => $attachment->focusY,
 			],
 		);
 	}
@@ -82,6 +89,14 @@ final class PdoAttachmentRepository implements AttachmentRepository
 		$this->db->execute(
 			'UPDATE ' . AttachmentSchema::TABLE . ' SET alt_text = :alt_text WHERE id = :id',
 			['id' => $id, 'alt_text' => $altText],
+		);
+	}
+
+	public function updateFocus(string $id, ?float $focusX, ?float $focusY): void
+	{
+		$this->db->execute(
+			'UPDATE ' . AttachmentSchema::TABLE . ' SET focus_x = :focus_x, focus_y = :focus_y WHERE id = :id',
+			['id' => $id, 'focus_x' => $focusX, 'focus_y' => $focusY],
 		);
 	}
 
@@ -195,6 +210,11 @@ final class PdoAttachmentRepository implements AttachmentRepository
 			altText: $row['alt_text'] === null ? null : (string) $row['alt_text'],
 			createdAt: Time::parse((string) $row['created_at']),
 			sourceUrl: $row['source_url'] === null ? null : (string) $row['source_url'],
+			kind: MediaKind::tryFrom((string) ($row['media_kind'] ?? 'image')) ?? MediaKind::Image,
+			durationSeconds: (int) ($row['duration_seconds'] ?? 0),
+			animated: (int) ($row['animated'] ?? 0) === 1,
+			focusX: ($row['focus_x'] ?? null) === null ? null : (float) $row['focus_x'],
+			focusY: ($row['focus_y'] ?? null) === null ? null : (float) $row['focus_y'],
 		);
 	}
 }

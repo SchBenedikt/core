@@ -526,18 +526,26 @@ final class MastodonPresenter
 	{
 		$width = (int) ($attachment['width'] ?? 0);
 		$height = (int) ($attachment['height'] ?? 0);
+		$duration = (int) ($attachment['duration_seconds'] ?? 0);
+		$type = match ((string) ($attachment['media_type'] ?? 'image')) {
+			'gifv' => 'gifv',
+			'video' => 'video',
+			'audio' => 'audio',
+			default => 'image',
+		};
+		$preview = $attachment['thumbnail_url'] ?? null;
 
 		return [
 			'id' => (string) ($attachment['id'] ?? ''),
-			'type' => 'image',
+			'type' => $type,
 			'url' => (string) ($attachment['url'] ?? ''),
-			'preview_url' => (string) ($attachment['thumbnail_url'] ?? ''),
+			'preview_url' => is_string($preview) && $preview !== '' ? $preview : null,
 			'remote_url' => null,
 			'preview_remote_url' => null,
 			'text_url' => null,
 			'meta' => [
-				'original' => $this->mediaMeta($width, $height),
-				'small' => $this->mediaMeta($width, $height),
+				'original' => $this->mediaMeta($width, $height, $duration),
+				'small' => $this->mediaMeta($width, $height, $duration),
 			],
 			'description' => $attachment['alt_text'] ?? null,
 			'blurhash' => null,
@@ -545,16 +553,22 @@ final class MastodonPresenter
 	}
 
 	/**
-	 * @return array{width: int, height: int, size: string, aspect: float}
+	 * @return array<string, int|float|string>
 	 */
-	private function mediaMeta(int $width, int $height): array
+	private function mediaMeta(int $width, int $height, int $duration = 0): array
 	{
-		return [
+		$meta = [
 			'width' => $width,
 			'height' => $height,
 			'size' => $width . 'x' . $height,
 			'aspect' => $height > 0 ? $width / $height : 1.0,
 		];
+
+		if ($duration > 0) {
+			$meta['duration'] = $duration;
+		}
+
+		return $meta;
 	}
 
 	/**

@@ -22,6 +22,7 @@ use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
@@ -44,6 +45,11 @@ final class PostService
 
 	public const MAX_CONTENT_WARNING_LENGTH = 200;
 
+	/**
+	 * Configured cap, clamped to what the domain and the API can carry.
+	 */
+	public const CONFIG_MAX_ATTACHMENTS = 'media.max_attachments';
+
 	public function __construct(
 		private readonly PostRepository $posts,
 		private readonly AttachmentRepository $attachments,
@@ -58,6 +64,7 @@ final class PostService
 		private readonly ?TransactionRunner $transactions = null,
 		private readonly ?PostRevisionRepository $revisions = null,
 		private readonly ?QuoteService $quotes = null,
+		private readonly ?Config $config = null,
 	) {
 	}
 
@@ -516,8 +523,9 @@ final class PostService
 			return ['attachment_ids' => 'Attachments must be a list of ids.'];
 		}
 
-		if (count($attachmentIds) > Post::MAX_ATTACHMENTS) {
-			return ['attachment_ids' => 'A post may have at most ' . Post::MAX_ATTACHMENTS . ' attachments.'];
+		$maxAttachments = $this->maxAttachments();
+		if (count($attachmentIds) > $maxAttachments) {
+			return ['attachment_ids' => 'A post may have at most ' . $maxAttachments . ' attachments.'];
 		}
 
 		$seen = [];
@@ -560,6 +568,14 @@ final class PostService
 		}
 
 		return [];
+	}
+
+	private function maxAttachments(): int
+	{
+		$configured = $this->config?->getInt('social', self::CONFIG_MAX_ATTACHMENTS, Post::MAX_ATTACHMENTS)
+			?? Post::MAX_ATTACHMENTS;
+
+		return max(1, min(Post::MAX_ATTACHMENTS, $configured));
 	}
 
 	/**

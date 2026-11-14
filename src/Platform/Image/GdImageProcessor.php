@@ -21,6 +21,7 @@ use function imagecreatefromstring;
 use function imagecreatetruecolor;
 use function imagedestroy;
 use function imagefill;
+use function imagegif;
 use function imagejpeg;
 use function imagepng;
 use function imagesavealpha;
@@ -126,6 +127,7 @@ final class GdImageProcessor implements ImageProcessor
 			ob_start();
 			$encoded = match ($mimeType) {
 				'image/png' => imagepng($target, null, 6),
+				'image/gif' => imagegif($target),
 				'image/webp' => function_exists('imagewebp') && imagewebp($target, null, 85),
 				'image/jpeg' => imagejpeg($target, null, 85),
 				default => false,

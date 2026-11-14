@@ -239,6 +239,8 @@ use AlohaSocial\Core\Platform\Db\TransactionRunner;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Image\GdImageProcessor;
+use AlohaSocial\Core\Platform\Media\MediaProbe;
+use AlohaSocial\Core\Platform\Media\MediaTranscoder;
 use AlohaSocial\Core\Platform\Network\DnsHostResolver;
 use AlohaSocial\Core\Platform\Network\HostResolver;
 use AlohaSocial\Core\Platform\Image\ImageProcessor;
@@ -390,6 +392,8 @@ final readonly class Application
 		?RemotePollRepository $remotePollRepository = null,
 		?RemotePollVoteRepository $remotePollVoteRepository = null,
 		?QuoteGrantRepository $quoteGrantRepository = null,
+		?MediaProbe $mediaProbe = null,
+		?MediaTranscoder $mediaTranscoder = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -477,6 +481,8 @@ final readonly class Application
 			remotePollRepository: $remotePollRepository,
 			remotePollVoteRepository: $remotePollVoteRepository,
 			quoteGrantRepository: $quoteGrantRepository,
+			mediaProbe: $mediaProbe,
+			mediaTranscoder: $mediaTranscoder,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -666,6 +672,8 @@ final readonly class Application
 		?RemotePollRepository $remotePollRepository = null,
 		?RemotePollVoteRepository $remotePollVoteRepository = null,
 		?QuoteGrantRepository $quoteGrantRepository = null,
+		?MediaProbe $mediaProbe = null,
+		?MediaTranscoder $mediaTranscoder = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -690,6 +698,8 @@ final readonly class Application
 				clock: $clock,
 				ids: $ids,
 				remotePosts: $remotePosts,
+				probe: $mediaProbe,
+				transcoder: $mediaTranscoder,
 			);
 		$activities = new ActivityFactory($config, $mediaService);
 		$cleanup = new CleanupService(
@@ -847,6 +857,7 @@ final readonly class Application
 			transactions: $transactions,
 			revisions: $postRevisions,
 			quotes: $quoteService,
+			config: $config,
 		);
 		$scheduledPostService = new ScheduledPostService(
 			$scheduledPostRepository ?? new InMemoryScheduledPostRepository(),

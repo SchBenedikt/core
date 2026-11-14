@@ -24,7 +24,7 @@ use Throwable;
  */
 final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomainCount
 {
-	public const MAX_ATTACHMENTS = 4;
+	public const MAX_ATTACHMENTS = 10;
 
 	private const COLUMNS = 'activity_id, object_id, object_author_id, actor_id, kind,'
 		. ' object_type, object_metadata, quoted_object_id, content, content_warning,'

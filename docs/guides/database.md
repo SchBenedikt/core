@@ -53,7 +53,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Timeline/FollowedHashtagSchema.php` → `social_followed_hashtag` (private per-user followed tags)
 - `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
 - `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
-- `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index)
+- `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index, `media_kind`, `duration_seconds`, `animated` and the optional focal point `focus_x`/`focus_y`)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
 - `src/Domain/Post/QuoteGrantSchema.php` → `social_quote_grant` (one FEP-044f grant per quoting object, with both object URLs, both actors and the revocable state)

@@ -20,7 +20,10 @@ the database — the core does not care.
 | `social` | `instance.languages` | no | Comma-separated or JSON array of language codes; defaults to an empty list |
 | `social` | `instance.thumbnail` | no | Public thumbnail URL; defaults to empty |
 | `social` | `federation.enabled` | no | Reported by the instance metadata as whether the instance federates; defaults to `true`. It is a status value, not a switch: the core does not refuse delivery or inbox requests based on it |
-| `social` | `media.max_bytes` | no | Local upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
+| `social` | `media.max_bytes` | no | Image upload ceiling; defaults to 5 MiB and is clamped to `Attachment::MAX_BYTES` |
+| `social` | `media.max_video_bytes` | no | Video upload ceiling; defaults to 20 MiB and is clamped to `Attachment::MAX_VIDEO_BYTES` |
+| `social` | `media.max_audio_bytes` | no | Audio upload ceiling; defaults to 10 MiB and is clamped to `Attachment::MAX_AUDIO_BYTES` |
+| `social` | `media.max_attachments` | no | Attachments accepted on one local or scheduled post and imported from one remote post; defaults to 10, clamped to 1–`Post::MAX_ATTACHMENTS` |
 | `social` | `media.thumbnail_max_dimension` | no | Longest thumbnail side in pixels; defaults to 640, clamped to 1–2000 |
 | `social` | `media.remote_fetch` | no | Enables fetching images advertised by incoming federated posts and historical posts processed by the outbox backfill; defaults to `true`. Set `false`/`0`/`off`/`no` to disable all remote media requests |
 | `social` | `media.remote_max_bytes` | no | Hard per-response body limit for a remote image; defaults to 5 MiB, clamped to 1 byte–`Attachment::MAX_BYTES` |
@@ -241,14 +244,18 @@ documented in [remote threads](../guides/remote-threads.md).
 | `PollOption::MAX_TITLE_LENGTH` | 50 | Characters per poll option after trimming |
 | `Poll::MIN_EXPIRY_SECONDS` / `Poll::MAX_EXPIRY_SECONDS` | 300 / 604800 | Expiry window accepted by `expires_in`/`expires_at`; advertised by the instance endpoint |
 | `PostService::MAX_CONTENT_WARNING_LENGTH` | 200 | Characters after trimming |
-| `Attachment::MAX_BYTES` | 5 MiB | Hard upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
+| `Attachment::MAX_BYTES` | 5 MiB | Hard image upload and remote-body ceiling; `media.max_bytes` and `media.remote_max_bytes` may only lower it |
+| `Attachment::MAX_VIDEO_BYTES` | 20 MiB | Hard video upload ceiling; `media.max_video_bytes` may only lower it |
+| `Attachment::MAX_AUDIO_BYTES` | 10 MiB | Hard audio upload ceiling; `media.max_audio_bytes` may only lower it |
+| `Attachment::MAX_REQUEST_BYTES` | 25 MiB | Largest multipart upload body the media parser accepts before it parses fields |
+| `Post::MAX_ATTACHMENTS` / `ScheduledPost::MAX_ATTACHMENTS` | 10 | Attachments per local or scheduled post; `media.max_attachments` may only lower it |
 | `Attachment::MAX_ALT_TEXT_LENGTH` | 1000 | Characters after trimming |
 | `Attachment::MAX_SOURCE_URL_LENGTH` | 512 | Longest stored remote media URL |
 | `RemoteMediaFetcher::DEFAULT_TIMEOUT_SECONDS` | 10 | Default per-hop remote fetch timeout |
 | `RemoteMediaFetcher::MAX_TIMEOUT_SECONDS` | 30 | Hard timeout ceiling |
 | `RemoteMediaFetcher::DEFAULT_MAX_REDIRECTS` | 3 | Default redirect budget |
 | `RemoteMediaFetcher::MAX_REDIRECTS` | 5 | Hard redirect ceiling |
-| `RemoteMediaService::MAX_ATTACHMENTS` | 4 | Imported images per incoming post |
+| `RemoteMediaService::MAX_ATTACHMENTS` | 10 | Imported media per incoming post |
 | `RemoteThreadFetcher::DEFAULT_MAX_DEPTH` | 5 | Default ancestors walked for a thread |
 | `RemoteThreadFetcher::MAX_DEPTH` | 10 | Hard ancestor ceiling |
 | `RemoteThreadFetcher::DEFAULT_MAX_REPLIES` | 20 | Default direct replies returned |

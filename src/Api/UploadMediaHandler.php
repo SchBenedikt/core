@@ -45,7 +45,12 @@ final class UploadMediaHandler implements Handler
 		$input = MediaUploadInput::fromRequest($request);
 
 		try {
-			$attachment = $this->media->upload($userId, $input->bytes, $input->altText);
+			$attachment = $this->media->upload(
+				$userId,
+				$input->bytes,
+				$input->altText,
+				$input->declaredMimeType,
+			);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
 		} catch (StorageException) {

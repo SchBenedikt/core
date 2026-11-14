@@ -1,9 +1,10 @@
 # Media
 
-The core owns two media paths: an image uploaded by an account, and an image
-advertised by an incoming federated post. Both use the same validation and
-storage pipeline. The image is stored as an untouched original plus a bounded
-thumbnail; `Attachment` metadata points at both.
+The core owns two media paths: an image, video or audio file uploaded by an
+account, and media advertised by an incoming federated post. Both use the same
+validation and storage pipeline. The original is stored untouched (metadata is
+stripped from images before storage); a still image also gets a bounded
+thumbnail. `Attachment` metadata points at both.
 
 ## What is stored
 
@@ -12,12 +13,16 @@ thumbnail; `Attachment` metadata points at both.
 | `id` | random, URL-safe id; also the path segment of the media URL |
 | `owner_id` | the local account (upload) or the remote actor (federated import) |
 | `storage_key` | relative `BlobStore` key of the original |
-| `thumbnail_key` | relative `BlobStore` key of the derived image |
+| `thumbnail_key` | relative `BlobStore` key of the derived image; empty for video and audio |
 | `mime_type` | sniffed from the bytes, never trusted from a declared header |
-| `width`, `height` | decoded dimensions of the original |
-| `byte_size` | size of the original |
+| `media_kind` | `image`, `video` or `audio`; derived from the sniffed MIME type |
+| `width`, `height` | decoded dimensions of the original; `0` for audio and containers the probe cannot read |
+| `duration_seconds` | whole seconds for MP4/M4A, MP3 and WAV; `0` when unknown |
+| `animated` | whether a GIF contains more than one frame; exposed as `gifv` |
+| `focus_x`, `focus_y` | optional normalized focal point in `-1..1` for a client crop |
+| `byte_size` | size of the stored original |
 | `alt_text` | optional description, up to 1000 characters |
-| `source_url` | remote identity for an imported image; `NULL` for local uploads |
+| `source_url` | remote identity for an imported attachment; `NULL` for local uploads |
 
 Rows live in `social_attachment`; the link to a local post lives in
 `social_post_attachment` with a `position`. A remote post's imported media is
@@ -26,12 +31,14 @@ has a unique index, so one remote URL produces at most one local attachment.
 Bytes live only in the host's `BlobStore`. The local layout is:
 
 ```
-media/{attachment-id}/original.{jpg|png|webp}
-media/{attachment-id}/thumbnail.{jpg|png|webp}
+media/{attachment-id}/original.{jpg|png|webp|gif|mp4|webm|mp3|m4a|ogg|wav}
+media/{attachment-id}/thumbnail.{jpg|png|webp|gif}
 ```
 
-The extension follows the sniffed MIME type. The original is never rewritten;
-the thumbnail is a second object.
+The extension follows the stored MIME type. The original is never rewritten
+after upload (except for the one-time image metadata strip); the thumbnail is a
+second object. Video and audio have no thumbnail key, so `thumbnail_url` is
+`null` and a request for `?variant=thumbnail` serves the original.
 
 ## Upload
 
@@ -56,21 +63,35 @@ The route needs an authenticated user and is rate-limited to 20 requests per
 900 seconds. `file` is required. `alt_text` is optional; an empty or
 whitespace-only value is stored as `null`.
 
-Accepted input is JPEG, PNG or WebP. SVG is refused because it is scriptable,
-and GIF is not accepted because an animated original would make a still
-thumbnail a silent content change. The service checks the decoded image before
-writing anything:
+Accepted input is JPEG, PNG, WebP and GIF images, MP4 and WebM video and
+MP3, MP4/M4A, Ogg and WAV audio. SVG, HTML and other scriptable documents are
+refused. The service sniffs the type from the bytes before writing anything:
 
-- bytes must be non-empty and at most `media.max_bytes` (hard ceiling 5 MiB);
-- `getimagesizefromstring` must recognize a supported MIME type;
-- dimensions must be positive, at most 10,000 per side and at most 40
+- image bytes must be at most `media.max_bytes` (hard ceiling 5 MiB);
+- video bytes must be at most `media.max_video_bytes` (hard ceiling 20 MiB);
+- audio bytes must be at most `media.max_audio_bytes` (hard ceiling 10 MiB);
+- the multipart body may be at most `Attachment::MAX_REQUEST_BYTES` (25 MiB);
+- `libmagic` must recognize one of the accepted types, and an explicit
+  `Content-Type` must match it;
+- image dimensions must be positive, at most 10,000 per side and at most 40
   megapixels in total;
-- the GD adapter must be able to produce the thumbnail.
+- the GD adapter must be able to produce an image thumbnail. A host without a
+  decoder rejects that image instead of storing it without a preview;
+- when a host installs a `MediaTranscoder`, a video is transcoded and the
+  result is sniffed again; a transcoder failure is `422`, never a fallback to
+  unverified bytes. Without a transcoder the original video is stored as-is.
+
+Image metadata (JPEG APP1/COM, PNG text/eXIf chunks, WebP EXIF/XMP) is removed
+before the original is stored, so location data does not leak through the media
+URL. The pixels are unchanged.
 
 A failed check is `422 validation_failed`, not a partial upload. The service
 writes the original and thumbnail first, then inserts metadata. If a later step
 fails, it deletes both blobs it just wrote, so a client never gets a URL whose
 row is missing and a row never points at an incomplete pair.
+
+A post, scheduled post or remote import carries at most 10 attachments. The
+`media.max_attachments` key may lower that limit; values above 10 are clamped.
 
 The response contains the metadata plus `url` and `thumbnail_url`. Both are
 built from `social/instance.url`; without that key they are relative paths.
@@ -135,9 +156,10 @@ with their existing blobs and links.
 
 `MediaService` is the note's attachment presenter, so the `Create(Note)` that
 delivery enqueues and the item the outbox serves carry the same `attachment`
-array: one `Image` per linked attachment, in link order, with `url`
-(`/api/v1/media/{id}`), `mediaType`, `width`, `height` and `name` when the
-author wrote alt text. A post without media keeps no `attachment` key.
+array: one `Image`, `Video` or `Audio` per linked attachment, in link order,
+with `url` (`/api/v1/media/{id}`), `mediaType`, `width`/`height` when known,
+an ActivityStreams `duration` for timed media and `name` when the author wrote
+alt text. A post without media keeps no `attachment` key.
 
 Only public and unlisted posts publish these links. A followers-only or direct
 post sends no attachment entries: the media route has no signed-fetch identity
@@ -306,6 +328,19 @@ permissions. For a container, mount that path as a persistent volume.
 implementation and requires `ext-gd`; a host that already runs ImageMagick or
 libvips can provide another adapter without changing the service or schema.
 There is no external image-library dependency in this repository.
+
+`MediaProbe` is the validation port. `NativeMediaProbe` uses `libmagic` for the
+MIME sniff and reads MP4/M4A, MP3 and WAV metadata itself; it needs no FFmpeg.
+A host may replace it with `ffprobe` to obtain dimensions and duration for
+every container. `MediaTranscoder` is optional: when installed it receives a
+video before storage and must return playable MP4/WebM bytes, which are sniffed
+again; when absent, the uploaded video is stored unchanged. A failed
+transcoder is a `422`, never a silent passthrough.
+
+AVIF, HEIC/HEIF and MOV are not accepted by the core. A host has to convert
+them to an accepted type before upload. Rendition/poster generation and any
+background media queue are host-owned; the core stores a playable original and
+only generates a still thumbnail for images.
 
 ### Orphan cleanup
 

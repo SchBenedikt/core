@@ -597,7 +597,7 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(422, $corrupt->status);
 		self::assertArrayHasKey('file', $corrupt->decodedBody()['error']['fields']);
 
-		$oversized = $this->upload($app, str_repeat('a', Attachment::MAX_BYTES + 200_000));
+		$oversized = $this->upload($app, str_repeat('a', Attachment::MAX_REQUEST_BYTES + 200_000));
 		self::assertSame(413, $oversized->status);
 		self::assertSame('payload_too_large', $oversized->decodedBody()['error']['code']);
 

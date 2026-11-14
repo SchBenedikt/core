@@ -35,7 +35,7 @@ final readonly class ScheduledPost
 
 	public const MAX_CONTENT_WARNING_LENGTH = 200;
 
-	public const MAX_ATTACHMENTS = 4;
+	public const MAX_ATTACHMENTS = 10;
 
 	public const MAX_FAILURE_LENGTH = 500;
 

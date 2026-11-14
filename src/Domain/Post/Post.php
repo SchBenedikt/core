@@ -23,7 +23,7 @@ use InvalidArgumentException;
  */
 final readonly class Post
 {
-	public const MAX_ATTACHMENTS = 4;
+	public const MAX_ATTACHMENTS = 10;
 
 	public function __construct(
 		public string $id,

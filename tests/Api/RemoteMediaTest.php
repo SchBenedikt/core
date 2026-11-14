@@ -420,11 +420,11 @@ final class RemoteMediaTest extends TestCase
 		self::assertContains('remote_media_link_failed', $this->logger->reasons());
 	}
 
-	public function testOnlyFourAttachmentsAreImportedPerPost(): void
+	public function testOnlyTenAttachmentsAreImportedPerPost(): void
 	{
 		$app = $this->app();
 		$attachments = [];
-		for ($index = 1; $index <= 5; ++$index) {
+		for ($index = 1; $index <= 11; ++$index) {
 			$attachments[] = [
 				'type' => 'Image',
 				'url' => self::MEDIA_HOST . '/image.png?slot=' . $index,
@@ -436,7 +436,7 @@ final class RemoteMediaTest extends TestCase
 		$response = $this->deliver($app, $this->create(
 			'https://remote.example/activities/create-many',
 			'https://remote.example/notes/many',
-			'five images',
+			'eleven images',
 			'2026-11-11T10:01:00Z',
 			$attachments,
 		));
@@ -444,8 +444,8 @@ final class RemoteMediaTest extends TestCase
 		self::assertSame(202, $response->status);
 		$posts = $this->feed($app)->decodedBody()['posts'];
 		self::assertCount(1, $posts);
-		self::assertCount(4, $posts[0]['attachments']);
-		self::assertSame(4, $this->attachments->count());
+		self::assertCount(10, $posts[0]['attachments']);
+		self::assertSame(10, $this->attachments->count());
 		self::assertContains('remote_media_attachment_limit', $this->logger->reasons());
 	}
 

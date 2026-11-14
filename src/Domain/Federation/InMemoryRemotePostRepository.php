@@ -20,7 +20,7 @@ use DateTimeImmutable;
  */
 final class InMemoryRemotePostRepository implements RemotePostRepository, RemoteDomainCount
 {
-	public const MAX_ATTACHMENTS = 4;
+	public const MAX_ATTACHMENTS = 10;
 
 	/**
 	 * @var array<string, RemotePost>

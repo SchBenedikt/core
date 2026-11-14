@@ -33,6 +33,12 @@ interface AttachmentRepository
 	public function updateAltText(string $id, ?string $altText): void;
 
 	/**
+	 * Updates only the focal point. Both coordinates travel together; null
+	 * clears it. Unknown ids are a no-op.
+	 */
+	public function updateFocus(string $id, ?float $focusX, ?float $focusY): void;
+
+	/**
 	 * Finds an attachment imported from a remote URL, so the same media is
 	 * fetched and stored at most once.
 	 */

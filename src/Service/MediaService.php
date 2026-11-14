@@ -13,6 +13,9 @@ use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\AttachmentPresenter;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
+use AlohaSocial\Core\Domain\Media\MediaKind;
+use AlohaSocial\Core\Domain\Media\MediaMetadataStripper;
+use AlohaSocial\Core\Domain\Media\NativeMediaProbe;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
@@ -20,11 +23,12 @@ use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Image\ImageProcessingException;
 use AlohaSocial\Core\Platform\Image\ImageProcessor;
+use AlohaSocial\Core\Platform\Media\MediaProbe;
+use AlohaSocial\Core\Platform\Media\MediaTranscoder;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 
-use function getimagesizefromstring;
 use function in_array;
 use function is_array;
 use function max;
@@ -46,6 +50,10 @@ final class MediaService implements AttachmentPresenter
 
 	public const CONFIG_MAX_BYTES = 'media.max_bytes';
 
+	public const CONFIG_MAX_VIDEO_BYTES = 'media.max_video_bytes';
+
+	public const CONFIG_MAX_AUDIO_BYTES = 'media.max_audio_bytes';
+
 	public const CONFIG_THUMBNAIL_MAX_DIMENSION = 'media.thumbnail_max_dimension';
 
 	public const DEFAULT_THUMBNAIL_MAX_DIMENSION = 640;
@@ -59,6 +67,9 @@ final class MediaService implements AttachmentPresenter
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
 		private readonly ?RemotePostRepository $remotePosts = null,
+		private readonly ?MediaProbe $probe = null,
+		private readonly ?MediaTranscoder $transcoder = null,
+		private readonly ?MediaMetadataStripper $stripper = null,
 	) {
 	}
 
@@ -113,53 +124,83 @@ final class MediaService implements AttachmentPresenter
 			throw new ValidationException(['file' => 'The uploaded file is empty.']);
 		}
 
-		$maxBytes = $this->maxBytes();
-		if (strlen($bytes) > $maxBytes) {
-			throw new ValidationException(['file' => 'The uploaded file is too large.']);
+		$detected = ($this->probe ?? new NativeMediaProbe())->probe($bytes);
+		if ($detected === null) {
+			throw new ValidationException([
+				'file' => 'The uploaded file is not a supported image, video or audio file.',
+			]);
 		}
 
-		$info = @getimagesizefromstring($bytes);
-		if (!is_array($info) || !isset($info[0], $info[1], $info['mime'])) {
-			throw new ValidationException(['file' => 'The uploaded file is not a supported image.']);
-		}
-
-		$mimeType = (string) $info['mime'];
-		if (!in_array($mimeType, Attachment::ALLOWED_MIME_TYPES, true)) {
-			throw new ValidationException(['file' => 'Only JPEG, PNG and WebP images are supported.']);
+		$mimeType = $detected->mimeType;
+		$kind = $detected->kind;
+		if (!in_array($mimeType, $kind->mimeTypes(), true)) {
+			throw new ValidationException(['file' => 'The uploaded file has an unsupported type.']);
 		}
 
 		if ($declaredMimeType !== null && $declaredMimeType !== $mimeType) {
 			throw new ValidationException(['file' => 'The declared media type does not match the uploaded file.']);
 		}
 
-		$width = (int) $info[0];
-		$height = (int) $info[1];
-		if ($width < 1 || $height < 1
-			|| $width > Attachment::MAX_DIMENSION
-			|| $height > Attachment::MAX_DIMENSION
-			|| $width * $height > Attachment::MAX_PIXELS
+		if (strlen($bytes) > $this->maxBytes($kind)) {
+			throw new ValidationException(['file' => 'The uploaded file is too large.']);
+		}
+
+		$width = $detected->width;
+		$height = $detected->height;
+		$duration = $detected->durationSeconds;
+		if ($kind === MediaKind::Image
+			&& ($width < 1 || $height < 1
+				|| $width > Attachment::MAX_DIMENSION
+				|| $height > Attachment::MAX_DIMENSION
+				|| $width * $height > Attachment::MAX_PIXELS)
 		) {
 			throw new ValidationException(['file' => 'The image dimensions are not supported.']);
 		}
 
-		try {
-			$thumbnail = $this->images->thumbnail(
-				$bytes,
-				$this->thumbnailMaxDimension(),
-				$this->thumbnailMaxDimension(),
-			);
-		} catch (ImageProcessingException) {
-			throw new ValidationException(['file' => 'The uploaded file is not a decodable image.']);
-		}
+		$thumbnail = null;
+		if ($kind === MediaKind::Image) {
+			$bytes = ($this->stripper ?? new MediaMetadataStripper())->strip($bytes, $mimeType);
 
-		if (!in_array($thumbnail->mimeType, Attachment::ALLOWED_MIME_TYPES, true)) {
-			throw new ValidationException(['file' => 'The generated thumbnail has an unsupported type.']);
+			try {
+				$thumbnail = $this->images->thumbnail(
+					$bytes,
+					$this->thumbnailMaxDimension(),
+					$this->thumbnailMaxDimension(),
+				);
+			} catch (ImageProcessingException) {
+				throw new ValidationException(['file' => 'The uploaded file is not a decodable image.']);
+			}
+
+			if (!in_array($thumbnail->mimeType, Attachment::IMAGE_MIME_TYPES, true)) {
+				throw new ValidationException(['file' => 'The generated thumbnail has an unsupported type.']);
+			}
+		} elseif ($kind === MediaKind::Video && $this->transcoder !== null) {
+			try {
+				$transcoded = $this->transcoder->transcode($bytes, $mimeType);
+			} catch (\Throwable) {
+				throw new ValidationException(['file' => 'The video could not be transcoded.']);
+			}
+
+			if ($transcoded === null) {
+				throw new ValidationException(['file' => 'The video could not be transcoded.']);
+			}
+
+			$verified = ($this->probe ?? new NativeMediaProbe())->probe($transcoded->bytes);
+			if ($verified === null || $verified->kind !== MediaKind::Video) {
+				throw new ValidationException(['file' => 'The transcoded video is not playable.']);
+			}
+
+			$bytes = $transcoded->bytes;
+			$mimeType = $verified->mimeType;
+			$width = $verified->width;
+			$height = $verified->height;
+			$duration = $verified->durationSeconds;
 		}
 
 		$id = $this->ids->generate();
 		$extension = Attachment::EXTENSIONS[$mimeType];
 		$storageKey = 'media/' . $id . '/original.' . $extension;
-		$thumbnailKey = 'media/' . $id . '/thumbnail.' . $extension;
+		$thumbnailKey = $thumbnail === null ? '' : 'media/' . $id . '/thumbnail.' . $extension;
 
 		$attachment = new Attachment(
 			id: $id,
@@ -173,11 +214,16 @@ final class MediaService implements AttachmentPresenter
 			altText: $altText,
 			createdAt: Time::toSecondPrecision($this->clock->now()),
 			sourceUrl: $sourceUrl,
+			kind: $kind,
+			durationSeconds: $duration,
+			animated: $detected->animated,
 		);
 
 		try {
 			$this->blobs->put($storageKey, $bytes);
-			$this->blobs->put($thumbnailKey, $thumbnail->bytes);
+			if ($thumbnail !== null) {
+				$this->blobs->put($thumbnailKey, $thumbnail->bytes);
+			}
 		} catch (\Throwable $exception) {
 			$this->cleanup($storageKey);
 			$this->cleanup($thumbnailKey);
@@ -248,6 +294,19 @@ final class MediaService implements AttachmentPresenter
 		return $updated;
 	}
 
+	/**
+	 * Changes the focal point of an attachment. Both coordinates are given; a
+	 * null pair clears it. Ownership and attachment state are the caller's
+	 * responsibility, like {@see updateAltText()}.
+	 */
+	public function updateFocus(Attachment $attachment, ?float $focusX, ?float $focusY): Attachment
+	{
+		$updated = $attachment->withFocus($focusX, $focusY);
+		$this->attachments->updateFocus($updated->id, $focusX, $focusY);
+
+		return $updated;
+	}
+
 	public function findBySourceUrl(string $sourceUrl): ?Attachment
 	{
 		return $this->attachments->findBySourceUrl($sourceUrl);
@@ -269,7 +328,14 @@ final class MediaService implements AttachmentPresenter
 	 */
 	public function read(Attachment $attachment, bool $thumbnail = false): string
 	{
-		return $this->blobs->read($thumbnail ? $attachment->thumbnailKey : $attachment->storageKey);
+		// Video and audio have no generated preview; a caller that asks for
+		// one gets the original rather than an empty path, and the presenter
+		// never advertises a thumbnail URL that does not exist.
+		$key = $thumbnail && $attachment->thumbnailKey !== ''
+			? $attachment->thumbnailKey
+			: $attachment->storageKey;
+
+		return $this->blobs->read($key);
 	}
 
 	/**
@@ -279,7 +345,7 @@ final class MediaService implements AttachmentPresenter
 	{
 		$data = $attachment->toArray();
 		$data['url'] = $this->url($attachment);
-		$data['thumbnail_url'] = $this->url($attachment, true);
+		$data['thumbnail_url'] = $attachment->thumbnailKey === '' ? null : $this->url($attachment, true);
 
 		return $data;
 	}
@@ -323,12 +389,23 @@ final class MediaService implements AttachmentPresenter
 		$presented = [];
 		foreach ($attachments as $attachment) {
 			$entry = [
-				'type' => 'Image',
+				'type' => match ($attachment->kind) {
+					MediaKind::Image => 'Image',
+					MediaKind::Video => 'Video',
+					MediaKind::Audio => 'Audio',
+				},
 				'url' => $this->url($attachment),
 				'mediaType' => $attachment->mimeType,
-				'width' => $attachment->width,
-				'height' => $attachment->height,
 			];
+
+			if ($attachment->width > 0 && $attachment->height > 0) {
+				$entry['width'] = $attachment->width;
+				$entry['height'] = $attachment->height;
+			}
+
+			if ($attachment->durationSeconds > 0) {
+				$entry['duration'] = $this->duration($attachment->durationSeconds);
+			}
 
 			// An absent alternative text is not the same as an empty one; only
 			// send the property when the author supplied a description.
@@ -467,18 +544,37 @@ final class MediaService implements AttachmentPresenter
 		}
 
 		$declared = strtolower(trim(explode(';', $declared, 2)[0]));
+		if ($declared === '' || $declared === 'application/octet-stream') {
+			return null;
+		}
+
+		$declared = match ($declared) {
+			'image/jpg', 'image/pjpeg' => 'image/jpeg',
+			'audio/mp3' => 'audio/mpeg',
+			'audio/x-wav', 'audio/wave' => 'audio/wav',
+			default => $declared,
+		};
+
 		if (!in_array($declared, Attachment::ALLOWED_MIME_TYPES, true)) {
-			throw new ValidationException(['file' => 'Only JPEG, PNG and WebP images are supported.']);
+			throw new ValidationException([
+				'file' => 'Only JPEG, PNG, WebP and GIF images, MP4/WebM video and MP3/M4A/Ogg/WAV audio are supported.',
+			]);
 		}
 
 		return $declared;
 	}
 
-	private function maxBytes(): int
+	private function maxBytes(MediaKind $kind): int
 	{
-		$configured = $this->config->getInt(self::CONFIG_APP, self::CONFIG_MAX_BYTES, Attachment::MAX_BYTES);
+		$key = match ($kind) {
+			MediaKind::Image => self::CONFIG_MAX_BYTES,
+			MediaKind::Video => self::CONFIG_MAX_VIDEO_BYTES,
+			MediaKind::Audio => self::CONFIG_MAX_AUDIO_BYTES,
+		};
 
-		return max(1, min(Attachment::MAX_BYTES, $configured));
+		$configured = $this->config->getInt(self::CONFIG_APP, $key, $kind->maxBytes());
+
+		return max(1, min($kind->maxBytes(), $configured));
 	}
 
 	private function thumbnailMaxDimension(): int
@@ -492,6 +588,29 @@ final class MediaService implements AttachmentPresenter
 		return max(1, min(2000, $configured));
 	}
 
+	/**
+	 * An ActivityStreams duration is an ISO 8601 duration, not seconds.
+	 */
+	private function duration(int $seconds): string
+	{
+		$hours = intdiv($seconds, 3600);
+		$minutes = intdiv($seconds % 3600, 60);
+		$rest = $seconds % 60;
+
+		$value = 'PT';
+		if ($hours > 0) {
+			$value .= $hours . 'H';
+		}
+		if ($minutes > 0) {
+			$value .= $minutes . 'M';
+		}
+		if ($rest > 0 || $value === 'PT') {
+			$value .= $rest . 'S';
+		}
+
+		return $value;
+	}
+
 	private function url(Attachment $attachment, bool $thumbnail = false): string
 	{
 		$base = trim((string) $this->config->get(self::CONFIG_APP, 'instance.url', ''));
@@ -503,6 +622,10 @@ final class MediaService implements AttachmentPresenter
 
 	private function cleanup(string $key): void
 	{
+		if ($key === '') {
+			return;
+		}
+
 		try {
 			$this->blobs->delete($key);
 		} catch (\Throwable) {

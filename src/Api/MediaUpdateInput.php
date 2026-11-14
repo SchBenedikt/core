@@ -14,6 +14,11 @@ use AlohaSocial\Core\Http\MultipartFormData;
 use AlohaSocial\Core\Http\Request;
 
 use function array_key_exists;
+use function array_values;
+use function count;
+use function explode;
+use function is_array;
+use function is_numeric;
 use function is_string;
 use function str_contains;
 use function strlen;
@@ -21,13 +26,12 @@ use function strtolower;
 use function trim;
 
 /**
- * The parsed, optional description of a media metadata update.
+ * The parsed, optional description and focal point of a media metadata update.
  *
- * Mastodon clients send this request as form data, JSON or multipart. The
- * core has no focal-point or replacement-thumbnail metadata, so `focus` is
- * ignored and binary fields are refused instead of being silently dropped.
- * The presence flag matters: an absent description leaves the current value
- * unchanged, while an empty one clears it.
+ * Mastodon clients send this request as form data, JSON or multipart. Binary
+ * fields are refused instead of being silently dropped. The presence flags
+ * matter: an absent description or focus leaves the current value unchanged,
+ * while an empty description clears it and a null focus pair resets the crop.
  */
 final readonly class MediaUpdateInput
 {
@@ -36,6 +40,9 @@ final readonly class MediaUpdateInput
 	public function __construct(
 		public bool $hasDescription,
 		public ?string $description,
+		public bool $hasFocus = false,
+		public ?float $focusX = null,
+		public ?float $focusY = null,
 	) {
 	}
 
@@ -61,7 +68,17 @@ final readonly class MediaUpdateInput
 				$description = $form->field('alt_text');
 			}
 
-			return new self($hasDescription, $hasDescription ? self::normalize($description) : null);
+			[$hasFocus, $focusX, $focusY] = array_key_exists('focus', $form->fields)
+				? self::focus($form->fields['focus'])
+				: [false, null, null];
+
+			return new self(
+				$hasDescription,
+				$hasDescription ? self::normalize($description) : null,
+				$hasFocus,
+				$focusX,
+				$focusY,
+			);
 		}
 
 		$body = $request->payload();
@@ -69,19 +86,51 @@ final readonly class MediaUpdateInput
 		self::rejectBinaryField(array_key_exists('thumbnail', $body), 'thumbnail');
 
 		$hasDescription = array_key_exists('description', $body) || array_key_exists('alt_text', $body);
-		if (!$hasDescription) {
-			return new self(false, null);
+		$description = null;
+		if ($hasDescription) {
+			$value = array_key_exists('description', $body) ? $body['description'] : ($body['alt_text'] ?? null);
+			if ($value !== null && !is_string($value)) {
+				throw HttpException::validationFailed(
+					['description' => 'description must be a string or null.'],
+					'description must be a string or null.',
+				);
+			}
+
+			$description = self::normalize($value);
 		}
 
-		$value = array_key_exists('description', $body) ? $body['description'] : ($body['alt_text'] ?? null);
-		if ($value !== null && !is_string($value)) {
+		[$hasFocus, $focusX, $focusY] = array_key_exists('focus', $body)
+			? self::focus($body['focus'])
+			: [false, null, null];
+
+		return new self($hasDescription, $description, $hasFocus, $focusX, $focusY);
+	}
+
+	/**
+	 * @return array{0: bool, 1: ?float, 2: ?float}
+	 */
+	private static function focus(mixed $value): array
+	{
+		if ($value === null || $value === '') {
+			return [true, null, null];
+		}
+
+		$pair = is_string($value) ? explode(',', $value, 2) : (is_array($value) ? array_values($value) : null);
+		if ($pair === null || count($pair) !== 2 || !is_numeric($pair[0]) || !is_numeric($pair[1])) {
 			throw HttpException::validationFailed(
-				['description' => 'description must be a string or null.'],
-				'description must be a string or null.',
+				['focus' => 'focus must be two numbers between -1 and 1, like "-0.5,0.5".'],
 			);
 		}
 
-		return new self(true, self::normalize($value));
+		$focusX = (float) $pair[0];
+		$focusY = (float) $pair[1];
+		if ($focusX < -1.0 || $focusX > 1.0 || $focusY < -1.0 || $focusY > 1.0) {
+			throw HttpException::validationFailed(
+				['focus' => 'focus must be two numbers between -1 and 1, like "-0.5,0.5".'],
+			);
+		}
+
+		return [true, $focusX, $focusY];
 	}
 
 	private static function rejectBinaryField(bool $present, string $field): void

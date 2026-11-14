@@ -909,6 +909,7 @@ final class MastodonService
 		string $bytes,
 		?string $description = null,
 		?string $idempotencyKey = null,
+		?string $declaredMimeType = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -923,6 +924,7 @@ final class MastodonService
 				ownerId: $userId,
 				bytes: $bytes,
 				altText: $description,
+				declaredMimeType: $declaredMimeType,
 				sourceUrl: $sourceUrl,
 			);
 		} catch (StorageException) {
@@ -950,6 +952,9 @@ final class MastodonService
 		string $mediaId,
 		bool $hasDescription,
 		?string $description,
+		bool $hasFocus = false,
+		?float $focusX = null,
+		?float $focusY = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -958,6 +963,10 @@ final class MastodonService
 		$attachment = $this->ownedUnattachedMedia($media, $userId, $mediaId);
 		if ($hasDescription) {
 			$attachment = $media->updateAltText($attachment, $description);
+		}
+
+		if ($hasFocus) {
+			$attachment = $media->updateFocus($attachment, $focusX, $focusY);
 		}
 
 		return $this->presenter->media($media->present($attachment));

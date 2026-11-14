@@ -150,10 +150,9 @@ final class MigrationInventory
 				'attachments',
 				'media metadata and link rows',
 				self::OWNER_CORE,
-				'social_attachment, social_post_attachment and the BlobStore port',
-				self::STATUS_PARTIAL,
+				'social_attachment, social_post_attachment and the BlobStore port, including image, video and audio metadata',
+				self::STATUS_SUPPORTED,
 				'v2',
-				gapIssue: '#9',
 			),
 			self::entry(
 				'media_processing',
