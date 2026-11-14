@@ -32,6 +32,12 @@ final class JobType
 
 	public const CLEANUP = 'cleanup';
 
+	/**
+	 * Publishes one due scheduled post. The payload carries the schedule id,
+	 * not a copy of the content, so a reschedule is honoured.
+	 */
+	public const SCHEDULED_POST_PUBLISH = 'scheduled.post.publish';
+
 	private function __construct()
 	{
 	}

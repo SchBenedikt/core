@@ -12,7 +12,13 @@ namespace AlohaSocial\Core\Api\Mastodon;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\Mastodon\MastodonRequestException;
+use AlohaSocial\Core\Service\Mastodon\MastodonScheduledStatusPresenter;
+use AlohaSocial\Core\Service\Mastodon\MastodonService;
+use AlohaSocial\Core\Service\ScheduledPostService;
+use AlohaSocial\Core\Support\Time;
+use InvalidArgumentException;
 
 use function is_array;
 use function is_bool;
@@ -30,6 +36,14 @@ use function is_string;
  */
 final class MastodonCreateStatusHandler extends MastodonHandler
 {
+	public function __construct(
+		MastodonService $mastodon,
+		private readonly ?ScheduledPostService $scheduled = null,
+		private readonly ?MastodonScheduledStatusPresenter $scheduledPresenter = null,
+	) {
+		parent::__construct($mastodon);
+	}
+
 	public function handle(Request $request): Response
 	{
 		$body = $request->payload();
@@ -92,6 +106,44 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 		}
 
 		$idempotencyKey = trim((string) $request->header('idempotency-key'));
+
+		// A Mastodon client schedules by sending the same write to the status
+		// route with `scheduled_at`. It is stored, not published: the status
+		// route must not return a status id before the publication time.
+		$rawScheduledAt = $body['scheduled_at'] ?? null;
+		if ($rawScheduledAt !== null) {
+			if (!is_string($rawScheduledAt) || trim($rawScheduledAt) === '') {
+				throw new MastodonRequestException(422, 'validation_failed', 'scheduled_at must be a timestamp or null.');
+			}
+
+			if ($this->scheduled === null || $this->scheduledPresenter === null) {
+				throw new MastodonRequestException(422, 'validation_failed', 'Scheduling is not configured.');
+			}
+
+			if ($poll !== null) {
+				throw new MastodonRequestException(422, 'validation_failed', 'A poll cannot be scheduled.');
+			}
+
+			try {
+				$scheduledAt = Time::parseIso8601($rawScheduledAt);
+			} catch (InvalidArgumentException) {
+				throw new MastodonRequestException(422, 'validation_failed', 'scheduled_at must be an ISO 8601 timestamp.');
+			}
+
+			return $this->respond(fn (): array => $this->scheduledPresenter->present($this->scheduled->schedule(
+				$userId,
+				new CreatePost(
+					authorId: $userId,
+					content: $content,
+					visibility: $visibility,
+					contentWarning: $spoiler === null || trim($spoiler) === '' ? null : trim($spoiler),
+					attachmentIds: $ids,
+					inReplyToId: $inReplyToId,
+					recipientIds: $recipientIds,
+				),
+				$scheduledAt,
+			)));
+		}
 
 		return $this->respond(fn (): array => $this->mastodon->createStatus(
 			$userId,

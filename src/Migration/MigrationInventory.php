@@ -275,10 +275,9 @@ final class MigrationInventory
 				'scheduled_posts',
 				'durable scheduled publishing',
 				self::OWNER_CORE,
-				'open: scheduling state and the publisher job (#8)',
-				self::STATUS_GAP,
-				'inventory-only',
-				gapIssue: '#8',
+				'social_scheduled_post rows with a reserved post id and the queued publisher job',
+				self::STATUS_SUPPORTED,
+				'v2',
 			),
 			self::entry(
 				'stories',

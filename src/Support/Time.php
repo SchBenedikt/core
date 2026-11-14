@@ -73,6 +73,26 @@ final class Time
 	}
 
 	/**
+	 * Parses an ISO 8601 timestamp that carries its own offset.
+	 *
+	 * Client-supplied schedule times come from browsers and app SDKs, which
+	 * use milliseconds and either `Z` or an offset. A value without a zone is
+	 * refused: interpreting it in the server's zone would silently move the
+	 * publication by hours for a travelling user.
+	 *
+	 * @throws InvalidArgumentException when the value is not ISO 8601 with an offset
+	 */
+	public static function parseIso8601(string $value): DateTimeImmutable
+	{
+		$value = trim($value);
+		if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/', $value) !== 1) {
+			throw new InvalidArgumentException('Not an ISO 8601 timestamp with an offset: ' . $value);
+		}
+
+		return new DateTimeImmutable($value, new DateTimeZone('UTC'));
+	}
+
+	/**
 	 * The IMF-fixdate form HTTP signatures and `Date` headers use.
 	 */
 	public static function httpDate(DateTimeImmutable $time): string

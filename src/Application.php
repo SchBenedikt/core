@@ -15,6 +15,11 @@ use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
+use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
+use AlohaSocial\Core\Api\ScheduledPostsHandler;
+use AlohaSocial\Core\Api\ShowScheduledPostHandler;
+use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
@@ -47,6 +52,10 @@ use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateScheduledStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDismissNotificationHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
@@ -168,6 +177,9 @@ use AlohaSocial\Core\Domain\Post\PollVoteCounter;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
+use AlohaSocial\Core\Domain\Scheduling\InMemoryScheduledPostRepository;
+use AlohaSocial\Core\Domain\Scheduling\PdoScheduledPostRepository;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountListRepository;
 use AlohaSocial\Core\Domain\Timeline\FollowedHashtagRepository;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
@@ -253,6 +265,9 @@ use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
+use AlohaSocial\Core\Service\Mastodon\MastodonScheduledStatusPresenter;
+use AlohaSocial\Core\Service\ScheduledPostService;
+use AlohaSocial\Core\Service\Scheduling\ScheduledPostPublishHandler;
 use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
 use AlohaSocial\Core\Service\MediaAccess;
@@ -339,6 +354,7 @@ final readonly class Application
 		?PostRevisionRepository $postRevisions = null,
 		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
+		?ScheduledPostRepository $scheduledPostRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -373,6 +389,7 @@ final readonly class Application
 		$followedHashtagRepository ??= new InMemoryFollowedHashtagRepository();
 		$postRevisions ??= new InMemoryPostRevisionRepository();
 		$pendingRemoteUpdates ??= new InMemoryPendingRemoteUpdateStore();
+		$scheduledPostRepository ??= new InMemoryScheduledPostRepository();
 		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
@@ -416,6 +433,7 @@ final readonly class Application
 			followedHashtagRepository: $followedHashtagRepository,
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
+			scheduledPostRepository: $scheduledPostRepository,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -527,6 +545,7 @@ final readonly class Application
 			followedHashtagRepository: $followedHashtagRepository,
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
+			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
@@ -595,6 +614,7 @@ final readonly class Application
 		bool $debug,
 		?TransactionRunner $transactions = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
+		?ScheduledPostRepository $scheduledPostRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -755,6 +775,17 @@ final readonly class Application
 			transactions: $transactions,
 			revisions: $postRevisions,
 		);
+		$scheduledPostService = new ScheduledPostService(
+			$scheduledPostRepository ?? new InMemoryScheduledPostRepository(),
+			$postService,
+			$posts,
+			$attachmentRepository,
+			$queue,
+			$clock,
+			$ids,
+			$config,
+		);
+		$scheduledPresenter = new MastodonScheduledStatusPresenter();
 		$boostService = new BoostService(
 			$postService,
 			$boostRepository,
@@ -909,6 +940,11 @@ final readonly class Application
 			->with(ReactToRemotePostHandler::class, static fn (): ReactToRemotePostHandler => new ReactToRemotePostHandler($reactionService))
 			->with(UnreactFromRemotePostHandler::class, static fn (): UnreactFromRemotePostHandler => new UnreactFromRemotePostHandler($reactionService))
 			->with(UpdatePostHandler::class, static fn (): UpdatePostHandler => new UpdatePostHandler($postService, $mediaService))
+			->with(ScheduledPostsHandler::class, static fn (): ScheduledPostsHandler => new ScheduledPostsHandler($scheduledPostService))
+			->with(CreateScheduledPostHandler::class, static fn (): CreateScheduledPostHandler => new CreateScheduledPostHandler($scheduledPostService))
+			->with(ShowScheduledPostHandler::class, static fn (): ShowScheduledPostHandler => new ShowScheduledPostHandler($scheduledPostService))
+			->with(UpdateScheduledPostHandler::class, static fn (): UpdateScheduledPostHandler => new UpdateScheduledPostHandler($scheduledPostService))
+			->with(DeleteScheduledPostHandler::class, static fn (): DeleteScheduledPostHandler => new DeleteScheduledPostHandler($scheduledPostService))
 			->with(PublishAtprotoHandler::class, static fn (): PublishAtprotoHandler => new PublishAtprotoHandler($atprotoService))
 			->with(ShowAtprotoPublicationHandler::class, static fn (): ShowAtprotoPublicationHandler => new ShowAtprotoPublicationHandler($atprotoService))
 			->with(ShowRemoteThreadHandler::class, static fn (): ShowRemoteThreadHandler => new ShowRemoteThreadHandler($remoteThreadService))
@@ -959,7 +995,11 @@ final readonly class Application
 			->with(MastodonDismissNotificationHandler::class, static fn (): MastodonDismissNotificationHandler => new MastodonDismissNotificationHandler($mastodonService))
 			->with(MastodonClearNotificationsHandler::class, static fn (): MastodonClearNotificationsHandler => new MastodonClearNotificationsHandler($mastodonService))
 			->with(MastodonSearchHandler::class, static fn (): MastodonSearchHandler => new MastodonSearchHandler($mastodonService))
-			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService))
+			->with(MastodonCreateStatusHandler::class, static fn (): MastodonCreateStatusHandler => new MastodonCreateStatusHandler($mastodonService, $scheduledPostService, $scheduledPresenter))
+			->with(MastodonScheduledStatusesHandler::class, static fn (): MastodonScheduledStatusesHandler => new MastodonScheduledStatusesHandler($scheduledPostService, $scheduledPresenter))
+			->with(MastodonScheduledStatusHandler::class, static fn (): MastodonScheduledStatusHandler => new MastodonScheduledStatusHandler($scheduledPostService, $scheduledPresenter))
+			->with(MastodonUpdateScheduledStatusHandler::class, static fn (): MastodonUpdateScheduledStatusHandler => new MastodonUpdateScheduledStatusHandler($scheduledPostService, $scheduledPresenter))
+			->with(MastodonDeleteScheduledStatusHandler::class, static fn (): MastodonDeleteScheduledStatusHandler => new MastodonDeleteScheduledStatusHandler($scheduledPostService, $scheduledPresenter))
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
 			->with(MastodonUpdateStatusHandler::class, static fn (): MastodonUpdateStatusHandler => new MastodonUpdateStatusHandler($mastodonService))
 			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))
@@ -1002,7 +1042,8 @@ final readonly class Application
 		$jobHandlers = $jobHandlers
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
 			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
-			->with(JobType::CLEANUP, new CleanupJobHandler($cleanup, $logger));
+			->with(JobType::CLEANUP, new CleanupJobHandler($cleanup, $logger))
+			->with(JobType::SCHEDULED_POST_PUBLISH, new ScheduledPostPublishHandler($scheduledPostService));
 
 		$routes = Routes::manifest(MastodonApiConfig::prefix($config));
 

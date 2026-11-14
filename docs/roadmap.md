@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 91 routes, 44 of them under the Mastodon prefix |
+| HTTP contract | 100 routes, 48 of them under the Mastodon prefix |
 | Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 148 PHP test files (1395 tests, 7057 assertions) and 9 UI test files (69 tests) |
+| Tests | 152 PHP test files (1424 tests, 7206 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -76,7 +76,9 @@ the host that serves it. See
   soft-delete, visibility, replies,
   local direct posts with `recipient_ids`, public, follow-based home, hashtag
   and private followed-hashtag timelines with stable cursors, blocks, mutes,
-  exclusive lists and boosts. See
+  exclusive lists and boosts. Durable scheduled posts wait for a queued
+  publication job, keep their reserved post id and publish once under
+  competing workers. See
   [posts and timelines](guides/posts-and-timelines.md).
 - **Social interactions** — local favourites, private bookmarks, local mutes,
   private account lists and list timelines, notifications (favourite, follow,
@@ -230,9 +232,8 @@ server or a product decision.
 
 ## Later
 
-- **Locally implementable Mastodon remainder:** filters, followed tags,
-  scheduled posts, follow requests/locked accounts and the wider
-  account-management surface. These are product decisions, not
+- **Locally implementable Mastodon remainder:** filters, follow requests/locked
+  accounts and the wider account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
   CAR/MST repository access.

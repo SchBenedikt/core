@@ -35,6 +35,8 @@ the database — the core does not care.
 | `social` | `atproto.publish` | no | Enables the AT Protocol publication job, the matching remote delete and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher`; remote delete also needs an `AtprotoDeleter` (the default XRPC publisher implements both) |
 | `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
 | `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
+| `social` | `scheduling.minimum_lead_seconds` | no | Shortest accepted gap between creating a schedule and its publication time; defaults to 300 and is clamped to 0–one year |
+| `social` | `scheduling.daily_limit` | no | Scheduled posts one account may create per rolling day; defaults to 30 and is clamped to 1–1000. Cancelled rows count, because the limit bounds work, not retained rows |
 
 Search adds no configuration key. It reads the existing `social_post` rows through
 `PostSearchRepository` and the host's local account directory through

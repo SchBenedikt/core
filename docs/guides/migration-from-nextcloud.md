@@ -302,7 +302,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `notifications` | core | partial | — | `social_notification`; sender policies #12 |
 | `polls` | core | partial | — | poll tables and local votes; remote #6 |
 | `quotes` | core | gap | — | quote rows, authorization, policies (#7) |
-| `scheduled_posts` | core | gap | — | scheduling state and publisher (#8) |
+| `scheduled_posts` | core | supported | — | `social_scheduled_post` with the reserved post id and the publisher job |
 | `stories` | core | gap | — | story model and expiry (#18) |
 | `moderation` | core | gap | — | reports, domain policy, review queue (#11) |
 | `keyword_filters` | core | gap | — | filter rules and contexts (#21) |

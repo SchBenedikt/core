@@ -15,6 +15,11 @@ use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
+use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
+use AlohaSocial\Core\Api\ScheduledPostsHandler;
+use AlohaSocial\Core\Api\ShowScheduledPostHandler;
+use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowHandler;
@@ -66,6 +71,10 @@ use AlohaSocial\Core\Api\Mastodon\MastodonCreateListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonCreateStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteListHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteMediaHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonDeleteScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonScheduledStatusesHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonUpdateScheduledStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDeleteStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonDismissNotificationHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonFavouriteStatusHandler;
@@ -240,6 +249,51 @@ final class Routes
 				handler: DeletePostHandler::class,
 				requiresAuth: true,
 				summary: 'Delete a post you wrote.',
+			),
+			new Route(
+				name: 'scheduled-posts.list',
+				method: 'GET',
+				path: $base . '/scheduled-posts',
+				handler: ScheduledPostsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'List the signed-in account\'s scheduled posts, newest first.',
+			),
+			new Route(
+				name: 'scheduled-posts.create',
+				method: 'POST',
+				path: $base . '/scheduled-posts',
+				handler: CreateScheduledPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Store a post and publish it at a future time; nothing is delivered before then.',
+			),
+			new Route(
+				name: 'scheduled-posts.get',
+				method: 'GET',
+				path: $base . '/scheduled-posts/{id}',
+				handler: ShowScheduledPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read one of the signed-in account\'s scheduled posts.',
+			),
+			new Route(
+				name: 'scheduled-posts.update',
+				method: 'PATCH',
+				path: $base . '/scheduled-posts/{id}',
+				handler: UpdateScheduledPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Move a pending scheduled post to a new time.',
+			),
+			new Route(
+				name: 'scheduled-posts.delete',
+				method: 'DELETE',
+				path: $base . '/scheduled-posts/{id}',
+				handler: DeleteScheduledPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Cancel a pending scheduled post without publishing it.',
 			),
 			new Route(
 				name: 'posts.boost',
@@ -617,6 +671,46 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Delete one of the signed-in account\'s statuses.',
+			),
+			new Route(
+				name: 'mastodon.scheduled_statuses.list',
+				method: 'GET',
+				path: $mastodon . '/scheduled_statuses',
+				handler: MastodonScheduledStatusesHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:statuses'],
+				summary: 'Scheduled statuses of the signed-in account in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.scheduled_statuses.show',
+				method: 'GET',
+				path: $mastodon . '/scheduled_statuses/{id}',
+				handler: MastodonScheduledStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				requiredScopes: ['read:statuses'],
+				summary: 'Read one scheduled status of the signed-in account.',
+			),
+			new Route(
+				name: 'mastodon.scheduled_statuses.update',
+				method: 'PUT',
+				path: $mastodon . '/scheduled_statuses/{id}',
+				handler: MastodonUpdateScheduledStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Move a scheduled status to a new time.',
+			),
+			new Route(
+				name: 'mastodon.scheduled_statuses.delete',
+				method: 'DELETE',
+				path: $mastodon . '/scheduled_statuses/{id}',
+				handler: MastodonDeleteScheduledStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:statuses'],
+				summary: 'Cancel a scheduled status without publishing it.',
 			),
 			new Route(
 				name: 'mastodon.statuses.reblog',

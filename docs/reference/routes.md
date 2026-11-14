@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 91 routes in total; 44 use the
+defaults to `/api/mastodon/v1`). There are 100 routes in total; 48 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -34,6 +34,11 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `remote-posts.react` | `POST` | `/api/v1/remote-posts/{id}/reactions` | yes | 30 / 900 s |
 | `remote-posts.unreact` | `DELETE` | `/api/v1/remote-posts/{id}/reactions/{emoji}` | yes | 60 / 900 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
+| `scheduled-posts.list` | `GET` | `/api/v1/scheduled-posts` | yes | 60 / 60 s |
+| `scheduled-posts.create` | `POST` | `/api/v1/scheduled-posts` | yes | 30 / 900 s |
+| `scheduled-posts.get` | `GET` | `/api/v1/scheduled-posts/{id}` | yes | 120 / 60 s |
+| `scheduled-posts.update` | `PATCH` | `/api/v1/scheduled-posts/{id}` | yes | 30 / 900 s |
+| `scheduled-posts.delete` | `DELETE` | `/api/v1/scheduled-posts/{id}` | yes | 30 / 900 s |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
 | `timelines.tag` | `GET` | `/api/v1/timelines/tag/{tag}` | no | — |
 | `timelines.followed_tags` | `GET` | `/api/v1/timelines/followed_tags` | yes | — |
@@ -75,6 +80,10 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.update` | `PUT` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.scheduled_statuses.list` | `GET` | `/api/mastodon/v1/scheduled_statuses` | yes, `read:statuses` | 60 / 60 s |
+| `mastodon.scheduled_statuses.show` | `GET` | `/api/mastodon/v1/scheduled_statuses/{id}` | yes, `read:statuses` | 120 / 60 s |
+| `mastodon.scheduled_statuses.update` | `PUT` | `/api/mastodon/v1/scheduled_statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.scheduled_statuses.delete` | `DELETE` | `/api/mastodon/v1/scheduled_statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.reblog` | `POST` | `/api/mastodon/v1/statuses/{id}/reblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.unreblog` | `POST` | `/api/mastodon/v1/statuses/{id}/unreblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |

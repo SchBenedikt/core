@@ -78,24 +78,40 @@ update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, following a remote actor through this
 compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), remote boost federation, remote notifications,
-streaming, voting on or fetching remote polls, scheduled posts,
-filters, followed tags, OAuth authorization/token endpoints, remote
-search, remote profile fetching, admin APIs or the full account management
-surface. Lists are limited to known local account ids; remote list membership
+streaming, voting on or fetching remote polls, filters, followed tags,
+OAuth authorization/token endpoints, remote search, remote profile fetching,
+admin APIs or the full account management surface. Scheduled statuses are
+supported locally (see below). Lists are limited to known local account ids; remote list membership
 is external.
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. The locally implementable remainder —
-hashtags and hashtag search, filters, followed tags, scheduled posts, follow
-requests/locked accounts and the wider account-management surface — is a
-product follow-up listed as Later in the [roadmap](../roadmap.md); everything
+hashtags and hashtag search, filters, followed tags, follow requests/locked
+accounts and the wider account-management surface — is a product follow-up listed as Later in the [roadmap](../roadmap.md); everything
 else needs a host or remote data. See the section at the end.
+
+## Scheduled statuses
+
+A status write with `scheduled_at` (`POST /statuses`) stores a
+`ScheduledStatus` instead of publishing. The response carries the nested
+`params` (`text`, `media_ids`, `sensitive`, `visibility`, `spoiler_text`,
+`in_reply_to_id`) and has no status id. `GET /scheduled_statuses`,
+`GET /scheduled_statuses/{id}`, `PUT /scheduled_statuses/{id}` (new
+`scheduled_at`) and `DELETE /scheduled_statuses/{id}` list, read, move and
+cancel it. Only the owner can see a schedule; the neutral routes are
+`/api/v1/scheduled-posts`.
+
+A schedule needs at least five minutes of lead time (configurable), counts
+against a per-account daily quota and may not contain a poll. Nothing is
+federated, published or given a public URL before the due time; a worker then
+publishes it through the normal post path exactly once. A failed publication
+keeps the row as `failed` with a reason and is visible to the owner.
 
 ## Configuration and prefix
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `social/mastodon.api` | `false` | Enables the compatibility handlers and gate. |
-| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all forty-three routes. |
+| `social/mastodon.prefix` | `/api/mastodon/v1` | Path prefix for all forty-eight routes. |
 
 `mastodon.prefix` must be a non-root path without a trailing slash, query,
 fragment, template, empty/parent segment or unsupported characters. It must
