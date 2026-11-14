@@ -1,6 +1,6 @@
 # Roadmap
 
-Status of the core, not a promise about dates. Last reviewed: 2026-11-13.
+Status of the core, not a promise about dates. Last reviewed: 2026-11-14.
 
 This is the canonical status document. The guides explain how a part works;
 this page says what exists, what is next and which repository owns it. If a
@@ -18,7 +18,7 @@ timeline
     2026-11-13 : 0.6.0 retention cleanup
     2026-11-13 : 0.7.0 transactions and job errors
     2026-11-14 : AT Protocol media, replies, facets, likes/reposts, profile, AppView read
-    next : standalone server
+    2026-11-14 : standalone server host, login and shared-UI mount
 ```
 
 ## Goal
@@ -57,17 +57,17 @@ the host that serves it. See
    disabled by default where documented; no host-specific branch appears in
    `src/`.
 
-## Where we are (2026-11-13)
+## Where we are (2026-11-14)
 
 | Measure | Value |
 | --- | --- |
 | HTTP contract | 84 routes, 43 of them under the Mastodon prefix |
 | Persistence | 18 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 135 PHP test files (1210 tests, 6042 assertions) and 9 UI test files (69 tests) |
+| Tests | 135 PHP test files (1220 tests, 6072 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
-| Hosts | Nextcloud adapter not started; standalone repository does not exist yet |
+| Hosts | Nextcloud adapter not started; the standalone host lives in [SchBenedikt/server](https://github.com/SchBenedikt/server) |
 
 ### Implemented in the core
 
@@ -97,8 +97,9 @@ the host that serves it. See
   idempotent object cache. See [remote threads](guides/remote-threads.md) and
   [remote backfill](guides/remote-backfill.md).
 - **Media** — JPEG/PNG/WebP validation, untouched originals, GD thumbnails,
-  authenticated upload, public fetch, post attachments and SSRF-safe remote
-  ingestion. See [media](guides/media.md).
+  authenticated upload, public fetch, post attachments, ActivityStreams
+  `attachment` entries on the `Create(Note)` that delivery and the outbox send,
+  and SSRF-safe remote ingestion. See [media](guides/media.md).
 - **Operations** — the `cleanup` worker job and `CleanupService` remove
   unreferenced media, read notifications and thread-cache rows after a
   configurable retention. Runs are dry-runnable, per-kind bounded and
@@ -157,7 +158,8 @@ the host that serves it. See
 - The Nextcloud adapter, mount pages, admin settings and the data import.
 - The standalone bootstrap, accounts, sessions, roles and administrator
   checks (host-owned per [ADR 0006](adr/0006-host-owned-accounts.md)),
-  installer, container and migration runner.
+  installer, container and migration runner. These exist in
+  [SchBenedikt/server](https://github.com/SchBenedikt/server), not here.
 - The host bridges and mount pages that render the shared screens inside the
   Nextcloud page and the standalone server.
 - The external remainder of the Mastodon server API and of the AT Protocol
@@ -177,11 +179,11 @@ server or a product decision.
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
 | M2 | Release and documentation consistency | done (`0.2.0`-`0.7.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.7.0` released |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
-| M4 | Standalone host | open | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates; built against the [server blueprint](guides/server-architecture.md) |
+| M4 | Standalone host | partial | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates; built against the [server blueprint](guides/server-architecture.md). The PHP host, its migrations, worker, login, `/app` mount and standalone `HostBridge` exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); installer hardening, deployment and a real-peer QA pass remain |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
-| M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; smoke tests pass |
+| M5 | Shared UI rollout | partial | `ui` + hosts | The standalone bridge and `/app` mount exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); the Nextcloud bridge and mount page, and the host smoke tests in both hosts, remain |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
-| M7 | Operations and packaging | open | `server` / ops | Installer, container, backup and an object-storage option exist; the core cleanup job is already available |
+| M7 | Operations and packaging | partial | `server` / ops | Installer, worker and container exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); backup, monitoring and an object-storage option remain, and the core cleanup job is already available |
 
 ## Now (core)
 
@@ -201,9 +203,10 @@ server or a product decision.
    `userId` as every host does.
 4. **Mount the finished shared screens in the hosts.** `ActorHeader`,
    `PostComposer` and `NotificationList` are complete and covered by
-   `FakeHostBridge` tests. The remaining M5 work is the Nextcloud bridge and
-   mount page, then the standalone bridge; neither belongs in this repository.
-   Do not move a Nextcloud-only page into the package.
+   `FakeHostBridge` tests. The standalone `HostBridge` and its `/app` mount are
+   in [SchBenedikt/server](https://github.com/SchBenedikt/server); the Nextcloud
+   bridge and mount page remain. Neither belongs in this repository: do not
+   move a Nextcloud-only page into the package.
 
 ## Next
 
@@ -213,9 +216,9 @@ server or a product decision.
 | Nextcloud `HostBridge`, mount pages and navigation | `social` | `social` | `PublicTimeline` and `PostDetail` render against the real bridge; login, 401 and logout work |
 | Nextcloud posts/follows import and actor-URL parity | `social` | `social` | The neutral export passes `bin/validate-cutover`; counts and checksums match the source |
 | Cutover: posts/timelines → actor surface → follows/delivery → inbox → UI | `social` | `social` | One account runs end to end on the core and a flag restores the old path |
-| Standalone repository and its host-owned account/session layer | `server` + ADR 0006 + [blueprint](guides/server-architecture.md) | `server` | A second host boots with its own accounts and the same kernel |
+| Standalone deployment and QA | [server installation](https://github.com/SchBenedikt/server/blob/main/docs/installation.md) + [blueprint](guides/server-architecture.md) | `server` | A fresh install from the documented steps publishes a post that a real peer receives |
 | Standalone AT Protocol linking (OAuth state, sealed tokens, refresh lock, PDS from the DID document) | `server` + [blueprint](guides/server-architecture.md#7-at-protocol-account-linking) | `server` | A real account connects, refreshes and publishes |
-| Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
+| Standalone installer hardening and container packaging | `server` | `server` | The installer and container images are reproducible and covered by the server's own tests |
 | Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
 | Registry publication: Packagist and npm | core | core | A host installs the tagged `0.7.x` release instead of `dev-main`; verified artifacts await registry credentials ([release](operations/release.md)) |
