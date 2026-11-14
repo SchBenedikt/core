@@ -33,6 +33,8 @@ use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\SignatureException;
+use AlohaSocial\Core\Service\AccountMoveException;
+use AlohaSocial\Core\Service\AccountMoveService;
 use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
@@ -99,6 +101,7 @@ final class InboxService
 		private readonly ?QuoteService $quotes = null,
 		private readonly ?ModerationService $moderation = null,
 		private readonly ?ModerationPolicy $moderationPolicy = null,
+		private readonly ?AccountMoveService $accountMoves = null,
 	) {
 	}
 
@@ -170,7 +173,9 @@ final class InboxService
 			// Reactions are keyed by identity, not by the activity id, so a
 			// retransmitted Like/EmojiReact/Undo is already applied. Refusing it
 			// would make a peer retry a delivery that can never change state.
-			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Flag') {
+			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Flag'
+				|| $type === 'Move'
+			) {
 				return;
 			}
 
@@ -188,6 +193,7 @@ final class InboxService
 				'Accept' => $this->handleFollowOrQuoteResponse($actor, $activity, FollowState::Accepted),
 				'Reject' => $this->handleFollowOrQuoteResponse($actor, $activity, FollowState::Rejected),
 				'QuoteRequest' => $this->handleQuoteRequest($actor, $activity),
+				'Move' => $this->handleMove($actor, $activity),
 				'Undo' => $this->handleUndo($actor, $activity),
 				'Create' => $this->handleCreate($actor, $activity),
 				'Update' => $this->handleUpdate($actor, $activity),
@@ -506,6 +512,29 @@ final class InboxService
 		}
 
 		$this->handleFollowResponse($actor, $activity, $state);
+	}
+
+	/**
+	 * A Move is verified by both actor documents before any follow edge moves.
+	 * The activity id is claimed by the replay guard; a duplicate Move returns
+	 * without applying a second migration because the row is keyed by it.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function handleMove(RemoteActor $actor, array $activity): void
+	{
+		if ($this->accountMoves === null) {
+			throw new InboxRejectedException(
+				'unsupported_activity',
+				'Account moves are not configured on this instance.',
+			);
+		}
+
+		try {
+			$this->accountMoves->receive($actor, $activity);
+		} catch (AccountMoveException $exception) {
+			throw new InboxRejectedException($exception->reason, $exception->getMessage());
+		}
 	}
 
 	/**

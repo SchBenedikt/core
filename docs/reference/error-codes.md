@@ -30,6 +30,10 @@ change. `fields` appears only when an error belongs to specific input.
 | `blocked_actor` | 403 | The host's blocked-actor policy refuses the signing actor |
 | `not_followed` | 403 | Inbound `Create`/`Delete`/`Announce` from an actor no local account follows |
 | `follow_not_accepted` | 403 | The host's `FollowPolicy` refuses an inbound Follow for that local account |
+| `invalid_target` | 400 | A Move object is not an absolute `https` actor URL |
+| `move_not_reciprocated` | 403 | An origin or target actor document does not name the other in `alsoKnownAs` |
+| `move_target_moved` | 400 | A Move target document itself points at another actor |
+| `move_target_unknown` | 404 | A Move target actor document could not be fetched or is unusable |
 | `signature_required` | 401 | An inbox request without a `Signature` header |
 | `invalid_signature` | 401 | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
 | `signature_expired` | 401 | The signed `Date` is outside the 300-second window |

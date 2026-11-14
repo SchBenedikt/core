@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Protocol\ActivityPub;
 
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
@@ -19,6 +20,7 @@ use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Service\Federation\RemoteFetchException;
 use JsonException;
 
+use function array_values;
 use function filter_var;
 use function in_array;
 use function is_array;
@@ -48,7 +50,7 @@ use function trim;
  * avoid a round trip per signed request while keeping every identity check on
  * a miss; a host may also implement its own cache with the same rules.
  */
-final class HttpActorResolver implements PinnedActorResolver
+final class HttpActorResolver implements PinnedActorResolver, RemoteActorFetcher
 {
 	public const ACCEPT = 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
@@ -93,26 +95,79 @@ final class HttpActorResolver implements PinnedActorResolver
 	public function resolveByKeyIdAtAddresses(string $keyId, array $addresses): RemoteActor
 	{
 		$actorId = $this->actorIdFromKeyId($keyId);
-		$response = $this->fetch($keyId, $actorId, $addresses);
+
+		return $this->resolveAt($keyId, $actorId, $addresses, $keyId);
+	}
+
+	/**
+	 * Fetches a destination actor for Move verification.
+	 *
+	 * The document must identify the requested actor and carry a usable key,
+	 * inbox and key id; Move never trusts a bare URL. The same target guard
+	 * and pinned-address fetch applies as for a signing key, so a destination
+	 * cannot point the instance at a private address.
+	 */
+	public function fetch(string $actorId): RemoteActor
+	{
+		if ($this->targetGuard === null) {
+			throw new UnknownActorException($actorId);
+		}
+
+		try {
+			$addresses = $this->targetGuard->addressesFor($actorId);
+		} catch (RemoteFetchException) {
+			throw new UnknownActorException($actorId);
+		}
+
+		if ($addresses === []) {
+			throw new UnknownActorException($actorId);
+		}
+
+		return $this->resolveAt($actorId, $actorId, $addresses, null);
+	}
+
+	/**
+	 * @param list<string> $addresses
+	 * @param ?string      $expectedKeyId null for a document fetch by actor URL
+	 */
+	private function resolveAt(
+		string $label,
+		string $actorId,
+		array $addresses,
+		?string $expectedKeyId,
+	): RemoteActor {
+		$response = $this->fetchDocument($label, $actorId, $addresses);
 
 		try {
 			$document = json_decode($response->body, true, 64, JSON_THROW_ON_ERROR);
 		} catch (JsonException) {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
+		return $this->actorFromDocument($document, $label, $actorId, $expectedKeyId);
+	}
+
+	/**
+	 * @param mixed $document the decoded actor document
+	 */
+	private function actorFromDocument(
+		mixed $document,
+		string $label,
+		string $actorId,
+		?string $expectedKeyId,
+	): RemoteActor {
 		if (!is_array($document)) {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
 		$id = $document['id'] ?? null;
 		if (!is_string($id) || rtrim($id, '/') !== rtrim($actorId, '/')) {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
 		$publicKey = $document['publicKey'] ?? null;
 		if (!is_array($publicKey)) {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
 		$documentKeyId = $publicKey['id'] ?? null;
@@ -120,26 +175,81 @@ final class HttpActorResolver implements PinnedActorResolver
 		$inbox = $document['inbox'] ?? null;
 		$sharedInbox = $this->sharedInbox($document);
 
-		if (!is_string($documentKeyId) || $documentKeyId !== $keyId) {
-			throw new UnknownActorException($keyId);
+		if (!is_string($documentKeyId) || trim($documentKeyId) === '') {
+			throw new UnknownActorException($label);
+		}
+
+		if ($expectedKeyId !== null && $documentKeyId !== $expectedKeyId) {
+			throw new UnknownActorException($label);
 		}
 
 		if (!is_string($publicKeyPem) || trim($publicKeyPem) === '') {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
 		if (!is_string($inbox) || !self::isHttpUrl($inbox)) {
-			throw new UnknownActorException($keyId);
+			throw new UnknownActorException($label);
 		}
 
-		return new RemoteActor($actorId, $keyId, $inbox, $publicKeyPem, $sharedInbox);
+		return new RemoteActor(
+			$actorId,
+			$documentKeyId,
+			$inbox,
+			$publicKeyPem,
+			$sharedInbox,
+			$this->alsoKnownAs($document),
+			$this->movedTo($document),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $document
+	 *
+	 * @return list<string>
+	 */
+	private function alsoKnownAs(array $document): array
+	{
+		$raw = $document['alsoKnownAs'] ?? [];
+		if (is_string($raw)) {
+			$raw = [$raw];
+		}
+
+		if (!is_array($raw) || !array_is_list($raw)) {
+			return [];
+		}
+
+		$aliases = [];
+		foreach ($raw as $alias) {
+			if (is_string($alias)
+				&& self::isHttpUrl($alias)
+				&& mb_strlen($alias) <= RemoteActor::MAX_URL_LENGTH
+			) {
+				$aliases[$alias] = true;
+			}
+		}
+
+		return array_values(array_keys($aliases));
+	}
+
+	/**
+	 * @param array<string, mixed> $document
+	 */
+	private function movedTo(array $document): ?string
+	{
+		$movedTo = $document['movedTo'] ?? null;
+
+		return is_string($movedTo)
+			&& self::isHttpUrl($movedTo)
+			&& mb_strlen($movedTo) <= RemoteActor::MAX_URL_LENGTH
+			? $movedTo
+			: null;
 	}
 
 	/**
 	 * @param list<string> $addresses validated addresses, or empty for a
 	 *                                caller that deliberately skipped the check
 	 */
-	private function fetch(string $keyId, string $actorId, array $addresses): HttpResponse
+	private function fetchDocument(string $keyId, string $actorId, array $addresses): HttpResponse
 	{
 		if (!$this->http instanceof BoundedHttpClient) {
 			// An unbounded client can buffer a peer-controlled document until

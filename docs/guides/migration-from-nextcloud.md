@@ -284,6 +284,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | Feature | Owner | Status | Validated by | Destination / gap |
 | --- | --- | --- | --- | --- |
 | `accounts` | host | supported | v1 | host account id becomes `local_user_id` |
+| `account_moves` | core | supported | — | `social_account_move`; stable event id, target and processed follow ids, actor/key identity untouched |
 | `profile_metadata` | core | supported | — | `LocalActorProfileProvider` supplies the actor document and Mastodon account; avatar/banner bytes travel as media |
 | `posts` | core | supported | v1 | `social_post`, derived note/Create/Delete ids |
 | `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
@@ -352,6 +353,7 @@ Create the core tables with the schema classes from the host's migration:
 - `social_followed_hashtag` — `FollowedHashtagSchema` (private local followed tags; no legacy import)
 - `social_boost` — `BoostSchema` (local Mastodon-compatible reblogs; no legacy import)
 - `social_notification` — `NotificationSchema` (local favourite/follow/mention/reblog notifications; no legacy import)
+- `social_account_move` — `AccountMoveSchema` (Move progress; new table, no legacy import)
 - `social_follower` — `FollowerSchema`
 - `social_following` — `FollowingSchema`
 - `social_remote_post` — `RemotePostSchema` (new remote content; no legacy import)

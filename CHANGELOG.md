@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- ActivityPub `Move` and identity portability. `AccountMoveService` verifies
+  that the signed origin and target actor documents name each other in
+  `alsoKnownAs`, rejects a moved target, and re-points outgoing follows and
+  accepted incoming followers in resumable batches stored in the new
+  `social_account_move` table. Pending old follower requests are dropped rather
+  than auto-accepted; actor/key ids and post URLs stay unchanged. The local
+  actor document advertises `movedTo`/`alsoKnownAs`, and `HttpActorResolver`
+  implements the new `RemoteActorFetcher` port.
 - The AT Protocol profile record and an AppView timeline read.
   `AtprotoProfileService` writes `app.bsky.actor.profile` at record key `self`
   (display name, description, avatar/banner through the blob uploader, JPEG/PNG

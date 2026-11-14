@@ -332,6 +332,51 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertNull($repository->find('rejected'));
 	}
 
+	public function testMoveScansAndReplacesAnAcceptedFollower(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->follower('accepted', 'alice', 'https://old.example/users/one'));
+		$repository->insert(new Follower(
+			'pending',
+			'bob',
+			'https://old.example/users/one',
+			'https://old.example/users/one/inbox',
+			Time::parse('2026-11-11T10:01:00Z'),
+			state: FollowState::Pending,
+		));
+
+		self::assertSame(
+			['pending', 'accepted'],
+			array_map(
+				static fn (Follower $follower): string => $follower->id,
+				$repository->followersForActor('https://old.example/users/one', 10, 0),
+			),
+		);
+
+		self::assertTrue($repository->replaceActor(
+			'accepted',
+			'alice',
+			'https://old.example/users/one',
+			'https://new.example/users/two',
+			'https://new.example/users/two/inbox',
+			null,
+		));
+
+		$moved = $repository->find('accepted');
+		self::assertSame('https://new.example/users/two', $moved?->actorId);
+		self::assertSame('https://new.example/users/two/inbox', $moved?->inboxUrl);
+		self::assertSame('accepted', $moved?->toArray()['state']);
+		self::assertNull($repository->findByActor('alice', 'https://old.example/users/one'));
+		self::assertFalse($repository->replaceActor(
+			'accepted',
+			'alice',
+			'https://old.example/users/one',
+			'https://new.example/users/three',
+			'https://new.example/users/three/inbox',
+			null,
+		));
+	}
+
 	public function testCountIsScopedToTheLocalUser(): void
 	{
 		$repository = $this->repository();

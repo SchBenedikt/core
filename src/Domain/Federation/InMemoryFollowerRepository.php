@@ -228,6 +228,53 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return $result;
 	}
 
+	public function followersForActor(string $actorId, int $limit, int $offset): array
+	{
+		$matching = array_values(array_filter(
+			$this->followers,
+			static fn (Follower $follower): bool => $follower->actorId === $actorId
+				&& ($follower->state === FollowState::Accepted || $follower->state === FollowState::Pending),
+		));
+
+		usort($matching, static function (Follower $a, Follower $b): int {
+			$byTime = $b->followedAt <=> $a->followedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($matching, max(0, $offset), max(0, $limit));
+	}
+
+	public function replaceActor(
+		string $id,
+		string $localUserId,
+		string $oldActorId,
+		string $newActorId,
+		string $inboxUrl,
+		?string $sharedInboxUrl,
+	): bool {
+		$stored = $this->followers[$id] ?? null;
+		if ($stored === null
+			|| $stored->localUserId !== $localUserId
+			|| $stored->actorId !== $oldActorId
+		) {
+			return false;
+		}
+
+		$this->followers[$id] = new Follower(
+			id: $stored->id,
+			localUserId: $stored->localUserId,
+			actorId: $newActorId,
+			inboxUrl: $inboxUrl,
+			followedAt: $stored->followedAt,
+			sharedInboxUrl: $sharedInboxUrl,
+			local: false,
+			state: $stored->state,
+		);
+
+		return true;
+	}
+
 	public function count(string $localUserId): int
 	{
 		$count = 0;

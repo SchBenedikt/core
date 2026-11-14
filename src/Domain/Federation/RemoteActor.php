@@ -28,6 +28,10 @@ final readonly class RemoteActor
 		public string $inboxUrl,
 		public string $publicKeyPem,
 		public ?string $sharedInboxUrl = null,
+		/** @var list<string> the actor's signed-identity aliases */
+		public array $alsoKnownAs = [],
+		/** The actor this account moved to, when the document advertises one. */
+		public ?string $movedTo = null,
 	) {
 		if ($actorId === '' || $keyId === '' || $inboxUrl === '' || $publicKeyPem === '') {
 			throw new InvalidArgumentException('A remote actor needs an id, a key id, an inbox and a public key.');
@@ -35,6 +39,10 @@ final readonly class RemoteActor
 
 		if ($sharedInboxUrl !== null && $sharedInboxUrl === '') {
 			throw new InvalidArgumentException('A remote shared inbox must be an absolute URL when present.');
+		}
+
+		if ($movedTo !== null && $movedTo === '') {
+			throw new InvalidArgumentException('A movedTo actor must be an absolute URL when present.');
 		}
 	}
 

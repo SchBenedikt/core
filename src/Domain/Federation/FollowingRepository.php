@@ -94,4 +94,14 @@ interface FollowingRepository
 	 * @return list<string>
 	 */
 	public function localUserIdsForActor(string $actorId): array;
+
+	/**
+	 * Accepted and pending edges that point at one actor, across local users.
+	 *
+	 * A verified Move uses this to migrate every follower of the moved
+	 * account. Rejected rows are already gone and are never returned.
+	 *
+	 * @return list<FollowedActor>
+	 */
+	public function followedActorsForActor(string $actorId, int $limit, int $offset): array;
 }

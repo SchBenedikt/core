@@ -218,6 +218,43 @@ abstract class FollowingRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->localUserIdsForActor('https://remote.example/users/nobody'));
 	}
 
+	public function testMoveScansAcceptedAndPendingEdgesOnly(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->followed('accepted', 'alice', 'https://old.example/users/one', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->followed(
+			'pending',
+			'bob',
+			'https://old.example/users/one',
+			'2026-11-11T10:01:00Z',
+			state: FollowState::Pending,
+		));
+		$repository->insert($this->followed(
+			'rejected',
+			'carol',
+			'https://old.example/users/one',
+			'2026-11-11T10:02:00Z',
+			state: FollowState::Rejected,
+		));
+		$repository->insert($this->followed('other', 'dave', 'https://new.example/users/two'));
+
+		self::assertSame(
+			['pending', 'accepted'],
+			array_map(
+				static fn (FollowedActor $followed): string => $followed->id,
+				$repository->followedActorsForActor('https://old.example/users/one', 10, 0),
+			),
+		);
+		self::assertSame([], $repository->followedActorsForActor('https://old.example/users/nobody', 10, 0));
+		self::assertSame(
+			['accepted'],
+			array_map(
+				static fn (FollowedActor $followed): string => $followed->id,
+				$repository->followedActorsForActor('https://old.example/users/one', 1, 1),
+			),
+		);
+	}
+
 	public function testCountIsScopedToTheLocalUser(): void
 	{
 		$repository = $this->repository();

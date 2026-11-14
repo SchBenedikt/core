@@ -241,6 +241,46 @@ final class PdoFollowerRepository implements FollowerRepository
 		return array_map(static fn (array $row): string => (string) $row['inbox_url'], $rows);
 	}
 
+	public function followersForActor(string $actorId, int $limit, int $offset): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND state IN (:accepted, :pending)'
+			. ' ORDER BY followed_at DESC, id DESC'
+			. ' LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset),
+			[
+				'actor_id' => $actorId,
+				'accepted' => FollowState::Accepted->value,
+				'pending' => FollowState::Pending->value,
+			],
+		);
+
+		return array_map(fn (array $row): Follower => $this->hydrate($row), $rows);
+	}
+
+	public function replaceActor(
+		string $id,
+		string $localUserId,
+		string $oldActorId,
+		string $newActorId,
+		string $inboxUrl,
+		?string $sharedInboxUrl,
+	): bool {
+		return $this->db->execute(
+			'UPDATE ' . FollowerSchema::TABLE . ' SET actor_id = :new_actor_id, inbox_url = :inbox_url,'
+			. ' shared_inbox_url = :shared_inbox_url, follow_activity = NULL'
+			. ' WHERE id = :id AND local_user_id = :local_user_id AND actor_id = :old_actor_id',
+			[
+				'new_actor_id' => $newActorId,
+				'inbox_url' => $inboxUrl,
+				'shared_inbox_url' => $sharedInboxUrl,
+				'id' => $id,
+				'local_user_id' => $localUserId,
+				'old_actor_id' => $oldActorId,
+			],
+		) > 0;
+	}
+
 	public function count(string $localUserId): int
 	{
 		$value = $this->db->fetchValue(

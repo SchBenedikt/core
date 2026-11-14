@@ -32,6 +32,7 @@ signed `Digest` is refused. For the shared inbox, use
 | `type` | Required fields | Effect |
 | --- | --- | --- |
 | `Follow` | `id`, `actor`, `object` = local actor URL | Creates the follower edge when the optional `FollowPolicy` accepts it; queues `Accept` |
+| `Move` | `id`, `actor`, `object` = target actor URL | Verifies reciprocal `alsoKnownAs`; re-points follows and accepted followers in resumable batches |
 | `Accept` | `id`, `actor`, `object` = embedded outgoing `Follow` or its id | Moves the matching outgoing pending follow to accepted |
 | `Reject` | `id`, `actor`, `object` = embedded outgoing `Follow` or its id | Moves the matching outgoing pending follow to rejected |
 | `Undo` | `id`, `actor`, `object` = embedded `Follow`, or an `Announce` embedded/by id | Removes the follower edge or soft-deletes the stored boost |
@@ -69,7 +70,9 @@ the activity timestamp and then the server clock. An invalid timestamp is
 | --- | --- | --- |
 | 400 | `invalid_json` | Body is not valid JSON or not an object |
 | 400 | `invalid_activity` | `id`, `type` or `actor` missing; the object, content, timestamp or content warning has the wrong shape |
-| 400 | `unsupported_activity` | A type other than Follow/Accept/Reject/Undo/Create/Update/Delete/Announce |
+| 400 | `unsupported_activity` | A type other than Follow/Move/Accept/Reject/Undo/Create/Update/Delete/Announce |
+| 400 | `invalid_target` | A Move object is not an absolute `https` actor URL |
+| 400 | `move_target_moved` | The Move target document itself points at another actor |
 | 400 | `replayed_activity` | This non-Accept/Reject activity id was already accepted |
 | 401 | `signature_required` | No `Signature` header |
 | 401 | `invalid_signature` | Malformed header, missing signed header, digest mismatch, wrong key or unsupported algorithm |
@@ -78,8 +81,10 @@ the activity timestamp and then the server clock. An invalid timestamp is
 | 403 | `blocked_actor` | The host's blocked-actor policy refuses this actor |
 | 403 | `not_followed` | `Create`/`Update`/`Delete`/`Announce`/`Undo(Announce)` from an actor no local account follows |
 | 403 | `follow_not_accepted` | A valid Follow is refused by the host's `FollowPolicy` |
+| 403 | `move_not_reciprocated` | The origin or target document does not name the other in `alsoKnownAs` |
 | 404 | `unknown_actor` | The `keyid` does not resolve to a usable actor |
 | 404 | `unknown_object` | A Follow does not address an actor on this instance |
+| 404 | `move_target_unknown` | The Move target actor document could not be fetched or is unusable |
 | 503 | `inbox_not_configured` | No actor resolver, HTTP client or signing key configured |
 | 503 | `instance_not_configured` | `social/instance.url` is missing while answering |
 

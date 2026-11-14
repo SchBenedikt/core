@@ -2,8 +2,8 @@
 
 The core speaks ActivityPub over signed HTTP POSTs, serves its actor
 documents and resolves handles through WebFinger. It also accepts inbound
-`Follow`, `Undo(Follow)`, `Create`, `Delete`, `Announce` and `Undo(Announce)`
-activities.
+`Follow`, `Move`, `Undo(Follow)`, `Create`, `Delete`, `Announce` and
+`Undo(Announce)` activities.
 
 ## Ids
 
@@ -119,6 +119,25 @@ the queue backoff. Before sending a Follow the worker re-reads the row, so an
 Unfollow removes the edge and the stale Follow job becomes a no-op. A signed
 `Accept`/`Reject` from the followed actor completes the pending request. See
 the [following collection](following-collection.md).
+
+## Account moves
+
+A signed `Move` is accepted only when the signing origin actor names the target
+in `alsoKnownAs` and the target document names the origin back the same way.
+The target must be HTTPS, pass the outbound target guard, identify itself as
+the requested actor and must not itself have moved. The activity's `object`
+must be that same target. A foreign `object`, an unreciprocated alias or a
+moved target is refused; an unreachable target is `404 move_target_unknown`.
+
+Accepted outgoing follows are re-created against the target with their state
+preserved (pending stays pending), and accepted incoming followers are moved
+to the target's inbox while pending requests from the old actor are dropped
+rather than auto-accepted. The move runs in batches of 20 and stores the
+processed edge ids on the move row, so an interrupted worker resumes instead
+of repeating work; a duplicate Move activity is idempotent. Actor id, key id
+and post URLs never change. The local actor document advertises `movedTo` and
+`alsoKnownAs` after `$app->accountMoves->moveLocalAccount()`. See the
+[inbox refusals](../reference/inbox-activities.md).
 
 Per-user blocks are queued asynchronously instead. The local block is stored
 before the actor document is resolved; when the actor's inbox is known, a

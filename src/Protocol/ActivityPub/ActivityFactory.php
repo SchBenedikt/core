@@ -149,6 +149,35 @@ final class ActivityFactory
 		];
 	}
 
+	/**
+	 * A Move id derived from both actor URLs.
+	 *
+	 * The stable pair makes a retried move the same activity for a peer and
+	 * prevents a second move record for the same destination. Post ids, keys
+	 * and actor URLs are deliberately not part of the transformation.
+	 */
+	public function moveId(string $originActorId, string $targetActorId): string
+	{
+		return $this->baseUrl() . '/api/v1/account-moves/'
+			. rawurlencode(substr(hash('sha256', $originActorId . "\0" . $targetActorId), 0, 32));
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function move(string $originActorId, string $targetActorId): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->moveId($originActorId, $targetActorId),
+			'type' => 'Move',
+			'actor' => $originActorId,
+			'object' => $originActorId,
+			'target' => $targetActorId,
+			'to' => [$targetActorId],
+		];
+	}
+
 	public function followId(string $followedId): string
 	{
 		return $this->baseUrl() . '/api/v1/following/' . rawurlencode($followedId) . '/follow';

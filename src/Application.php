@@ -168,7 +168,11 @@ use AlohaSocial\Core\Domain\Filter\PdoFilterRuleRepository;
 use AlohaSocial\Core\Domain\Federation\NoBlockedActors;
 use AlohaSocial\Core\Domain\Federation\PdoBlockRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
+use AlohaSocial\Core\Domain\Federation\PdoAccountMoveRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryAccountMoveRepository;
+use AlohaSocial\Core\Domain\Federation\AccountMoveRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryPendingRemoteUpdateStore;
@@ -297,6 +301,7 @@ use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
+use AlohaSocial\Core\Protocol\ActivityPub\HttpActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
@@ -340,6 +345,8 @@ use AlohaSocial\Core\Service\Cleanup\CleanupService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowedHashtagService;
 use AlohaSocial\Core\Service\FollowerService;
+use AlohaSocial\Core\Service\AccountMoveHandler;
+use AlohaSocial\Core\Service\AccountMoveService;
 use AlohaSocial\Core\Service\FollowRequestService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
@@ -414,6 +421,7 @@ final readonly class Application
 		public ?SearchService $search = null,
 		public ?FollowRequestService $followRequests = null,
 		public ?ActorProfileUpdateService $profileUpdates = null,
+		public ?AccountMoveService $accountMoves = null,
 	) {
 	}
 
@@ -480,6 +488,8 @@ final readonly class Application
 		?LocalActorProfileProvider $localProfiles = null,
 		?FollowRequestService $followRequests = null,
 		?ActorProfileUpdateService $profileUpdates = null,
+		?AccountMoveRepository $accountMoveRepository = null,
+		?RemoteActorFetcher $remoteActors = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -490,6 +500,7 @@ final readonly class Application
 		]);
 		$logger ??= new NullLogger();
 		$activityLog ??= new InMemoryActivityLog();
+		$accountMoveRepository ??= new InMemoryAccountMoveRepository();
 		$ids = new RandomIdGenerator();
 
 		$posts = new InMemoryPostRepository();
@@ -589,6 +600,8 @@ final readonly class Application
 			localProfiles: $localProfiles,
 			followRequests: $followRequests,
 			profileUpdates: $profileUpdates,
+			accountMoveRepository: $accountMoveRepository,
+			remoteActors: $remoteActors,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -677,6 +690,8 @@ final readonly class Application
 		?LocalActorProfileProvider $localProfiles = null,
 		?FollowRequestService $followRequests = null,
 		?ActorProfileUpdateService $profileUpdates = null,
+		?AccountMoveRepository $accountMoveRepository = null,
+		?RemoteActorFetcher $remoteActors = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -740,6 +755,8 @@ final readonly class Application
 			localProfiles: $localProfiles,
 			followRequests: $followRequests,
 			profileUpdates: $profileUpdates,
+			accountMoveRepository: $accountMoveRepository ?? new PdoAccountMoveRepository($database),
+			remoteActors: $remoteActors,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -840,6 +857,8 @@ final readonly class Application
 		?LocalActorProfileProvider $localProfiles = null,
 		?FollowRequestService $followRequests = null,
 		?ActorProfileUpdateService $profileUpdates = null,
+		?AccountMoveRepository $accountMoveRepository = null,
+		?RemoteActorFetcher $remoteActors = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1032,6 +1051,21 @@ final readonly class Application
 			$queue,
 			$transactions,
 		);
+		$remoteActors ??= $httpClient instanceof BoundedHttpClient
+			? new HttpActorResolver($httpClient, $targetGuard)
+			: null;
+		$accountMoveService = $remoteActors === null
+			? null
+			: new AccountMoveService(
+				$accountMoveRepository ?? new InMemoryAccountMoveRepository(),
+				$followingRepository,
+				$followers,
+				$followingService,
+				$remoteActors,
+				$activities,
+				$queue,
+				$clock,
+			);
 		$instance = new InstanceInfo($config, $localActors, $posts, $remotePosts);
 		$localRelationships = $localActors === null
 			? null
@@ -1237,6 +1271,7 @@ final readonly class Application
 				$quoteService,
 				$moderationService,
 				$moderationPolicy,
+				$accountMoveService,
 			)
 			: null;
 
@@ -1251,6 +1286,7 @@ final readonly class Application
 				$followingService,
 				$localRelationships,
 				$localProfiles,
+				$accountMoveService,
 			)
 			: null;
 		$profileUpdateService = $profileUpdates
@@ -1411,6 +1447,12 @@ final readonly class Application
 					new FollowingDeliveryHandler($followingRepository, $federationDelivery),
 				);
 		}
+		if ($accountMoveService !== null) {
+			$jobHandlers = $jobHandlers->with(
+				JobType::ACCOUNT_MOVE,
+				new AccountMoveHandler($accountMoveService),
+			);
+		}
 		$jobHandlers = $jobHandlers
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
 			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
@@ -1469,6 +1511,7 @@ final readonly class Application
 			$searchService,
 			$followRequestService,
 			$profileUpdateService,
+			$accountMoveService,
 		);
 	}
 

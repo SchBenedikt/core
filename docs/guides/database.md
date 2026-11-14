@@ -59,6 +59,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Search/SearchIndexSchema.php` → `social_search_index` (public local and cached remote accounts/posts with source, aliases, hashtags and cache timestamp)
 - `src/Domain/Search/TrendSchema.php` → `social_search_trend` (one hashtag row per indexed record, unique by entry and hashtag, with a time index for bounded trend windows)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index, `media_kind`, `duration_seconds`, `animated` and the optional focal point `focus_x`/`focus_y`)
+- `src/Domain/Federation/AccountMoveSchema.php` → `social_account_move` (stable Move event id, origin/target actor and inbox, direction/state, and JSON progress lists for idempotent batch resume)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url`, `is_local`, the `pending`/`accepted` follow state and the original Follow activity JSON kept for Accept/Reject)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
 - `src/Domain/Post/QuoteGrantSchema.php` → `social_quote_grant` (one FEP-044f grant per quoting object, with both object URLs, both actors and the revocable state)
@@ -99,7 +100,9 @@ paths in the same release. For `social_following`, add
 `follow_activity_id VARCHAR(512)` plus its unique index; old rows remain
 accepted, and the write path inserts pending rows. There is no automatic
 migration runner in the core:
-it would need to know the host's migration mechanism, which is exactly the kind of host concern ports exist to keep out. Existing follower tables need the
+it would need to know the host's migration mechanism, which is exactly the kind of host concern ports exist to keep out. Account moves need the new `social_account_move` table produced by
+`AccountMoveSchema`; it is additive and has no backfill. Existing follower
+tables need the
 nullable `social_follower.shared_inbox_url VARCHAR(512)` column; rows with
 `NULL` keep delivering to `inbox_url`, so no backfill is required. See
 [shared inboxes](shared-inboxes.md). For the Mastodon-compatible local follow

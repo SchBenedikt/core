@@ -33,6 +33,12 @@ final class JobType
 	public const CLEANUP = 'cleanup';
 
 	/**
+	 * Continues one bounded batch of an accepted account move. The payload
+	 * carries only the durable event id; progress lives on the move row.
+	 */
+	public const ACCOUNT_MOVE = 'account.move';
+
+	/**
 	 * Publishes one due scheduled post. The payload carries the schedule id,
 	 * not a copy of the content, so a reschedule is honoured.
 	 */

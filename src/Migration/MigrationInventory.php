@@ -65,6 +65,7 @@ final class MigrationInventory
 	 */
 	public const DOMAINS = [
 		'accounts',
+		'account_moves',
 		'profile_metadata',
 		'posts',
 		'post_revisions',
@@ -120,6 +121,14 @@ final class MigrationInventory
 				'host accounts, local_user_id + ActorDocumentService',
 				self::STATUS_SUPPORTED,
 				'v1',
+			),
+			self::entry(
+				'account_moves',
+				'ActivityPub Move and alsoKnownAs follower redirection',
+				self::OWNER_CORE,
+				'social_account_move rows with the stable activity id, destination and processed follow ids; actor URLs and keys stay untouched',
+				self::STATUS_SUPPORTED,
+				'inventory-only',
 			),
 			self::entry(
 				'profile_metadata',

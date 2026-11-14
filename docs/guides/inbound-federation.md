@@ -50,11 +50,14 @@ Every step refuses before anything changes:
 9. **Actor blocked by the host policy?** — 403 `blocked_actor`.
 10. **Activity id not seen before?** — 400 `replayed_activity`.
 11. **Type supported?** — 400 `unsupported_activity`.
-12. **For a `Follow`: does the local account's `FollowPolicy` accept it?** —
+12. **For a `Move`: is the target reciprocally verified?** — 400
+    `invalid_target`, 403 `move_not_reciprocated`, 400 `move_target_moved` or
+    404 `move_target_unknown`.
+13. **For a `Follow`: does the local account's `FollowPolicy` accept it?** —
     403 `follow_not_accepted`.
-13. **For `Create`, `Delete`, `Announce` and `Undo(Announce)`: does at least
+14. **For `Create`, `Delete`, `Announce` and `Undo(Announce)`: does at least
     one local account follow the actor?** — 403 `not_followed`.
-14. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
+15. **Object belongs to the signing actor?** — 403 `actor_mismatch`.
 
 A refusal releases the replay claim when the claim was already taken, so a peer
 that fixes its document can deliver the same activity again. A blocked actor is
@@ -65,6 +68,7 @@ refused before a claim, and a replay is refused without changing anything.
 | Type | Effect |
 | --- | --- |
 | `Follow` | stores the follower edge when the optional `FollowPolicy` accepts it (idempotently) and queues an `Accept` to the follower's inbox |
+| `Move` | after reciprocal `alsoKnownAs` verification, re-points outgoing follows and accepted followers to the target in resumable batches; pending old requests are dropped |
 | `Accept` / `Reject` | moves an outgoing pending Follow to accepted/rejected after verifying the signer is its target actor and the embedded Follow matches |
 | `Undo` with an embedded `Follow` or an `Announce` (embedded or by id) | removes the follower edge or soft-deletes the stored boost; an Undo for an already-absent edge/boost is still accepted |
 | `Create` | stores the embedded `Note` in the remote-post store as a post |

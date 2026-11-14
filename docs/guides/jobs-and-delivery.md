@@ -120,6 +120,17 @@ jobs: a non-2xx answer or transport failure leaves the same payload queued for
 the next attempt, and the activity id derived from the follow row makes the
 receiver's handling idempotent.
 
+## Account move jobs
+
+An accepted `Move` is processed by `account.move` with `{"event_id": "…"}`.
+One run handles at most 20 outgoing or incoming edges, saves each completed row
+id on the move and queues the same job again while work remains. A retry after
+an interruption therefore skips the edges already recorded; a duplicate
+inbound Move finds the completed row and queues nothing. The migration queues ordinary
+`federation.follow` jobs (including their Undo) and `federation.deliver` jobs
+for the outbound Move, so network failures use the normal retry/backoff
+policy. See [account moves](federation.md#account-moves).
+
 ## Idempotency
 
 A retry must be safe for the receiver. Two things make it so:

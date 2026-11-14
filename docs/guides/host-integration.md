@@ -136,6 +136,7 @@ $app = Application::forHost(
     queue: $queue,               // Core\Jobs\JobQueue, durable
     activityLog: $activityLog,   // Core\Domain\Federation\ActivityLog, durable
     actorResolver: $resolver,    // optional; without it both inbox routes are 503
+    remoteActors: null,          // optional RemoteActorFetcher; derived from a bounded HTTP client otherwise
     blockedActors: $policy,      // optional; instance-wide block policy
     blobStore: $blobs,           // optional; without it media routes are 503
     imageProcessor: $images,     // optional; default is GdImageProcessor
@@ -161,6 +162,7 @@ The object exposes the parts a host needs:
 | `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
 | `$app->followRequests`, `$app->profileUpdates` | Accept/reject a pending request for a locked account and publish a signed `Update(Person)` after the host changed the profile; `null` only if the host injected its own service |
 | `$app->inbox` | `null` when inbound federation is not configured |
+| `$app->accountMoves` | Receive a signed `Move`, start a local move and continue a batched migration; `null` without a `RemoteActorFetcher` |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
@@ -210,6 +212,7 @@ production bootstrap.
 | `ActivityLog` | Claim an activity id exactly once, release it on failure, expire old ids | `PdoActivityLog`; `InMemoryActivityLog` for tests |
 | `ActorResolver` | Resolve a signing key id to a remote actor; the assembly wraps it in `GuardedActorResolver`, which applies the outbound SSRF guard before the host adapter can fetch | `HttpActorResolver`, optionally wrapped in `CachingActorResolver` |
 | `ActorInboxResolver` | Resolve a remote actor URL to its individual inbox for `Block`/`Undo(Block)`; an unavailable actor document queues nothing | `HttpActorInboxResolver` when the assembly has an HTTP client |
+| `RemoteActorFetcher` | Fetch a target actor document for a Move and return its aliases and `movedTo`; the assembly derives one from a bounded HTTP client and its target guard, but a host may inject its own | `HttpActorResolver`; `InMemoryRemoteActorFetcher` for tests |
 | `BlockedActorPolicy` | Optional instance-wide decision whether inbound content from an actor is refused | `NoBlockedActors` by default; host policy otherwise |
 | `FollowPolicy` | Optional per-account decision whether an inbound Follow creates an edge | `AcceptAllFollows` by default; host policy otherwise |
 | `InboxResolver` | Return the inboxes for a local author | `FollowerInboxResolver` by default |
@@ -232,6 +235,17 @@ ones that receive content. After changing a profile, call
 `$app->profileUpdates->publish($userId)` to queue the signed update to accepted
 followers. `hide_collections` affects member pages only; the root count stays
 public. See [the route reference](../reference/routes.md#locked-accounts-and-profile-fields).
+
+### Account moves
+
+`$app->accountMoves` receives signed `Move` activities, runs the resumable
+follow migration and advertises `movedTo`/`alsoKnownAs` on the local actor
+document after `moveLocalAccount($userId, $targetActorId)`. The move row lives
+in `social_account_move`; the host only has to create that schema/table. A
+Move never rewrites actor ids, key ids or post URLs. Accepted incoming
+followers move to the target inbox, pending requests from the old actor are
+dropped, and accepted outgoing follows are re-created with their previous
+state. See [federation](federation.md#account-moves).
 
 ### Config keys
 

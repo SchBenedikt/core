@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\FollowState;
@@ -1175,6 +1176,7 @@ final class ApplicationHostTest extends TestCase
 		TrendSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
+		AccountMoveSchema::create($database);
 		RemotePostSchema::create($database);
 		PendingRemoteUpdateSchema::create($database);
 		RemoteThreadSchema::create($database);

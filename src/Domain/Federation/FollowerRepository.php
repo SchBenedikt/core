@@ -52,6 +52,31 @@ interface FollowerRepository
 	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array;
 
 	/**
+	 * Accepted and pending follower edges of one actor, across local users.
+	 *
+	 * A verified Move uses this to carry an accepted follower to the new
+	 * actor; pending requests are dropped instead of being accepted by a
+	 * move. Rejected requests are not stored.
+	 *
+	 * @return list<Follower>
+	 */
+	public function followersForActor(string $actorId, int $limit, int $offset): array;
+
+	/**
+	 * Re-points one follower edge at the moved actor, preserving its id, time
+	 * and state. The conditional actor id makes a concurrent Unfollow or a
+	 * second move a no-op rather than an overwrite.
+	 */
+	public function replaceActor(
+		string $id,
+		string $localUserId,
+		string $oldActorId,
+		string $newActorId,
+		string $inboxUrl,
+		?string $sharedInboxUrl,
+	): bool;
+
+	/**
 	 * Deletes only if the follower belongs to the given local user.
 	 *
 	 * @return bool whether a row was removed

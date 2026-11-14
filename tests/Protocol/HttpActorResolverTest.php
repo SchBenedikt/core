@@ -69,6 +69,45 @@ final class HttpActorResolverTest extends TestCase
 		self::assertSame(self::ACTOR, $this->http->requests[0]['url']);
 	}
 
+	public function testTheDocumentAliasesAndMovedToAreValidated(): void
+	{
+		$this->http->queueResponse($this->document([
+			'alsoKnownAs' => [
+				'https://new.example/users/bob',
+				'javascript:alert(1)',
+				'https://new.example/users/bob',
+			],
+			'movedTo' => 'https://new.example/users/bob',
+		]));
+
+		$actor = $this->resolver->resolveByKeyId(self::KEY_ID);
+
+		self::assertSame(['https://new.example/users/bob'], $actor->alsoKnownAs);
+		self::assertSame('https://new.example/users/bob', $actor->movedTo);
+	}
+
+	public function testASingleAliasStringIsAccepted(): void
+	{
+		$this->http->queueResponse($this->document([
+			'alsoKnownAs' => 'https://new.example/users/bob',
+		]));
+
+		$actor = $this->resolver->resolveByKeyId(self::KEY_ID);
+
+		self::assertSame(['https://new.example/users/bob'], $actor->alsoKnownAs);
+	}
+
+	public function testATargetActorIsFetchedByUrlAndMustIdentifyItself(): void
+	{
+		$this->http->queueResponse($this->document(['alsoKnownAs' => [self::ACTOR]]));
+
+		$actor = $this->resolver->fetch(self::ACTOR);
+
+		self::assertSame(self::ACTOR, $actor->actorId);
+		self::assertSame(self::KEY_ID, $actor->keyId);
+		self::assertSame([self::ACTOR], $actor->alsoKnownAs);
+	}
+
 	public function testANonSuccessfulDocumentIsUnknown(): void
 	{
 		$this->http->queueResponse(new HttpResponse(404));

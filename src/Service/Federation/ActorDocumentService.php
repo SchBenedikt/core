@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Service\AccountMoveService;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
@@ -47,6 +48,7 @@ final class ActorDocumentService
 		private readonly FollowingService $following,
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?LocalActorProfileProvider $profiles = null,
+		private readonly ?AccountMoveService $moves = null,
 	) {}
 
 	/**
@@ -82,6 +84,15 @@ final class ActorDocumentService
 				'publicKeyPem' => $this->keys->publicKeyPem(),
 			],
 		];
+
+		$move = $this->moves?->findOutboundByOrigin($actorId);
+		if ($move !== null) {
+			// The destination is published in both fields: movedTo tells a
+			// peer where to go, alsoKnownAs is the reciprocal proof the target
+			// must carry before it accepts the Move.
+			$document['movedTo'] = $move->targetActorId;
+			$document['alsoKnownAs'] = [$move->targetActorId];
+		}
 
 		if ($profile === null) {
 			return $document;

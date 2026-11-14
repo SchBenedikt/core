@@ -159,6 +159,23 @@ final class PdoFollowingRepository implements FollowingRepository
 		return (int) $value;
 	}
 
+	public function followedActorsForActor(string $actorId, int $limit, int $offset): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . FollowingSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND state IN (:accepted, :pending)'
+			. ' ORDER BY followed_at DESC, id DESC'
+			. ' LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset),
+			[
+				'actor_id' => $actorId,
+				'accepted' => FollowState::Accepted->value,
+				'pending' => FollowState::Pending->value,
+			],
+		);
+
+		return array_map(fn (array $row): FollowedActor => $this->hydrate($row), $rows);
+	}
+
 	public function localUserIdsForActor(string $actorId): array
 	{
 		$rows = $this->db->fetchAll(

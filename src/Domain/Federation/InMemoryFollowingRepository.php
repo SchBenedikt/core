@@ -147,6 +147,23 @@ final class InMemoryFollowingRepository implements FollowingRepository
 		return $count;
 	}
 
+	public function followedActorsForActor(string $actorId, int $limit, int $offset): array
+	{
+		$matching = array_values(array_filter(
+			$this->following,
+			static fn (FollowedActor $followed): bool => $followed->actorId === $actorId
+				&& ($followed->state->isAccepted() || $followed->state === FollowState::Pending),
+		));
+
+		usort($matching, static function (FollowedActor $a, FollowedActor $b): int {
+			$byTime = $b->followedAt <=> $a->followedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($matching, max(0, $offset), max(0, $limit));
+	}
+
 	public function localUserIdsForActor(string $actorId): array
 	{
 		$users = [];
