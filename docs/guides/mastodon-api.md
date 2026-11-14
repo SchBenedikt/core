@@ -58,6 +58,12 @@ Locally implemented (core):
 - `GET /notifications/unread_count`
 - `GET /search`
 
+`GET /notifications` and `GET /notifications/unread_count` apply the sender
+policy before filtering and pagination: `held` and `dropped` events are absent,
+and `POST /notifications/{id}/dismiss` only dismisses a visible own row. The
+sender-policy and request lifecycle routes are neutral (`/api/v1`); the
+Mastodon projection intentionally exposes no separate request endpoints.
+
 `PUT /statuses/{id}` is Mastodon's status edit: `status`, `spoiler_text`,
 `sensitive` and `media_ids`. Visibility and the reply target are not editable
 there, and they are not part of this route either — the neutral

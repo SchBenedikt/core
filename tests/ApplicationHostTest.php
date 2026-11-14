@@ -42,7 +42,10 @@ use AlohaSocial\Core\Domain\Moderation\ModerationActionSchema;
 use AlohaSocial\Core\Domain\Moderation\ReportSchema;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\ConversationMuteSchema;
+use AlohaSocial\Core\Domain\Notification\NotificationPolicySchema;
 use AlohaSocial\Core\Domain\Notification\NotificationSchema;
+use AlohaSocial\Core\Domain\Notification\NotificationSenderSchema;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountListSchema;
@@ -117,7 +120,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(115, $app->routes->routes());
+		self::assertCount(123, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1158,6 +1161,9 @@ final class ApplicationHostTest extends TestCase
 		RemotePollSchema::create($database);
 		QuoteGrantSchema::create($database);
 		NotificationSchema::create($database);
+		NotificationPolicySchema::create($database);
+		NotificationSenderSchema::create($database);
+		ConversationMuteSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
 		RemotePostSchema::create($database);

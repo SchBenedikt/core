@@ -15,7 +15,9 @@ use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use PDOException;
 
+use function array_map;
 use function array_values;
+use function str_replace;
 use function implode;
 
 /**
@@ -28,7 +30,7 @@ use function implode;
  */
 final class PdoNotificationRepository implements NotificationRepository
 {
-	private const COLUMNS = 'id, recipient_id, actor_id, type, post_id, created_at, read_at';
+	private const COLUMNS = 'id, recipient_id, actor_id, type, post_id, created_at, read_at, status, conversation_id, policy_category, policy_action';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -40,8 +42,10 @@ final class PdoNotificationRepository implements NotificationRepository
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . NotificationSchema::TABLE
-				. ' (id, recipient_id, actor_id, type, post_id, created_at, read_at)'
-				. ' VALUES (:id, :recipient_id, :actor_id, :type, :post_id, :created_at, :read_at)',
+				. 				' (id, recipient_id, actor_id, type, post_id, created_at, read_at,'
+				. ' status, conversation_id, policy_category, policy_action)'
+				. ' VALUES (:id, :recipient_id, :actor_id, :type, :post_id, :created_at, :read_at,'
+				. ' :status, :conversation_id, :policy_category, :policy_action)',
 				[
 					'id' => $notification->id,
 					'recipient_id' => $notification->recipientId,
@@ -50,6 +54,10 @@ final class PdoNotificationRepository implements NotificationRepository
 					'post_id' => $notification->postId,
 					'created_at' => Time::format($notification->createdAt),
 					'read_at' => $notification->readAt === null ? null : Time::format($notification->readAt),
+					'status' => $notification->status?->value,
+					'conversation_id' => $notification->conversationId,
+					'policy_category' => $notification->policyCategory?->value,
+					'policy_action' => $notification->policyAction?->value,
 				],
 			);
 		} catch (PDOException $exception) {
@@ -88,6 +96,7 @@ final class PdoNotificationRepository implements NotificationRepository
 		$parameters = ['recipient_id' => $recipientId];
 
 		$this->appendFilters($sql, $parameters, $types, $excludeTypes, null, !$includeRead, $excludeActorIds);
+		$sql .= ' AND (status IS NULL OR status = ' . $this->quote(NotificationRecordStatus::Visible->value) . ')';
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -157,7 +166,8 @@ final class PdoNotificationRepository implements NotificationRepository
 			return $this->db->execute(
 				'UPDATE ' . NotificationSchema::TABLE
 				. ' SET read_at = :read_at'
-				. ' WHERE recipient_id = :recipient_id AND read_at IS NULL',
+				. ' WHERE recipient_id = :recipient_id AND read_at IS NULL'
+				. ' AND (status IS NULL OR status = ' . $this->quote(NotificationRecordStatus::Visible->value) . ')',
 				[
 					'read_at' => Time::format($readAt),
 					'recipient_id' => $recipientId,
@@ -208,6 +218,7 @@ final class PdoNotificationRepository implements NotificationRepository
 		$parameters = ['recipient_id' => $recipientId];
 
 		$this->appendFilters($sql, $parameters, $types, $excludeTypes, $accountId, true, $excludeActorIds);
+		$sql .= ' AND (status IS NULL OR status = ' . $this->quote(NotificationRecordStatus::Visible->value) . ')';
 
 		try {
 			return (int) $this->db->fetchValue($sql, $parameters);
@@ -286,6 +297,47 @@ final class PdoNotificationRepository implements NotificationRepository
 			postId: $row['post_id'] === null ? null : (string) $row['post_id'],
 			createdAt: Time::parse((string) $row['created_at']),
 			readAt: $row['read_at'] === null ? null : Time::parse((string) $row['read_at']),
+			status: $row['status'] === null ? null : NotificationRecordStatus::from((string) $row['status']),
+			conversationId: $row['conversation_id'] === null ? null : (string) $row['conversation_id'],
+			policyCategory: $row['policy_category'] === null
+				? null
+				: NotificationSenderCategory::from((string) $row['policy_category']),
+			policyAction: $row['policy_action'] === null
+				? null
+				: NotificationPolicyAction::from((string) $row['policy_action']),
 		);
+	}
+
+	public function markStatusForActor(
+		string $recipientId,
+		string $actorId,
+		NotificationRecordStatus $from,
+		NotificationRecordStatus $to,
+	): int {
+		try {
+			return $this->db->execute(
+				'UPDATE ' . NotificationSchema::TABLE
+				. ' SET status = :to_status'
+				. ' WHERE recipient_id = :recipient_id AND actor_id = :actor_id'
+				. ' AND (status = :from_status OR (status IS NULL AND ' . $this->quote($from->value) . ' = '
+				. $this->quote(NotificationRecordStatus::Visible->value) . '))',
+				[
+					'to_status' => $to->value,
+					'recipient_id' => $recipientId,
+					'actor_id' => $actorId,
+					'from_status' => $from->value,
+				],
+			);
+		} catch (PDOException $exception) {
+			throw new DatabaseException('The notification policy state could not be updated.', 0, $exception);
+		}
+	}
+
+	/**
+	 * A literal that is never user input: all call sites pass an enum value.
+	 */
+	private function quote(string $value): string
+	{
+		return "'" . str_replace("'", "''", $value) . "'";
 	}
 }

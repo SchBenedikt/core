@@ -75,6 +75,10 @@ final class InMemoryNotificationRepository implements NotificationRepository
 					return false;
 				}
 
+				if (!$notification->isVisible()) {
+					return false;
+				}
+
 				if (in_array($notification->actorId, $excludeActorIds, true)) {
 					return false;
 				}
@@ -147,7 +151,10 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		$marked = 0;
 		$readAt = Time::toSecondPrecision($readAt);
 		foreach ($this->notifications as $id => $notification) {
-			if ($notification->recipientId !== $recipientId || $notification->isRead()) {
+			if ($notification->recipientId !== $recipientId
+				|| !$notification->isVisible()
+				|| $notification->isRead()
+			) {
 				continue;
 			}
 
@@ -202,7 +209,10 @@ final class InMemoryNotificationRepository implements NotificationRepository
 	): int {
 		$count = 0;
 		foreach ($this->notifications as $notification) {
-			if ($notification->recipientId !== $recipientId || $notification->isRead()) {
+			if ($notification->recipientId !== $recipientId
+				|| !$notification->isVisible()
+				|| $notification->isRead()
+			) {
 				continue;
 			}
 
@@ -226,5 +236,27 @@ final class InMemoryNotificationRepository implements NotificationRepository
 		}
 
 		return $count;
+	}
+
+	public function markStatusForActor(
+		string $recipientId,
+		string $actorId,
+		NotificationRecordStatus $from,
+		NotificationRecordStatus $to,
+	): int {
+		$changed = 0;
+		foreach ($this->notifications as $id => $notification) {
+			if ($notification->recipientId !== $recipientId
+				|| $notification->actorId !== $actorId
+				|| $notification->effectiveStatus() !== $from
+			) {
+				continue;
+			}
+
+			$this->notifications[$id] = $notification->withPolicyStatus($to);
+			$changed++;
+		}
+
+		return $changed;
 	}
 }

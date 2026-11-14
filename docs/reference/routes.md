@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 115 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 123 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -71,6 +71,14 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `notifications.unread_count` | `GET` | `/api/v1/notifications/unread_count` | yes | 60 / 60 s |
 | `notifications.dismiss` | `POST` | `/api/v1/notifications/{id}/dismiss` | yes | 30 / 900 s |
 | `notifications.clear` | `POST` | `/api/v1/notifications/clear` | yes | 30 / 900 s |
+| `notifications.policy` | `GET` | `/api/v1/notifications/policy` | yes | 60 / 60 s |
+| `notifications.policy.update` | `PATCH` | `/api/v1/notifications/policy` | yes | 30 / 900 s |
+| `notifications.requests` | `GET` | `/api/v1/notifications/requests` | yes | 60 / 60 s |
+| `notifications.requests.accept` | `POST` | `/api/v1/notifications/requests/{id}/accept` | yes | 30 / 900 s |
+| `notifications.requests.dismiss` | `POST` | `/api/v1/notifications/requests/{id}/dismiss` | yes | 30 / 900 s |
+| `notifications.requests.revoke` | `DELETE` | `/api/v1/notifications/requests/{id}` | yes | 30 / 900 s |
+| `conversations.mute` | `POST` | `/api/v1/conversations/{id}/mute` | yes | 30 / 900 s |
+| `conversations.unmute` | `DELETE` | `/api/v1/conversations/{id}/mute` | yes | 60 / 900 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `inbox.shared` | `POST` | `/inbox/shared` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
@@ -727,9 +735,59 @@ idempotent for the caller's own already-read row; a missing or foreign id is
 `404 not_found`. Clear marks every unread notification of the caller read and
 answers `{"cleared": 3}`; repeating it returns `0`. Read rows stay stored and
 become eligible for the cleanup job after the configured retention;
-`GET /api/v1/notifications` returns unread rows only. The core records a local
+`GET /api/v1/notifications` returns unread visible rows only. The core records a local
 follow, favourite, mention/reply and reblog; recording is best-effort and never
 fails the primary interaction.
+
+## Notification policy and requests
+
+```http
+GET|PATCH /api/v1/notifications/policy
+
+{
+  "actions": {
+    "mutual": "allow", "following": "allow", "follower": "allow",
+    "new": "hold", "stranger": "hold"
+  },
+  "new_account_days": 7
+}
+```
+
+The five categories are `mutual`, `following`, `follower`, `new` and
+`stranger`. An action is `allow`, `hold` or `drop`. The core's protective
+default holds `new` and `stranger`; existing installations keep the permissive
+all-allow policy unless a host opts into the protective default. A patch changes
+only the categories it names, and existing stored events keep the status they
+were recorded with. `new_account_days` accepts 0–3650. An invalid category or
+action is `422 validation_failed`.
+
+```http
+GET  /api/v1/notifications/requests
+POST /api/v1/notifications/requests/{id}/accept
+POST /api/v1/notifications/requests/{id}/dismiss
+DELETE /api/v1/notifications/requests/{id}
+```
+
+A `hold` stores the event as `held`, creates one sender request and leaves it out
+of the notification list and unread count. Accepting releases every held event
+from that sender as visible without re-invoking the downstream event sink;
+dismissing keeps the events for audit and drops them from the visible list;
+revoking removes the sender decision so the category policy applies again. These
+transitions never change the follow, favourite, boost or post that caused the
+event. Request ids are scoped to the caller, so a foreign id is `404`.
+
+```http
+POST   /api/v1/conversations/{id}/mute
+DELETE /api/v1/conversations/{id}/mute
+```
+
+A conversation mute is keyed by the resolved thread root, local or remote. It
+suppresses alerts for that thread only; the posts stay visible. An unknown root
+is stored against the submitted id rather than guessed into another thread. A
+missing mute on delete is a successful no-op. The notification list and unread
+count apply the visible status before pagination, filters and Mastodon
+notification projections; held and dropped rows stay available to the policy
+audit and cleanup.
 
 ## Inbox
 

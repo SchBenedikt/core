@@ -100,4 +100,17 @@ interface NotificationRepository
 		array $excludeTypes = [],
 		array $excludeActorIds = [],
 	): int;
+
+	/**
+	 * Moves this recipient's stored events from one sender out of a policy
+	 * state, for example held to visible when a sender request is accepted.
+	 *
+	 * @return int number of rows changed
+	 */
+	public function markStatusForActor(
+		string $recipientId,
+		string $actorId,
+		NotificationRecordStatus $from,
+		NotificationRecordStatus $to,
+	): int;
 }

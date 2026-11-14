@@ -90,7 +90,8 @@ follow graph (individual and shared inboxes, batched delivery, local follows),
 inbound and outbound ActivityPub, remote posts/boosts with a follow-based home
 timeline, per-user blocks including outbound `Block`/`Undo(Block)`, local and
 guarded remote media, outbox backfill, thread/context fetching, local
-favourites, bookmarks, mutes, account lists, notifications, polls,
+favourites, bookmarks, mutes, account lists, notifications with sender
+policy/request and conversation-mute controls, polls,
 boosts/replies, typed remote Event/Article/Video objects with validated
 metadata, remote Question polling with signed votes, quote posts with FEP-044f
 authorization and revocation, per-reader keyword filters with hide/warn and contexts, a

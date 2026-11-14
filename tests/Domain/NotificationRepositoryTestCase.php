@@ -10,7 +10,10 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationPolicyAction;
+use AlohaSocial\Core\Domain\Notification\NotificationRecordStatus;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationSenderCategory;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
@@ -299,6 +302,69 @@ abstract class NotificationRepositoryTestCase extends TestCase
 		self::assertSame(1, $repository->deleteReadBefore(Time::parse('2026-11-11T10:05:00Z'), 10));
 		self::assertSame(0, $repository->countReadBefore(Time::parse('2026-11-11T10:05:00Z')));
 		self::assertSame(0, $repository->deleteReadBefore(Time::parse('2026-11-11T10:05:00Z'), 10));
+	}
+
+	public function testHeldAndDroppedRowsStayStoredButOutOfListsAndCounts(): void
+	{
+		$repository = $this->repository();
+		$repository->insert(new Notification(
+			'visible',
+			'alice',
+			'bob',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-11-11T10:00:00Z'),
+			status: NotificationRecordStatus::Visible,
+			policyCategory: NotificationSenderCategory::Follower,
+			policyAction: NotificationPolicyAction::Allow,
+		));
+		$repository->insert(new Notification(
+			'held',
+			'alice',
+			'carol',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-11-11T10:01:00Z'),
+			status: NotificationRecordStatus::Held,
+			conversationId: 'thread-1',
+			policyCategory: NotificationSenderCategory::Stranger,
+			policyAction: NotificationPolicyAction::Hold,
+		));
+		$repository->insert(new Notification(
+			'dropped',
+			'alice',
+			'dave',
+			NotificationType::Follow,
+			null,
+			Time::parse('2026-11-11T10:02:00Z'),
+			status: NotificationRecordStatus::Dropped,
+			policyCategory: NotificationSenderCategory::Stranger,
+			policyAction: NotificationPolicyAction::Drop,
+		));
+
+		self::assertSame(1, $repository->countUnread('alice'));
+		self::assertSame(
+			['visible'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor('alice', 10)),
+		);
+		self::assertSame(NotificationRecordStatus::Held, $repository->find('held')?->effectiveStatus());
+		self::assertSame('thread-1', $repository->find('held')?->conversationId);
+
+		self::assertSame(1, $repository->markStatusForActor(
+			'alice',
+			'carol',
+			NotificationRecordStatus::Held,
+			NotificationRecordStatus::Visible,
+		));
+		self::assertSame(2, $repository->countUnread('alice'));
+		self::assertSame(
+			['held', 'visible'],
+			array_map(static fn (Notification $notification): string => $notification->id, $repository->listFor('alice', 10)),
+		);
+
+		// A row written before the policy existed has no status and stays visible.
+		$repository->insert($this->notification('legacy', 'alice', 'erin', NotificationType::Follow, null, '2026-11-11T09:00:00Z'));
+		self::assertSame(3, $repository->countUnread('alice'));
 	}
 
 	private function notification(

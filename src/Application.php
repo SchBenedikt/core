@@ -47,7 +47,12 @@ use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\LikeRemotePostHandler;
 use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
+use AlohaSocial\Core\Api\MuteConversationHandler;
+use AlohaSocial\Core\Api\NotificationPolicyHandler;
+use AlohaSocial\Core\Api\NotificationRequestActionHandler;
+use AlohaSocial\Core\Api\NotificationRequestsHandler;
 use AlohaSocial\Core\Api\NotificationsHandler;
+use AlohaSocial\Core\Api\UnmuteConversationHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
@@ -176,7 +181,24 @@ use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
+use AlohaSocial\Core\Domain\Notification\ConversationMuteRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryConversationMuteRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryNotificationPolicyRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryNotificationSenderRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationEventSink;
+use AlohaSocial\Core\Domain\Notification\NotificationPolicy;
+use AlohaSocial\Core\Domain\Notification\NotificationPolicyRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationRelationshipReader;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationSenderAge;
+use AlohaSocial\Core\Domain\Notification\NotificationSenderRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationThreadResolver;
+use AlohaSocial\Core\Domain\Notification\NullNotificationEventSink;
+use AlohaSocial\Core\Domain\Notification\NullNotificationRelationships;
+use AlohaSocial\Core\Domain\Notification\PdoConversationMuteRepository;
+use AlohaSocial\Core\Domain\Notification\PdoNotificationPolicyRepository;
+use AlohaSocial\Core\Domain\Notification\PdoNotificationSenderRepository;
+use AlohaSocial\Core\Domain\Notification\UnknownNotificationSenderAge;
 use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
@@ -305,6 +327,9 @@ use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalAccountService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
+use AlohaSocial\Core\Service\Notification\NotificationPolicyService;
+use AlohaSocial\Core\Service\Notification\PostNotificationThreadResolver;
+use AlohaSocial\Core\Service\Notification\RepositoryNotificationRelationships;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
@@ -367,6 +392,7 @@ final readonly class Application
 		public ?AtprotoTimelineReader $atprotoTimeline = null,
 		public ?ModerationService $moderation = null,
 		public ?HeldPostService $heldPosts = null,
+		public ?NotificationService $notifications = null,
 	) {
 	}
 
@@ -398,6 +424,14 @@ final readonly class Application
 		?AtprotoPublisher $atprotoPublisher = null,
 		?AtprotoPublicationRepository $atprotoPublications = null,
 		?NotificationRepository $notificationRepository = null,
+		?NotificationPolicyRepository $notificationPolicies = null,
+		?NotificationSenderRepository $notificationSenders = null,
+		?ConversationMuteRepository $conversationMutes = null,
+		?NotificationRelationshipReader $notificationRelationships = null,
+		?NotificationSenderAge $notificationSenderAge = null,
+		?NotificationEventSink $notificationEventSink = null,
+		?NotificationThreadResolver $notificationThreadResolver = null,
+		?NotificationPolicy $notificationDefaultPolicy = null,
 		?BoostRepository $boostRepository = null,
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
@@ -493,6 +527,14 @@ final readonly class Application
 			reactionRepository: $reactionRepository,
 			pollVoteRepository: $pollVoteRepository,
 			notificationRepository: $notificationRepository,
+			notificationPolicies: $notificationPolicies,
+			notificationSenders: $notificationSenders,
+			conversationMutes: $conversationMutes,
+			notificationRelationships: $notificationRelationships,
+			notificationSenderAge: $notificationSenderAge,
+			notificationEventSink: $notificationEventSink,
+			notificationThreadResolver: $notificationThreadResolver,
+			notificationDefaultPolicy: $notificationDefaultPolicy,
 			boostRepository: $boostRepository,
 			bookmarkRepository: $bookmarkRepository,
 			muteRepository: $muteRepository,
@@ -571,6 +613,14 @@ final readonly class Application
 		?AtprotoPublisher $atprotoPublisher = null,
 		?AtprotoPublicationRepository $atprotoPublications = null,
 		?NotificationRepository $notificationRepository = null,
+		?NotificationPolicyRepository $notificationPolicies = null,
+		?NotificationSenderRepository $notificationSenders = null,
+		?ConversationMuteRepository $conversationMutes = null,
+		?NotificationRelationshipReader $notificationRelationships = null,
+		?NotificationSenderAge $notificationSenderAge = null,
+		?NotificationEventSink $notificationEventSink = null,
+		?NotificationThreadResolver $notificationThreadResolver = null,
+		?NotificationPolicy $notificationDefaultPolicy = null,
 		?BoostRepository $boostRepository = null,
 		?BookmarkRepository $bookmarkRepository = null,
 		?MuteRepository $muteRepository = null,
@@ -621,6 +671,14 @@ final readonly class Application
 			reactionRepository: $reactionRepository ?? new PdoReactionRepository($database),
 			pollVoteRepository: $pollVoteRepository ?? new PdoPollVoteRepository($database),
 			notificationRepository: $notificationRepository ?? new PdoNotificationRepository($database),
+			notificationPolicies: $notificationPolicies ?? new PdoNotificationPolicyRepository($database),
+			notificationSenders: $notificationSenders ?? new PdoNotificationSenderRepository($database),
+			conversationMutes: $conversationMutes ?? new PdoConversationMuteRepository($database),
+			notificationRelationships: $notificationRelationships,
+			notificationSenderAge: $notificationSenderAge,
+			notificationEventSink: $notificationEventSink,
+			notificationThreadResolver: $notificationThreadResolver,
+			notificationDefaultPolicy: $notificationDefaultPolicy,
 			boostRepository: $boostRepository ?? new PdoBoostRepository($database),
 			bookmarkRepository: $bookmarkRepository ?? new PdoBookmarkRepository($database),
 			muteRepository: $muteRepository,
@@ -681,6 +739,14 @@ final readonly class Application
 		ReactionRepository $reactionRepository,
 		PollVoteRepository $pollVoteRepository,
 		NotificationRepository $notificationRepository,
+		?NotificationPolicyRepository $notificationPolicies,
+		?NotificationSenderRepository $notificationSenders,
+		?ConversationMuteRepository $conversationMutes,
+		?NotificationRelationshipReader $notificationRelationships,
+		?NotificationSenderAge $notificationSenderAge,
+		?NotificationEventSink $notificationEventSink,
+		?NotificationThreadResolver $notificationThreadResolver,
+		?NotificationPolicy $notificationDefaultPolicy,
 		BoostRepository $boostRepository,
 		BookmarkRepository $bookmarkRepository,
 		MuteRepository $muteRepository,
@@ -734,6 +800,14 @@ final readonly class Application
 		$heldPostRepository ??= new InMemoryHeldPostRepository();
 		$adminAuthorization ??= new NoAdministrators();
 		$postHoldPolicy ??= new NoPostHolds();
+		$notificationPolicies ??= new InMemoryNotificationPolicyRepository();
+		$notificationSenders ??= new InMemoryNotificationSenderRepository();
+		$conversationMutes ??= new InMemoryConversationMuteRepository();
+		$notificationSenderAge ??= new UnknownNotificationSenderAge();
+		$notificationEventSink ??= new NullNotificationEventSink();
+		// Existing installations keep every stored interaction visible. A host
+		// can opt new accounts into the protective default policy explicitly.
+		$notificationDefaultPolicy ??= NotificationPolicy::legacy();
 		$moderationPolicy = new StoredModerationPolicy($moderationActions);
 		// Built before the activity factory: a note serializes its media, so
 		// delivery and the outbox use the very same attachment urls.
@@ -760,7 +834,30 @@ final readonly class Application
 			$clock,
 			$logger,
 		);
-		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
+		$notificationRelationships ??= new RepositoryNotificationRelationships(
+			$followers,
+			$followingRepository,
+			$activities,
+		);
+		$notificationThreadResolver ??= new PostNotificationThreadResolver($posts, $threadRepository);
+		$notificationPolicyService = new NotificationPolicyService(
+			$notificationPolicies,
+			$notificationSenders,
+			$conversationMutes,
+			$notificationRelationships,
+			$clock,
+			$notificationSenderAge,
+			$moderationPolicy,
+			$notificationDefaultPolicy,
+		);
+		$notificationService = new NotificationService(
+			$notificationRepository,
+			$clock,
+			$logger,
+			$notificationPolicyService,
+			$notificationEventSink,
+			$notificationThreadResolver,
+		);
 		$reactionService = new ReactionService(
 			$posts,
 			$favouriteRepository,
@@ -1146,6 +1243,11 @@ final readonly class Application
 			->with(NotificationUnreadCountHandler::class, static fn (): NotificationUnreadCountHandler => new NotificationUnreadCountHandler($localAccounts))
 			->with(DismissNotificationHandler::class, static fn (): DismissNotificationHandler => new DismissNotificationHandler($localAccounts))
 			->with(ClearNotificationsHandler::class, static fn (): ClearNotificationsHandler => new ClearNotificationsHandler($localAccounts))
+			->with(NotificationPolicyHandler::class, static fn (): NotificationPolicyHandler => new NotificationPolicyHandler($notificationService))
+			->with(NotificationRequestsHandler::class, static fn (): NotificationRequestsHandler => new NotificationRequestsHandler($notificationService))
+			->with(NotificationRequestActionHandler::class, static fn (): NotificationRequestActionHandler => new NotificationRequestActionHandler($notificationService))
+			->with(MuteConversationHandler::class, static fn (): MuteConversationHandler => new MuteConversationHandler($notificationService))
+			->with(UnmuteConversationHandler::class, static fn (): UnmuteConversationHandler => new UnmuteConversationHandler($notificationService))
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
@@ -1269,6 +1371,7 @@ final readonly class Application
 			$atprotoTimeline,
 			$moderationService,
 			$heldPostService,
+			$notificationService,
 		);
 	}
 

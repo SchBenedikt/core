@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Support;
 
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationRecordStatus;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
@@ -73,6 +74,15 @@ final class FailingNotificationRepository implements NotificationRepository
 		array $types = [],
 		array $excludeTypes = [],
 		array $excludeActorIds = [],
+	): int {
+		throw new DatabaseException('The notification table is unavailable.');
+	}
+
+	public function markStatusForActor(
+		string $recipientId,
+		string $actorId,
+		NotificationRecordStatus $from,
+		NotificationRecordStatus $to,
 	): int {
 		throw new DatabaseException('The notification table is unavailable.');
 	}

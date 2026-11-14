@@ -32,6 +32,11 @@ final readonly class Notification
 		public ?string $postId,
 		public DateTimeImmutable $createdAt,
 		public ?DateTimeImmutable $readAt = null,
+		/** Null on a row written before the policy existed; read as visible. */
+		public ?NotificationRecordStatus $status = null,
+		public ?string $conversationId = null,
+		public ?NotificationSenderCategory $policyCategory = null,
+		public ?NotificationPolicyAction $policyAction = null,
 	) {
 		if ($id === '' || $recipientId === '' || $actorId === '') {
 			throw new InvalidArgumentException('A notification needs an id, a recipient and an actor.');
@@ -51,6 +56,16 @@ final readonly class Notification
 		return $this->readAt !== null;
 	}
 
+	public function effectiveStatus(): NotificationRecordStatus
+	{
+		return $this->status ?? NotificationRecordStatus::Visible;
+	}
+
+	public function isVisible(): bool
+	{
+		return $this->effectiveStatus() === NotificationRecordStatus::Visible;
+	}
+
 	/**
 	 * Returns the same event with a read marker. Dismiss and clear are the only
 	 * callers; a repeat keeps the first marker so the operation stays
@@ -66,6 +81,27 @@ final readonly class Notification
 			postId: $this->postId,
 			createdAt: $this->createdAt,
 			readAt: $readAt,
+			status: $this->status,
+			conversationId: $this->conversationId,
+			policyCategory: $this->policyCategory,
+			policyAction: $this->policyAction,
+		);
+	}
+
+	public function withPolicyStatus(NotificationRecordStatus $status): self
+	{
+		return new self(
+			id: $this->id,
+			recipientId: $this->recipientId,
+			actorId: $this->actorId,
+			type: $this->type,
+			postId: $this->postId,
+			createdAt: $this->createdAt,
+			readAt: $this->readAt,
+			status: $status,
+			conversationId: $this->conversationId,
+			policyCategory: $this->policyCategory,
+			policyAction: $this->policyAction,
 		);
 	}
 
@@ -82,6 +118,10 @@ final readonly class Notification
 			'post_id' => $this->postId,
 			'created_at' => Time::format($this->createdAt),
 			'read_at' => $this->readAt === null ? null : Time::format($this->readAt),
+			'status' => $this->effectiveStatus()->value,
+			'conversation_id' => $this->conversationId,
+			'policy_category' => $this->policyCategory?->value,
+			'policy_action' => $this->policyAction?->value,
 		];
 	}
 }

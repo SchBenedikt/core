@@ -37,12 +37,18 @@ final class NotificationSchema
 			. ' type VARCHAR(32) NOT NULL,'
 			. ' post_id VARCHAR(64) NULL,'
 			. ' created_at VARCHAR(20) NOT NULL,'
-			. ' read_at VARCHAR(20) NULL'
+			. ' read_at VARCHAR(20) NULL,'
+			. ' status VARCHAR(16) NULL,'
+			. ' conversation_id VARCHAR(512) NULL,'
+			. ' policy_category VARCHAR(16) NULL,'
+			. ' policy_action VARCHAR(16) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE
 			. ' (recipient_id, created_at, id)',
 			'CREATE INDEX ' . self::TABLE . '_unread ON ' . self::TABLE
 			. ' (recipient_id, read_at, created_at, id)',
+			'CREATE INDEX ' . self::TABLE . '_visible ON ' . self::TABLE
+			. ' (recipient_id, status, created_at, id)',
 		];
 	}
 

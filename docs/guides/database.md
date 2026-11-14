@@ -52,7 +52,10 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Timeline/AccountListSchema.php` → `social_account_list` and `social_account_list_member` (private lists and their local account membership)
 - `src/Domain/Timeline/FollowedHashtagSchema.php` → `social_followed_hashtag` (private per-user followed tags)
 - `src/Domain/Post/BoostSchema.php` → `social_boost` (local reblogs, unique by user and post, with an Announce-compatible id)
-- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker)
+- `src/Domain/Notification/NotificationSchema.php` → `social_notification` (local favourites, follows, mentions and reblogs, keyed by a deterministic event id, with a nullable `read_at` marker and nullable `status`, `conversation_id`, `policy_category` and `policy_action` audit columns)
+- `src/Domain/Notification/NotificationPolicySchema.php` → `social_notification_policy` (one JSON category-action map and new-account threshold per recipient)
+- `src/Domain/Notification/NotificationSenderSchema.php` → `social_notification_sender` (one held, allowed or dismissed sender decision per recipient and actor, with the remembered category)
+- `src/Domain/Notification/ConversationMuteSchema.php` → `social_conversation_mute` (private thread-root notification mutes, unique by user and conversation root)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index, `media_kind`, `duration_seconds`, `animated` and the optional focal point `focus_x`/`focus_y`)
 - `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
@@ -72,6 +75,13 @@ Each table's definition lives next to its repository or adapter:
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
 therefore move between the two databases.
+
+An existing `social_notification` table gains nullable `status`,
+`conversation_id`, `policy_category` and `policy_action` columns plus the
+`(recipient_id, status, created_at, id)` index. A null `status` is a legacy row
+and is read as visible, so the migration needs no backfill; existing rows stay
+in the list and unread count. The three new policy tables are additive and
+contain no data that has to be derived from old notifications.
 
 `social_post` has nullable `in_reply_to_id` and an index on
 `(in_reply_to_id, published_at)`. A direct post's local audience is stored in

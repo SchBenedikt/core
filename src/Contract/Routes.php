@@ -42,8 +42,13 @@ use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\LikeRemotePostHandler;
+use AlohaSocial\Core\Api\MuteConversationHandler;
+use AlohaSocial\Core\Api\NotificationPolicyHandler;
+use AlohaSocial\Core\Api\NotificationRequestActionHandler;
+use AlohaSocial\Core\Api\NotificationRequestsHandler;
 use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\NotificationsHandler;
+use AlohaSocial\Core\Api\UnmuteConversationHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
@@ -626,6 +631,78 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				summary: 'Mark every unread notification of the signed-in account read.',
+			),
+			new Route(
+				name: 'notifications.requests',
+				method: 'GET',
+				path: $base . '/notifications/requests',
+				handler: NotificationRequestsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'Held notification senders of the signed-in account, newest first.',
+			),
+			new Route(
+				name: 'notifications.requests.accept',
+				method: 'POST',
+				path: $base . '/notifications/requests/{id}/accept',
+				handler: NotificationRequestActionHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Accept a held sender and release its eligible notifications without re-notifying.',
+			),
+			new Route(
+				name: 'notifications.requests.dismiss',
+				method: 'POST',
+				path: $base . '/notifications/requests/{id}/dismiss',
+				handler: NotificationRequestActionHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Dismiss a held sender and suppress its held notifications.',
+			),
+			new Route(
+				name: 'notifications.requests.revoke',
+				method: 'DELETE',
+				path: $base . '/notifications/requests/{id}',
+				handler: NotificationRequestActionHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Revoke an explicit sender decision so the category policy applies again.',
+			),
+			new Route(
+				name: 'notifications.policy',
+				method: 'GET',
+				path: $base . '/notifications/policy',
+				handler: NotificationPolicyHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				summary: 'Notification sender-category policy of the signed-in account.',
+			),
+			new Route(
+				name: 'notifications.policy.update',
+				method: 'PATCH',
+				path: $base . '/notifications/policy',
+				handler: NotificationPolicyHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Change sender-category actions or the new-account threshold; existing events keep their status.',
+			),
+			new Route(
+				name: 'conversations.mute',
+				method: 'POST',
+				path: $base . '/conversations/{id}/mute',
+				handler: MuteConversationHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Mute notification alerts for one thread root, local or remote.',
+			),
+			new Route(
+				name: 'conversations.unmute',
+				method: 'DELETE',
+				path: $base . '/conversations/{id}/mute',
+				handler: UnmuteConversationHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove a thread notification mute; posts and replies are never affected.',
 			),
 			new Route(
 				name: 'inbox',

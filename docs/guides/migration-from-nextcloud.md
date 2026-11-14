@@ -299,7 +299,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `mutes` | core | supported | — | `social_mute` |
 | `account_lists` | core | supported | — | `social_account_list` + members |
 | `followed_hashtags` | core | supported | — | `social_followed_hashtag` |
-| `notifications` | core | partial | — | `social_notification`; sender policies #12 |
+| `notifications` | core | supported | — | `social_notification`, `social_notification_policy`, `social_notification_sender`, `social_conversation_mute` |
 | `polls` | core | supported | — | local poll tables and votes plus imported remote Questions with signed votes |
 | `quotes` | core | supported | — | local and remote quote references, FEP-044f grants, revocation and policy |
 | `scheduled_posts` | core | supported | — | `social_scheduled_post` with the reserved post id and the publisher job |

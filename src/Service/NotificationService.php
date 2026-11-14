@@ -10,14 +10,26 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationEventSink;
+use AlohaSocial\Core\Domain\Notification\NotificationPolicyAction;
+use AlohaSocial\Core\Domain\Notification\NotificationRecordStatus;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
+use AlohaSocial\Core\Domain\Notification\NotificationSender;
+use AlohaSocial\Core\Domain\Notification\NotificationThreadResolver;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
+use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Service\Notification\NotificationPolicyService;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Throwable;
+
+use function array_map;
+use function max;
+use function min;
 
 /**
  * Records and reads local account notifications.
@@ -40,6 +52,9 @@ final class NotificationService
 		private readonly NotificationRepository $notifications,
 		private readonly Clock $clock,
 		?LoggerInterface $logger = null,
+		private readonly ?NotificationPolicyService $policy = null,
+		private readonly ?NotificationEventSink $sink = null,
+		private readonly ?NotificationThreadResolver $threads = null,
 	) {
 		$this->logger = $logger ?? new NullLogger();
 	}
@@ -165,6 +180,91 @@ final class NotificationService
 		);
 	}
 
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function policyFor(string $userId): array
+	{
+		return $this->requirePolicy()->policyFor($userId)->toArray();
+	}
+
+	/**
+	 * @param array<string, mixed> $body
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function updatePolicy(string $userId, array $body): array
+	{
+		return $this->requirePolicy()->updatePolicy($userId, $body)->toArray();
+	}
+
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	public function requests(string $userId, int $limit = NotificationPolicyService::DEFAULT_REQUEST_LIMIT): array
+	{
+		return array_map(
+			static fn (NotificationSender $sender): array => $sender->toArray(),
+			$this->requirePolicy()->requests($userId, max(1, min(NotificationPolicyService::MAX_REQUEST_LIMIT, $limit))),
+		);
+	}
+
+	/**
+	 * Accepts one sender and releases every held event from that sender.
+	 *
+	 * Releasing changes the stored rows only. The event sink is deliberately
+	 * not called again: the user already has the event, it simply becomes
+	 * visible in the existing list and unread count.
+	 *
+	 * @return array{request: array<string, mixed>, released: int}
+	 */
+	public function acceptSender(string $userId, string $requestId): array
+	{
+		$sender = $this->requirePolicy()->accept($userId, $requestId);
+		$released = $this->notifications->markStatusForActor(
+			$userId,
+			$sender->actorId,
+			NotificationRecordStatus::Held,
+			NotificationRecordStatus::Visible,
+		);
+
+		return ['request' => $sender->toArray(), 'released' => $released];
+	}
+
+	/**
+	 * @return array{request: array<string, mixed>, suppressed: int}
+	 */
+	public function dismissSender(string $userId, string $requestId): array
+	{
+		$sender = $this->requirePolicy()->dismiss($userId, $requestId);
+		$suppressed = $this->notifications->markStatusForActor(
+			$userId,
+			$sender->actorId,
+			NotificationRecordStatus::Held,
+			NotificationRecordStatus::Dropped,
+		);
+
+		return ['request' => $sender->toArray(), 'suppressed' => $suppressed];
+	}
+
+	public function revokeSender(string $userId, string $requestId): bool
+	{
+		return $this->requirePolicy()->revoke($userId, $requestId);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function muteConversation(string $userId, string $postId): array
+	{
+		return $this->requirePolicy()->muteConversation($userId, $this->conversationRoot($postId))->toArray();
+	}
+
+	public function unmuteConversation(string $userId, string $postId): bool
+	{
+		return $this->requirePolicy()->unmuteConversation($userId, $this->conversationRoot($postId));
+	}
+
 	private function record(
 		string $recipientId,
 		string $actorId,
@@ -178,6 +278,56 @@ final class NotificationService
 			return;
 		}
 
+		$conversationId = null;
+		if ($postId !== null && $this->threads !== null) {
+			try {
+				$conversationId = $this->threads->rootFor($postId);
+			} catch (Throwable $exception) {
+				// Thread resolution is an enhancement. A missing or broken thread
+				// cache must not make the favourite/follow write fail.
+				$this->logger->error('Notification thread root could not be resolved.', [
+					'recipient_id' => $recipientId,
+					'post_id' => $postId,
+					'exception' => $exception,
+				]);
+			}
+		}
+
+		$decision = null;
+		if ($this->policy !== null) {
+			try {
+				$decision = $this->policy->decide($recipientId, $actorId, $conversationId);
+			} catch (Throwable $exception) {
+				// A missing policy or sender table is a host migration issue. The
+				// follow/favourite write must survive it, and an event is safer
+				// shown than silently lost.
+				$this->logger->error('Notification policy could not be evaluated.', [
+					'recipient_id' => $recipientId,
+					'actor_id' => $actorId,
+					'exception' => $exception,
+				]);
+			}
+		}
+
+		$action = $decision?->action;
+		$status = match ($action) {
+			NotificationPolicyAction::Hold => NotificationRecordStatus::Held,
+			NotificationPolicyAction::Drop => NotificationRecordStatus::Dropped,
+			default => NotificationRecordStatus::Visible,
+		};
+
+		if ($decision !== null && $action === NotificationPolicyAction::Hold) {
+			try {
+				$this->policy?->holdSender($recipientId, $actorId, $decision->category);
+			} catch (Throwable $exception) {
+				$this->logger->error('Notification sender request could not be stored.', [
+					'recipient_id' => $recipientId,
+					'actor_id' => $actorId,
+					'exception' => $exception,
+				]);
+			}
+		}
+
 		$id = $this->idFor($recipientId, $actorId, $type, $postId, $emoji);
 		$notification = new Notification(
 			id: $id,
@@ -186,12 +336,14 @@ final class NotificationService
 			type: $type,
 			postId: $postId,
 			createdAt: Time::toSecondPrecision($this->clock->now()),
+			status: $status,
+			conversationId: $conversationId,
+			policyCategory: $decision?->category,
+			policyAction: $action,
 		);
 
 		try {
 			$this->notifications->insert($notification);
-
-			return;
 		} catch (DatabaseException $exception) {
 			// The deterministic id is the idempotency boundary. Re-read before
 			// deciding this was a real storage failure.
@@ -211,7 +363,52 @@ final class NotificationService
 				'post_id' => $postId,
 				'exception' => $exception,
 			]);
+
+			return;
 		}
+
+		if ($status->isVisible() && $this->sink !== null) {
+			try {
+				$this->sink->emit($notification);
+			} catch (Throwable $exception) {
+				// The row is committed. A host bell, digest or push failure is
+				// retried by that adapter, not by the primary interaction.
+				$this->logger->error('Notification event sink failed.', [
+					'recipient_id' => $recipientId,
+					'actor_id' => $actorId,
+					'type' => $type->value,
+					'exception' => $exception,
+				]);
+			}
+		}
+	}
+
+	private function conversationRoot(string $postId): string
+	{
+		$postId = trim($postId);
+		if ($this->threads === null) {
+			return $postId;
+		}
+
+		try {
+			return $this->threads->rootFor($postId) ?? $postId;
+		} catch (Throwable $exception) {
+			$this->logger->error('Conversation mute root could not be resolved.', [
+				'post_id' => $postId,
+				'exception' => $exception,
+			]);
+
+			return $postId;
+		}
+	}
+
+	private function requirePolicy(): NotificationPolicyService
+	{
+		if ($this->policy === null) {
+			throw new ConfigurationException('Notification policy is not configured.');
+		}
+
+		return $this->policy;
 	}
 
 	private function idFor(

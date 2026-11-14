@@ -245,12 +245,11 @@ final class MigrationInventory
 			),
 			self::entry(
 				'notifications',
-				'local notification rows',
+				'local notification rows, sender policy and held requests',
 				self::OWNER_CORE,
-				'social_notification rows; sender policies are open (#12)',
-				self::STATUS_PARTIAL,
+				'social_notification, social_notification_policy, social_notification_sender and social_conversation_mute',
+				self::STATUS_SUPPORTED,
 				'inventory-only',
-				gapIssue: '#12',
 			),
 			self::entry(
 				'polls',
