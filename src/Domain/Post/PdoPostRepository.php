@@ -583,6 +583,16 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
 	}
 
+	public function postsForAttachment(string $attachmentId): array
+	{
+		$sql = 'SELECT p.* FROM ' . PostSchema::TABLE . ' p'
+			. ' INNER JOIN ' . PostSchema::ATTACHMENT_TABLE . ' l ON l.post_id = p.id'
+			. ' WHERE l.attachment_id = :attachment_id'
+			. ' ORDER BY p.published_at DESC, p.id DESC';
+
+		return $this->hydrateAll($this->db->fetchAll($sql, ['attachment_id' => $attachmentId]));
+	}
+
 	public function isAttachmentLinked(string $attachmentId): bool
 	{
 		return (int) $this->db->fetchValue(

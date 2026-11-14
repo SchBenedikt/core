@@ -518,6 +518,25 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->followedHashtagTimeline([], 10));
 	}
 
+	public function testPostsForAttachmentListsEveryLinkingPostIncludingDeletedOnes(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', attachmentIds: ['a1']));
+		$repository->insert($this->post('p2', 'alice', Visibility::Followers, '2026-11-11T10:01:00Z', attachmentIds: ['a1']));
+		$repository->insert($this->post('p3', 'alice', Visibility::Public, '2026-11-11T10:02:00Z', attachmentIds: ['a2']));
+		$repository->softDelete('p1', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(
+			['p2', 'p1'],
+			array_map(static fn (Post $post): string => $post->id, $repository->postsForAttachment('a1')),
+		);
+		self::assertSame(
+			['p3'],
+			array_map(static fn (Post $post): string => $post->id, $repository->postsForAttachment('a2')),
+		);
+		self::assertSame([], $repository->postsForAttachment('missing'));
+	}
+
 	public function testSoftDeleteIsIdempotent(): void
 	{
 		$repository = $this->repository();

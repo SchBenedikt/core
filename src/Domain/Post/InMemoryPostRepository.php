@@ -385,6 +385,22 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return array_slice($matches, max(0, $offset), max(1, $limit));
 	}
 
+	public function postsForAttachment(string $attachmentId): array
+	{
+		$posts = array_values(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => in_array($attachmentId, $post->attachmentIds, true),
+		));
+
+		usort($posts, static function (Post $a, Post $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return $posts;
+	}
+
 	public function isAttachmentLinked(string $attachmentId): bool
 	{
 		foreach ($this->posts as $post) {

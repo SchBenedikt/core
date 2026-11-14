@@ -187,11 +187,23 @@ GET /api/v1/media/{id}
 GET /api/v1/media/{id}?variant=thumbnail
 ```
 
-`200` with the exact stored bytes and the stored MIME type. The route is
-public so a remote server can fetch a URL referenced by a post; the id is
-random. Responses are immutable and cacheable for a year. A missing id or blob
-is `404 not_found`; an unknown variant is `400 invalid_media_variant`; an
-instance without a configured `BlobStore` is `503 media_not_configured`.
+`200` with the exact stored bytes and the stored MIME type. The route needs no
+session for media a post publishes (`public` or `unlisted`), so a remote server
+can fetch a URL referenced by a published note; the id is random. Those
+responses are immutable and cacheable for a year.
+
+The audience of the linking post decides everything else. Media of a
+`followers` post is served to its author and accepted local followers, media of
+a `direct` post to its author and local recipients; `Cache-Control: private,
+no-store` keeps a restricted copy out of shared caches. Everybody else —
+anonymous clients included — gets the same `404 not_found` as an unknown id, so
+the answer never confirms that the attachment exists. An attachment no post
+links yet stays readable (composer preview of a fresh upload), and after a post
+is deleted only its author may read its media.
+
+A missing id or blob is `404 not_found`; an unknown variant is `400
+invalid_media_variant`; an instance without a configured `BlobStore` is `503
+media_not_configured`. The rule lives in `Service\\MediaAccess`.
 
 ## Write a post
 

@@ -205,5 +205,17 @@ interface PostRepository
 	 * deleting the metadata would leave a dangling reference. A host cleanup
 	 * may remove such links after the post is gone.
 	 */
+	/**
+	 * Every post linking an attachment, newest first.
+	 *
+	 * Deleted posts are included: their link rows survive the tombstone, and a
+	 * reader has to be able to tell "no post publishes this" from "only a
+	 * deleted post used to". The first attaching author is the only one who
+	 * may link it, so the returned posts always share an author.
+	 *
+	 * @return list<Post>
+	 */
+	public function postsForAttachment(string $attachmentId): array;
+
 	public function isAttachmentLinked(string $attachmentId): bool;
 }

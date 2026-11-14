@@ -302,9 +302,13 @@ final class MediaService implements AttachmentPresenter
 	 * The note attachments of a post, in link order.
 	 *
 	 * A public or unlisted post may reference its media from a federated
-	 * document: the binary route is public so a peer can fetch it, and the id
-	 * is unguessable. A followers-only or direct post stays out of reach of an
-	 * unauthenticated URL and therefore sends no attachment links at all.
+	 * document: the binary route serves it to anybody so a peer can fetch it,
+	 * and the id is unguessable. A followers-only or direct post sends no
+	 * attachment links, because a peer fetching its note has no identity on
+	 * the media route: {@see MediaAccess} would answer 404 to that anonymous
+	 * request, and advertising a dead URL (or opening the route to everyone)
+	 * are both worse than omitting it. Authenticated remote fetch is a separate
+	 * feature; it must not be simulated by publishing the blob URL.
 	 *
 	 * @return list<array<string, mixed>>
 	 */

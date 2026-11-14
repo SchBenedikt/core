@@ -82,13 +82,29 @@ GET /api/v1/media/{id}
 GET /api/v1/media/{id}?variant=thumbnail
 ```
 
-The route is public and the id is random. A remote server fetching an image
-referenced by a public or unlisted post must not need a local session. The
-route serves the exact bytes with the stored `Content-Type`, a one-year
-immutable cache header and `X-Content-Type-Options: nosniff`.
+The id is random, but unguessability is not authorization. `Service\MediaAccess`
+binds each attachment to the post(s) that link it and answers with the post's
+visibility and the requester's relationship to its author:
 
-An absent row or blob is `404 not_found`. `variant` accepts only `thumbnail`
-(or the default `original`); anything else is `400 invalid_media_variant`.
+| Linking post | Who may fetch |
+| --- | --- |
+| `public`, `unlisted` | anybody, no session; `Cache-Control: public`, one year immutable |
+| `followers` | the author and accepted local followers; `Cache-Control: private, no-store` |
+| `direct` | the author and the local recipients; `Cache-Control: private, no-store` |
+| deleted post | only its author |
+| no post links it yet | anybody — the composer preview of a fresh upload |
+
+Everybody else gets the same `404 not_found` as an unknown id, so the route
+never confirms that an attachment exists, and the thumbnail variant follows the
+exact same rule (no private bytes through `?variant=thumbnail`). Only the
+attachment's own author may attach it (post creation checks ownership), so a
+reused id cannot widen one author's audience through another author's post; if
+the author links the same id from a public post, that post publishes it.
+
+The route serves the exact bytes with the stored `Content-Type` and
+`X-Content-Type-Options: nosniff`. An absent row or blob is `404 not_found`.
+`variant` accepts only `thumbnail` (or the default `original`); anything else
+is `400 invalid_media_variant`.
 
 ## Attaching to a local post
 
@@ -123,9 +139,14 @@ array: one `Image` per linked attachment, in link order, with `url`
 (`/api/v1/media/{id}`), `mediaType`, `width`, `height` and `name` when the
 author wrote alt text. A post without media keeps no `attachment` key.
 
-Only public and unlisted posts publish these links. The media route is
-unauthenticated, so a followers-only or direct post sends no attachment entries
-rather than a blob URL that whoever holds it can open.
+Only public and unlisted posts publish these links. A followers-only or direct
+post sends no attachment entries: the media route has no signed-fetch identity
+for a remote peer, so the link would either leak the bytes or dead-end. That is
+the documented limitation of the current design — private media delivery to a
+remote follower needs an authenticated fetch flow (HTTP-signature GET with the
+peer's key and a follower check) and is tracked separately; the fail-closed
+choice here keeps an unlisted or private blob URL out of every federated
+document.
 
 ## Remote attachments from incoming posts
 
@@ -329,9 +350,9 @@ sweep the unreferenced attachment.
 
 Remote media adds no route. Its state appears through the existing post and
 timeline responses, and its local bytes are served by the already documented
-`GET /api/v1/media/{id}` route. Consequently the route manifest remains 84
-routes (and the OpenAPI export 70 paths); remote media adds no path or payload
-schema and no private fetch endpoint is exposed.
+`GET /api/v1/media/{id}` route. Consequently remote media adds no route: the
+manifest stays at 86 routes (and the OpenAPI export at 70 paths), and no
+private fetch endpoint is exposed.
 
 ## Open point
 

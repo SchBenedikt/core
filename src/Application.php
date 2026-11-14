@@ -246,6 +246,7 @@ use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
+use AlohaSocial\Core\Service\MediaAccess;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
@@ -863,6 +864,10 @@ final readonly class Application
 			? new WebFingerService($activities, $localActors)
 			: null;
 
+		// Media reads reuse the post visibility rule, so a followers-only image
+		// needs the same relationship as the post that carries it.
+		$mediaAccess = new MediaAccess($posts, $localRelationships);
+
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
@@ -873,7 +878,7 @@ final readonly class Application
 			->with(ShowAtprotoPublicationHandler::class, static fn (): ShowAtprotoPublicationHandler => new ShowAtprotoPublicationHandler($atprotoService))
 			->with(ShowRemoteThreadHandler::class, static fn (): ShowRemoteThreadHandler => new ShowRemoteThreadHandler($remoteThreadService))
 			->with(UploadMediaHandler::class, static fn (): UploadMediaHandler => new UploadMediaHandler($mediaService))
-			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService))
+			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService, $mediaAccess))
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
 			->with(BoostPostHandler::class, static fn (): BoostPostHandler => new BoostPostHandler($boostService))
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
