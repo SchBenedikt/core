@@ -20,7 +20,14 @@ namespace AlohaSocial\Core\Domain\Atproto;
 interface AtprotoDeleter
 {
 	/**
+	 * @param string $collection the NSID the record belongs to; the default is a
+	 *                           post record
+	 *
 	 * @throws AtprotoPublishFailedException when the PDS refused the delete or could not be reached
 	 */
-	public function delete(AtprotoAccount $account, string $rkey): void;
+	public function delete(
+		AtprotoAccount $account,
+		string $rkey,
+		string $collection = AtprotoPostRecord::COLLECTION,
+	): void;
 }

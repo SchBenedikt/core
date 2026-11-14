@@ -204,6 +204,7 @@ use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
+use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
@@ -275,6 +276,7 @@ final readonly class Application
 		public ?AtprotoPublishService $atproto = null,
 		public ?MastodonService $mastodon = null,
 		public ?CleanupService $cleanup = null,
+		public ?AtprotoInteractionService $atprotoInteractions = null,
 	) {
 	}
 
@@ -616,6 +618,18 @@ final readonly class Application
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
 		);
+		// Likes and reposts mirror only posts this instance published; the
+		// subject CID is read from the PDS, so they share the record resolver.
+		$atprotoInteractions = new AtprotoInteractionService(
+			$config,
+			$posts,
+			$atprotoPublications,
+			$atprotoAccounts,
+			$atprotoPublisher,
+			$httpClient === null ? null : new XrpcAtprotoRecordResolver($httpClient),
+			$clock,
+			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
+		);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$blockService = new BlockService(
 			$blockRepository,
@@ -947,6 +961,7 @@ final readonly class Application
 			$atprotoService,
 			$mastodonService,
 			$cleanup,
+			$atprotoInteractions,
 		);
 	}
 

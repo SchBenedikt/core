@@ -72,8 +72,10 @@ must provide.
 Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
-truncated. Facets, reply references and image/video embeds are implemented (see
-below); an edit, AppView read, firehose consumer or CAR/MST repository is not.
+truncated. Facets, reply references, image/video embeds and likes/reposts are
+implemented (see below); an edit, AppView read, firehose consumer or CAR/MST
+repository is not, and neither is an interaction with a post this instance
+never published.
 Remote delete is implemented for records the core itself published; deleting
 arbitrary PDS records is not, and so is deleting an uploaded blob.
 
@@ -162,6 +164,30 @@ Protocol passes them explicitly. Every refusal above ends the whole post: no
 record and no partial embed is written. A blob uploaded before a later upload
 failed stays on the PDS without a record — the core does not delete it, because
 it never deletes a blob the account might use elsewhere.
+
+## Reposts and likes
+
+`AtprotoInteractionService` writes `app.bsky.feed.like` and
+`app.bsky.feed.repost` records for a post this instance already published:
+`like()`/`unlike()` and `repost()`/`undoRepost()`.
+
+- The subject is a `com.atproto.repo.strongRef`: record URI plus CID. The URI
+  comes from the publication row, the CID is read with `getRecord` — it cannot
+  be derived locally. A post without a publication is refused with
+  `interaction_subject_not_published`; a subject the PDS cannot return is
+  refused with `interaction_subject_unresolvable`. Neither writes a record.
+- The record key is derived from the subject post and the interacting account.
+  A repeated like or repost therefore updates the same record, and the undo
+  deletes exactly that key without a local interaction table. Liking again after
+  an undo recreates the same key.
+- `AtprotoPublisher::publish()` and `AtprotoDeleter::delete()` take the
+  collection as their last argument (default `app.bsky.feed.post`), so one
+  adapter writes and removes all three record types. A non-NSID value is
+  rejected before any request.
+- The service is host-called, like session refresh: it is not wired into the
+  internal favourite or boost path, so a host decides when a local interaction
+  becomes an AT Protocol record. Liking a Bluesky post from the network needs
+  the AppView reads that are still open.
 
 ## Configuration
 
@@ -438,7 +464,11 @@ CID lookup, an unreadable parent and an unreadable root;
 XRPC adapters and their failure answers. `XrpcAtprotoBlobUploaderTest` covers
 the upload request, the DPoP variant, a refused upload, a transport failure and
 a success without a blob reference; `AtprotoEmbedTest` covers 1–4 images, a
-video, mixed media, every refusal above and the aspect-ratio pass-through. `AtprotoOAuthSessionTest` covers session validation and
+video, mixed media, every refusal above and the aspect-ratio pass-through.
+`AtprotoInteractionRecordTest` covers both interaction records and the strong
+reference validation; `AtprotoInteractionServiceTest` covers like/repost,
+the undo on the same record key, the feature switch, a missing account, a
+missing publication, an unresolvable subject and the collection on the wire. `AtprotoOAuthSessionTest` covers session validation and
 the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
 rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
 `Es256DpopProofProviderTest` verifies the JWS signature, the RFC 7638

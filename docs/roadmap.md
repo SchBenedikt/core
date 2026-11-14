@@ -97,7 +97,8 @@ the host that serves it. See
 - **AT Protocol** — public text-only publishing through bearer or DPoP-bound
   XRPC `putRecord`/`deleteRecord`, deterministic TIDs, byte-offset tag/mention/link
   facets, reply references with a `getRecord` CID lookup, image/video blob uploads
-  with `app.bsky.embed.images`/`#video` embeds, idempotent publication rows, a read
+  with `app.bsky.embed.images`/`#video` embeds, likes and reposts as
+  `app.bsky.feed.like`/`#.repost` records, idempotent publication rows, a read
   of the stored publication state, remote delete, OAuth session refresh
   and the authorization-code/PAR/revocation protocol client. Account linking
   UI, credential storage and PDS selection stay with the host. See

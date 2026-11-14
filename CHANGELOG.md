@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Likes and reposts as AT Protocol records. `AtprotoInteractionService` writes
+  `app.bsky.feed.like` and `app.bsky.feed.repost` for a post this instance
+  published and removes them again: the subject is a `strongRef` (URI from the
+  publication, CID read with `getRecord`), and the record key is derived from
+  the subject post and the account, so a repeated interaction updates the same
+  record and an undo needs no local interaction table. `AtprotoPublisher` and
+  `AtprotoDeleter` now take the collection (default `app.bsky.feed.post`),
+  which is a port signature change. A post without a publication is refused
+  with `interaction_subject_not_published`, an unreadable subject with
+  `interaction_subject_unresolvable`.
 - Image and video embeds. `XrpcAtprotoBlobUploader` uploads raw bytes through
   `com.atproto.repo.uploadBlob` with the media type as Content-Type over the
   shared bearer/DPoP request layer (`AtprotoPdsRequest`, also used by the record

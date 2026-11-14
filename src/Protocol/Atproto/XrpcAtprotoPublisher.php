@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use InvalidArgumentException;
 use JsonException;
 
 use function is_array;
@@ -48,14 +49,19 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		$this->requests = new AtprotoPdsRequest($http, $dpop);
 	}
 
-	public function publish(AtprotoAccount $account, string $rkey, array $record): string
-	{
+	public function publish(
+		AtprotoAccount $account,
+		string $rkey,
+		array $record,
+		string $collection = AtprotoPostRecord::COLLECTION,
+	): string {
+		$this->assertCollection($collection);
 		$url = rtrim($account->pdsUrl, '/') . self::ENDPOINT;
 
 		try {
 			$body = json_encode([
 				'repo' => $account->did,
-				'collection' => AtprotoPostRecord::COLLECTION,
+				'collection' => $collection,
 				'rkey' => $rkey,
 				'record' => $record,
 				'validate' => true,
@@ -84,14 +90,18 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		return $uri;
 	}
 
-	public function delete(AtprotoAccount $account, string $rkey): void
-	{
+	public function delete(
+		AtprotoAccount $account,
+		string $rkey,
+		string $collection = AtprotoPostRecord::COLLECTION,
+	): void {
+		$this->assertCollection($collection);
 		$url = rtrim($account->pdsUrl, '/') . self::DELETE_ENDPOINT;
 
 		try {
 			$body = json_encode([
 				'repo' => $account->did,
-				'collection' => AtprotoPostRecord::COLLECTION,
+				'collection' => $collection,
 				'rkey' => $rkey,
 			], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 		} catch (JsonException) {
@@ -105,6 +115,19 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		// host-side cleanup can finish.
 		if (!$response->isSuccessful() && $response->status !== 404) {
 			throw new AtprotoPublishFailedException($response->status, 'The AT Protocol PDS refused the delete.');
+		}
+	}
+
+	/**
+	 * A collection is an NSID such as `app.bsky.feed.like`; anything else would
+	 * write into a namespace the network does not understand.
+	 */
+	private function assertCollection(string $collection): void
+	{
+		if (strlen($collection) > 128
+			|| preg_match('/^[a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9][a-zA-Z0-9-]*)+$/', $collection) !== 1
+		) {
+			throw new InvalidArgumentException('An AT Protocol collection must be a valid NSID.');
 		}
 	}
 

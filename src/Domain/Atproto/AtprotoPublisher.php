@@ -20,8 +20,15 @@ interface AtprotoPublisher
 {
 	/**
 	 * @param array<string, mixed> $record
+	 * @param string               $collection the NSID the record belongs to; the
+	 *                                         default is a post record
 	 *
 	 * @throws AtprotoPublishFailedException
 	 */
-	public function publish(AtprotoAccount $account, string $rkey, array $record): string;
+	public function publish(
+		AtprotoAccount $account,
+		string $rkey,
+		array $record,
+		string $collection = AtprotoPostRecord::COLLECTION,
+	): string;
 }

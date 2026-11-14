@@ -103,6 +103,11 @@ reads a record with its CID for a reply reference. `Protocol\Atproto\AtprotoBlob
 stores one image or video on the PDS (`XrpcAtprotoBlobUploader`). All three are
 optional, reuse `HttpClient` (and the DPoP proof provider for an OAuth
 account), and are wired automatically by the standard assemblies.
+
+`Domain\Atproto\AtprotoPublisher` and `AtprotoDeleter` take the record's
+collection as their last argument, defaulting to `app.bsky.feed.post`, so one
+adapter writes posts, likes, reposts and (later) profile records. Existing
+implementations of either port must accept that optional argument.
 `XrpcAtprotoPublisher` is the production record adapter over the existing
 `HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
 OAuth refresh collaborators. `AtprotoOAuthMetadataResolver` and

@@ -136,6 +136,44 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		}
 	}
 
+	public function testACustomCollectionIsWrittenAndDeleted(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode([
+			'uri' => 'at://did:plc:alice/app.bsky.feed.like/rkey1',
+		], JSON_THROW_ON_ERROR)));
+		$publisher = new XrpcAtprotoPublisher($http);
+
+		$publisher->publish($this->account(), 'rkey1', [
+			'$type' => 'app.bsky.feed.like',
+			'subject' => ['uri' => 'at://did:plc:alice/app.bsky.feed.post/abc', 'cid' => 'bafy-subject'],
+		], 'app.bsky.feed.like');
+
+		$body = json_decode($http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.like', $body['collection']);
+
+		$http->queueResponse(new HttpResponse(200, [], '{}'));
+		$publisher->delete($this->account(), 'rkey1', 'app.bsky.feed.like');
+
+		$delete = json_decode($http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.like', $delete['collection']);
+		self::assertSame('rkey1', $delete['rkey']);
+	}
+
+	public function testAnInvalidCollectionIsRejectedBeforeTheRequest(): void
+	{
+		$http = new FakeHttpClient();
+		$publisher = new XrpcAtprotoPublisher($http);
+
+		$this->expectException(\InvalidArgumentException::class);
+
+		try {
+			$publisher->delete($this->account(), 'rkey1', 'not a nsid');
+		} finally {
+			self::assertCount(0, $http->requests);
+		}
+	}
+
 	public function testADpopAccountSendsADpopResourceRequest(): void
 	{
 		$http = new FakeHttpClient();
