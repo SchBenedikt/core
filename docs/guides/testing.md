@@ -41,6 +41,9 @@ that prints or skips is a failure.
 | `tests/Protocol/XrpcAtprotoIdentityResolverTest.php` | the exact `resolveHandle` GET, a resolved DID, unknown handle, transport failure, malformed DID and an invalid handle that is never sent |
 | `tests/Protocol/XrpcAtprotoRecordResolverTest.php` | the exact `getRecord` GET with uri and cid, a missing record, a record without a CID, transport failure and a malformed body |
 | `tests/Protocol/XrpcAtprotoBlobUploaderTest.php` | the exact `uploadBlob` POST with media Content-Type and raw body, the bearer and DPoP variants, local metadata fallback, a refused upload, transport failure and a success without a blob reference |
+| `tests/Protocol/AtprotoProfileRecordTest.php` | the `self` profile record with only the given fields, the bounds and the image-only avatar rule |
+| `tests/Service/AtprotoProfileServiceTest.php` | avatar upload then `putRecord`, the refused banner and oversized avatar without a request, the delete and the disabled switch |
+| `tests/Protocol/XrpcAtprotoTimelineReaderTest.php` | the page with cursor and author, the limit clamp, an empty feed, a refused request and a page without a feed |
 | `tests/Protocol/AtprotoInteractionRecordTest.php` | the `app.bsky.feed.like` and `#.repost` record shape with subject URI and CID, and the strong-reference validation |
 | `tests/Service/AtprotoInteractionServiceTest.php` | like and repost over `putRecord` with the subject CID from `getRecord`, the undo deleting the same rkey and collection, the disabled switch, no account, no publication, an unreadable subject and a missing post |
 | `tests/Protocol/AtprotoEmbedTest.php` | one to four images, a video, images-plus-video as a refusal, the missing/empty/long alt cases, unsupported type, oversized and empty files, a second video, incomplete aspect ratio and no media |

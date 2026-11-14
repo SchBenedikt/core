@@ -4,7 +4,10 @@ This repository is the library. A server without Nextcloud is a separate
 repository (`AlohaSocial/server`, not created yet) that depends on this package
 and provides everything a process needs.
 
-This document is the checklist that host is built against.
+This document is the checklist that host is built against. The full build
+blueprint — process topology, module layout, configuration, migrations, the AT
+Protocol linking flow and a phase plan with acceptance checks — is in
+[the server blueprint](../guides/server-architecture.md).
 
 ## Boot order
 

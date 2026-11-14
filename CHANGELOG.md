@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The AT Protocol profile record and an AppView timeline read.
+  `AtprotoProfileService` writes `app.bsky.actor.profile` at record key `self`
+  (display name, description, avatar/banner through the blob uploader, JPEG/PNG
+  up to 1 MB, checked before the first upload) and removes it again.
+  `AtprotoTimelineReader`/`XrpcAtprotoTimelineReader` read
+  `app.bsky.feed.getTimeline` over the same bearer/DPoP transport and return
+  `AtprotoTimelineItem` values plus a cursor; a refusal raises
+  `timeline_unavailable`, an unreadable body `timeline_invalid_response`.
+- The standalone server blueprint (`docs/guides/server-architecture.md`):
+  process topology, module layout, boot order, configuration, migrations, the
+  OAuth linking flow, worker, security checklist and the phase plan with
+  acceptance checks.
 - Likes and reposts as AT Protocol records. `AtprotoInteractionService` writes
   `app.bsky.feed.like` and `app.bsky.feed.repost` for a post this instance
   published and removes them again: the subject is a `strongRef` (URI from the

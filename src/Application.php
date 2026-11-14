@@ -201,10 +201,13 @@ use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoBlobUploader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoIdentityResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoTimelineReader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoTimelineReader;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
+use AlohaSocial\Core\Service\Atproto\AtprotoProfileService;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
@@ -277,6 +280,8 @@ final readonly class Application
 		public ?MastodonService $mastodon = null,
 		public ?CleanupService $cleanup = null,
 		public ?AtprotoInteractionService $atprotoInteractions = null,
+		public ?AtprotoProfileService $atprotoProfiles = null,
+		public ?AtprotoTimelineReader $atprotoTimeline = null,
 	) {
 	}
 
@@ -630,6 +635,19 @@ final readonly class Application
 			$clock,
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
 		);
+		// The profile write shares the blob uploader with post media; the
+		// timeline read is a port so a host can cache or map it as it likes.
+		$atprotoProfiles = new AtprotoProfileService(
+			$config,
+			$atprotoAccounts,
+			$atprotoPublisher,
+			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
+			$httpClient === null ? null : new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop),
+			$clock,
+		);
+		$atprotoTimeline = $httpClient === null
+			? null
+			: new XrpcAtprotoTimelineReader($httpClient, $atprotoDpop);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$blockService = new BlockService(
 			$blockRepository,
@@ -962,6 +980,8 @@ final readonly class Application
 			$mastodonService,
 			$cleanup,
 			$atprotoInteractions,
+			$atprotoProfiles,
+			$atprotoTimeline,
 		);
 	}
 

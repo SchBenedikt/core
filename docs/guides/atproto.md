@@ -189,6 +189,28 @@ it never deletes a blob the account might use elsewhere.
   becomes an AT Protocol record. Liking a Bluesky post from the network needs
   the AppView reads that are still open.
 
+## Profile
+
+`AtprotoProfileService` writes `app.bsky.actor.profile` with record key `self`
+and removes it again. The host passes the fields it wants: `displayName`
+(1–64 characters), `description` (up to 256), and an optional avatar and banner
+as `AtprotoMedia`. Both images go through the same blob uploader as post media
+and are checked **before** the first upload — only JPEG and PNG, at most one
+megabyte each — so a refused banner leaves the previous record untouched. The
+record omits absent fields; an empty string is a deliberate clear.
+
+## Reading a Bluesky timeline
+
+`AtprotoTimelineReader` is a read port; `XrpcAtprotoTimelineReader` calls
+`app.bsky.feed.getTimeline` with the account's PDS and token, using the same
+bearer/DPoP transport. It returns `AtprotoTimelineItem` values (uri, cid,
+author DID/handle/display name, text, createdAt, reply/repost/like counts, the
+raw embed and indexedAt) and the opaque `cursor` for the next page; the limit is
+clamped to 1–100. A refused request raises `timeline_unavailable`, an
+unreadable body `timeline_invalid_response` — an empty page would falsely say
+"no posts". Caching, rendering and mapping DIDs to local users stay with the
+host.
+
 ## Configuration
 
 | App | Key | Default | Meaning |
@@ -465,6 +487,10 @@ XRPC adapters and their failure answers. `XrpcAtprotoBlobUploaderTest` covers
 the upload request, the DPoP variant, a refused upload, a transport failure and
 a success without a blob reference; `AtprotoEmbedTest` covers 1–4 images, a
 video, mixed media, every refusal above and the aspect-ratio pass-through.
+`AtprotoProfileRecordTest` covers the `self` record and its bounds;
+`AtprotoProfileServiceTest` covers the avatar upload, both refusals without a
+request, the delete and the feature switch; `XrpcAtprotoTimelineReaderTest`
+covers paging, limits, an empty feed and the two failure reasons.
 `AtprotoInteractionRecordTest` covers both interaction records and the strong
 reference validation; `AtprotoInteractionServiceTest` covers like/repost,
 the undo on the same record key, the feature switch, a missing account, a
@@ -486,8 +512,8 @@ The full AT Protocol stack is still host/app work:
 - account-linking UI and browser callback, the short-lived flow store, the
   credential store and per-account PDS selection (the protocol client and
   authorization-server discovery are implemented locally);
-- a full repository client (CAR/MST, arbitrary record listing/update),
-  AppView reads and firehose consumption;
+- a full repository client (CAR/MST, arbitrary record listing/update) and
+  firehose consumption (AppView timeline reads are implemented as a port);
 - video transcoding and image processing for AT Protocol (the core uploads
   bytes the caller already prepared);
 - link cards and richer mention/facet targets;

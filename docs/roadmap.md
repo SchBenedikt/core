@@ -49,7 +49,7 @@ the host that serves it. See
 | --- | --- |
 | HTTP contract | 84 routes, 43 of them under the Mastodon prefix |
 | Persistence | 18 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 124 PHP test files (1111 tests, 5302 assertions) and 9 UI test files (69 tests) |
+| Tests | 135 PHP test files (1210 tests, 6042 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -98,7 +98,9 @@ the host that serves it. See
   XRPC `putRecord`/`deleteRecord`, deterministic TIDs, byte-offset tag/mention/link
   facets, reply references with a `getRecord` CID lookup, image/video blob uploads
   with `app.bsky.embed.images`/`#video` embeds, likes and reposts as
-  `app.bsky.feed.like`/`#.repost` records, idempotent publication rows, a read
+  `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record
+  with avatar/banner blobs, an `app.bsky.feed.getTimeline` read port,
+  idempotent publication rows, a read
   of the stored publication state, remote delete, OAuth session refresh
   and the authorization-code/PAR/revocation protocol client. Account linking
   UI, credential storage and PDS selection stay with the host. See
@@ -161,7 +163,7 @@ server or a product decision.
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
 | M2 | Release and documentation consistency | done (`0.2.0`-`0.7.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.7.0` released |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
-| M4 | Standalone host | open | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates |
+| M4 | Standalone host | open | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates; built against the [server blueprint](guides/server-architecture.md) |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
 | M5 | Shared UI rollout | partial | `ui` + hosts | Both hosts mount the shared screens through their bridge; smoke tests pass |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
@@ -197,7 +199,8 @@ server or a product decision.
 | Nextcloud `HostBridge`, mount pages and navigation | `social` | `social` | `PublicTimeline` and `PostDetail` render against the real bridge; login, 401 and logout work |
 | Nextcloud posts/follows import and actor-URL parity | `social` | `social` | The neutral export passes `bin/validate-cutover`; counts and checksums match the source |
 | Cutover: posts/timelines → actor surface → follows/delivery → inbox → UI | `social` | `social` | One account runs end to end on the core and a flag restores the old path |
-| Standalone repository and its host-owned account/session layer | `server` + ADR 0006 | `server` | A second host boots with its own accounts and the same kernel |
+| Standalone repository and its host-owned account/session layer | `server` + ADR 0006 + [blueprint](guides/server-architecture.md) | `server` | A second host boots with its own accounts and the same kernel |
+| Standalone AT Protocol linking (OAuth state, sealed tokens, refresh lock, PDS from the DID document) | `server` + [blueprint](guides/server-architecture.md#7-at-protocol-account-linking) | `server` | A real account connects, refreshes and publishes |
 | Standalone migrations, installer, worker and container | `server` | `server` | A fresh install creates the schema, seals a key, publishes a post and drains the queue |
 | Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
@@ -210,7 +213,7 @@ server or a product decision.
   account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
-  the full repository/AppView client.
+  CAR/MST repository access.
 - **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
 - **Operations:** backup/restore and monitoring for the standalone host,
   plus an S3-compatible blob store whose layout can be swept independently of
@@ -242,9 +245,10 @@ local gaps. The detailed lists live in the guides.
   remote search; remote relationship/admin APIs. See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
-  store, credential storage and PDS selection; a full repository/AppView client
-  (CAR/MST); video transcoding; the firehose; link cards; migrating the
-  existing Nextcloud implementation. See
+  store, credential storage and PDS selection; CAR/MST repository access; video
+  transcoding; the firehose and incoming AppView events; link cards; migrating
+  the existing Nextcloud implementation. The AppView timeline read is a core
+  port; rendering it is host work. See
   [AT Protocol publishing](guides/atproto.md#remaining-external-work).
 - **Hosts:** login, sessions, account creation/reset, CSRF, bearer-token
   issuance, admin settings, navigation, templates, deployment and the worker

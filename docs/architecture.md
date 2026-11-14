@@ -842,12 +842,81 @@ session, a linked-account row or a credential store.
 Adding a port is a breaking change for both hosts. Add one only when a host
 genuinely owns the capability.
 
+## Publishing to AT Protocol
+
+The write path reuses one transport for records and blobs, and one OAuth
+session for the account:
+
+```mermaid
+sequenceDiagram
+    participant Job as atproto.publish job
+    participant S as AtprotoPublishService
+    participant E as AtprotoEmbed
+    participant R as AtprotoPdsRequest
+    participant P as PDS
+    Job->>S: publish(user, post, media)
+    S->>S: validate text, facets, reply ref
+    S->>E: build(media, account)
+    loop each image / the video
+        E->>R: uploadBlob(bytes, Content-Type)
+        R->>P: DPoP proof + ath
+        P-->>R: 400 use_dpop_nonce
+        R->>P: retry once with nonce
+        P-->>R: blob ref {cid, mimeType, size}
+    end
+    E-->>S: app.bsky.embed.images | #video
+    S->>R: putRecord(collection, rkey, record)
+    R->>P: DPoP proof + ath
+    P-->>R: uri + cid
+    S->>S: store publication row
+```
+
+A profile write uses the same path with collection `app.bsky.actor.profile` and
+record key `self`; likes and reposts use `app.bsky.feed.like`/`#.repost` with a
+`strongRef` whose CID is read back with `getRecord`. Reads go the other way:
+`XrpcAtprotoTimelineReader` calls `app.bsky.feed.getTimeline` with the account's
+token and returns `AtprotoTimelineItem` values; the host decides what to render.
+A refused read is an `AtprotoTimelineException`, never an empty page.
+
+## The server the hosts build
+
+```mermaid
+flowchart TB
+    subgraph Edge
+        PX[Reverse proxy\nTLS · rate limit]
+    end
+    subgraph Web process
+        IDX[public/index.php] --> K[Core Kernel]
+        K --> SV[Services]
+        IDX --> AU[Host auth\nsessions · CSRF · scopes]
+    end
+    subgraph Worker
+        WK[bin/worker.php] --> JW[JobWorker::runOnce]
+    end
+    SV --> DB[(SQL\ncore schemas)]
+    SV --> BL[(BlobStore)]
+    SV --> QU[(social_job)]
+    JW --> QU
+    JW --> DB
+    SV --> HX[HttpClient + DNS guard]
+    HX --> PEER[Fediverse]
+    HX --> PDS[PDS / AppView]
+    AU --> DB
+    PX --> IDX
+```
+
+Both processes boot the same `Application::forHost()`; the web process serves
+the manifest, the worker drains the queue. Accounts, sessions, roles and the AT
+Protocol credential store live in the host. The full build order, configuration
+and acceptance checks are in the
+[server blueprint](guides/server-architecture.md).
+
 ## What is not here yet
 
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, roles, password reset and administrator rights | host-owned by [ADR 0006](adr/0006-host-owned-accounts.md); the core accepts an authenticated `Request::$userId` and host-resolved scopes, and stores no user table, credentials, sessions or role model |
-| AT Protocol account-linking UI/callback, full repository/AppView client, media and firehose | host/app; the core owns the publishing foundation, OAuth session refresh, authorization-code/PAR/revocation and metadata validation in `Protocol\Atproto` and `Domain\Atproto`; credential storage, PDS selection and the browser flow store stay with the host |
+| AT Protocol account-linking UI/callback, credential store, PDS selection, firehose and CAR/MST | host/app; the core owns publishing, media, likes/reposts, profile, an AppView timeline read port, OAuth session refresh and the authorization-code/PAR/revocation client in `Protocol\Atproto` and `Domain\Atproto` |
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset; the locally implementable remainder (hashtags, filters, followed tags, scheduled posts, follow requests and account management) is listed as Later in the [roadmap](roadmap.md); see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages and host role checks; the core keeps the settings *rules* and never sees an administrator flag ([ADR 0006](adr/0006-host-owned-accounts.md)) |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |

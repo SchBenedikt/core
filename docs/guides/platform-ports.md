@@ -104,6 +104,11 @@ stores one image or video on the PDS (`XrpcAtprotoBlobUploader`). All three are
 optional, reuse `HttpClient` (and the DPoP proof provider for an OAuth
 account), and are wired automatically by the standard assemblies.
 
+`Protocol\Atproto\AtprotoTimelineReader` is the AppView read port
+(`XrpcAtprotoTimelineReader` over the same client);
+`Service\Atproto\AtprotoProfileService` writes the `self` profile record through
+`AtprotoPublisher` and the blob uploader.
+
 `Domain\Atproto\AtprotoPublisher` and `AtprotoDeleter` take the record's
 collection as their last argument, defaulting to `app.bsky.feed.post`, so one
 adapter writes posts, likes, reposts and (later) profile records. Existing

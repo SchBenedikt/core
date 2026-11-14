@@ -22,6 +22,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | --- | --- |
 | [Platform ports](guides/platform-ports.md) | Every interface a host implements, and the contract tests behind them |
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
+| [The standalone server blueprint](guides/server-architecture.md) | How the server is built: processes, module layout, boot order, configuration, migrations, the AT Protocol linking flow, worker, security and the phase plan with acceptance checks |
 | [Using the core from a host](guides/host-integration.md) | Composer setup, the core/UI compatibility matrix, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
@@ -31,7 +32,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Follow graph](guides/follow-graph.md) | Followers and following, inbox resolution, signed Follow/Undo delivery and the reverse lookup used by the home timeline |
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
-| [AT Protocol publishing](guides/atproto.md) | The public text-only ATProto foundation, account/publisher ports, idempotent publication rows, publication state reads, OAuth authorization-code/PAR/revocation, limits and the external rest |
+| [AT Protocol publishing](guides/atproto.md) | Records, facets, replies, media embeds, likes/reposts, profile, the AppView timeline read, publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
 | [Two protocols, one local model](guides/dual-protocol.md) | How ActivityPub and AT Protocol share one local post, what is and is not combined, and why this is not a new protocol |
 | [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, private lists and list timelines, local boosts/reblogs, reply context, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |

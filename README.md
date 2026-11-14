@@ -20,12 +20,17 @@ protocol: ActivityPub and AT Protocol remain the protocols peers speak.
 
 ```mermaid
 flowchart LR
-    P[Local post] --> AP[ActivityPub adapter]
-    P --> AT[AT Protocol adapter]
-    AP --> I[Followers' inboxes]
-    I --> F[Fediverse]
-    AT --> X[Author's PDS]
-    X --> B[Bluesky / AppView]
+    subgraph One model
+        P[Post + audience + rules]
+    end
+    P --> AP[ActivityPub\nCreate / Delete / Announce]
+    P --> AT[AT Protocol\npost · reply · embed · like · repost]
+    AP --> IN[Followers' inboxes]
+    IN --> F[Fediverse]
+    AT --> PDS[Author's PDS]
+    PDS --> B[Bluesky / AppView]
+    B -. reads .-> AT
+    style P fill:#eef,stroke:#557
 ```
 
 | Capability | ActivityPub | AT Protocol | Status |
@@ -33,10 +38,15 @@ flowchart LR
 | Public text post | `Create(Note)` | `app.bsky.feed.post` | both |
 | Delete | `Delete` | `deleteRecord` | both |
 | Follow | `Follow` / `Accept` | `app.bsky.graph.follow` | ActivityPub |
-| Boost | `Announce` | `app.bsky.feed.repost` | ActivityPub |
-| Like | `Like` | `app.bsky.feed.like` | local only |
-| Media | attachment + public URL | blob + embed | ActivityPub |
-| Reply | `in_reply_to` | reply ref | local/ActivityPub |
+| Boost | `Announce` | `app.bsky.feed.repost` | both (core writes the record) |
+| Like | `Like` | `app.bsky.feed.like` | local + core record |
+| Media | attachment + public URL | blob upload + `images`/`video` embed | core |
+| Reply | `in_reply_to` | strong-ref reply | core |
+| Profile | actor document | `app.bsky.actor.profile` | core |
+
+The AT Protocol side is complete as a library: records, facets, replies,
+media, likes, reposts, profile and an AppView timeline read. What is not here
+is the host that drives it — linking, credentials, PDS choice and the UI.
 
 "Both" means one local post can be delivered to ActivityPub followers and
 mirrored to the author's PDS at the same time, with independent failures. The
@@ -55,7 +65,7 @@ The full mapping, guarantees and the path to a real bridge are in
 | Federation | HTTP signatures, actor documents, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Accept`/`Reject`/`Undo`/`Create`/`Delete`/`Announce`; outbound `Follow`/`Undo(Follow)`, `Block`/`Undo(Block)` and local `Announce`/`Undo(Announce)` |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
-| AT Protocol | account/record primitives, deterministic TIDs, bearer or DPoP-bound XRPC `putRecord`/`deleteRecord`, byte-offset tag/mention/link facets, reply references with a `getRecord` CID lookup, image/video blob uploads with `app.bsky.embed.images`/`#video` embeds, likes and reposts as `app.bsky.feed.like`/`#.repost` records, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
+| AT Protocol | account/record primitives, deterministic TIDs, bearer or DPoP-bound XRPC `putRecord`/`deleteRecord`, byte-offset tag/mention/link facets, reply references with a `getRecord` CID lookup, image/video blob uploads with `app.bsky.embed.images`/`#video` embeds, likes and reposts as `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record, an AppView timeline read port, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (84 routes; 43 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table; `TransactionRunner` for atomic multi-repository writes |
@@ -108,11 +118,12 @@ The milestone order and current status are in [the roadmap](docs/roadmap.md).
   poll fetching/voting/federation; remote search; and remote
   relationship/admin APIs. The local subset and the exact external list are in
   [Mastodon-compatible API](docs/guides/mastodon-api.md#what-remains-external).
-- **The full AT Protocol stack:** account-linking UI/browser callback, the
-  short-lived flow store, credential storage, PDS selection, the full
-  repository/AppView client, CAR/MST, blob uploads and the firehose. The
-  protocol client and publishing foundation are implemented; see
-  [AT Protocol publishing](docs/guides/atproto.md#remaining-external-work).
+- **The AT Protocol host glue:** account-linking UI/browser callback, the
+  short-lived flow store, credential storage, refresh serialization, PDS
+  selection and the firehose; CAR/MST stays optional. The protocol client,
+  publishing, media, interactions, profile and AppView reads are implemented —
+  see [AT Protocol publishing](docs/guides/atproto.md) and the
+  [server blueprint](docs/guides/server-architecture.md).
 - **Host-specific UI bridges and mount pages**, including the Nextcloud
   `HostBridge`, rollout of the shared screens and the standalone bridge. See
   [shared UI](docs/guides/shared-ui.md).
@@ -126,6 +137,15 @@ receives `Block`/`Undo(Block)`, but no public block collection is served and an
 incoming block is not applied as a local moderation rule. See
 [posts and timelines](docs/guides/posts-and-timelines.md) and
 [blocks](docs/guides/blocks.md).
+
+## Building the server
+
+This repository has no process of its own. The standalone host
+(`AlohaSocial/server`) is specified in
+[the server blueprint](docs/guides/server-architecture.md): process topology,
+module layout, boot order, configuration, migrations, the AT Protocol linking
+flow, worker, deployment and a phase-by-phase build order with acceptance
+checks.
 
 ## Architecture at a glance
 
@@ -293,6 +313,7 @@ docs/              architecture, guides, reference, operations, ADRs
   [configuration](docs/reference/configuration.md)
 - [Mastodon-compatible API](docs/guides/mastodon-api.md),
   [AT Protocol publishing](docs/guides/atproto.md),
+  [server blueprint](docs/guides/server-architecture.md),
   [federation](docs/guides/federation.md),
   [inbound federation](docs/guides/inbound-federation.md),
   [media](docs/guides/media.md), [blocks](docs/guides/blocks.md)
