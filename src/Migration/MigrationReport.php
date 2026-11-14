@@ -11,14 +11,32 @@ namespace AlohaSocial\Core\Migration;
 
 use JsonException;
 
+use function array_filter;
+use function array_map;
+use function array_values;
+
 /**
  * The immutable result of a cutover validation.
+ *
+ * The three states are explicit so a caller cannot confuse "nothing to do"
+ * with "checked and clean": `pass` has no findings, `warn` has only warnings,
+ * `fail` has at least one failure that must be repaired before the cutover.
+ * Warnings keep the exit code at 0 because they do not invalidate identity;
+ * they exist so an operator sees a semantic difference the export cannot
+ * express (a dead job, unverifiable media bytes) instead of losing it in a
+ * silent "everything is fine".
  *
  * `exitCode()` is intentionally part of the report: a CLI must not decide
  * differently from a caller that used the class directly.
  */
 final readonly class MigrationReport
 {
+	public const STATUS_PASS = 'pass';
+
+	public const STATUS_WARN = 'warn';
+
+	public const STATUS_FAIL = 'fail';
+
 	/**
 	 * @param list<MigrationViolation> $violations
 	 */
@@ -28,9 +46,24 @@ final readonly class MigrationReport
 	) {
 	}
 
+	/**
+	 * Whether the dataset may be cut over. Warnings do not block.
+	 */
 	public function passed(): bool
 	{
-		return $this->violations === [];
+		return $this->failures() === [];
+	}
+
+	/**
+	 * @return self::STATUS_*
+	 */
+	public function status(): string
+	{
+		if ($this->failures() !== []) {
+			return self::STATUS_FAIL;
+		}
+
+		return $this->warnings() === [] ? self::STATUS_PASS : self::STATUS_WARN;
 	}
 
 	public function exitCode(): int
@@ -47,14 +80,47 @@ final readonly class MigrationReport
 	}
 
 	/**
-	 * @return array{source: string, passed: bool, exit_code: int, violations: list<array{record: string, field: string, message: string, expected: mixed, actual: mixed}>}
+	 * @return list<MigrationViolation>
+	 */
+	public function failures(): array
+	{
+		return array_values(array_filter(
+			$this->violations,
+			static fn (MigrationViolation $violation): bool => $violation->isFailure(),
+		));
+	}
+
+	/**
+	 * @return list<MigrationViolation>
+	 */
+	public function warnings(): array
+	{
+		return array_values(array_filter(
+			$this->violations,
+			static fn (MigrationViolation $violation): bool => !$violation->isFailure(),
+		));
+	}
+
+	/**
+	 * @return array{
+	 *     source: string,
+	 *     status: string,
+	 *     passed: bool,
+	 *     exit_code: int,
+	 *     failures: int,
+	 *     warnings: int,
+	 *     violations: list<array{record: string, field: string, message: string, expected: mixed, actual: mixed, severity: string}>
+	 * }
 	 */
 	public function toArray(): array
 	{
 		return [
 			'source' => $this->source,
+			'status' => $this->status(),
 			'passed' => $this->passed(),
 			'exit_code' => $this->exitCode(),
+			'failures' => count($this->failures()),
+			'warnings' => count($this->warnings()),
 			'violations' => array_map(
 				static fn (MigrationViolation $violation): array => $violation->toArray(),
 				$this->violations,
@@ -77,7 +143,9 @@ final readonly class MigrationReport
 	{
 		$lines = [
 			'Migration cutover: ' . $this->source,
-			'Result: ' . ($this->passed() ? 'PASS' : 'FAIL (' . count($this->violations) . ' violation(s))'),
+			'Result: ' . strtoupper($this->status())
+				. ' (' . count($this->failures()) . ' failure(s), '
+				. count($this->warnings()) . ' warning(s))',
 		];
 
 		foreach ($this->violations as $violation) {

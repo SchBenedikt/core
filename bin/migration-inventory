@@ -1,0 +1,64 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+use AlohaSocial\Core\Migration\MigrationInventory;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+$args = array_slice($argv, 1);
+
+foreach ($args as $arg) {
+	if ($arg === '--help' || $arg === '-h') {
+		fwrite(
+			STDOUT,
+			"Usage: bin/migration-inventory [--summary]\n"
+			. "\n"
+			. "Prints the feature-level migration inventory as JSON: which source\n"
+			. "feature maps to which core or host destination, whether the neutral\n"
+			. "export validates it and which issue tracks an open gap. The exit code\n"
+			. "is always 0; the inventory is documentation, not a gate.\n",
+		);
+		exit(0);
+	}
+
+	if ($arg !== '--summary') {
+		fwrite(STDERR, "Unknown option: {$arg}\n");
+		exit(2);
+	}
+}
+
+try {
+	$json = MigrationInventory::toJson();
+} catch (JsonException $exception) {
+	fwrite(STDERR, 'Could not encode the inventory: ' . $exception->getMessage() . "\n");
+	exit(2);
+}
+
+if (in_array('--summary', $args, true)) {
+	$entries = MigrationInventory::entries();
+	$byStatus = [];
+	foreach ($entries as $entry) {
+		$byStatus[$entry['status']] = ($byStatus[$entry['status']] ?? 0) + 1;
+	}
+
+	echo 'Migration inventory: ' . count($entries) . " feature(s)\n";
+	foreach ($byStatus as $status => $count) {
+		echo '  ' . $status . ': ' . $count . "\n";
+	}
+
+	echo "\nOpen gaps:\n";
+	foreach (MigrationInventory::gaps() as $gap) {
+		echo '  ' . $gap['feature'] . ' (' . $gap['status'] . ')' . ($gap['gap_issue'] ?? '') . "\n";
+	}
+
+	exit(0);
+}
+
+echo $json, "\n";

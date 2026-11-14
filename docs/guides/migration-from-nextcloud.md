@@ -173,6 +173,55 @@ derives both the Follow and Undo ids from it. A changed row id is reported at
 the exporter must provide both the old id (`legacy_id`) and the imported id
 (`id`).
 
+### Version 2 sections
+
+`version: 2` keeps every field above and adds five optional sections. They are
+optional so a host can adopt them feature by feature; whatever is present is
+cross-checked, and an absent section is not a schema error. A version-1 export
+ignores them completely, so the version never changes the meaning of a field
+that already existed.
+
+A version-2 post may additionally declare its live revision, edit time and
+linked attachments:
+
+```json
+{
+  "revision": 2,
+  "edited_at": "2026-11-11T11:00:00Z",
+  "attachment_ids": ["att-1"]
+}
+```
+
+| Section | Field | Rule |
+| --- | --- | --- |
+| `posts` | `revision` | Optional integer >= 1; the number of replaced versions is `revision - 1` |
+| `posts` | `edited_at` | Optional canonical UTC seconds |
+| `posts` | `attachment_ids` | Optional list of media attachment ids in display order |
+| `revisions` | `post_id`, `revision`, `content`, `content_warning`, `edited_at` | One row per replaced version; the post must exist, the number must be unique and start at 1 |
+| `media` | `attachment_id`, `post_id`, `storage_key`, `mime_type`, `byte_size` | One row per attachment; `mime_type` must be a type the core serves, `byte_size` must be positive |
+| `media` | `alt_text` | Optional; copied verbatim, never regenerated |
+| `media` | `checksum_sha256` | 64 lower-case hex characters; absent means the bytes cannot be verified (warning) |
+| `reactions` | `activity_id`, `actor_id`, `object_id`, `kind`, `emoji`, `created_at` | `kind` is `like` or `emoji`; `emoji` is required for `emoji` and absent for `like`; an actor may react once per object and emoji |
+| `quotes` | `post_id`, `quoted_url` | At most one quoted object per exported post; `quoted_url` is an `http(s)` URL |
+| `quotes` | `authorization` | Optional FEP-044f authorization token, at most 512 characters |
+| `counts` | `<feature>` | Declared row count per feature; compared with the exported rows |
+
+A post's exported history must cover every replaced version: `revision: 3`
+requires two `revisions` rows for that post, numbered `1` and `2`, with
+non-decreasing `edited_at`. A gap, a duplicate number or a missing row is a
+failure, because the edit history would silently lose a version.
+
+Every `attachment_ids` entry must have a `media` row, and an attachment id is
+exported once. A missing attachment is a failure rather than a broken post after
+the cutover. Media without `checksum_sha256` is a warning: the host may not
+have hashed the bytes yet, but the cutover then cannot prove what it copied.
+
+`counts` is the export's own baseline. When a declared count differs from the
+exported rows, the validator fails; a key with no matching section is a warning
+so a future feature's count is not silently ignored. `php
+bin/migration-inventory` is the machine-readable list of which features have a
+core destination at all.
+
 ## Running the validator
 
 Run the validator against the staging export before the shadow phase and again
@@ -188,21 +237,108 @@ Exit codes are stable:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Every exported identity and reference is consistent; parity passed |
-| `1` | At least one parity violation; the report lists every one |
+| `0` | Parity passed, with or without warnings (`PASS` or `WARN`) |
+| `1` | At least one failure; the report lists every finding |
 | `2` | The file is unreadable, is not valid JSON, or fails the export schema |
 
-The plain report starts with `Result: PASS` or `Result: FAIL (n violation(s))`.
-Each violation has a `record` (for example `following[0]`), a `field` (for
-example `undo_id`), a message, the expected value and the actual value. `--json`
-returns the same data as machine-readable JSON with `source`, `passed`,
-`exit_code` and `violations`.
+The report has three states, and a violation carries the same severity in text
+and JSON:
+
+| Status | Meaning | Blocks the cutover |
+| --- | --- | --- |
+| `PASS` | Checked, no findings | no |
+| `WARN` | Only semantic differences the export cannot resolve: a dead-lettered job, media without a checksum, an unknown count key, a like that carries an emoji | no, but record it |
+| `FAIL` | Identity, a reference or a declared count would change; repair the export | yes |
+
+Warnings keep exit code `0` on purpose: they are not a parity failure, but they
+must be read and acknowledged instead of disappearing into a green run.
+
+The plain report starts with `Result: PASS|WARN|FAIL (n failure(s), n
+warning(s))`; each entry starts with `FAIL` or `WARN`, then its `record` (for
+example `following[0]`), a `field` (for example `undo_id`), a message, the
+expected value and the actual value. `--json` returns the same data with
+`source`, `status`, `passed`, `exit_code`, `failures`, `warnings` and
+`violations`, and each violation repeats its `severity`.
 
 The validator checks the export, not the source database. Source/target counts
 and the deterministic checksum below are still host-side preconditions; the
 validator cannot derive them from target rows alone. It does check required
 fields, duplicate ids and pairs, canonical timestamps, URL shape, exported
-account references, queue key references and queue activity references.
+account references, queue key references, queue activity references and, for a
+version-2 export, revision histories, attachment links, media checksums,
+reaction identity keys and declared counts.
+
+## Feature inventory
+
+The inventory is the "no silent drop" contract: every Social domain the core
+knows about is listed once with an owner, a destination and the issue that
+tracks the remaining gap. No entry has a `drop` retention — discarding a
+feature is a product decision, not an export default. Generate the canonical
+list from code:
+
+```bash
+php bin/migration-inventory            # JSON
+php bin/migration-inventory --summary  # counts and open gaps
+```
+
+| Feature | Owner | Status | Validated by | Destination / gap |
+| --- | --- | --- | --- | --- |
+| `accounts` | host | supported | v1 | host account id becomes `local_user_id` |
+| `profile_metadata` | core | partial | — | actor metadata (#15); avatar/banner bytes travel as media |
+| `posts` | core | supported | v1 | `social_post`, derived note/Create/Delete ids |
+| `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
+| `attachments` | core | partial | v2 | `social_attachment` + `BlobStore` (#9) |
+| `media_processing` | core | supported | — | derived thumbnails, converted not copied |
+| `favourites` | core | partial | — | local `social_favourite`; remote Like is #5 |
+| `emoji_reactions` | core | gap | — | reaction rows and delivery (#5) |
+| `boosts` | core | supported | — | `social_boost` + queued Announce/Undo |
+| `bookmarks` | core | supported | — | `social_bookmark` |
+| `followers` | core | supported | v1 | `social_follower` |
+| `following` | core | supported | v1 | `social_following` with preserved row id |
+| `blocks` | core | supported | — | `social_block` |
+| `mutes` | core | supported | — | `social_mute` |
+| `account_lists` | core | supported | — | `social_account_list` + members |
+| `followed_hashtags` | core | supported | — | `social_followed_hashtag` |
+| `notifications` | core | partial | — | `social_notification`; sender policies #12 |
+| `polls` | core | partial | — | poll tables and local votes; remote #6 |
+| `quotes` | core | gap | — | quote rows, authorization, policies (#7) |
+| `scheduled_posts` | core | gap | — | scheduling state and publisher (#8) |
+| `stories` | core | gap | — | story model and expiry (#18) |
+| `moderation` | core | gap | — | reports, domain policy, review queue (#11) |
+| `keyword_filters` | core | gap | — | filter rules and contexts (#21) |
+| `direct_messages` | core | gap | — | conversations and delivery (#19) |
+| `search_index` | core | partial | — | local post search; remote index #13 |
+| `atproto_publications` | core | partial | — | publication rows; inbound relay #22 |
+| `queue` | core | supported | v1 | `social_job` |
+| `activity_log` | core | supported | v1 | `social_activity_log` |
+| `host_accounts_sessions` | host | host-only | — | users, sessions, roles |
+| `admin_ui` | host | host-only | — | host admin surface |
+
+A `gap` is a feature the core cannot store yet. Do not invent a host-specific
+table in `src/` for it; keep the source data in the old stack until the issue
+lands. A `partial` feature has a core home for part of the data and an explicit
+issue for the rest.
+
+## Shadow reads
+
+Before a slice takes writes, compare the old and the new read path for the same
+records. `ShadowReadComparator` (in `src/Migration`) takes two neutral row lists
+with an `id` and returns the same `MigrationReport` as the validator:
+
+- a record the old side has and the new side does not is a **failure** (that is
+  silent data loss);
+- a changed field is a **failure**, with old and new values in the report;
+- an added field or a record only the new side returns is a **warning**.
+
+Run it for posts, the actor document, the outbox and the follow graph before
+each phase. `tests/Migration/ShadowFixtures.php` shows the shape: rows carry
+`actor_id`, `note_url`, `activity_id` and the follow/undo ids, so the comparison
+is about federation identity and not about local columns.
+
+The same comparison proves the rollback path: compare old -> new, then old ->
+rolled back. A rollback that regenerated an actor URL fails even when every post
+id survived, because peers would see a different account. Keep the fixtures
+with the preserved ids so a re-import is repeatable.
 
 ## Phase 1 — Stage the target tables
 
@@ -334,6 +470,13 @@ stacks must not both own writes for the same handle.
    [the shared UI guide](shared-ui.md); do not move the backend and the screen
    in one flag flip.
 
+The order is one-way: a clean shadow read comes first, then reads, then inbound
+writes on a test domain, then outgoing follows, then the remaining outbound
+writes. Never enable two federated write kinds in one step, and never enable an
+outbound write before the actor, note and activity URLs for that account have
+passed the shadow comparison. A peer that saw a wrong URL cannot un-see it;
+deleting and re-sending the activity is not a retry, it is a second activity.
+
 The core now owns the public text-only AT Protocol publishing foundation, but
 not account linking, OAuth/session storage or the full repository/AppView
 stack. Do not migrate those account credentials or the old AT Protocol stack
@@ -382,6 +525,18 @@ why the old endpoints stay available during the observation window.
 
 A key rotation is not a rollback. If the key changes, peers need an overlap
 period and the migration must be treated as a separate federation event.
+
+Federated writes need two extra rules, because a rollback cannot unsend them:
+
+- **Before any outbound write is enabled**, the core queue must be empty of old
+  rows and the shadow comparison must be clean for the actor document, the
+  outbox and the follow graph. An `Update`, `Announce` or `Follow` sent from a
+  wrong identity is visible to every peer inbox it reached.
+- **On rollback, stop the core inbox and outbox first**, then drain or disable
+  the core queue for the affected accounts. Do not let a queued job retry
+  against an account the old stack owns again, and do not re-deliver an
+  activity the old stack already sent. The preserved ids make the re-import
+  produce the same URLs, so peers keep seeing one identity instead of two.
 
 ## Out of scope
 

@@ -73,7 +73,7 @@ The full mapping, guarantees and the path to a real bridge are in
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table; `TransactionRunner` for atomic multi-repository writes |
 | Operations | core `cleanup` worker job and service for unreferenced media older than a retention window, read notifications and thread caches; dry run, per-kind limits, idempotent deletes, stable payload reasons and host scheduling |
 | Host integration | `Application::forHost()` with injected ports, SQL repositories and the same kernel as the in-memory assembly |
-| Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md) and the read-only `bin/validate-cutover` identity checker |
+| Migration | [ADR 0004](docs/adr/0004-incremental-migration-and-ownership.md), the [Nextcloud migration guide](docs/guides/migration-from-nextcloud.md), the read-only `bin/validate-cutover` identity checker (export versions 1 and 2, `PASS`/`WARN`/`FAIL`), the feature inventory `bin/migration-inventory` and the `ShadowReadComparator` old/new/rollback read check |
 | Shared UI | `ui/` contains `@alohasocial/ui`: typed `HostBridge`, Vue plugin, typed `CoreApi`, network-free `FakeHostBridge`, `PostCard`, read-only `PublicTimeline` (public or hashtag timeline)/`PostDetail`, and the write screens `ActorHeader` (with follow toggle), `PostComposer` and `NotificationList` |
 
 `/api/v1` now exposes a host-neutral local interaction surface: public

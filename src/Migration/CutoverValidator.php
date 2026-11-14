@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Migration;
 
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -27,8 +28,14 @@ use function in_array;
 use function is_array;
 use function is_int;
 use function is_string;
+use function array_keys;
+use function count;
+use function ksort;
+use function max;
 use function mb_strlen;
 use function parse_url;
+use function preg_match;
+use function trim;
 
 /**
  * Read-only validator for the neutral JSON export of a migration cutover.
@@ -105,6 +112,22 @@ use function parse_url;
  * Follower row ids are internal; only `followers[].id` is used for references,
  * so a host may assign new stable ids for them.
  *
+ * Version 2 keeps every version-1 field and meaning and adds optional
+ * per-feature sections for records that already exist in the source but had no
+ * neutral export representation: `revisions`, `media`, `reactions`, `quotes`
+ * and `counts`. A version-1 export validates exactly as before; a version-2
+ * export additionally cross-checks revision histories against the live
+ * revision, attachment links against the media rows, media checksums, reaction
+ * identity keys and declared per-feature counts.
+ *
+ * Findings are categorized: a `fail` blocks the cutover, a `warn` records a
+ * semantic difference the export cannot resolve (a dead-lettered job, media
+ * without a checksum) without blocking. Version 1 never produces warnings.
+ *
+ * The feature-level inventory that says which source entity has which core
+ * destination is {@see MigrationInventory}; a feature without a destination is
+ * listed there as a gap instead of being silently dropped here.
+ *
  * The human-readable format is documented in
  * {@see docs/guides/migration-from-nextcloud.md#export-format}.
  */
@@ -112,7 +135,11 @@ final class CutoverValidator
 {
 	public const FORMAT = 'alohasocial.migration-cutover';
 
+	/** The oldest supported export version; its semantics never change. */
 	public const VERSION = 1;
+
+	/** @var list<int> */
+	public const SUPPORTED_VERSIONS = [1, 2];
 
 	private const ACTIVITY_TYPES = ['Create', 'Delete', 'Follow', 'Undo', 'Accept'];
 
@@ -158,9 +185,10 @@ final class CutoverValidator
 			);
 		}
 
-		if (($dataset['version'] ?? null) !== self::VERSION) {
+		$version = $dataset['version'] ?? null;
+		if (!is_int($version) || !in_array($version, self::SUPPORTED_VERSIONS, true)) {
 			throw new InvalidMigrationDatasetException(
-				'Unsupported version; expected ' . self::VERSION . '.',
+				'Unsupported version; expected one of ' . implode(', ', self::SUPPORTED_VERSIONS) . '.',
 			);
 		}
 
@@ -213,6 +241,8 @@ final class CutoverValidator
 		$queueIds = [];
 		/** @var array<string, true> $activityIds */
 		$activityIds = [];
+		/** @var array<string, array{record: string, revision: ?int, attachment_ids: list<string>}> $postMeta */
+		$postMeta = [];
 
 		foreach ($this->records($dataset, 'accounts') as $index => $entry) {
 			$this->validateAccount(
@@ -234,6 +264,7 @@ final class CutoverValidator
 				$postIds,
 				$createIds,
 				$deleteIds,
+				$postMeta,
 			);
 		}
 
@@ -273,6 +304,7 @@ final class CutoverValidator
 				$deleteIds,
 				$followIds,
 				$undoIds,
+				$version >= 2,
 			);
 		}
 
@@ -282,6 +314,23 @@ final class CutoverValidator
 				'activity_log[' . $index . ']',
 				$violations,
 				$activityIds,
+			);
+		}
+
+		if ($version >= 2) {
+			$this->validateVersionTwo(
+				$dataset,
+				$violations,
+				$postIds,
+				$postMeta,
+				[
+					'accounts' => count($this->records($dataset, 'accounts')),
+					'posts' => count($this->records($dataset, 'posts')),
+					'followers' => count($this->records($dataset, 'followers')),
+					'following' => count($this->records($dataset, 'following')),
+					'queue' => count($this->records($dataset, 'queue')),
+					'activity_log' => count($this->records($dataset, 'activity_log')),
+				],
 			);
 		}
 
@@ -356,6 +405,7 @@ final class CutoverValidator
 	 * @param array<string, true>   $postIds
 	 * @param array<string, string> $createIds
 	 * @param array<string, string> $deleteIds
+	 * @param array<string, array{record: string, revision: ?int, attachment_ids: list<string>}> $postMeta
 	 */
 	private function validatePost(
 		ActivityFactory $activities,
@@ -366,6 +416,7 @@ final class CutoverValidator
 		array &$postIds,
 		array &$createIds,
 		array &$deleteIds,
+		array &$postMeta,
 	): void {
 		$legacyId = $this->requiredString($row, 'legacy_id', $record);
 		$id = $this->requiredString($row, 'id', $record);
@@ -477,6 +528,11 @@ final class CutoverValidator
 		);
 
 		$postIds[$id] = true;
+		$postMeta[$id] = [
+			'record' => $record,
+			'revision' => $this->postRevision($row, $record, $violations),
+			'attachment_ids' => $this->attachmentIds($row, $record, $violations),
+		];
 		$createIds[$createId] = $id;
 		$deleteIds[$deleteId] = $id;
 	}
@@ -673,6 +729,7 @@ final class CutoverValidator
 	 * @param array<string, string> $deleteIds
 	 * @param array<string, string> $followIds
 	 * @param array<string, string> $undoIds
+	 * @param bool $warnOnDeadJob whether version-2 semantics may add warnings
 	 */
 	private function validateQueue(
 		array $row,
@@ -683,7 +740,8 @@ final class CutoverValidator
 		array $createIds,
 		array $deleteIds,
 		array $followIds,
-		array $undoIds,
+		array 		$undoIds,
+		bool $warnOnDeadJob = false,
 	): void {
 		$id = $this->requiredString($row, 'id', $record);
 		$type = $this->requiredString($row, 'type', $record);
@@ -736,6 +794,17 @@ final class CutoverValidator
 		$this->timestamp($availableValue, $record, 'available_at', $violations);
 		if ($deadValue !== null) {
 			$this->timestamp($deadValue, $record, 'dead_at', $violations);
+
+			if ($warnOnDeadJob) {
+				$violations[] = new MigrationViolation(
+					$record,
+					'dead_at',
+					'The job is dead-lettered; the cutover will not retry it and the peer never received it.',
+					'a live job, or an explicit decision to abandon this delivery',
+					$deadValue,
+					MigrationViolation::WARN,
+				);
+			}
 		}
 
 		if ($attempts < 0) {
@@ -809,6 +878,611 @@ final class CutoverValidator
 
 		$this->timestamp($seenValue, $record, 'seen_at', $violations);
 		$activityIds[$activityId] = true;
+	}
+
+	/**
+	 * The optional version-2 sections.
+	 *
+	 * They are optional so a host can adopt them per feature; whatever is
+	 * present is cross-checked, and a declared count is only compared when the
+	 * matching section exists. Nothing here changes a version-1 result.
+	 *
+	 * @param array<string, mixed> $dataset
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, true> $postIds
+	 * @param array<string, array{record: string, revision: ?int, attachment_ids: list<string>}> $postMeta
+	 * @param array<string, int> $baseCounts
+	 */
+	private function validateVersionTwo(
+		array $dataset,
+		array &$violations,
+		array $postIds,
+		array $postMeta,
+		array $baseCounts,
+	): void {
+		/** @var array<string, array<int, string>> $revisionsByPost */
+		$revisionsByPost = [];
+		$revisionRows = 0;
+		foreach ($this->optionalRecords($dataset, 'revisions') as $index => $entry) {
+			$revisionRows++;
+			$this->validateRevision(
+				$this->record($entry, 'revisions[' . $index . ']'),
+				'revisions[' . $index . ']',
+				$violations,
+				$postIds,
+				$revisionsByPost,
+			);
+		}
+
+		/** @var array<string, string> $mediaIds */
+		$mediaIds = [];
+		$mediaRows = 0;
+		foreach ($this->optionalRecords($dataset, 'media') as $index => $entry) {
+			$mediaRows++;
+			$this->validateMedia(
+				$this->record($entry, 'media[' . $index . ']'),
+				'media[' . $index . ']',
+				$violations,
+				$postIds,
+				$mediaIds,
+			);
+		}
+
+		/** @var array<string, true> $reactionIds */
+		$reactionIds = [];
+		/** @var array<string, true> $reactionKeys */
+		$reactionKeys = [];
+		$reactionRows = 0;
+		foreach ($this->optionalRecords($dataset, 'reactions') as $index => $entry) {
+			$reactionRows++;
+			$this->validateReaction(
+				$this->record($entry, 'reactions[' . $index . ']'),
+				'reactions[' . $index . ']',
+				$violations,
+				$reactionIds,
+				$reactionKeys,
+			);
+		}
+
+		/** @var array<string, true> $quotedPosts */
+		$quotedPosts = [];
+		$quoteRows = 0;
+		foreach ($this->optionalRecords($dataset, 'quotes') as $index => $entry) {
+			$quoteRows++;
+			$this->validateQuote(
+				$this->record($entry, 'quotes[' . $index . ']'),
+				'quotes[' . $index . ']',
+				$violations,
+				$postIds,
+				$quotedPosts,
+			);
+		}
+
+		$this->validateRevisionBaselines($postMeta, $revisionsByPost, $violations);
+		$this->validateMediaBaselines($postMeta, $mediaIds, $violations);
+
+		$this->validateCounts($dataset, $violations, $baseCounts + [
+			'revisions' => $revisionRows,
+			'media' => $mediaRows,
+			'reactions' => $reactionRows,
+			'quotes' => $quoteRows,
+		]);
+	}
+
+	/**
+	 * The live revision of a post, when the export declares one.
+	 *
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 */
+	private function postRevision(array $row, string $record, array &$violations): ?int
+	{
+		if (!array_key_exists('revision', $row) || $row['revision'] === null) {
+			return null;
+		}
+
+		$value = $row['revision'];
+		if (!is_int($value) || $value < 1) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'revision',
+				'A live revision must be an integer starting at one.',
+				'>= 1',
+				$value,
+			);
+
+			return null;
+		}
+
+		return $value;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 *
+	 * @return list<string>
+	 */
+	private function attachmentIds(array $row, string $record, array &$violations): array
+	{
+		if (!array_key_exists('attachment_ids', $row) || $row['attachment_ids'] === null) {
+			return [];
+		}
+
+		$value = $row['attachment_ids'];
+		if (!is_array($value) || !array_is_list($value)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'attachment_ids',
+				'Attachment ids must be a JSON array of strings.',
+				'list of attachment ids',
+				$value,
+			);
+
+			return [];
+		}
+
+		$ids = [];
+		foreach ($value as $id) {
+			if (!is_string($id) || trim($id) === '') {
+				$violations[] = new MigrationViolation(
+					$record,
+					'attachment_ids',
+					'Attachment ids must be non-empty strings.',
+					'non-empty string',
+					$id,
+				);
+				continue;
+			}
+
+			$ids[] = $id;
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, true> $postIds
+	 * @param array<string, array<int, string>> $revisionsByPost
+	 */
+	private function validateRevision(
+		array $row,
+		string $record,
+		array &$violations,
+		array $postIds,
+		array &$revisionsByPost,
+	): void {
+		$postId = $this->requiredString($row, 'post_id', $record);
+		$revision = $this->requiredInt($row, 'revision', $record);
+		$content = $this->stringValue($row, 'content', $record);
+		$warning = $this->nullableString($row, 'content_warning', $record);
+		$editedValue = $this->requiredString($row, 'edited_at', $record);
+
+		if (!array_key_exists($postId, $postIds)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'post_id',
+				'Revision points at a post that is not in the export.',
+				'a known post id',
+				$postId,
+			);
+		}
+
+		if ($revision < 1) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'revision',
+				'A stored revision number starts at one.',
+				'>= 1',
+				$revision,
+			);
+		} elseif (array_key_exists($revision, $revisionsByPost[$postId] ?? [])) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'revision',
+				'Duplicate revision number for this post.',
+				'a revision number that is not stored yet',
+				$revision,
+			);
+		} else {
+			$revisionsByPost[$postId][$revision] = trim($editedValue);
+		}
+
+		if (trim($content) === '') {
+			$violations[] = new MigrationViolation(
+				$record,
+				'content',
+				'A superseded version with empty content could not have been created.',
+				'non-empty content',
+				$content,
+			);
+		}
+
+		if ($warning !== null && mb_strlen($warning) > 200) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'content_warning',
+				'A content warning may be at most 200 characters long.',
+				'<= 200 characters',
+				mb_strlen($warning) . ' characters',
+			);
+		}
+
+		$this->timestamp($editedValue, $record, 'edited_at', $violations);
+	}
+
+	/**
+	 * A post's live revision and its stored history must agree, or the edit
+	 * history is silently incomplete after the cutover.
+	 *
+	 * @param array<string, array{record: string, revision: ?int, attachment_ids: list<string>}> $postMeta
+	 * @param array<string, array<int, string>> $revisionsByPost
+	 * @param list<MigrationViolation> $violations
+	 */
+	private function validateRevisionBaselines(array $postMeta, array $revisionsByPost, array &$violations): void
+	{
+		foreach ($postMeta as $postId => $meta) {
+			$versions = $revisionsByPost[$postId] ?? [];
+			ksort($versions);
+
+			$expected = $meta['revision'] === null ? count($versions) : max(0, $meta['revision'] - 1);
+			if (count($versions) !== $expected) {
+				$violations[] = new MigrationViolation(
+					$meta['record'],
+					'revision',
+					'The exported revision history does not cover every replaced version.',
+					$expected . ' stored version(s)',
+					count($versions) . ' exported version(s)',
+				);
+
+				continue;
+			}
+
+			$position = 1;
+			$previous = null;
+			foreach ($versions as $number => $editedAt) {
+				if ($number !== $position) {
+					$violations[] = new MigrationViolation(
+						$meta['record'],
+						'revision',
+						'Revision numbers must be contiguous, starting at one.',
+						'contiguous numbering',
+						'gap before ' . $number,
+					);
+
+					break;
+				}
+
+				if ($previous !== null && $editedAt < $previous) {
+					$violations[] = new MigrationViolation(
+						$meta['record'],
+						'edited_at',
+						'Revision timestamps must not go backwards.',
+						'a later or equal timestamp',
+						$editedAt,
+					);
+				}
+
+				$previous = $editedAt;
+				$position++;
+			}
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, true> $postIds
+	 * @param array<string, string> $mediaIds
+	 */
+	private function validateMedia(
+		array $row,
+		string $record,
+		array &$violations,
+		array $postIds,
+		array &$mediaIds,
+	): void {
+		$attachmentId = $this->requiredString($row, 'attachment_id', $record);
+		$postId = $this->requiredString($row, 'post_id', $record);
+		$storageKey = $this->requiredString($row, 'storage_key', $record);
+		$mimeType = $this->requiredString($row, 'mime_type', $record);
+		$byteSize = $this->requiredInt($row, 'byte_size', $record);
+		$checksum = $this->nullableString($row, 'checksum_sha256', $record);
+
+		$this->checkLength($record, 'attachment_id', $attachmentId, 128, $violations);
+		$this->checkLength($record, 'storage_key', $storageKey, 512, $violations);
+
+		if (!array_key_exists($postId, $postIds)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'post_id',
+				'Media points at a post that is not in the export.',
+				'a known post id',
+				$postId,
+			);
+		}
+
+		if (array_key_exists($attachmentId, $mediaIds)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'attachment_id',
+				'Duplicate media attachment id in the export.',
+				'unique attachment id',
+				$attachmentId,
+			);
+		}
+
+		if (!in_array($mimeType, Attachment::ALLOWED_MIME_TYPES, true)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'mime_type',
+				'Media type is not one the core serves.',
+				implode(', ', Attachment::ALLOWED_MIME_TYPES),
+				$mimeType,
+			);
+		}
+
+		if ($byteSize < 1) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'byte_size',
+				'A stored media object is never empty.',
+				'> 0',
+				$byteSize,
+			);
+		}
+
+		if ($checksum === null) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'checksum_sha256',
+				'Media has no checksum; the cutover cannot verify the bytes it copies.',
+				'sha256 of the original bytes',
+				null,
+				MigrationViolation::WARN,
+			);
+		} elseif (preg_match('/^[0-9a-f]{64}$/', $checksum) !== 1) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'checksum_sha256',
+				'Expected a lower-case hexadecimal sha256 checksum.',
+				'64 hex characters',
+				$checksum,
+			);
+		}
+
+		$mediaIds[$attachmentId] = $postId;
+	}
+
+	/**
+	 * A linked attachment that is missing from the media rows would render a
+	 * broken post after the cutover, so it fails instead of disappearing.
+	 *
+	 * @param array<string, array{record: string, revision: ?int, attachment_ids: list<string>}> $postMeta
+	 * @param array<string, string> $mediaIds
+	 * @param list<MigrationViolation> $violations
+	 */
+	private function validateMediaBaselines(array $postMeta, array $mediaIds, array &$violations): void
+	{
+		foreach ($postMeta as $meta) {
+			foreach ($meta['attachment_ids'] as $attachmentId) {
+				if (!array_key_exists($attachmentId, $mediaIds)) {
+					$violations[] = new MigrationViolation(
+						$meta['record'],
+						'attachment_ids',
+						'The post links an attachment that has no media row in the export.',
+						'an exported media row',
+						$attachmentId,
+					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, true> $reactionIds
+	 * @param array<string, true> $reactionKeys
+	 */
+	private function validateReaction(
+		array $row,
+		string $record,
+		array &$violations,
+		array &$reactionIds,
+		array &$reactionKeys,
+	): void {
+		$activityId = $this->requiredString($row, 'activity_id', $record);
+		$actorId = $this->requiredString($row, 'actor_id', $record);
+		$objectId = $this->requiredString($row, 'object_id', $record);
+		$kind = $this->requiredString($row, 'kind', $record);
+		$emoji = $this->nullableString($row, 'emoji', $record);
+		$createdValue = $this->requiredString($row, 'created_at', $record);
+
+		$this->checkLength($record, 'activity_id', $activityId, 512, $violations);
+		$this->checkLength($record, 'object_id', $objectId, 1024, $violations);
+		$this->requireHttpUrl($record, 'actor_id', $actorId, $violations);
+		$this->requireHttpUrl($record, 'object_id', $objectId, $violations);
+
+		if (!in_array($kind, ['like', 'emoji'], true)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'kind',
+				'Unsupported reaction kind.',
+				'like or emoji',
+				$kind,
+			);
+		}
+
+		if ($kind === 'emoji') {
+			if ($emoji === null || trim($emoji) === '') {
+				$violations[] = new MigrationViolation(
+					$record,
+					'emoji',
+					'An emoji reaction needs its emoji.',
+					'a non-empty emoji',
+					null,
+				);
+			} elseif (mb_strlen($emoji) > 64) {
+				$violations[] = new MigrationViolation(
+					$record,
+					'emoji',
+					'An emoji may be at most 64 characters long.',
+					'<= 64 characters',
+					mb_strlen($emoji) . ' characters',
+				);
+			}
+		} elseif ($emoji !== null) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'emoji',
+				'A like carries an emoji; the export would turn it into an emoji reaction.',
+				'no emoji on a like',
+				$emoji,
+				MigrationViolation::WARN,
+			);
+		}
+
+		$this->timestamp($createdValue, $record, 'created_at', $violations);
+
+		if (array_key_exists($activityId, $reactionIds)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'activity_id',
+				'Duplicate reaction activity id in the export.',
+				'unique activity id',
+				$activityId,
+			);
+		}
+
+		$key = $actorId . "\0" . $objectId . "\0" . $kind . ':' . ($emoji ?? '');
+		if (array_key_exists($key, $reactionKeys)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'actor_id',
+				'The same actor already reacted to this object with the same reaction.',
+				'one reaction per actor, object and emoji',
+				$actorId . ' -> ' . $objectId,
+			);
+		}
+
+		$reactionIds[$activityId] = true;
+		$reactionKeys[$key] = true;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, true> $postIds
+	 * @param array<string, true> $quotedPosts
+	 */
+	private function validateQuote(
+		array $row,
+		string $record,
+		array &$violations,
+		array $postIds,
+		array &$quotedPosts,
+	): void {
+		$postId = $this->requiredString($row, 'post_id', $record);
+		$quotedUrl = $this->requiredString($row, 'quoted_url', $record);
+		$authorization = $this->nullableString($row, 'authorization', $record);
+
+		$this->checkLength($record, 'quoted_url', $quotedUrl, 1024, $violations);
+		$this->requireHttpUrl($record, 'quoted_url', $quotedUrl, $violations);
+
+		if (!array_key_exists($postId, $postIds)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'post_id',
+				'Quote points at a post that is not in the export.',
+				'a known post id',
+				$postId,
+			);
+		}
+
+		if (array_key_exists($postId, $quotedPosts)) {
+			$violations[] = new MigrationViolation(
+				$record,
+				'post_id',
+				'A post can quote at most one object.',
+				'one quote per post',
+				$postId,
+			);
+		}
+
+		if ($authorization !== null) {
+			$this->checkLength($record, 'authorization', $authorization, 512, $violations);
+		}
+
+		$quotedPosts[$postId] = true;
+	}
+
+	/**
+	 * @param array<string, mixed> $dataset
+	 * @param list<MigrationViolation> $violations
+	 * @param array<string, int> $actual
+	 */
+	private function validateCounts(array $dataset, array &$violations, array $actual): void
+	{
+		if (!array_key_exists('counts', $dataset)) {
+			return;
+		}
+
+		$counts = $this->record($dataset['counts'], 'counts');
+		foreach ($counts as $feature => $value) {
+			if (!is_string($feature)) {
+				throw new InvalidMigrationDatasetException('dataset.counts: expected feature names as keys.');
+			}
+
+			if (!is_int($value)) {
+				$violations[] = new MigrationViolation(
+					'counts',
+					$feature,
+					'A declared feature count must be an integer.',
+					'integer',
+					$value,
+				);
+				continue;
+			}
+
+			if (!array_key_exists($feature, $actual)) {
+				$violations[] = new MigrationViolation(
+					'counts',
+					$feature,
+					'The declared count has no exported section to compare with.',
+					'a section with one of: ' . implode(', ', array_keys($actual)),
+					$feature,
+					MigrationViolation::WARN,
+				);
+				continue;
+			}
+
+			if ($value !== $actual[$feature]) {
+				$violations[] = new MigrationViolation(
+					'counts',
+					$feature,
+					'The declared count does not match the exported rows.',
+					$actual[$feature],
+					$value,
+				);
+			}
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $dataset
+	 *
+	 * @return list<mixed>
+	 */
+	private function optionalRecords(array $dataset, string $field): array
+	{
+		if (!array_key_exists($field, $dataset)) {
+			return [];
+		}
+
+		return $this->records($dataset, $field);
 	}
 
 	/**

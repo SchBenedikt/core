@@ -31,6 +31,7 @@ php bin/core-demo
 php bin/export-routes
 php bin/validate-cutover var/migration-export.json
 composer migration:validate -- var/migration-export.json
+php bin/migration-inventory --summary
 composer check:attribution
 cd ui && npm test
 cd ui && npm run typecheck

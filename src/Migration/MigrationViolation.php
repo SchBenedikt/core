@@ -16,8 +16,14 @@ use function is_int;
 use function is_string;
 
 /**
- * One mismatch found while comparing a migration export with the core's
- * derived federation identity.
+ * One finding from a cutover validation.
+ *
+ * A `fail` means the exported data would lose or change identity and the
+ * cutover must not proceed. A `warn` is a semantic difference the operator has
+ * to know about but that cannot be resolved by the export: a dead-lettered job
+ * that will not be retried, or media without a checksum whose bytes therefore
+ * cannot be verified. Warnings never block, but they keep a "looks fine"
+ * report from being mistaken for "everything is provably fine".
  *
  * The record is deliberately a path (`following[2]`) rather than a database
  * row id: the export is the only input and the host needs to be able to find
@@ -25,17 +31,27 @@ use function is_string;
  */
 final readonly class MigrationViolation
 {
+	public const FAIL = 'fail';
+
+	public const WARN = 'warn';
+
 	public function __construct(
 		public string $record,
 		public string $field,
 		public string $message,
 		public mixed $expected = null,
 		public mixed $actual = null,
+		public string $severity = self::FAIL,
 	) {
 	}
 
+	public function isFailure(): bool
+	{
+		return $this->severity === self::FAIL;
+	}
+
 	/**
-	 * @return array{record: string, field: string, message: string, expected: mixed, actual: mixed}
+	 * @return array{record: string, field: string, message: string, expected: mixed, actual: mixed, severity: string}
 	 */
 	public function toArray(): array
 	{
@@ -45,6 +61,7 @@ final readonly class MigrationViolation
 			'message' => $this->message,
 			'expected' => $this->expected,
 			'actual' => $this->actual,
+			'severity' => $this->severity,
 		];
 	}
 
@@ -58,8 +75,9 @@ final readonly class MigrationViolation
 		}
 
 		$suffix = $details === [] ? '' : ' (' . implode(', ', $details) . ')';
+		$prefix = $this->isFailure() ? 'FAIL ' : 'WARN ';
 
-		return $this->record . '.' . $this->field . ': ' . $this->message . $suffix;
+		return $prefix . $this->record . '.' . $this->field . ': ' . $this->message . $suffix;
 	}
 
 	private function formatValue(mixed $value): string

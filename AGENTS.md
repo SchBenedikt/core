@@ -47,6 +47,7 @@ php bin/core-demo
 php bin/export-routes
 php bin/export-openapi
 php bin/validate-cutover <migration-export.json>
+php bin/migration-inventory
 cd ui && npm ci && npm run typecheck && npm test
 ```
 
