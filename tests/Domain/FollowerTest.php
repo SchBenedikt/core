@@ -27,6 +27,7 @@ final class FollowerTest extends TestCase
 				'actor' => 'https://remote.example/users/bob',
 				'inbox' => 'https://remote.example/users/bob/inbox',
 				'followed_at' => '2026-11-11T10:00:00Z',
+				'state' => 'accepted',
 			],
 			$follower->toArray(),
 		);
@@ -40,6 +41,23 @@ final class FollowerTest extends TestCase
 		self::assertSame('f1', $updated->id);
 		self::assertSame('https://remote.example/inbox-v2', $updated->inboxUrl);
 		self::assertSame('2026-11-11T10:00:00Z', $updated->toArray()['followed_at']);
+	}
+
+	public function testAPendingRequestKeepsTheOriginalFollowForTheAnswer(): void
+	{
+		$follow = ['id' => 'https://remote.example/follow/1', 'type' => 'Follow'];
+		$pending = (new Follower(
+			'f2',
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			Time::parse('2026-11-11T10:00:00Z'),
+			state: \AlohaSocial\Core\Domain\Federation\FollowState::Pending,
+			followActivity: $follow,
+		))->withState(\AlohaSocial\Core\Domain\Federation\FollowState::Accepted);
+
+		self::assertSame('accepted', $pending->toArray()['state']);
+		self::assertSame($follow, $pending->followActivity);
 	}
 
 	public function testASharedInboxIsPreferredForDelivery(): void

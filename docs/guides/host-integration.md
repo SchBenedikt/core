@@ -132,6 +132,7 @@ $app = Application::forHost(
     httpClient: $http,           // Core\Platform\Http\HttpClient; BoundedHttpClient enables remote media
     signingKey: $keys,           // Core\Protocol\ActivityPub\RsaKeyPair
     localActors: $actors,        // Core\Domain\Federation\LocalActorDirectory
+    localProfiles: $profiles,    // optional Core\Domain\Federation\LocalActorProfileProvider
     queue: $queue,               // Core\Jobs\JobQueue, durable
     activityLog: $activityLog,   // Core\Domain\Federation\ActivityLog, durable
     actorResolver: $resolver,    // optional; without it both inbox routes are 503
@@ -158,6 +159,7 @@ The object exposes the parts a host needs:
 | `$app->worker` | `runOnce()` from cron or a worker loop |
 | `$app->queue` | The same queue the services write to |
 | `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
+| `$app->followRequests`, `$app->profileUpdates` | Accept/reject a pending request for a locked account and publish a signed `Update(Person)` after the host changed the profile; `null` only if the host injected its own service |
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
@@ -199,6 +201,7 @@ production bootstrap.
 | `Network\HostResolver` | Resolve every A/AAAA answer so outbound delivery, actor/inbox discovery and remote media reject private addresses | `DnsHostResolver`; hosts may supply their DNS policy |
 | `Storage\BlobStore` | Store media originals and thumbnails; pass it to `forHost()` to enable the media routes | `LocalBlobStore`, `InMemoryBlobStore` |
 | `LocalActorDirectory` | Answer whether a user id is an account on this instance | host-specific |
+| `LocalActorProfileProvider` | Optional: return the host-owned display name, bio, avatar/header URLs, up to four profile fields, `locked` and `hide_collections` for a local user; without it the actor document keeps the minimal shape | host-specific; `InMemoryLocalActorProfileProvider` for tests/tools |
 | `LocalActorSearch` | Optional: search local account ids for `GET {mastodon.prefix}/search`; a directory that also implements this gets account search, otherwise the route answers `503 search_not_configured` for `type=accounts` | host-specific; `InMemoryActorDirectory` for tests/tools |
 | `LocalActorCount` | Optional: report the number of local accounts for instance stats; without it the count is `0` | host-specific; `InMemoryActorDirectory` |
 | `PostCount` | Optional: report live local posts for instance stats; without it the count is `0` | `InMemoryPostRepository`, `PdoPostRepository`; host adapter otherwise |
@@ -216,6 +219,19 @@ production bootstrap.
 | `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client. Pass `atprotoDpop` when the linked account uses a DPoP-bound OAuth token, otherwise keep the bearer token | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoDeleter` | Delete the record this core published; the default XRPC adapter implements both write and delete | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoSessionStore` | Persist the host's OAuth session and replace it with the rotated tokens; keep tokens in the host's secret store | none; host secret store; `InMemoryAtprotoSessionStore` for tests |
+
+### Locked accounts and profile fields
+
+A host that implements `LocalActorProfileProvider` owns the profile values and
+the `locked`/`hide_collections` flags. The core reads them for the actor
+document, its `Update(Person)` and the Mastodon account; it does not write the
+host's profile. When a locked account receives a `Follow`, the edge stays
+pending until the host calls `$app->followRequests->accept()`/`reject()` or
+routes `GET/POST /api/v1/follow-requests...`; accepted requests are the only
+ones that receive content. After changing a profile, call
+`$app->profileUpdates->publish($userId)` to queue the signed update to accepted
+followers. `hide_collections` affects member pages only; the root count stays
+public. See [the route reference](../reference/routes.md#locked-accounts-and-profile-fields).
 
 ### Config keys
 

@@ -32,6 +32,26 @@ interface FollowerRepository
 	public function findByActor(string $localUserId, string $actorId): ?Follower;
 
 	/**
+	 * Moves one request from `from` to `to`, but only for its owner.
+	 *
+	 * The conditional update is the concurrency boundary: a repeated Accept
+	 * or a Reject after an Accept changes no row and reports false.
+	 */
+	public function updateState(
+		string $id,
+		string $localUserId,
+		FollowState $from,
+		FollowState $to,
+	): bool;
+
+	/**
+	 * Pending requests for one account, newest first.
+	 *
+	 * @return list<Follower>
+	 */
+	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array;
+
+	/**
 	 * Deletes only if the follower belongs to the given local user.
 	 *
 	 * @return bool whether a row was removed

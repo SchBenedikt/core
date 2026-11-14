@@ -64,6 +64,48 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return true;
 	}
 
+	public function updateState(
+		string $id,
+		string $localUserId,
+		FollowState $from,
+		FollowState $to,
+	): bool {
+		$follower = $this->followers[$id] ?? null;
+		if ($follower === null || $follower->localUserId !== $localUserId || $follower->state !== $from) {
+			return false;
+		}
+
+		// A rejected request is not an edge and must not linger in the
+		// follower graph. The peer's next Follow is a fresh request.
+		if ($to === FollowState::Rejected) {
+			unset($this->followers[$id]);
+
+			return true;
+		}
+
+		$this->followers[$id] = $follower->withState($to);
+
+		return true;
+	}
+
+	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		$matching = array_values(array_filter(
+			$this->followers,
+			static fn (Follower $follower): bool => $follower->localUserId === $localUserId
+				&& $follower->state === FollowState::Pending
+				&& ($before === null || $follower->followedAt < $before),
+		));
+
+		usort($matching, static function (Follower $a, Follower $b): int {
+			$byTime = $b->followedAt <=> $a->followedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
+		});
+
+		return array_slice($matching, 0, max(1, $limit));
+	}
+
 	public function removeByActor(string $localUserId, string $actorId): bool
 	{
 		foreach ($this->followers as $id => $follower) {
@@ -82,6 +124,7 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		$matching = array_values(array_filter(
 			$this->followers,
 			static fn (Follower $follower): bool => $follower->localUserId === $localUserId
+				&& $follower->state === FollowState::Accepted
 				&& ($before === null || $follower->followedAt < $before),
 		));
 
@@ -98,7 +141,8 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$matching = array_values(array_filter(
 			$this->followers,
-			static fn (Follower $follower): bool => $follower->localUserId === $localUserId,
+			static fn (Follower $follower): bool => $follower->localUserId === $localUserId
+				&& $follower->state === FollowState::Accepted,
 		));
 
 		usort($matching, static function (Follower $a, Follower $b): int {
@@ -119,7 +163,9 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$matching = array_values(array_filter(
 			$this->followers,
-			static fn (Follower $follower): bool => $follower->local && $follower->actorId === $actorId,
+			static fn (Follower $follower): bool => $follower->local
+				&& $follower->actorId === $actorId
+				&& $follower->state === FollowState::Accepted,
 		));
 
 		usort($matching, static function (Follower $a, Follower $b): int {
@@ -135,7 +181,10 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$users = [];
 		foreach ($this->followers as $follower) {
-			if ($follower->local && $follower->actorId === $actorId) {
+			if ($follower->local
+				&& $follower->actorId === $actorId
+				&& $follower->state === FollowState::Accepted
+			) {
 				$users[$follower->localUserId] = true;
 			}
 		}
@@ -150,7 +199,10 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$count = 0;
 		foreach ($this->followers as $follower) {
-			if ($follower->local && $follower->actorId === $actorId) {
+			if ($follower->local
+				&& $follower->actorId === $actorId
+				&& $follower->state === FollowState::Accepted
+			) {
 				$count++;
 			}
 		}
@@ -162,7 +214,10 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$inboxes = [];
 		foreach ($this->followers as $follower) {
-			if ($follower->localUserId === $localUserId && !$follower->local) {
+			if ($follower->localUserId === $localUserId
+				&& !$follower->local
+				&& $follower->state === FollowState::Accepted
+			) {
 				$inboxes[$follower->deliveryInboxUrl()] = true;
 			}
 		}
@@ -177,7 +232,7 @@ final class InMemoryFollowerRepository implements FollowerRepository
 	{
 		$count = 0;
 		foreach ($this->followers as $follower) {
-			if ($follower->localUserId === $localUserId) {
+			if ($follower->localUserId === $localUserId && $follower->state === FollowState::Accepted) {
 				$count++;
 			}
 		}

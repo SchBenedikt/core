@@ -10,6 +10,9 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfile;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileField;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
@@ -17,10 +20,12 @@ use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
+use AlohaSocial\Core\Support\Time;
 
 use function array_merge;
 use function array_slice;
 use function count;
+use function trim;
 
 /**
  * The public description of a local account, its followers and following.
@@ -41,8 +46,8 @@ final class ActorDocumentService
 		private readonly FollowerService $followers,
 		private readonly FollowingService $following,
 		private readonly ?LocalRelationshipService $relationships = null,
-	) {
-	}
+		private readonly ?LocalActorProfileProvider $profiles = null,
+	) {}
 
 	/**
 	 * @return array<string, mixed>
@@ -53,13 +58,14 @@ final class ActorDocumentService
 	{
 		$userId = $this->knownUser($handle);
 		$actorId = $this->activities->actorId($userId);
+		$profile = $this->profiles?->profile($userId);
 
-		return [
+		$document = [
 			'@context' => [ActivityFactory::CONTEXT, self::CONTEXT_SECURITY],
 			'id' => $actorId,
 			'type' => 'Person',
 			'preferredUsername' => $userId,
-			'name' => $userId,
+			'name' => $profile?->displayName ?? $userId,
 			// One inbox endpoint serves all local actors; the activity's
 			// `object` names the account it is addressed to. The shared inbox
 			// is advertised separately so peers can batch server-wide delivery.
@@ -76,6 +82,61 @@ final class ActorDocumentService
 				'publicKeyPem' => $this->keys->publicKeyPem(),
 			],
 		];
+
+		if ($profile === null) {
+			return $document;
+		}
+
+		if ($profile->summary !== '') {
+			$document['summary'] = $profile->summary;
+		}
+
+		if ($profile->avatarUrl !== null) {
+			$document['icon'] = ['type' => 'Image', 'url' => $profile->avatarUrl];
+		}
+
+		if ($profile->headerUrl !== null) {
+			$document['image'] = ['type' => 'Image', 'url' => $profile->headerUrl];
+		}
+
+		if ($profile->locked) {
+			$document['manuallyApprovesFollowers'] = true;
+		}
+
+		$document['updated'] = Time::format($profile->updatedAt);
+
+		$attachments = array_map(
+			static fn (string $url): array => ['type' => 'Image', 'url' => $url],
+			$profile->attachmentUrls,
+		);
+		foreach ($profile->fields as $field) {
+			$attachments[] = $this->profileField($field);
+		}
+		if ($attachments !== []) {
+			$document['attachment'] = $attachments;
+		}
+
+		return $document;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function profileField(LocalActorProfileField $field): array
+	{
+		$value = [
+			'type' => 'PropertyValue',
+			'name' => $field->name,
+			'value' => $field->value,
+		];
+
+		// The host only sets this after checking the link. The core never
+		// fetches an arbitrary URL to discover a rel=me claim itself.
+		if ($field->verified) {
+			$value['rel'] = ['me'];
+		}
+
+		return $value;
 	}
 
 	/**
@@ -89,6 +150,7 @@ final class ActorDocumentService
 		string $handle,
 		?int $page = null,
 		int $limit = OrderedCollection::DEFAULT_LIMIT,
+		?string $viewerId = null,
 	): array {
 		$userId = $this->knownUser($handle);
 		$limit = OrderedCollection::clampLimit($limit);
@@ -97,6 +159,10 @@ final class ActorDocumentService
 
 		if ($page === null) {
 			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		if ($this->hiddenFrom($userId, $viewerId)) {
+			return OrderedCollection::page($id, $page, $limit, $total, []);
 		}
 
 		$actors = $this->followers->actorIdsPage(
@@ -119,6 +185,7 @@ final class ActorDocumentService
 		string $handle,
 		?int $page = null,
 		int $limit = OrderedCollection::DEFAULT_LIMIT,
+		?string $viewerId = null,
 	): array {
 		$userId = $this->knownUser($handle);
 		$limit = OrderedCollection::clampLimit($limit);
@@ -128,6 +195,10 @@ final class ActorDocumentService
 
 		if ($page === null) {
 			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		if ($this->hiddenFrom($userId, $viewerId)) {
+			return OrderedCollection::page($id, $page, $limit, $total, []);
 		}
 
 		if ($local === []) {
@@ -148,6 +219,16 @@ final class ActorDocumentService
 		}
 
 		return OrderedCollection::page($id, $page, $limit, $total, $actors);
+	}
+
+	/**
+	 * A hidden collection keeps its root counts but refuses member pages to
+	 * anyone except its owner.
+	 */
+	private function hiddenFrom(string $userId, ?string $viewerId): bool
+	{
+		return $viewerId !== $userId
+			&& ($this->profiles?->profile($userId)?->hideCollections ?? false);
 	}
 
 	/**

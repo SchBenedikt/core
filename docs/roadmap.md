@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 125 routes, 53 of them under the Mastodon prefix |
+| HTTP contract | 128 routes, 53 of them under the Mastodon prefix |
 | Persistence | 27 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 181 PHP test files (1599 tests, 8279 assertions) and 9 UI test files (69 tests) |
+| Tests | 186 PHP test files (1614 tests, 8404 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -122,7 +122,11 @@ the host that serves it. See
   follows, signed `Follow`/`Undo`, inbound `Follow`/`Undo`/`Create`/`Delete`/
   `Announce`, outbound `Block`/`Undo(Block)` and local `Announce`/
   `Undo(Announce)`, retries with backoff, dead letters and a durable replay
-  log. See [federation](guides/federation.md),
+  log. A host-supplied profile feeds the actor document and Mastodon account;
+  a locked account holds a Follow pending until the owner accepts or rejects
+  it, a profile change is a signed `Update(Person)` to accepted followers, and
+  `hide_collections` keeps member pages owner-only while the root count stays
+  public. See [federation](guides/federation.md),
   [inbound federation](guides/inbound-federation.md) and
   [jobs and delivery](guides/jobs-and-delivery.md).
 - **Discovery** — actor document, WebFinger, followers/following/outbox

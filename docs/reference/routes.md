@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 125 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 128 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -59,6 +59,9 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
+| `follow_requests.list` | `GET` | `/api/v1/follow-requests` | yes | 120 / 60 s |
+| `follow_requests.accept` | `POST` | `/api/v1/follow-requests/{id}/accept` | yes | 60 / 900 s |
+| `follow_requests.reject` | `POST` | `/api/v1/follow-requests/{id}/reject` | yes | 60 / 900 s |
 | `following.follow` | `POST` | `/api/v1/following` | yes | 30 / 900 s |
 | `following.unfollow` | `DELETE` | `/api/v1/following/{id}` | yes | 60 / 900 s |
 | `blocks.list` | `GET` | `/api/v1/blocks` | yes | 120 / 60 s |
@@ -1179,6 +1182,33 @@ and terminal worker errors are dead-lettered immediately. The worker codes
 response bodies; see [jobs and delivery](../guides/jobs-and-delivery.md) and
 the [error code reference](error-codes.md#worker-and-queue-failure-codes). It
 adds no HTTP route and no OpenAPI path either.
+
+## Locked accounts and profile fields
+
+When the host supplies a `LocalActorProfileProvider`, `GET /@{handle}` carries
+the display name, summary, avatar (`icon`), header (`image`), up to four
+`PropertyValue` fields and `manuallyApprovesFollowers`; `updated` is the
+profile's last change while the actor id, key id and inbox URLs stay stable.
+Only a field the host marked verified is serialized with `rel: ["me"]`. The
+Mastodon account object uses the same profile for `display_name`, `note`,
+avatar, header, `locked`, `fields` and `created_at`.
+
+A locked account (`locked`) turns an inbound `Follow` into a pending request:
+it is never an edge, receives no content or follow notification, and gets no
+`Accept`. `GET /api/v1/follow-requests` lists the caller's pending requests.
+`POST /api/v1/follow-requests/{id}/accept` turns one into an accepted edge and
+queues the signed `Accept`; `POST /api/v1/follow-requests/{id}/reject` deletes
+it and queues a signed `Reject`. Both answer `202` on success (`200` with the
+updated request for accept), and a missing or foreign id is `404
+follow_request_not_found`. Repeating an already answered request is the same
+`404`; an open account continues to accept immediately. A profile change is
+published as a signed `Update(Person)` to accepted follower inboxes without
+changing the actor or key id.
+
+With `hide_collections`, the root `followers`/`following` collection still
+reports `totalItems`, but the member page is empty for anonymous and other
+viewers; the owner (the request's `userId`) sees the members. Mastodon's
+`/accounts/{id}/followers` and `/following` follow the same rule.
 
 ## Route parameters
 

@@ -27,7 +27,10 @@ use AlohaSocial\Core\Api\UpdateFilterHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
+use AlohaSocial\Core\Api\AcceptFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowRequestsHandler;
+use AlohaSocial\Core\Api\RejectFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
 use AlohaSocial\Core\Api\FollowedTagsHandler;
 use AlohaSocial\Core\Api\FollowHashtagHandler;
@@ -543,6 +546,33 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/900',
 				summary: 'Forget a follower and stop delivering to it.',
+			),
+			new Route(
+				name: 'follow_requests.list',
+				method: 'GET',
+				path: $base . '/follow-requests',
+				handler: FollowRequestsHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Pending follow requests for a locked account.',
+			),
+			new Route(
+				name: 'follow_requests.accept',
+				method: 'POST',
+				path: $base . '/follow-requests/{id}/accept',
+				handler: AcceptFollowRequestHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Accept one pending follow request and queue the signed Accept.',
+			),
+			new Route(
+				name: 'follow_requests.reject',
+				method: 'POST',
+				path: $base . '/follow-requests/{id}/reject',
+				handler: RejectFollowRequestHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Reject one pending follow request and queue the signed Reject.',
 			),
 			new Route(
 				name: 'blocks.list',

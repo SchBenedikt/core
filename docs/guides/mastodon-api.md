@@ -393,12 +393,17 @@ not know is `404 not_found`; the route does not reveal whether an account ever
 existed. The id is the local user id, and the counts come from the existing
 follower graph: `followers_count` is the follower collection and
 `following_count` merges outgoing remote edges with local-to-local edges.
-Profile detail fields stay host-owned; the local id and counts are projected
-as above, while display name, note, avatar, header, fields and
-`statuses_count` keep their minimal defaults instead of inventing host data.
+Profile detail fields stay host-owned; with a
+`LocalActorProfileProvider` the account carries the host's display name, note,
+avatar, header, `locked`, `fields` and `created_at`, otherwise those fields
+keep their minimal defaults instead of inventing host data. A verified profile
+field includes `verified_at`.
 
 `GET /accounts/{id}/followers` and `GET /accounts/{id}/following` are also
-public (`60/60`) and return an array of the same account objects. `limit`
+public (`60/60`) and return an array of the same account objects. When the
+account sets `hide_collections`, both arrays are empty for every viewer except
+the owner; the account's `followers_count`/`following_count` are unchanged.
+`limit`
 defaults to 40 and is clamped to 1–80. Both support Mastodon's id-aware
 cursors:
 

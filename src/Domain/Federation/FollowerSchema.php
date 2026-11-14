@@ -39,7 +39,9 @@ final class FollowerSchema
 			. ' inbox_url VARCHAR(512) NOT NULL,'
 			. ' shared_inbox_url VARCHAR(512) NULL,'
 			. ' followed_at VARCHAR(20) NOT NULL,'
-			. ' is_local SMALLINT NOT NULL DEFAULT 0'
+			. ' is_local SMALLINT NOT NULL DEFAULT 0,'
+			. " state VARCHAR(16) NOT NULL DEFAULT 'accepted',"
+			. ' follow_activity TEXT NULL'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::TABLE . '_identity ON ' . self::TABLE
 			. ' (local_user_id, actor_id)',

@@ -28,6 +28,7 @@ final class MastodonAccountFollowingHandler extends MastodonHandler
 					$maxId,
 					$sinceId,
 					$minId,
+					$request->userId,
 				),
 		);
 	}

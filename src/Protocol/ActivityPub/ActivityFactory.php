@@ -116,6 +116,39 @@ final class ActivityFactory
 		return $this->actorId($userId) . '/outbox';
 	}
 
+	/**
+	 * A profile Update's id changes with the profile's update time, while the
+	 * actor id and key id stay stable. A retry of one edit therefore carries
+	 * the same activity id.
+	 */
+	public function actorUpdateId(string $userId, DateTimeImmutable $at): string
+	{
+		return $this->actorId($userId) . '#updates/' . rawurlencode(Time::format($at));
+	}
+
+	/**
+	 * A signed profile Update whose object is the complete actor document.
+	 *
+	 * It is addressed to the account's followers, not to the public
+	 * collection: a profile is public, but an update delivery is fan-out.
+	 *
+	 * @param array<string, mixed> $actorDocument
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function updateActor(string $userId, array $actorDocument, DateTimeImmutable $at): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->actorUpdateId($userId, $at),
+			'type' => 'Update',
+			'actor' => $this->actorId($userId),
+			'published' => Time::format($at),
+			'to' => [$this->followersId($userId)],
+			'object' => $actorDocument,
+		];
+	}
+
 	public function followId(string $followedId): string
 	{
 		return $this->baseUrl() . '/api/v1/following/' . rawurlencode($followedId) . '/follow';
@@ -414,6 +447,29 @@ final class ActivityFactory
 	 * The original Follow is embedded unchanged, so the peer can match the
 	 * Accept to its request without having stored the activity id itself.
 	 *
+	 * @param array<string, mixed> $follow
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function rejectFollow(string $localUserId, string $followerId, array $follow): array
+	{
+		$activity = [
+			'@context' => self::CONTEXT,
+			'id' => $this->baseUrl() . '/api/v1/followers/' . rawurlencode($followerId) . '/reject',
+			'type' => 'Reject',
+			'actor' => $this->actorId($localUserId),
+			'object' => $follow,
+		];
+
+		$target = $follow['actor'] ?? null;
+		if (is_string($target) && $target !== '') {
+			$activity['to'] = [$target];
+		}
+
+		return $activity;
+	}
+
+	/**
 	 * @param array<string, mixed> $follow
 	 *
 	 * @return array<string, mixed>

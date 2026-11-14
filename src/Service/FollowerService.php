@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
@@ -43,10 +44,16 @@ final class FollowerService
 	}
 
 	/**
-	 * @param bool $local true for a local-to-local edge, which has no remote delivery
+	 * @param bool                 $local            true for a local-to-local edge, which has no remote delivery
+	 * @param bool                 $requiresApproval store a locked account's Follow as pending
+	 * @param array<string, mixed> $followActivity   the original Follow, for a later Accept/Reject
 	 */
-	public function follow(FollowActor $command, bool $local = false): FollowResult
-	{
+	public function follow(
+		FollowActor $command,
+		bool $local = false,
+		bool $requiresApproval = false,
+		array $followActivity = [],
+	): FollowResult {
 		$localUserId = trim($command->localUserId);
 		$actorId = trim($command->actorId);
 		$inboxUrl = trim($command->inboxUrl);
@@ -88,13 +95,21 @@ final class FollowerService
 
 		$existing = $this->followers->findByActor($localUserId, $actorId);
 		if ($existing !== null) {
+			// An account that was locked when the request arrived may have
+			// been unlocked since. A new Follow is then an acceptance.
+			if ($existing->state === FollowState::Pending && !$requiresApproval) {
+				$this->followers->updateState($existing->id, $localUserId, FollowState::Pending, FollowState::Accepted);
+				$existing = $existing->withState(FollowState::Accepted);
+			}
+
 			if ($existing->inboxUrl === $inboxUrl
 				&& ($sharedInboxUrl === null || $existing->sharedInboxUrl === $sharedInboxUrl)
+				&& ($followActivity === [] || $existing->followActivity === $followActivity)
 			) {
 				return new FollowResult($existing, false);
 			}
 
-			$updated = $existing->withInbox($inboxUrl, $sharedInboxUrl);
+			$updated = $existing->withInbox($inboxUrl, $sharedInboxUrl, $followActivity);
 			$this->followers->updateInbox($updated);
 
 			return new FollowResult($updated, false);
@@ -108,6 +123,8 @@ final class FollowerService
 			followedAt: Time::toSecondPrecision($this->clock->now()),
 			sharedInboxUrl: $sharedInboxUrl,
 			local: $local,
+			state: $requiresApproval ? FollowState::Pending : FollowState::Accepted,
+			followActivity: $followActivity,
 		);
 
 		$this->followers->insert($follower);
@@ -163,6 +180,27 @@ final class FollowerService
 	public function count(string $localUserId): int
 	{
 		return $this->followers->count($localUserId);
+	}
+
+	/**
+	 * Pending requests for one local account, newest first.
+	 *
+	 * @return list<Follower>
+	 *
+	 * @throws InvalidCursorException
+	 */
+	public function pending(string $localUserId, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	{
+		return $this->followers->pending(
+			$localUserId,
+			max(1, min(self::MAX_LIMIT, $limit)),
+			$this->cursor($before),
+		);
+	}
+
+	public function find(string $followerId): ?Follower
+	{
+		return $this->followers->find($followerId);
 	}
 
 	/**

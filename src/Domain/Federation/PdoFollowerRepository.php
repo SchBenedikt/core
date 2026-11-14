@@ -21,7 +21,7 @@ use DateTimeImmutable;
  */
 final class PdoFollowerRepository implements FollowerRepository
 {
-	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local';
+	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local, state, follow_activity';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -32,8 +32,8 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$this->db->execute(
 			'INSERT INTO ' . FollowerSchema::TABLE
-			. ' (id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local)'
-			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :shared_inbox_url, :followed_at, :is_local)',
+			. ' (id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local, state, follow_activity)'
+			. ' VALUES (:id, :local_user_id, :actor_id, :inbox_url, :shared_inbox_url, :followed_at, :is_local, :state, :follow_activity)',
 			[
 				'id' => $follower->id,
 				'local_user_id' => $follower->localUserId,
@@ -42,6 +42,10 @@ final class PdoFollowerRepository implements FollowerRepository
 				'shared_inbox_url' => $follower->sharedInboxUrl,
 				'followed_at' => Time::format($follower->followedAt),
 				'is_local' => $follower->local ? 1 : 0,
+				'state' => $follower->state->value,
+				'follow_activity' => $follower->followActivity === []
+					? null
+					: json_encode($follower->followActivity, JSON_THROW_ON_ERROR),
 			],
 		);
 	}
@@ -50,11 +54,15 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$this->db->execute(
 			'UPDATE ' . FollowerSchema::TABLE
-			. ' SET inbox_url = :inbox_url, shared_inbox_url = :shared_inbox_url WHERE id = :id',
+			. ' SET inbox_url = :inbox_url, shared_inbox_url = :shared_inbox_url,'
+			. ' follow_activity = :follow_activity WHERE id = :id',
 			[
 				'id' => $follower->id,
 				'inbox_url' => $follower->inboxUrl,
 				'shared_inbox_url' => $follower->sharedInboxUrl,
+				'follow_activity' => $follower->followActivity === []
+					? null
+					: json_encode($follower->followActivity, JSON_THROW_ON_ERROR),
 			],
 		);
 	}
@@ -80,6 +88,50 @@ final class PdoFollowerRepository implements FollowerRepository
 		return $row === null ? null : $this->hydrate($row);
 	}
 
+	public function updateState(
+		string $id,
+		string $localUserId,
+		FollowState $from,
+		FollowState $to,
+	): bool {
+		if ($to === FollowState::Rejected) {
+			return $this->db->execute(
+				'DELETE FROM ' . FollowerSchema::TABLE
+				. ' WHERE id = :id AND local_user_id = :local_user_id AND state = :state',
+				['id' => $id, 'local_user_id' => $localUserId, 'state' => $from->value],
+			) > 0;
+		}
+
+		return $this->db->execute(
+			'UPDATE ' . FollowerSchema::TABLE . ' SET state = :to WHERE id = :id'
+			. ' AND local_user_id = :local_user_id AND state = :from',
+			[
+				'to' => $to->value,
+				'id' => $id,
+				'local_user_id' => $localUserId,
+				'from' => $from->value,
+			],
+		) > 0;
+	}
+
+	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
+	{
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
+			. ' WHERE local_user_id = :local_user_id AND state = :state';
+		$parameters = ['local_user_id' => $localUserId, 'state' => FollowState::Pending->value];
+		if ($before !== null) {
+			$sql .= ' AND followed_at < :before';
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY followed_at DESC, id DESC LIMIT ' . max(1, $limit);
+
+		return array_map(
+			fn (array $row): Follower => $this->hydrate($row),
+			$this->db->fetchAll($sql, $parameters),
+		);
+	}
+
 	public function remove(string $id, string $localUserId): bool
 	{
 		return $this->db->execute(
@@ -101,8 +153,8 @@ final class PdoFollowerRepository implements FollowerRepository
 	public function followers(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id';
-		$parameters = ['local_user_id' => $localUserId];
+			. ' WHERE local_user_id = :local_user_id AND state = :state';
+		$parameters = ['local_user_id' => $localUserId, 'state' => FollowState::Accepted->value];
 
 		if ($before !== null) {
 			$sql .= ' AND followed_at < :before';
@@ -121,9 +173,9 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$rows = $this->db->fetchAll(
 			'SELECT actor_id FROM ' . FollowerSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id'
+			. ' WHERE local_user_id = :local_user_id AND state = :state'
 			. ' ORDER BY followed_at DESC, id DESC',
-			['local_user_id' => $localUserId],
+			['local_user_id' => $localUserId, 'state' => FollowState::Accepted->value],
 		);
 
 		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
@@ -133,11 +185,11 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$rows = $this->db->fetchAll(
 			'SELECT actor_id FROM ' . FollowerSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id'
+			. ' WHERE local_user_id = :local_user_id AND state = :state'
 			. ' ORDER BY followed_at DESC, id DESC'
 			. ' LIMIT ' . max(1, $limit)
 			. ' OFFSET ' . max(0, $offset),
-			['local_user_id' => $localUserId],
+			['local_user_id' => $localUserId, 'state' => FollowState::Accepted->value],
 		);
 
 		return array_map(static fn (array $row): string => (string) $row['actor_id'], $rows);
@@ -147,8 +199,9 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$rows = $this->db->fetchAll(
 			'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
-			. ' WHERE actor_id = :actor_id AND is_local = 1 ORDER BY followed_at DESC, id DESC',
-			['actor_id' => $actorId],
+			. ' WHERE actor_id = :actor_id AND is_local = 1 AND state = :state'
+			. ' ORDER BY followed_at DESC, id DESC',
+			['actor_id' => $actorId, 'state' => FollowState::Accepted->value],
 		);
 
 		return array_map(fn (array $row): Follower => $this->hydrate($row), $rows);
@@ -158,8 +211,9 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		$rows = $this->db->fetchAll(
 			'SELECT DISTINCT local_user_id FROM ' . FollowerSchema::TABLE
-			. ' WHERE actor_id = :actor_id AND is_local = 1 ORDER BY local_user_id',
-			['actor_id' => $actorId],
+			. ' WHERE actor_id = :actor_id AND is_local = 1 AND state = :state'
+			. ' ORDER BY local_user_id',
+			['actor_id' => $actorId, 'state' => FollowState::Accepted->value],
 		);
 
 		return array_map(static fn (array $row): string => (string) $row['local_user_id'], $rows);
@@ -169,8 +223,8 @@ final class PdoFollowerRepository implements FollowerRepository
 	{
 		return (int) $this->db->fetchValue(
 			'SELECT COUNT(*) FROM ' . FollowerSchema::TABLE
-			. ' WHERE actor_id = :actor_id AND is_local = 1',
-			['actor_id' => $actorId],
+			. ' WHERE actor_id = :actor_id AND is_local = 1 AND state = :state',
+			['actor_id' => $actorId, 'state' => FollowState::Accepted->value],
 		);
 	}
 
@@ -179,8 +233,9 @@ final class PdoFollowerRepository implements FollowerRepository
 		$rows = $this->db->fetchAll(
 			'SELECT DISTINCT COALESCE(shared_inbox_url, inbox_url) AS inbox_url'
 			. ' FROM ' . FollowerSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id AND is_local = 0 ORDER BY inbox_url',
-			['local_user_id' => $localUserId],
+			. ' WHERE local_user_id = :local_user_id AND is_local = 0 AND state = :state'
+			. ' ORDER BY inbox_url',
+			['local_user_id' => $localUserId, 'state' => FollowState::Accepted->value],
 		);
 
 		return array_map(static fn (array $row): string => (string) $row['inbox_url'], $rows);
@@ -189,8 +244,9 @@ final class PdoFollowerRepository implements FollowerRepository
 	public function count(string $localUserId): int
 	{
 		$value = $this->db->fetchValue(
-			'SELECT COUNT(*) FROM ' . FollowerSchema::TABLE . ' WHERE local_user_id = :local_user_id',
-			['local_user_id' => $localUserId],
+			'SELECT COUNT(*) FROM ' . FollowerSchema::TABLE
+			. ' WHERE local_user_id = :local_user_id AND state = :state',
+			['local_user_id' => $localUserId, 'state' => FollowState::Accepted->value],
 		);
 
 		return (int) $value;
@@ -209,6 +265,23 @@ final class PdoFollowerRepository implements FollowerRepository
 			followedAt: Time::parse((string) $row['followed_at']),
 			sharedInboxUrl: $row['shared_inbox_url'] === null ? null : (string) $row['shared_inbox_url'],
 			local: (int) ($row['is_local'] ?? 0) === 1,
+			state: FollowState::tryFrom((string) ($row['state'] ?? FollowState::Accepted->value))
+				?? FollowState::Accepted,
+			followActivity: $this->decodeActivity($row['follow_activity'] ?? null),
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function decodeActivity(mixed $value): array
+	{
+		if (!is_string($value) || $value === '') {
+			return [];
+		}
+
+		$decoded = json_decode($value, true);
+
+		return is_array($decoded) ? $decoded : [];
 	}
 }

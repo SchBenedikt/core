@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfile;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
@@ -58,6 +60,7 @@ final class MastodonPresenter
 		private readonly ?BookmarkRepository $bookmarks = null,
 		private readonly ?MuteService $mutes = null,
 		private readonly ?ReactionService $reactions = null,
+		private readonly ?LocalActorProfileProvider $profiles = null,
 	) {
 	}
 
@@ -67,6 +70,7 @@ final class MastodonPresenter
 	public function account(string $userId): array
 	{
 		$url = $this->baseUrl() . '/@' . rawurlencode($userId);
+		$profile = $this->profiles?->profile($userId);
 
 		return $this->accountShape(
 			$userId,
@@ -75,6 +79,7 @@ final class MastodonPresenter
 			$url,
 			$this->relationships?->followersCount($userId) ?? 0,
 			$this->relationships?->followingCount($userId) ?? 0,
+			$profile,
 		);
 	}
 
@@ -413,30 +418,43 @@ final class MastodonPresenter
 		string $url,
 		int $followersCount,
 		int $followingCount,
+		?LocalActorProfile $profile = null,
 	): array {
+		$fields = [];
+		foreach ($profile?->fields ?? [] as $field) {
+			$fields[] = [
+				'name' => $field->name,
+				'value' => $this->html($field->value),
+				'verified_at' => $field->verified
+					? $profile?->updatedAt->format('Y-m-d\\TH:i:s.000\\Z')
+					: null,
+			];
+		}
+
 		return [
 			'id' => $id,
 			'username' => $username,
 			'acct' => $acct,
-			'display_name' => $username,
-			'locked' => false,
+			'display_name' => $profile?->displayName ?? $username,
+			'locked' => $profile?->locked ?? false,
 			'bot' => false,
 			'discoverable' => true,
 			'group' => false,
-			'created_at' => '1970-01-01T00:00:00.000Z',
-			'note' => '',
+			'created_at' => $profile?->createdAt?->format('Y-m-d\\TH:i:s.000\\Z')
+				?? '1970-01-01T00:00:00.000Z',
+			'note' => $this->html($profile?->summary ?? ''),
 			'url' => $url,
-			'avatar' => '',
-			'avatar_static' => '',
-			'header' => '',
-			'header_static' => '',
+			'avatar' => $profile?->avatarUrl ?? '',
+			'avatar_static' => $profile?->avatarUrl ?? '',
+			'header' => $profile?->headerUrl ?? '',
+			'header_static' => $profile?->headerUrl ?? '',
 			'followers_count' => $followersCount,
 			'following_count' => $followingCount,
 			'statuses_count' => 0,
 			'last_status_at' => null,
 			'noindex' => false,
 			'emojis' => [],
-			'fields' => [],
+			'fields' => $fields,
 		];
 	}
 

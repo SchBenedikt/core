@@ -284,7 +284,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | Feature | Owner | Status | Validated by | Destination / gap |
 | --- | --- | --- | --- | --- |
 | `accounts` | host | supported | v1 | host account id becomes `local_user_id` |
-| `profile_metadata` | core | partial | — | actor metadata (#15); avatar/banner bytes travel as media |
+| `profile_metadata` | core | supported | — | `LocalActorProfileProvider` supplies the actor document and Mastodon account; avatar/banner bytes travel as media |
 | `posts` | core | supported | v1 | `social_post`, derived note/Create/Delete ids |
 | `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
 | `attachments` | core | supported | v2 | `social_attachment` + `BlobStore`, with image, video and audio metadata |

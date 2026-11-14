@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
@@ -89,6 +90,7 @@ final class InboxService
 		private readonly Clock $clock,
 		private readonly ?BlockedActorPolicy $blockedActors = null,
 		private readonly ?FollowPolicy $followPolicy = null,
+		private readonly ?LocalActorProfileProvider $profiles = null,
 		private readonly ?RemoteMediaService $remoteMedia = null,
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?PendingRemoteUpdateStore $pendingUpdates = null,
@@ -607,12 +609,23 @@ final class InboxService
 			);
 		}
 
-		$result = $this->followers->follow(new FollowActor(
-			$localUserId,
-			$actor->actorId,
-			$actor->inboxUrl,
-			$actor->sharedInboxUrl,
-		));
+		$locked = $this->profiles?->profile($localUserId)?->locked ?? false;
+		$result = $this->followers->follow(
+			new FollowActor(
+				$localUserId,
+				$actor->actorId,
+				$actor->inboxUrl,
+				$actor->sharedInboxUrl,
+			),
+			requiresApproval: $locked,
+			followActivity: $activity,
+		);
+
+		// A pending request is not a follower yet: it must not receive
+		// content or a notification until the owner accepts it.
+		if ($result->follower->isPending()) {
+			return;
+		}
 
 		// Record on every accepted Follow, not only the first edge: the
 		// deterministic id makes the write idempotent, and a retry after a

@@ -59,7 +59,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Search/SearchIndexSchema.php` → `social_search_index` (public local and cached remote accounts/posts with source, aliases, hashtags and cache timestamp)
 - `src/Domain/Search/TrendSchema.php` → `social_search_trend` (one hashtag row per indexed record, unique by entry and hashtag, with a time index for bounded trend windows)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index, `media_kind`, `duration_seconds`, `animated` and the optional focal point `focus_x`/`focus_y`)
-- `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url` and `is_local`)
+- `src/Domain/Federation/FollowerSchema.php` → `social_follower` (including nullable `shared_inbox_url`, `is_local`, the `pending`/`accepted` follow state and the original Follow activity JSON kept for Accept/Reject)
 - `src/Domain/Federation/FollowingSchema.php` → `social_following` (outgoing follow state `pending`/`accepted`/`rejected` and the exact Follow activity id used by Accept/Reject)
 - `src/Domain/Post/QuoteGrantSchema.php` → `social_quote_grant` (one FEP-044f grant per quoting object, with both object URLs, both actors and the revocable state)
 - `src/Domain/Federation/RemotePollSchema.php` → `social_remote_poll` (peer-owned Question options and counts as JSON) and `social_remote_poll_vote` (one optimistic local vote per viewer, with its queue state)
@@ -105,7 +105,12 @@ nullable `social_follower.shared_inbox_url VARCHAR(512)` column; rows with
 [shared inboxes](shared-inboxes.md). For the Mastodon-compatible local follow
 routes, add `social_follower.is_local SMALLINT NOT NULL DEFAULT 0`; existing
 rows stay remote (`0`) and need no backfill. Local edges are excluded from
-`inboxesFor()`, and an unfollow removes the row.
+`inboxesFor()`, and an unfollow removes the row. Locked accounts also need
+`social_follower.state VARCHAR(16) NOT NULL DEFAULT 'accepted'` and nullable
+`follow_activity JSON`; existing rows stay accepted, and a rejected request is
+deleted rather than stored. Only accepted rows appear in follower pages,
+inbox delivery and counts; `pending()` reads the unaccepted requests for the
+owner. See [locked accounts and profile fields](host-integration.md#locked-accounts-and-profile-fields).
 
 `social_job` is the durable queue used by `PdoJobQueue`; `social_activity_log`
 is the replay guard used by `PdoActivityLog`. The queue reserves a row with a

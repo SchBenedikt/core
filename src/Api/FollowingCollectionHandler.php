@@ -56,7 +56,7 @@ final class FollowingCollectionHandler implements Handler
 		);
 
 		try {
-			$collection = $this->documents->following($handle, $page, $limit);
+			$collection = $this->documents->following($handle, $page, $limit, $request->userId);
 		} catch (UnknownLocalActorException) {
 			throw new HttpException(404, 'actor_not_found', 'Actor not found.');
 		} catch (ConfigurationException) {

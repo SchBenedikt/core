@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
@@ -291,6 +292,44 @@ abstract class FollowerRepositoryTestCase extends TestCase
 			['https://a.example/inbox/shared', 'https://b.example/users/three/inbox'],
 			$repository->inboxesFor('alice'),
 		);
+	}
+
+	public function testAPendingRequestIsInvisibleToTheGraphUntilAccepted(): void
+	{
+		$repository = $this->repository();
+		$repository->insert(new Follower(
+			'pending',
+			'alice',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			Time::parse('2026-11-11T10:00:00Z'),
+			state: FollowState::Pending,
+			followActivity: ['id' => 'https://remote.example/follow/1', 'type' => 'Follow'],
+		));
+
+		self::assertSame(0, $repository->count('alice'));
+		self::assertSame([], $repository->actorIds('alice'));
+		self::assertSame([], $repository->inboxesFor('alice'));
+		self::assertSame(['pending'], array_map(
+			static fn (Follower $follower): string => $follower->id,
+			$repository->pending('alice', 10),
+		));
+
+		self::assertTrue($repository->updateState('pending', 'alice', FollowState::Pending, FollowState::Accepted));
+		self::assertSame(1, $repository->count('alice'));
+		self::assertSame(['https://remote.example/users/bob'], $repository->actorIds('alice'));
+		self::assertSame([], $repository->pending('alice', 10));
+
+		$repository->insert(new Follower(
+			'rejected',
+			'alice',
+			'https://remote.example/users/carol',
+			'https://remote.example/users/carol/inbox',
+			Time::parse('2026-11-11T10:01:00Z'),
+			state: FollowState::Pending,
+		));
+		self::assertTrue($repository->updateState('rejected', 'alice', FollowState::Pending, FollowState::Rejected));
+		self::assertNull($repository->find('rejected'));
 	}
 
 	public function testCountIsScopedToTheLocalUser(): void

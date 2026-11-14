@@ -33,7 +33,10 @@ use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
 use AlohaSocial\Core\Api\FollowedTagsHandler;
+use AlohaSocial\Core\Api\AcceptFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowHandler;
+use AlohaSocial\Core\Api\FollowRequestsHandler;
+use AlohaSocial\Core\Api\RejectFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowHashtagHandler;
 use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
@@ -156,6 +159,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Filter\FilterRuleRepository;
@@ -312,6 +316,7 @@ use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
+use AlohaSocial\Core\Service\Federation\ActorProfileUpdateService;
 use AlohaSocial\Core\Service\Federation\FederationDeliveryHandler;
 use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Service\Federation\FollowingDeliveryHandler;
@@ -335,6 +340,7 @@ use AlohaSocial\Core\Service\Cleanup\CleanupService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowedHashtagService;
 use AlohaSocial\Core\Service\FollowerService;
+use AlohaSocial\Core\Service\FollowRequestService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalAccountService;
@@ -406,6 +412,8 @@ final readonly class Application
 		public ?HeldPostService $heldPosts = null,
 		public ?NotificationService $notifications = null,
 		public ?SearchService $search = null,
+		public ?FollowRequestService $followRequests = null,
+		public ?ActorProfileUpdateService $profileUpdates = null,
 	) {
 	}
 
@@ -469,6 +477,9 @@ final readonly class Application
 		?TrendRepository $trends = null,
 		?RemoteActorSearch $remoteActorSearch = null,
 		?SearchService $search = null,
+		?LocalActorProfileProvider $localProfiles = null,
+		?FollowRequestService $followRequests = null,
+		?ActorProfileUpdateService $profileUpdates = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -575,6 +586,9 @@ final readonly class Application
 			trends: $trends,
 			remoteActorSearch: $remoteActorSearch,
 			search: $search,
+			localProfiles: $localProfiles,
+			followRequests: $followRequests,
+			profileUpdates: $profileUpdates,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -660,6 +674,9 @@ final readonly class Application
 		?TrendRepository $trends = null,
 		?RemoteActorSearch $remoteActorSearch = null,
 		?SearchService $search = null,
+		?LocalActorProfileProvider $localProfiles = null,
+		?FollowRequestService $followRequests = null,
+		?ActorProfileUpdateService $profileUpdates = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -720,6 +737,9 @@ final readonly class Application
 			trends: $trends ?? new PdoTrendRepository($database),
 			remoteActorSearch: $remoteActorSearch,
 			search: $search,
+			localProfiles: $localProfiles,
+			followRequests: $followRequests,
+			profileUpdates: $profileUpdates,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -817,6 +837,9 @@ final readonly class Application
 		?TrendRepository $trends = null,
 		?RemoteActorSearch $remoteActorSearch = null,
 		?SearchService $search = null,
+		?LocalActorProfileProvider $localProfiles = null,
+		?FollowRequestService $followRequests = null,
+		?ActorProfileUpdateService $profileUpdates = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -966,6 +989,8 @@ final readonly class Application
 			? null
 			: new XrpcAtprotoTimelineReader($httpClient, $atprotoDpop);
 		$followerService = new FollowerService($followers, $clock, $ids);
+		$followRequestService = $followRequests
+			?? new FollowRequestService($followers, $followerService, $activities, $queue);
 		$actorInboxResolver = $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
 		$blockService = new BlockService(
 			$blockRepository,
@@ -1103,7 +1128,7 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService, $reactionService),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService, $reactionService, $localProfiles),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
@@ -1119,6 +1144,7 @@ final readonly class Application
 			$muteService,
 			$accountListService,
 			$trends,
+			$localProfiles,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -1202,6 +1228,7 @@ final readonly class Application
 				$clock,
 				$blockedActors,
 				$followPolicy,
+				$localProfiles,
 				$remoteMedia,
 				$notificationService,
 				$pendingRemoteUpdates,
@@ -1216,8 +1243,20 @@ final readonly class Application
 		// An actor document needs a key to publish and a directory to answer
 		// whether a handle exists. Missing either keeps the routes at 503.
 		$actorDocuments = ($signingKey !== null && $localActors !== null)
-			? new ActorDocumentService($activities, $signingKey, $localActors, $followerService, $followingService, $localRelationships)
+			? new ActorDocumentService(
+				$activities,
+				$signingKey,
+				$localActors,
+				$followerService,
+				$followingService,
+				$localRelationships,
+				$localProfiles,
+			)
 			: null;
+		$profileUpdateService = $profileUpdates
+			?? ($actorDocuments !== null && $localProfiles !== null
+				? new ActorProfileUpdateService($actorDocuments, $followers, $activities, $queue, $localProfiles)
+				: null);
 
 		// The outbox reads the same post repository the local API writes.
 		// It is enabled with the rest of the actor surface, so an instance
@@ -1295,6 +1334,9 @@ final readonly class Application
 			->with(ClearNotificationsHandler::class, static fn (): ClearNotificationsHandler => new ClearNotificationsHandler($localAccounts))
 			->with(SearchHandler::class, static fn (): SearchHandler => new SearchHandler($searchService))
 			->with(TrendsHandler::class, static fn (): TrendsHandler => new TrendsHandler($searchService))
+			->with(FollowRequestsHandler::class, static fn (): FollowRequestsHandler => new FollowRequestsHandler($followRequestService))
+			->with(AcceptFollowRequestHandler::class, static fn (): AcceptFollowRequestHandler => new AcceptFollowRequestHandler($followRequestService))
+			->with(RejectFollowRequestHandler::class, static fn (): RejectFollowRequestHandler => new RejectFollowRequestHandler($followRequestService))
 			->with(NotificationPolicyHandler::class, static fn (): NotificationPolicyHandler => new NotificationPolicyHandler($notificationService))
 			->with(NotificationRequestsHandler::class, static fn (): NotificationRequestsHandler => new NotificationRequestsHandler($notificationService))
 			->with(NotificationRequestActionHandler::class, static fn (): NotificationRequestActionHandler => new NotificationRequestActionHandler($notificationService))
@@ -1425,6 +1467,8 @@ final readonly class Application
 			$heldPostService,
 			$notificationService,
 			$searchService,
+			$followRequestService,
+			$profileUpdateService,
 		);
 	}
 

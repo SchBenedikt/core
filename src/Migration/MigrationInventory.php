@@ -125,10 +125,9 @@ final class MigrationInventory
 				'profile_metadata',
 				'profile fields, display name, bio, avatar, banner',
 				self::OWNER_CORE,
-				'open: actor metadata (#15); the avatar and banner bytes travel as attachments',
-				self::STATUS_PARTIAL,
+				'LocalActorProfileProvider -> actor document and Mastodon account; avatar and banner bytes travel as attachments',
+				self::STATUS_SUPPORTED,
 				'inventory-only',
-				gapIssue: '#15',
 			),
 			self::entry(
 				'posts',

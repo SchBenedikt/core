@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Media\Attachment;
@@ -106,6 +107,7 @@ final class MastodonService
 		private readonly ?MuteService $mutes = null,
 		private readonly ?AccountListService $lists = null,
 		private readonly ?TrendRepository $trends = null,
+		private readonly ?LocalActorProfileProvider $profiles = null,
 	) {
 	}
 
@@ -204,10 +206,15 @@ final class MastodonService
 		?string $maxId,
 		?string $sinceId,
 		?string $minId,
+		?string $viewerId = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($accountId);
 		$relationships = $this->requireRelationships();
+
+		if ($this->profiles?->profile($accountId)?->hideCollections === true && $viewerId !== $accountId) {
+			return [];
+		}
 
 		return $this->accountPage(
 			$relationships->followerAccountIds($accountId),
@@ -227,10 +234,15 @@ final class MastodonService
 		?string $maxId,
 		?string $sinceId,
 		?string $minId,
+		?string $viewerId = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($accountId);
 		$relationships = $this->requireRelationships();
+
+		if ($this->profiles?->profile($accountId)?->hideCollections === true && $viewerId !== $accountId) {
+			return [];
+		}
 
 		return $this->accountPage(
 			$relationships->followingAccountIds($accountId),
