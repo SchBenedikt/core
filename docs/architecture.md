@@ -786,8 +786,9 @@ protocol side of linking is local: `AtprotoOAuthMetadataResolver` fetches and
 validates the PDS protected-resource and authorization-server metadata, and
 `XrpcAtprotoOAuthClient` performs PAR with PKCE S256 and `dpop_jkt`, the
 authorization-code exchange with issuer/DID checks, and refresh-token
-revocation. `DpopKeyThumbprint` is an optional proof-provider capability; the
-ES256 adapter implements it.
+revocation. `DpopKeyThumbprint` is an optional proof-provider capability (`dpop_jkt`), as
+is `DpopResourceProofProvider` for authenticated PDS requests; the ES256
+adapter implements both.
 
 OAuth session refresh is a protocol operation, not a route:
 
@@ -805,9 +806,11 @@ AtprotoSessionService::current(localUserId)
 The store is a host port because tokens are credentials; the core has no
 session table. `InMemoryAtprotoSessionStore` is the test/tool adapter. The
 refresher retries exactly one `use_dpop_nonce` challenge and never logs a token
-or response body. The existing `XrpcAtprotoPublisher` still uses its bearer
-account token; OAuth-bound resource requests remain part of the external
-account-linking/client work.
+or response body. `XrpcAtprotoPublisher` sends a DPoP resource request when the
+host supplies a `DpopResourceProofProvider` (`Es256DpopProofProvider`
+implements it, including the `ath` binding) and falls back to the bearer token
+otherwise. Account-linking UI/callback, the flow store, credential storage and
+PDS selection stay host-owned.
 
 Linking has the same protocol/service split, with no route and no core flow
 table:

@@ -105,6 +105,39 @@ final class Es256DpopProofProviderTest extends TestCase
 		$provider->proof('  ', 'https://auth.example/oauth/token');
 	}
 
+	public function testAResourceProofBindsTheAccessToken(): void
+	{
+		[$privateKey] = $this->keyPair();
+		$provider = new Es256DpopProofProvider(
+			$privateKey,
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+		);
+
+		$payload = $this->payload($provider->proofForResource(
+			'POST',
+			'https://pds.example/xrpc/com.atproto.repo.putRecord',
+			'token-1',
+		));
+
+		self::assertSame('POST', $payload['htm']);
+		self::assertSame('https://pds.example/xrpc/com.atproto.repo.putRecord', $payload['htu']);
+		self::assertSame(
+			rtrim(strtr(base64_encode(hash('sha256', 'token-1', true)), '+/', '-_'), '='),
+			$payload['ath'],
+		);
+		self::assertArrayNotHasKey('nonce', $payload);
+		self::assertArrayNotHasKey('ath', $this->payload($provider->proof('POST', 'https://pds.example/x')));
+	}
+
+	public function testAResourceProofNeedsAnAccessToken(): void
+	{
+		[$privateKey] = $this->keyPair();
+		$provider = new Es256DpopProofProvider($privateKey);
+
+		$this->expectException(InvalidArgumentException::class);
+		$provider->proofForResource('POST', 'https://pds.example/x', ' ');
+	}
+
 	/**
 	 * @return array{0: string, 1: string}
 	 */

@@ -194,6 +194,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\GuardedActorResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpActorInboxResolver;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
+use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
@@ -303,6 +304,7 @@ final readonly class Application
 		?MuteRepository $muteRepository = null,
 		?AccountListRepository $accountListRepository = null,
 		?FollowedHashtagRepository $followedHashtagRepository = null,
+		?DpopResourceProofProvider $atprotoDpop = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -321,7 +323,7 @@ final readonly class Application
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
 		$remoteThreadRepository ??= new InMemoryRemoteThreadRepository();
 		$atprotoPublications ??= new InMemoryAtprotoPublicationRepository();
-		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient);
+		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient, $atprotoDpop);
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository($posts, $remotePostRepository);
 		$favouriteRepository ??= new InMemoryFavouriteRepository();
@@ -437,6 +439,7 @@ final readonly class Application
 		?AccountListRepository $accountListRepository = null,
 		?FollowedHashtagRepository $followedHashtagRepository = null,
 		?TransactionRunner $transactions = null,
+		?DpopResourceProofProvider $atprotoDpop = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -480,7 +483,7 @@ final readonly class Application
 			hostResolver: $hostResolver,
 			atprotoPublications: $atprotoPublications ?? new PdoAtprotoPublicationRepository($database),
 			atprotoAccounts: $atprotoAccounts,
-			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient),
+			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient, $atprotoDpop),
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,

@@ -94,8 +94,8 @@ the host that serves it. See
   `Platform\Db\TransactionRunner`; terminal job errors are dead-lettered
   immediately and a failed completion is logged rather than retried. See
   [jobs and delivery](guides/jobs-and-delivery.md).
-- **AT Protocol** — public text-only publishing through authenticated XRPC
-  `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
+- **AT Protocol** — public text-only publishing through bearer or DPoP-bound
+  XRPC `putRecord`/`deleteRecord`, deterministic TIDs, idempotent publication rows,
   a read of the stored publication state, remote delete, OAuth session refresh
   and the authorization-code/PAR/revocation protocol client. Account linking
   UI, credential storage and PDS selection stay with the host. See

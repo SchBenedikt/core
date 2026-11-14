@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- DPoP-bound PDS requests. `XrpcAtprotoPublisher` accepts an optional
+  `DpopResourceProofProvider` (`Es256DpopProofProvider` implements it with the
+  RFC 9449 `ath` binding) and then sends `Authorization: DPoP` with a fresh
+  proof, retrying exactly one `use_dpop_nonce` challenge; without a provider it
+  keeps the bearer token. `Application::inMemory()` and `forHost()` take the
+  optional `atprotoDpop` port and pass it to the default publisher.
 - Guard the configuration reference with code. `DocumentationTest` resolves
 every `Config` key the core reads — declared constants and literals alike —
 and fails when `docs/reference/configuration.md` does not name it.

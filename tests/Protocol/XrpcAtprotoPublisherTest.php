@@ -11,10 +11,13 @@ namespace AlohaSocial\Core\Tests\Protocol;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
+use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoPostRecord;
+use AlohaSocial\Core\Protocol\Atproto\Es256DpopProofProvider;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use PHPUnit\Framework\TestCase;
 
@@ -131,6 +134,136 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		} catch (AtprotoPublishFailedException $exception) {
 			self::assertSame(502, $exception->status);
 		}
+	}
+
+	public function testADpopAccountSendsADpopResourceRequest(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+
+		$uri = (new XrpcAtprotoPublisher($http, $this->dpop()))->publish(
+			$this->account(),
+			'234567abcdefg',
+			AtprotoPostRecord::fromPost($this->post()),
+		);
+
+		self::assertSame(self::URI, $uri);
+		self::assertCount(1, $http->requests);
+		$request = $http->requests[0];
+		self::assertSame('DPoP secret-token', $request['headers']['Authorization']);
+
+		$proof = $this->proofPayload($request['headers']['DPoP']);
+		self::assertSame('POST', $proof['htm']);
+		self::assertSame('https://pds.example/xrpc/com.atproto.repo.putRecord', $proof['htu']);
+		self::assertSame($this->accessTokenHash('secret-token'), $proof['ath']);
+		self::assertArrayNotHasKey('nonce', $proof);
+	}
+
+	public function testADpopNonceChallengeIsRetriedOnce(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(400, ['dpop-nonce' => 'nonce-1'], '{"error":"use_dpop_nonce"}'));
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+
+		$uri = (new XrpcAtprotoPublisher($http, $this->dpop()))->publish(
+			$this->account(),
+			'234567abcdefg',
+			AtprotoPostRecord::fromPost($this->post()),
+		);
+
+		self::assertSame(self::URI, $uri);
+		self::assertCount(2, $http->requests);
+		self::assertArrayNotHasKey('nonce', $this->proofPayload($http->requests[0]['headers']['DPoP']));
+		self::assertSame('nonce-1', $this->proofPayload($http->requests[1]['headers']['DPoP'])['nonce']);
+	}
+
+	public function testASecondNonceChallengeIsNotRetried(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(400, ['dpop-nonce' => 'nonce-1'], '{"error":"use_dpop_nonce"}'));
+		$http->queueResponse(new HttpResponse(400, ['dpop-nonce' => 'nonce-2'], '{"error":"use_dpop_nonce"}'));
+		$publisher = new XrpcAtprotoPublisher($http, $this->dpop());
+
+		try {
+			$publisher->publish($this->account(), '234567abcdefg', AtprotoPostRecord::fromPost($this->post()));
+			self::fail('The publisher should have failed.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(400, $exception->status);
+			self::assertStringNotContainsString('use_dpop_nonce', $exception->getMessage());
+		}
+
+		self::assertCount(2, $http->requests);
+	}
+
+	public function testADpopChallengeWithoutNonceIsNotRetried(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(401, [], '{"error":"use_dpop_nonce"}'));
+		$publisher = new XrpcAtprotoPublisher($http, $this->dpop());
+
+		try {
+			$publisher->publish($this->account(), '234567abcdefg', AtprotoPostRecord::fromPost($this->post()));
+			self::fail('The publisher should have failed.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(401, $exception->status);
+		}
+
+		self::assertCount(1, $http->requests);
+	}
+
+	public function testADpopDeleteSendsTheProofToo(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(404, [], '{"error":"RecordNotFound"}'));
+
+		(new XrpcAtprotoPublisher($http, $this->dpop()))->delete($this->account(), '234567abcdefg');
+
+		self::assertCount(1, $http->requests);
+		$request = $http->requests[0];
+		self::assertSame('DPoP secret-token', $request['headers']['Authorization']);
+		self::assertSame(
+			'https://pds.example/xrpc/com.atproto.repo.deleteRecord',
+			$this->proofPayload($request['headers']['DPoP'])['htu'],
+		);
+	}
+
+	private function dpop(): Es256DpopProofProvider
+	{
+		$key = openssl_pkey_new([
+			'private_key_type' => OPENSSL_KEYTYPE_EC,
+			'curve_name' => 'prime256v1',
+		]);
+		self::assertNotFalse($key);
+		self::assertTrue(openssl_pkey_export($key, $privateKey));
+
+		return new Es256DpopProofProvider(
+			$privateKey,
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function proofPayload(string $proof): array
+	{
+		$parts = explode('.', $proof);
+		self::assertCount(3, $parts);
+
+		return json_decode(
+			base64_decode(
+				strtr($parts[1], '-_', '+/') . str_repeat('=', (4 - strlen($parts[1]) % 4) % 4),
+				true,
+			),
+			true,
+			64,
+			JSON_THROW_ON_ERROR,
+		);
+	}
+
+	private function accessTokenHash(string $accessToken): string
+	{
+		return rtrim(strtr(base64_encode(hash('sha256', $accessToken, true)), '+/', '-_'), '=');
 	}
 
 	private function account(): AtprotoAccount

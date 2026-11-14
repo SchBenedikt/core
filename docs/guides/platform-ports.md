@@ -101,8 +101,8 @@ a PDS, `Domain\Atproto\AtprotoDeleter` removes a record this core published, and
 `HttpClient`; `XrpcAtprotoSessionRefresher` and `Es256DpopProofProvider` are the
 OAuth refresh collaborators. `AtprotoOAuthMetadataResolver` and
 `XrpcAtprotoOAuthClient` perform discovery, PAR, code exchange and revocation
-over the same `HttpClient`; `DpopKeyThumbprint` is an optional capability on
-the existing proof port for `dpop_jkt`. Tests use fakes for the network and a
+over the same `HttpClient`; `DpopKeyThumbprint` and `DpopResourceProofProvider` are optional capabilities
+on the existing proof port for `dpop_jkt` and for authenticated PDS requests. Tests use fakes for the network and a
 fake proof provider where cryptography is not the subject. The account-linking
 UI/callback, flow store, PDS selection and the real credential store stay in
 the host; `InMemoryAtprotoSessionStore` is only the test/tool adapter. See

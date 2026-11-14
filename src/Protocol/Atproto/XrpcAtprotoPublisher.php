@@ -15,10 +15,13 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
 use JsonException;
 
 use function is_array;
 use function is_string;
+use function strlen;
+use function trim;
 
 /**
  * The authenticated XRPC write used for a Bluesky post.
@@ -27,6 +30,13 @@ use function is_string;
  * updates the same record instead of creating a duplicate. The PDS is the
  * only remote service this class talks to, and the access token is sent only
  * in the Authorization header.
+ *
+ * With a `DpopResourceProofProvider` every request is a DPoP resource request
+ * (`Authorization: DPoP <token>` plus a proof carrying `ath`), which is what an
+ * AT Protocol OAuth token needs; without one the adapter keeps sending the
+ * host's bearer token so an app-password-style host is unchanged. Exactly one
+ * `use_dpop_nonce` challenge is retried with the server's nonce. Neither a
+ * token nor a proof is ever logged or echoed in an exception.
  */
 final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 {
@@ -34,8 +44,11 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 
 	public const DELETE_ENDPOINT = '/xrpc/com.atproto.repo.deleteRecord';
 
+	public const TIMEOUT_SECONDS = 20;
+
 	public function __construct(
 		private readonly HttpClient $http,
+		private readonly ?DpopResourceProofProvider $dpop = null,
 	) {
 	}
 
@@ -55,21 +68,7 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 			throw new AtprotoPublishFailedException(0, 'The AT Protocol record could not be encoded.');
 		}
 
-		try {
-			$response = $this->http->request(
-				'POST',
-				$url,
-				[
-					'Authorization' => 'Bearer ' . $account->accessToken,
-					'Content-Type' => 'application/json',
-					'Accept' => 'application/json',
-				],
-				$body,
-				20,
-			);
-		} catch (HttpClientException) {
-			throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
-		}
+		$response = $this->send($url, $account, $body);
 
 		if (!$response->isSuccessful()) {
 			throw new AtprotoPublishFailedException($response->status, 'The AT Protocol PDS refused the record.');
@@ -103,21 +102,7 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 			throw new AtprotoPublishFailedException(0, 'The AT Protocol record key could not be encoded.');
 		}
 
-		try {
-			$response = $this->http->request(
-				'POST',
-				$url,
-				[
-					'Authorization' => 'Bearer ' . $account->accessToken,
-					'Content-Type' => 'application/json',
-					'Accept' => 'application/json',
-				],
-				$body,
-				20,
-			);
-		} catch (HttpClientException) {
-			throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
-		}
+		$response = $this->send($url, $account, $body);
 
 		// A missing record already has the desired end state. Treat it as a
 		// successful idempotent delete so a retry after a lost response or a
@@ -125,5 +110,85 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		if (!$response->isSuccessful() && $response->status !== 404) {
 			throw new AtprotoPublishFailedException($response->status, 'The AT Protocol PDS refused the delete.');
 		}
+	}
+
+	private function send(string $url, AtprotoAccount $account, string $body): HttpResponse
+	{
+		$nonce = null;
+		for ($attempt = 0; $attempt < 2; $attempt++) {
+			try {
+				$response = $this->http->request(
+					'POST',
+					$url,
+					$this->headers($url, $account, $nonce),
+					$body,
+					self::TIMEOUT_SECONDS,
+				);
+			} catch (HttpClientException) {
+				throw new AtprotoPublishFailedException(0, 'The AT Protocol PDS could not be reached.');
+			}
+
+			if ($this->dpop === null || $attempt === 1) {
+				return $response;
+			}
+
+			$nextNonce = $this->nonce($response);
+			if ($nextNonce === null
+				|| ($response->status !== 400 && $response->status !== 401)
+				|| $this->errorCode($response) !== 'use_dpop_nonce'
+			) {
+				return $response;
+			}
+
+			$nonce = $nextNonce;
+		}
+
+		throw new AtprotoPublishFailedException(401, 'The AT Protocol PDS kept refusing the DPoP proof.');
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	private function headers(string $url, AtprotoAccount $account, ?string $nonce): array
+	{
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Accept' => 'application/json',
+		];
+
+		if ($this->dpop === null) {
+			$headers['Authorization'] = 'Bearer ' . $account->accessToken;
+
+			return $headers;
+		}
+
+		return [
+			'Authorization' => 'DPoP ' . $account->accessToken,
+			'DPoP' => $this->dpop->proofForResource('POST', $url, $account->accessToken, $nonce),
+			...$headers,
+		];
+	}
+
+	private function nonce(HttpResponse $response): ?string
+	{
+		$nonce = $response->header('DPoP-Nonce');
+		if (!is_string($nonce) || trim($nonce) === '') {
+			return null;
+		}
+
+		return trim($nonce);
+	}
+
+	private function errorCode(HttpResponse $response): string
+	{
+		try {
+			$decoded = json_decode($response->body, true, 64, JSON_THROW_ON_ERROR);
+		} catch (JsonException) {
+			return 'unexpected';
+		}
+
+		$error = is_array($decoded) ? ($decoded['error'] ?? null) : null;
+
+		return is_string($error) && $error !== '' && strlen($error) <= 64 ? $error : 'unexpected';
 	}
 }

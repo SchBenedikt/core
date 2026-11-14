@@ -141,7 +141,8 @@ $app = Application::forHost(
     hostResolver: $dns,          // optional; default is DnsHostResolver; guards all federation targets
     accountListRepository: null,  // optional; default is PdoAccountListRepository($database)
     atprotoAccounts: $atprotoAccounts, // optional; enables AT Protocol publishing
-    atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http)
+    atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http, $atprotoDpop)
+    atprotoDpop: $dpop,          // optional; DPopResourceProofProvider for DPoP-bound OAuth tokens
     atprotoPublications: null,   // optional; default is PdoAtprotoPublicationRepository($database)
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
@@ -212,7 +213,7 @@ production bootstrap.
 | `RsaKeyPair` | Load the instance key from the host's secret store | `fromPems()` / `SecretBox` |
 | `ImageProcessor` | Produce a bounded thumbnail; the default GD adapter is complete for local use | `GdImageProcessor` |
 | `AtprotoAccountResolver` | Resolve a local user to a linked DID, handle, PDS URL and access token; the host may use `AtprotoSessionService` to refresh an OAuth session before returning it | none; host-specific |
-| `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client | `XrpcAtprotoPublisher`; fake in tests |
+| `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client. Pass `atprotoDpop` when the linked account uses a DPoP-bound OAuth token, otherwise keep the bearer token | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoDeleter` | Delete the record this core published; the default XRPC adapter implements both write and delete | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoSessionStore` | Persist the host's OAuth session and replace it with the rotated tokens; keep tokens in the host's secret store | none; host secret store; `InMemoryAtprotoSessionStore` for tests |
 

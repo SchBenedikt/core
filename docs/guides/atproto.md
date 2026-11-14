@@ -18,9 +18,12 @@ must provide.
   key. It is deterministic for one local post and account, so a retry updates
   the same PDS record through `com.atproto.repo.putRecord` instead of creating
   a duplicate.
-- `Protocol\Atproto\XrpcAtprotoPublisher` authenticates with the account's
-  bearer token and calls `POST /xrpc/com.atproto.repo.putRecord` on the PDS at
-  the account's `pdsUrl`. It accepts only an `at://` URI returned by the PDS.
+- `Protocol\Atproto\XrpcAtprotoPublisher` calls
+  `POST /xrpc/com.atproto.repo.putRecord` on the PDS at the account's `pdsUrl`
+  and accepts only an `at://` URI returned by the PDS. Without a proof provider
+  it authenticates with the account's bearer token; with a
+  `DpopResourceProofProvider` it sends a DPoP resource request instead, which
+  is what an AT Protocol OAuth access token needs.
 - `Domain\Atproto\AtprotoAccount` validates the DID, lowercase handle, absolute
   http(s) PDS URL and access token. `AtprotoAccountResolver` is the host port
   that maps a local user id to that account.
@@ -185,10 +188,16 @@ rotated refresh token, the `atproto` scope, the same `sub` DID and a positive
 | `dpop_nonce_missing` | no | A DPoP challenge or success response had no usable nonce |
 | OAuth error code, e.g. `invalid_grant` | only `429`/`5xx` | The server refused the refresh; `invalid_grant` requires re-authorization |
 
-The refresh flow does not change `XrpcAtprotoPublisher`: that adapter still
-uses the host's bearer/app-password token for record writes. OAuth access
-tokens use the same token endpoint refresh but require a DPoP resource request,
-which remains part of the external account-linking/client work.
+`XrpcAtprotoPublisher` takes an optional `DpopResourceProofProvider`. Without
+one it keeps sending the host's bearer/app-password token, so an existing host
+is unchanged. When the host passes its `Es256DpopProofProvider`, every record
+write is a DPoP resource request: `Authorization: DPoP <access token>`, a fresh
+proof over the request method and URL, and the RFC 9449 `ath` binding to that
+token. Exactly one `400`/`401 use_dpop_nonce` challenge is retried with the
+server's `DPoP-Nonce`; a second challenge returns the PDS status and a missing
+nonce header is not retried. No proof, nonce or token appears in an exception
+or a log line. The host still serializes refreshes per session, because AT
+Protocol refresh tokens are single-use.
 
 No `social` config key and no route is added. The session store is a host port
 because tokens are credentials; the core deliberately ships no
@@ -342,13 +351,14 @@ adds deleteRecord, publication removal, retry after a PDS failure, a 404 as
 idempotent success and the no-publication/no-double-job cases.
 `AtprotoPublishServiceTest` covers the schedule skip rules for attachments,
 non-public posts and long text plus disabled/not-configured deletion;
-`XrpcAtprotoPublisherTest` checks the exact XRPC requests and malformed/refused
+`XrpcAtprotoPublisherTest` checks the exact XRPC requests, the DPoP resource
+request with its `ath` binding, the single nonce retry and malformed/refused
 responses; `TidTest` and the repository contract cover the protocol and
 persistence primitives. `AtprotoOAuthSessionTest` covers session validation and
 the expiry leeway; `XrpcAtprotoSessionRefresherTest` covers the form request,
 rotation, DPoP nonce retry, terminal OAuth errors and malformed responses;
 `Es256DpopProofProviderTest` verifies the JWS signature, the RFC 7638
-thumbprint and unique `jti`; `AtprotoSessionServiceTest` covers refresh-on-expiry,
+thumbprint, unique `jti` and the `ath`-bound resource proof; `AtprotoSessionServiceTest` covers refresh-on-expiry,
 persistence and a failed refresh that leaves the old session untouched.
 `AtprotoOAuthMetadataResolverTest` covers discovery, issuer binding and invalid
 metadata; `XrpcAtprotoOAuthClientTest` covers the PAR form, PKCE/`dpop_jkt`,

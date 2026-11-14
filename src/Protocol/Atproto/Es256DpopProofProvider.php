@@ -18,6 +18,7 @@ use JsonException;
 use OpenSSLAsymmetricKey;
 
 use function base64_encode;
+use function hash;
 use function json_encode;
 use function openssl_pkey_get_details;
 use function openssl_pkey_get_private;
@@ -38,7 +39,7 @@ use function trim;
  * signature is converted from OpenSSL's DER form to the raw R||S form JWS
  * requires.
  */
-final class Es256DpopProofProvider implements DpopProofProvider, DpopKeyThumbprint
+final class Es256DpopProofProvider implements DpopProofProvider, DpopKeyThumbprint, DpopResourceProofProvider
 {
 	private const CURVE = 'prime256v1';
 
@@ -102,6 +103,32 @@ final class Es256DpopProofProvider implements DpopProofProvider, DpopKeyThumbpri
 
 	public function proof(string $method, string $url, ?string $nonce = null): string
 	{
+		return $this->buildProof($method, $url, $nonce, null);
+	}
+
+	/**
+	 * A resource proof adds `ath`, the hash of the access token it is sent
+	 * with. Without it the PDS treats the proof as unrelated to the token.
+	 */
+	public function proofForResource(
+		string $method,
+		string $url,
+		string $accessToken,
+		?string $nonce = null,
+	): string {
+		if ($accessToken === '' || trim($accessToken) !== $accessToken) {
+			throw new InvalidArgumentException('A DPoP resource proof needs an access token.');
+		}
+
+		return $this->buildProof($method, $url, $nonce, $accessToken);
+	}
+
+	private function buildProof(
+		string $method,
+		string $url,
+		?string $nonce,
+		?string $accessToken,
+	): string {
 		if ($method === '' || trim($method) !== $method) {
 			throw new InvalidArgumentException('A DPoP proof needs an HTTP method.');
 		}
@@ -124,6 +151,10 @@ final class Es256DpopProofProvider implements DpopProofProvider, DpopKeyThumbpri
 
 		if ($nonce !== null) {
 			$payload['nonce'] = $nonce;
+		}
+
+		if ($accessToken !== null) {
+			$payload['ath'] = $this->base64Url(hash('sha256', $accessToken, true));
 		}
 
 		try {
