@@ -1,0 +1,662 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+namespace AlohaSocial\Core\Service;
+
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
+use AlohaSocial\Core\Domain\Federation\FollowerRepository;
+use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\MuteRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Interaction\Reaction;
+use AlohaSocial\Core\Domain\Interaction\ReactionDirection;
+use AlohaSocial\Core\Domain\Interaction\ReactionKind;
+use AlohaSocial\Core\Domain\Interaction\ReactionRepository;
+use AlohaSocial\Core\Domain\Post\FavouriteRepository;
+use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobType;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Service\Federation\RemoteEmoji;
+use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
+
+use function in_array;
+use function is_array;
+use function is_string;
+use function rawurldecode;
+use function str_contains;
+use function str_starts_with;
+use function strlen;
+use function substr;
+use function trim;
+
+/**
+ * Federated Like and EmojiReact in both directions.
+ *
+ * The design decisions live here:
+ *
+ * - **Identity, not activity ids.** A reaction is keyed by (subject, object,
+ *   kind, emoji). A peer's retransmission with a fresh activity id is still
+ *   the same reaction, and an Undo removes it by the same key.
+ * - **A local favourite is not a remote delivery.** A like/unlike is stored
+ *   before anything is queued, so the local view is immediate and survives a
+ *   failing or dead-lettered delivery; the queue owns retries.
+ * - **Likes and emoji are separate counts.** An EmojiReact never increments
+ *   the like count, and a like never becomes an emoji row.
+ * - **Authorization is the post's audience, not the sender's claim.** Inbound
+ *   reactions need a live local post, the author's block check and the same
+ *   visibility rule a reader needs (direct posts are never reacted to).
+ * - **Reactions are never mirrored to a remote object we cannot verify.**
+ *   Outbound targets must be a stored remote post whose author the local
+ *   account follows; the stored inbox is the delivery target, so no new
+ *   network resolution happens on a write.
+ */
+final class ReactionService
+{
+	public function __construct(
+		private readonly PostRepository $posts,
+		private readonly FavouriteRepository $favourites,
+		private readonly ReactionRepository $reactions,
+		private readonly FollowerRepository $followers,
+		private readonly FollowingRepository $following,
+		private readonly BlockRepository $blocks,
+		private readonly ActivityFactory $activities,
+		private readonly JobQueue $queue,
+		private readonly Clock $clock,
+		private readonly ?NotificationService $notifications = null,
+		private readonly ?MuteRepository $mutes = null,
+		private readonly ?RemotePostRepository $remotePosts = null,
+	) {
+	}
+
+	/**
+	 * Stores a verified inbound Like on a local post.
+	 *
+	 * @param array<string, mixed> $activity
+	 *
+	 * @throws InboxRejectedException when the object is unknown, unauthorized or the author blocks the actor
+	 */
+	public function receiveLike(RemoteActor $actor, array $activity): void
+	{
+		$this->storeInbound($actor, $activity, ReactionKind::Like, null, null);
+	}
+
+	/**
+	 * Stores a verified inbound EmojiReact on a local post.
+	 *
+	 * @param array<string, mixed> $activity
+	 *
+	 * @throws InboxRejectedException when the emoji, the object, the audience or the block check refuses it
+	 */
+	public function receiveEmojiReact(RemoteActor $actor, array $activity): void
+	{
+		$emoji = RemoteEmoji::fromActivity($activity);
+
+		$this->storeInbound($actor, $activity, ReactionKind::Emoji, $emoji['emoji'], $emoji['icon_url']);
+	}
+
+	/**
+	 * @param array<string, mixed>|string $object the embedded Like or its id
+	 *
+	 * @throws InboxRejectedException
+	 */
+	public function undoLike(RemoteActor $actor, array|string $object): void
+	{
+		$this->undo($actor, $object, ReactionKind::Like);
+	}
+
+	/**
+	 * @param array<string, mixed>|string $object the embedded EmojiReact or its id
+	 *
+	 * @throws InboxRejectedException
+	 */
+	public function undoEmojiReact(RemoteActor $actor, array|string $object): void
+	{
+		$this->undo($actor, $object, ReactionKind::Emoji);
+	}
+
+	/**
+	 * Handles an Undo whose object is only an activity id.
+	 *
+	 * @return bool whether a stored reaction matched; false lets the caller try
+	 *              the Announce interpretation of the same id
+	 *
+	 * @throws InboxRejectedException when the id belongs to another actor
+	 */
+	public function undoByActivityId(RemoteActor $actor, string $activityId): bool
+	{
+		$stored = $this->reactions->findByActivityId(trim($activityId));
+		if ($stored === null) {
+			return false;
+		}
+
+		if ($stored->direction !== ReactionDirection::In || $stored->subjectId !== $actor->actorId) {
+			throw new InboxRejectedException(
+				'actor_mismatch',
+				'An actor may only undo its own reaction.',
+			);
+		}
+
+		$this->reactions->remove(
+			ReactionDirection::In,
+			$stored->subjectId,
+			$stored->objectId,
+			$stored->kind,
+			$stored->emoji,
+		);
+
+		return true;
+	}
+
+	/**
+	 * The neutral interaction projection of one local post.
+	 *
+	 * `favourites_count` is local favourites plus inbound remote likes; emoji
+	 * reactions have their own list and never inflate it. An emoji's stored
+	 * icon URL is not returned: the core does not vouch for a remote image.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function interactionsFor(Post $post, ?string $viewerId): array
+	{
+		$counts = $this->inboundCounts([$post->id])[$post->id];
+
+		$emoji = [];
+		foreach ($counts['emojis'] as $value => $total) {
+			$emoji[] = ['emoji' => $value, 'count' => $total];
+		}
+
+		return [
+			'favourites_count' => $this->favourites->countForPost($post->id) + $counts['likes'],
+			'emoji_reactions' => $emoji,
+			'viewer' => [
+				'favourited' => $viewerId !== null && $this->favourites->exists($viewerId, $post->id),
+				'reactions' => [],
+			],
+		];
+	}
+
+	/**
+	 * The favourite count a Mastodon status shows: local favourites plus
+	 * inbound remote likes, never emoji reactions.
+	 */
+	public function favouritesCountFor(Post $post): int
+	{
+		$counts = $this->inboundCounts([$post->id])[$post->id];
+
+		return $this->favourites->countForPost($post->id) + $counts['likes'];
+	}
+
+	/**
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, int>
+	 */
+	public function favouritesCountsForPosts(array $postIds): array
+	{
+		$counts = $this->inboundCounts($postIds);
+		$result = $this->favourites->countsForPosts($postIds);
+		foreach ($result as $postId => $local) {
+			$result[$postId] = $local + ($counts[$postId]['likes'] ?? 0);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * The stored remote post a local account may react to.
+	 *
+	 * @throws ReactionException when the post is unknown, its author is not
+	 *                           followed or the actor is blocked
+	 */
+	public function remotePostFor(string $userId, string $objectId): RemotePost
+	{
+		$objectId = trim($objectId);
+		if ($objectId === '' || $this->remotePosts === null) {
+			throw new ReactionException('remote_post_not_found', 'Remote post not found.');
+		}
+
+		$post = $this->remotePosts->findPostByObjectId($objectId);
+		if ($post === null || $post->deletedAt !== null) {
+			throw new ReactionException('remote_post_not_found', 'Remote post not found.');
+		}
+
+		$followed = $this->following->find($userId, $post->actorId);
+		if ($followed === null || $followed->state !== FollowState::Accepted) {
+			throw new ReactionException(
+				'remote_post_not_followed',
+				'Follow the author before reacting to this post.',
+			);
+		}
+
+		if ($this->blocks->findByActor($userId, $post->actorId) !== null) {
+			throw new ReactionException('blocked_actor', 'This actor is blocked.');
+		}
+
+		return $post;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws ReactionException
+	 */
+	public function likeRemote(string $userId, string $objectId): array
+	{
+		$post = $this->remotePostFor($userId, $objectId);
+		$reaction = new Reaction(
+			direction: ReactionDirection::Out,
+			subjectId: $userId,
+			objectId: $post->objectId,
+			localPostId: null,
+			kind: ReactionKind::Like,
+			emoji: null,
+			iconUrl: null,
+			activityId: $this->activities->likeId($userId, $post->objectId),
+			createdAt: $this->now(),
+		);
+
+		if ($this->insertOutbound($reaction)) {
+			$this->deliver($userId, $post->actorId, $this->activities->like($userId, $post->objectId));
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws ReactionException
+	 */
+	public function unlikeRemote(string $userId, string $objectId): array
+	{
+		$post = $this->remotePostFor($userId, $objectId);
+		$removed = $this->reactions->remove(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Like,
+			null,
+		);
+
+		if ($removed) {
+			$this->deliver($userId, $post->actorId, $this->activities->undoLike($userId, $post->objectId));
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws ReactionException
+	 */
+	public function reactToRemote(string $userId, string $objectId, string $emoji): array
+	{
+		$post = $this->remotePostFor($userId, $objectId);
+		$emoji = RemoteEmoji::forOutbound($emoji);
+		$reaction = new Reaction(
+			direction: ReactionDirection::Out,
+			subjectId: $userId,
+			objectId: $post->objectId,
+			localPostId: null,
+			kind: ReactionKind::Emoji,
+			emoji: $emoji,
+			iconUrl: null,
+			activityId: $this->activities->reactionId($userId, $post->objectId, $emoji),
+			createdAt: $this->now(),
+		);
+
+		if ($this->insertOutbound($reaction)) {
+			$this->deliver(
+				$userId,
+				$post->actorId,
+				$this->activities->emojiReact($userId, $post->objectId, $emoji),
+			);
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 *
+	 * @throws ReactionException
+	 */
+	public function unreactFromRemote(string $userId, string $objectId, string $emoji): array
+	{
+		$post = $this->remotePostFor($userId, $objectId);
+		$emoji = RemoteEmoji::forOutbound($emoji);
+		$removed = $this->reactions->remove(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Emoji,
+			$emoji,
+		);
+
+		if ($removed) {
+			$this->deliver(
+				$userId,
+				$post->actorId,
+				$this->activities->undoEmojiReact($userId, $post->objectId, $emoji),
+			);
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
+	/**
+	 * The viewer's own state on a remote post.
+	 *
+	 * A remote post has no trusted count: the core only knows what its local
+	 * accounts sent, so `favourites_count` is one or zero and the emoji list
+	 * is the viewer's own reactions. Presenting a remote total would require a
+	 * count fetch the core does not perform on a read.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function remoteInteractionsFor(string $userId, RemotePost $post): array
+	{
+		$rows = $this->reactions->forSubject(
+			ReactionDirection::Out,
+			$userId,
+			[$post->objectId],
+		)[$post->objectId] ?? [];
+
+		$favourited = false;
+		$emoji = [];
+		$viewerEmoji = [];
+		foreach ($rows as $row) {
+			if ($row->kind === ReactionKind::Like) {
+				$favourited = true;
+				continue;
+			}
+
+			$emoji[] = ['emoji' => $row->emojiKey(), 'count' => 1];
+			$viewerEmoji[] = $row->emojiKey();
+		}
+
+		return [
+			'favourites_count' => $favourited ? 1 : 0,
+			'emoji_reactions' => $emoji,
+			'viewer' => [
+				'favourited' => $favourited,
+				'reactions' => $viewerEmoji,
+			],
+		];
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function storeInbound(
+		RemoteActor $actor,
+		array $activity,
+		ReactionKind $kind,
+		?string $emoji,
+		?string $iconUrl,
+	): void {
+		$object = $activity['object'] ?? null;
+		if (!is_string($object) || trim($object) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A reaction needs an object id.');
+		}
+
+		$post = $this->localPostFor(trim($object));
+		if ($post === null) {
+			throw new InboxRejectedException('unknown_object', 'The reaction targets an unknown local post.');
+		}
+
+		$this->authorize($post, $actor);
+
+		$activityId = $activity['id'] ?? null;
+		if (!is_string($activityId) || trim($activityId) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A reaction needs an activity id.');
+		}
+
+		$reaction = new Reaction(
+			direction: ReactionDirection::In,
+			subjectId: $actor->actorId,
+			objectId: $this->activities->noteId($post),
+			localPostId: $post->id,
+			kind: $kind,
+			emoji: $emoji,
+			iconUrl: $iconUrl,
+			activityId: trim($activityId),
+			createdAt: $this->now(),
+		);
+
+		try {
+			$this->reactions->insert($reaction);
+		} catch (DatabaseException $exception) {
+			// A retransmission with a new activity id is the same identity.
+			// Only a storage failure without a matching row is a real error.
+			if ($this->reactions->find(
+				ReactionDirection::In,
+				$actor->actorId,
+				$reaction->objectId,
+				$kind,
+				$emoji,
+			) === null) {
+				throw $exception;
+			}
+
+			return;
+		}
+
+		if ($post->authorId === $actor->actorId) {
+			return;
+		}
+
+		if (in_array(
+			$actor->actorId,
+			$this->mutes?->notificationActorIds($post->authorId, $this->clock->now()) ?? [],
+			true,
+		)) {
+			// A muted actor's reaction still counts; only its notification
+			// is suppressed, which is what a mute means.
+			return;
+		}
+
+		$this->notifications?->recordReaction($post->authorId, $actor->actorId, $post->id, $emoji);
+	}
+
+	/**
+	 * @param array<string, mixed>|string $object
+	 */
+	private function undo(RemoteActor $actor, array|string $object, ReactionKind $kind): void
+	{
+		$stored = null;
+
+		if (is_array($object)) {
+			$expected = $kind === ReactionKind::Like ? 'Like' : 'EmojiReact';
+			if (($object['type'] ?? null) !== $expected) {
+				throw new InboxRejectedException('invalid_activity', 'The Undo does not embed a ' . $expected . '.');
+			}
+
+			$embeddedActor = $object['actor'] ?? null;
+			if (!is_string($embeddedActor) || $embeddedActor !== $actor->actorId) {
+				throw new InboxRejectedException('actor_mismatch', 'An actor may only undo its own reaction.');
+			}
+
+			$target = $object['object'] ?? null;
+			if (!is_string($target) || trim($target) === '') {
+				throw new InboxRejectedException('invalid_activity', 'The embedded reaction needs an object id.');
+			}
+
+			$id = $object['id'] ?? null;
+			if (is_string($id) && trim($id) !== '') {
+				$stored = $this->reactions->findByActivityId(trim($id));
+			}
+
+			if ($stored === null) {
+				$emoji = $kind === ReactionKind::Emoji && is_string($object['content'] ?? null)
+					? trim($object['content'])
+					: null;
+				$stored = $this->reactions->find(
+					ReactionDirection::In,
+					$actor->actorId,
+					trim($target),
+					$kind,
+					$emoji,
+				);
+			}
+		} elseif (trim($object) !== '') {
+			$stored = $this->reactions->findByActivityId(trim($object));
+
+			if ($stored === null) {
+				// Some peers send the note URL. Removing by identity is safe
+				// and makes the already-satisfied Undo a no-op.
+				$post = $this->localPostFor(trim($object));
+				if ($post !== null) {
+					$this->reactions->remove(
+						ReactionDirection::In,
+						$actor->actorId,
+						$this->activities->noteId($post),
+						$kind,
+						null,
+					);
+				}
+
+				return;
+			}
+		} else {
+			throw new InboxRejectedException('invalid_activity', 'An Undo needs an object.');
+		}
+
+		if ($stored === null) {
+			// The reaction never arrived or was already undone; the peer's
+			// intent is satisfied.
+			return;
+		}
+
+		if ($stored->direction !== ReactionDirection::In || $stored->subjectId !== $actor->actorId) {
+			throw new InboxRejectedException('actor_mismatch', 'An actor may only undo its own reaction.');
+		}
+
+		if ($stored->kind !== $kind) {
+			throw new InboxRejectedException(
+				'invalid_activity',
+				'The Undo type does not match the stored reaction.',
+			);
+		}
+
+		$this->reactions->remove(
+			ReactionDirection::In,
+			$stored->subjectId,
+			$stored->objectId,
+			$stored->kind,
+			$stored->emoji,
+		);
+	}
+
+	private function authorize(Post $post, RemoteActor $actor): void
+	{
+		if ($this->blocks->findByActor($post->authorId, $actor->actorId) !== null) {
+			throw new InboxRejectedException('blocked_actor', 'The author blocks this actor.');
+		}
+
+		$allowed = match ($post->visibility) {
+			Visibility::Public, Visibility::Unlisted => true,
+			Visibility::Followers => $this->followers->findByActor($post->authorId, $actor->actorId) !== null,
+			// A direct post is addressed to named accounts; a reaction would
+			// create a public count for a private conversation.
+			Visibility::Direct => false,
+		};
+
+		if (!$allowed) {
+			throw new InboxRejectedException('not_authorized', 'The actor may not see this post.');
+		}
+	}
+
+	private function localPostFor(string $objectId): ?Post
+	{
+		$prefix = $this->activities->baseUrl() . '/api/v1/posts/';
+		if (!str_starts_with($objectId, $prefix)) {
+			return null;
+		}
+
+		$encoded = substr($objectId, strlen($prefix));
+		if ($encoded === '' || str_contains($encoded, '/')) {
+			return null;
+		}
+
+		$post = $this->posts->find(rawurldecode($encoded));
+
+		return $post === null || $post->isDeleted() ? null : $post;
+	}
+
+	/**
+	 * @param list<string> $postIds
+	 *
+	 * @return array<string, array{likes: int, emojis: array<string, int>}>
+	 */
+	private function inboundCounts(array $postIds): array
+	{
+		return $this->reactions->countsForPosts($postIds);
+	}
+
+	private function insertOutbound(Reaction $reaction): bool
+	{
+		try {
+			$this->reactions->insert($reaction);
+
+			return true;
+		} catch (DatabaseException $exception) {
+			if ($this->reactions->find(
+				ReactionDirection::Out,
+				$reaction->subjectId,
+				$reaction->objectId,
+				$reaction->kind,
+				$reaction->emoji,
+			) === null) {
+				throw $exception;
+			}
+
+			return false;
+		}
+	}
+
+	/**
+	 * Queues one delivery to the stored inbox of a followed actor.
+	 *
+	 * A missing edge means the follow was removed while the reaction was being
+	 * written; the local state stays and nothing is sent, because there is no
+	 * longer a target this account asked to talk to.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function deliver(string $userId, string $actorId, array $activity): void
+	{
+		$followed = $this->following->find($userId, $actorId);
+		if ($followed === null) {
+			return;
+		}
+
+		$this->queue->push(JobType::FEDERATION_DELIVER, [
+			'inbox' => $followed->inboxUrl,
+			'activity' => $activity,
+			'key_id' => $this->activities->keyId($userId),
+		]);
+	}
+
+	private function now(): DateTimeImmutable
+	{
+		return Time::toSecondPrecision($this->clock->now());
+	}
+}

@@ -164,23 +164,21 @@ final class MigrationInventory
 				'inventory-only',
 				retention: 'convert',
 			),
-			self::entry(
+							self::entry(
 				'favourites',
 				'local likes and their remote counterparts',
 				self::OWNER_CORE,
-				'social_favourite rows; remote Like delivery is tracked separately',
-				self::STATUS_PARTIAL,
-				'inventory-only',
-				gapIssue: '#5',
+				'social_favourite for local posts plus social_reaction inbound Likes; outbound Like/Undo for remote posts',
+				self::STATUS_SUPPORTED,
+				'v2',
 			),
-			self::entry(
+							self::entry(
 				'emoji_reactions',
 				'ActivityPub EmojiReact',
 				self::OWNER_CORE,
-				'open: reaction rows and delivery (#5)',
-				self::STATUS_GAP,
-				'inventory-only',
-				gapIssue: '#5',
+				'social_reaction emoji rows with separate counts; outbound EmojiReact/Undo for remote posts',
+				self::STATUS_SUPPORTED,
+				'v2',
 			),
 							self::entry(
 				'boosts',

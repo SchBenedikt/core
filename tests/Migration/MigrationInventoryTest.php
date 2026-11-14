@@ -87,14 +87,16 @@ final class MigrationInventoryTest extends TestCase
 			self::assertSame('v1', $byFeature[$feature]['validation'], $feature);
 		}
 
-		foreach (['post_revisions', 'attachments'] as $feature) {
+		foreach (['post_revisions', 'attachments', 'favourites', 'emoji_reactions'] as $feature) {
 			self::assertSame('v2', $byFeature[$feature]['validation'], $feature);
 		}
 
 		self::assertSame('gap', $byFeature['quotes']['status']);
 		self::assertSame('#7', $byFeature['quotes']['gap_issue']);
-		self::assertSame('gap', $byFeature['emoji_reactions']['status']);
-		self::assertSame('#5', $byFeature['emoji_reactions']['gap_issue']);
+		self::assertSame('supported', $byFeature['emoji_reactions']['status']);
+		self::assertNull($byFeature['emoji_reactions']['gap_issue']);
+		self::assertSame('supported', $byFeature['favourites']['status']);
+		self::assertNull($byFeature['favourites']['gap_issue']);
 	}
 
 	public function testGapsOnlyListFeaturesWithoutACompleteDestination(): void

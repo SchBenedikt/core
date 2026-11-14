@@ -20,7 +20,9 @@ use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 
+use function hash;
 use function is_string;
+use function substr;
 
 /**
  * Builds the ActivityStreams documents this instance sends.
@@ -325,6 +327,90 @@ final class ActivityFactory
 				'cc' => [],
 			],
 		};
+	}
+
+	/**
+	 * The Like id of one local account on one object.
+	 *
+	 * Derived from the pair, so a retried favourite re-sends the identical
+	 * activity and a later Undo can name the Like without a second id table.
+	 */
+	public function likeId(string $localUserId, string $objectId): string
+	{
+		return $this->interactionId('likes', $localUserId, $objectId, '');
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function like(string $localUserId, string $objectId): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->likeId($localUserId, $objectId),
+			'type' => 'Like',
+			'actor' => $this->actorId($localUserId),
+			'object' => $objectId,
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function undoLike(string $localUserId, string $objectId): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->likeId($localUserId, $objectId) . '/undo',
+			'type' => 'Undo',
+			'actor' => $this->actorId($localUserId),
+			'object' => $this->like($localUserId, $objectId),
+		];
+	}
+
+	public function reactionId(string $localUserId, string $objectId, string $emoji): string
+	{
+		return $this->interactionId('reactions', $localUserId, $objectId, $emoji);
+	}
+
+	/**
+	 * A FEP-044f EmojiReact. `content` is the emoji itself; the core only
+	 * sends Unicode emoji, so no custom-emoji tag is attached.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function emojiReact(string $localUserId, string $objectId, string $emoji): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->reactionId($localUserId, $objectId, $emoji),
+			'type' => 'EmojiReact',
+			'actor' => $this->actorId($localUserId),
+			'object' => $objectId,
+			'content' => $emoji,
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function undoEmojiReact(string $localUserId, string $objectId, string $emoji): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $this->reactionId($localUserId, $objectId, $emoji) . '/undo',
+			'type' => 'Undo',
+			'actor' => $this->actorId($localUserId),
+			'object' => $this->emojiReact($localUserId, $objectId, $emoji),
+		];
+	}
+
+	private function interactionId(string $kind, string $localUserId, string $objectId, string $emoji): string
+	{
+		return $this->baseUrl() . '/api/v1/' . $kind . '/' . rawurlencode(substr(hash(
+			'sha256',
+			$localUserId . "\0" . $objectId . "\0" . $emoji,
+		), 0, 32));
 	}
 
 	public function boostId(Boost $boost): string

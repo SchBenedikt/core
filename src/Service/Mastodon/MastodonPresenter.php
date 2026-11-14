@@ -31,6 +31,7 @@ use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
+use AlohaSocial\Core\Service\ReactionService;
 use DateTimeImmutable;
 
 /**
@@ -56,6 +57,7 @@ final class MastodonPresenter
 		private readonly ?BoostRepository $boosts = null,
 		private readonly ?BookmarkRepository $bookmarks = null,
 		private readonly ?MuteService $mutes = null,
+		private readonly ?ReactionService $reactions = null,
 	) {
 	}
 
@@ -138,7 +140,8 @@ final class MastodonPresenter
 			'url' => $url,
 			'replies_count' => $repliesCount ?? ($this->posts?->replyCount($post->id) ?? 0),
 			'reblogs_count' => $reblogsCount ?? ($this->boosts?->countForPost($post->id) ?? 0),
-			'favourites_count' => $favouritesCount ?? ($this->favourites?->countForPost($post->id) ?? 0),
+			'favourites_count' => $favouritesCount
+				?? ($this->reactions?->favouritesCountFor($post) ?? ($this->favourites?->countForPost($post->id) ?? 0)),
 			'edited_at' => $post->editedAt?->format('Y-m-d\TH:i:s.000\Z'),
 			'content' => $this->html($post->content),
 			'reblog' => null,

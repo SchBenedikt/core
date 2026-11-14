@@ -94,7 +94,9 @@ favourites, bookmarks, mutes, account lists, notifications, polls,
 boosts/replies, a disabled-by-default Mastodon compatibility subset (44
 routes), the AT Protocol publishing foundation with OAuth refresh and the
 authorization-code/PAR protocol client, author-only post editing with revision
-history and ActivityPub `Update` ingestion/delivery, public hashtag timelines,
+history and ActivityPub `Update` ingestion/delivery, federated `Like` and
+`EmojiReact` in both directions with identity-keyed reactions, separate counts
+and idempotent `Undo`, public hashtag timelines,
 private followed hashtags with their own timeline, the durable queue and replay log,
 `Application::forHost()` and the read-only cutover validator.
 

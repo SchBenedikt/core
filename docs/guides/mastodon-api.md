@@ -238,8 +238,10 @@ of status objects. `GET /statuses/{id}` returns one object. The mapping is:
   warning. A content warning implies `sensitive: true`.
 - `media_attachments` projects the existing attachments, their alt text and
   original/thumbnail URLs. No new blob or media row is created by this API.
-- `favourites_count` is the number of local accounts that favourited the post;
-  `favourited` is true only when the authenticated viewer owns a favourite.
+- `favourites_count` is the number of local accounts that favourited the post
+  plus verified inbound ActivityPub `Like`s; emoji reactions are kept in their
+  own list and never inflate it. `favourited` is true only when the
+  authenticated viewer owns a local favourite.
   The public timeline is unauthenticated, so it always reports `favourited`
   false while still reporting the count.
 - `poll` is `null` when the status has no poll, otherwise the Mastodon poll

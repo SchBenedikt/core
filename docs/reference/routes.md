@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 86 routes in total; 44 use the
+defaults to `/api/mastodon/v1`). There are 91 routes in total; 44 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -28,6 +28,11 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `atproto.publish` | `POST` | `/api/v1/posts/{id}/atproto` | yes | 10 / 900 s |
 | `atproto.publication` | `GET` | `/api/v1/posts/{id}/atproto` | yes | 120 / 60 s |
 | `threads.get` | `GET` | `/api/v1/remote-posts/{id}/thread` | yes | 60 / 60 s |
+| `remote-posts.get` | `GET` | `/api/v1/remote-posts/{id}` | yes | 120 / 60 s |
+| `remote-posts.like` | `POST` | `/api/v1/remote-posts/{id}/like` | yes | 30 / 900 s |
+| `remote-posts.unlike` | `DELETE` | `/api/v1/remote-posts/{id}/like` | yes | 60 / 900 s |
+| `remote-posts.react` | `POST` | `/api/v1/remote-posts/{id}/reactions` | yes | 30 / 900 s |
+| `remote-posts.unreact` | `DELETE` | `/api/v1/remote-posts/{id}/reactions/{emoji}` | yes | 60 / 900 s |
 | `posts.delete` | `DELETE` | `/api/v1/posts/{id}` | yes | — |
 | `timelines.public` | `GET` | `/api/v1/timelines/public` | no | — |
 | `timelines.tag` | `GET` | `/api/v1/timelines/tag/{tag}` | no | — |
@@ -321,6 +326,37 @@ DELETE /api/v1/posts/{id}
 
 `204` on success, `403 forbidden` when the post belongs to somebody else, `404`
 when it does not exist.
+
+## Remote reactions
+
+```http
+GET    /api/v1/remote-posts/{id}
+POST   /api/v1/remote-posts/{id}/like
+DELETE /api/v1/remote-posts/{id}/like
+POST   /api/v1/remote-posts/{id}/reactions        {"emoji": "❤"}
+DELETE /api/v1/remote-posts/{id}/reactions/{emoji}
+```
+
+`{id}` is the stored remote object id, URL-encoded as one path segment. The
+post must be a live row from an actor the caller follows; otherwise the answer
+is `404 remote_post_not_found`. The local reaction is stored before the signed
+`Like`, `Undo(Like)`, `EmojiReact` or `Undo(EmojiReact)` is queued, so the read
+model changes even when delivery is retried. A repeated call is idempotent and
+queues no second activity. `EmojiReact` accepts Unicode emoji only; a custom
+emoji shortcode is refused because the core has no verified local emoji source.
+
+```json
+{"interaction": {
+  "favourites_count": 1,
+  "emoji_reactions": [{"emoji": "❤", "count": 1}],
+  "viewer": {"favourited": true, "reactions": ["❤"]}
+}}
+```
+
+The remote projection is the caller's own state, not a remote total: the core
+does not fetch a remote count on a read. Inbound reactions on local posts are
+counted in the neutral post detail (`post.interactions`) and in the Mastodon
+`favourites_count`; emoji reactions stay a separate list.
 
 ## Remote thread/context
 

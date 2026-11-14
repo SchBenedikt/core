@@ -31,11 +31,14 @@ use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\LikeRemotePostHandler;
 use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\NotificationsHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
+use AlohaSocial\Core\Api\ReactToRemotePostHandler;
+use AlohaSocial\Core\Api\ShowRemotePostHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\UpdatePostHandler;
@@ -44,6 +47,8 @@ use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
+use AlohaSocial\Core\Api\UnlikeRemotePostHandler;
+use AlohaSocial\Core\Api\UnreactFromRemotePostHandler;
 use AlohaSocial\Core\Api\UnfollowHashtagHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
@@ -182,6 +187,51 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/60',
 				summary: 'Fetch the bounded ancestors and direct replies of a remote post.',
+			),
+			new Route(
+				name: 'remote-posts.get',
+				method: 'GET',
+				path: $base . '/remote-posts/{id}',
+				handler: ShowRemotePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read one stored remote post with the signed-in account\'s reaction state.',
+			),
+			new Route(
+				name: 'remote-posts.like',
+				method: 'POST',
+				path: $base . '/remote-posts/{id}/like',
+				handler: LikeRemotePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Like a remote post from a followed actor; queues a signed Like and is idempotent.',
+			),
+			new Route(
+				name: 'remote-posts.unlike',
+				method: 'DELETE',
+				path: $base . '/remote-posts/{id}/like',
+				handler: UnlikeRemotePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove the signed-in account\'s like from a remote post and queue Undo(Like).',
+			),
+			new Route(
+				name: 'remote-posts.react',
+				method: 'POST',
+				path: $base . '/remote-posts/{id}/reactions',
+				handler: ReactToRemotePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Add a Unicode emoji reaction to a remote post and queue an EmojiReact.',
+			),
+			new Route(
+				name: 'remote-posts.unreact',
+				method: 'DELETE',
+				path: $base . '/remote-posts/{id}/reactions/{emoji}',
+				handler: UnreactFromRemotePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove the signed-in account\'s emoji reaction and queue Undo(EmojiReact).',
 			),
 			new Route(
 				name: 'posts.delete',

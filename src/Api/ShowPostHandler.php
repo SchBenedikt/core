@@ -16,6 +16,7 @@ use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Service\ReactionService;
 
 /**
  * `GET /api/v1/posts/{id}`
@@ -25,6 +26,7 @@ final class ShowPostHandler implements Handler
 	public function __construct(
 		private readonly PostService $posts,
 		private readonly ?MediaService $media = null,
+		private readonly ?ReactionService $reactions = null,
 	) {
 	}
 
@@ -38,8 +40,14 @@ final class ShowPostHandler implements Handler
 			throw HttpException::notFound('Post not found.');
 		}
 
-		return Response::json([
-			'post' => $this->media === null ? $post->toArray() : $this->media->presentPost($post),
-		]);
+		$presented = $this->media === null ? $post->toArray() : $this->media->presentPost($post);
+
+		// Counts and viewer state live with the interaction service so the
+		// neutral detail and the Mastodon status cannot disagree about them.
+		if ($this->reactions !== null) {
+			$presented['interactions'] = $this->reactions->interactionsFor($post, $request->userId);
+		}
+
+		return Response::json(['post' => $presented]);
 	}
 }

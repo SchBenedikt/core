@@ -32,6 +32,7 @@ use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\FollowerService;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\NotificationService;
+use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Support\Time;
 use Throwable;
 
@@ -57,6 +58,12 @@ use function is_string;
  * only from an actor followed by at least one local account; they change the
  * remote-post store, which the home timeline reads.
  *
+ * Like, EmojiReact and their Undo are deliberately not gated on a follow
+ * edge: a public post may be liked by any actor that can see it. The reaction
+ * service applies the post's audience and the author's block list instead, and
+ * keys the row by actor/object/kind/emoji so a retransmission with a new
+ * activity id cannot be counted twice.
+ *
  * Every refusal is an {@see InboxRejectedException} with a stable reason; this
  * class knows nothing about HTTP status codes.
  */
@@ -80,6 +87,7 @@ final class InboxService
 		private readonly ?RemoteMediaService $remoteMedia = null,
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?PendingRemoteUpdateStore $pendingUpdates = null,
+		private readonly ?ReactionService $reactions = null,
 	) {
 	}
 
@@ -141,6 +149,13 @@ final class InboxService
 				return;
 			}
 
+			// Reactions are keyed by identity, not by the activity id, so a
+			// retransmitted Like/EmojiReact/Undo is already applied. Refusing it
+			// would make a peer retry a delivery that can never change state.
+			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo') {
+				return;
+			}
+
 			throw new InboxRejectedException(
 				'replayed_activity',
 				'This activity has already been accepted.',
@@ -150,6 +165,8 @@ final class InboxService
 		try {
 			match ($type) {
 				'Follow' => $this->handleFollow($actor, $activity),
+				'Like' => $this->requireReactions()->receiveLike($actor, $activity),
+				'EmojiReact' => $this->requireReactions()->receiveEmojiReact($actor, $activity),
 				'Accept' => $this->handleFollowResponse($actor, $activity, FollowState::Accepted),
 				'Reject' => $this->handleFollowResponse($actor, $activity, FollowState::Rejected),
 				'Undo' => $this->handleUndo($actor, $activity),
@@ -520,15 +537,31 @@ final class InboxService
 		$object = $activity['object'] ?? null;
 
 		if (is_string($object)) {
-			// Some peers send only the Announce id. It is safe to look up the
-			// stored row by that id, but the ownership check still happens in
-			// undoAnnounceById().
+			// Some peers send only the reaction or Announce id. Try the reaction
+			// store first: an actor that liked a public post need not be followed,
+			// and the Announce handler would refuse it as "not_followed".
+			if ($this->reactions !== null && $this->reactions->undoByActivityId($actor, $object)) {
+				return;
+			}
+
 			$this->undoAnnounceById($actor, $object);
 
 			return;
 		}
 
 		$type = is_array($object) ? ($object['type'] ?? null) : null;
+
+		if ($type === 'Like') {
+			$this->requireReactions()->undoLike($actor, $object);
+
+			return;
+		}
+
+		if ($type === 'EmojiReact') {
+			$this->requireReactions()->undoEmojiReact($actor, $object);
+
+			return;
+		}
 
 		if ($type === 'Follow') {
 			$this->undoFollow($actor, $object);
@@ -544,8 +577,20 @@ final class InboxService
 
 		throw new InboxRejectedException(
 			'unsupported_activity',
-			'Only Undo(Follow) and Undo(Announce) are supported.',
+			'Only Undo(Follow), Undo(Announce), Undo(Like) and Undo(EmojiReact) are supported.',
 		);
+	}
+
+	private function requireReactions(): ReactionService
+	{
+		if ($this->reactions === null) {
+			throw new InboxRejectedException(
+				'unsupported_activity',
+				'Reaction storage is not configured on this instance.',
+			);
+		}
+
+		return $this->reactions;
 	}
 
 	/**

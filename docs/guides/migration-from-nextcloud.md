@@ -289,8 +289,8 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
 | `attachments` | core | partial | v2 | `social_attachment` + `BlobStore` (#9) |
 | `media_processing` | core | supported | — | derived thumbnails, converted not copied |
-| `favourites` | core | partial | — | local `social_favourite`; remote Like is #5 |
-| `emoji_reactions` | core | gap | — | reaction rows and delivery (#5) |
+| `favourites` | core | supported | v2 | `social_favourite` plus inbound/outbound `Like` state |
+| `emoji_reactions` | core | supported | v2 | `social_reaction` emoji rows with separate counts |
 | `boosts` | core | supported | — | `social_boost` + queued Announce/Undo |
 | `bookmarks` | core | supported | — | `social_bookmark` |
 | `followers` | core | supported | v1 | `social_follower` |

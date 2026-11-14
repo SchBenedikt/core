@@ -269,8 +269,8 @@ final class InboxTest extends TestCase
 	public function testAnUnsupportedActivityIsRefused(): void
 	{
 		$response = $this->deliver([
-			'id' => 'https://remote.example/activities/like-1',
-			'type' => 'Like',
+			'id' => 'https://remote.example/activities/dislike-1',
+			'type' => 'Dislike',
 			'actor' => self::ACTOR,
 		]);
 

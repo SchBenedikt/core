@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 86 routes, 44 of them under the Mastodon prefix |
+| HTTP contract | 91 routes, 44 of them under the Mastodon prefix |
 | Persistence | 19 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 144 PHP test files (1343 tests, 6869 assertions) and 9 UI test files (69 tests) |
+| Tests | 148 PHP test files (1395 tests, 7057 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -81,9 +81,12 @@ the host that serves it. See
 - **Social interactions** — local favourites, private bookmarks, local mutes,
   private account lists and list timelines, notifications (favourite, follow,
   mention, reblog) with dismiss/unread state, polls with local voting, local
-  follow/unfollow and relationship reads. These routes live under the optional
-  Mastodon compatibility prefix, not under `/api/v1`. See
-  [Mastodon-compatible API](guides/mastodon-api.md).
+  follow/unfollow and relationship reads, plus federated `Like` and
+  `EmojiReact` on remote posts with their `Undo` and inbound reaction counts.
+  Mastodon-shaped interaction routes live under the optional compatibility
+  prefix; the remote reaction routes live under `/api/v1`. See
+  [Mastodon-compatible API](guides/mastodon-api.md) and the
+  [route reference](reference/routes.md#remote-reactions).
 - **Follow graph and federation** — incoming and outgoing edges, individual
   and shared inboxes, batched delivery, optional follow policy, local-to-local
   follows, signed `Follow`/`Undo`, inbound `Follow`/`Undo`/`Create`/`Delete`/
@@ -258,10 +261,11 @@ These parts are implemented by a host or need remote data; they are not hidden
 local gaps. The detailed lists live in the guides.
 
 - **Mastodon:** OAuth authorization/token issuance/revocation and app
-  registration; remote timelines and delivery; favourite federation (outbound
-  `Like`/`Undo` and remote counts); remote boost federation; remote
-  notifications; streaming; remote poll fetching/voting/`Question` federation;
-  remote search; remote relationship/admin APIs. See
+  registration; remote timelines and delivery; remote counts for an outbound
+  `Like` (the count itself lives on the remote instance); remote boost
+  federation; remote notifications; streaming; remote poll
+  fetching/voting/`Question` federation; remote search; remote
+  relationship/admin APIs. See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
   store, credential storage and PDS selection; CAR/MST repository access; video

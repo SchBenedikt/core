@@ -44,6 +44,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment`, ordered `social_post_recipient`, normalized `social_post_hashtag` rows and the `social_post_revision` history of edits
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
+- `src/Domain/Interaction/ReactionSchema.php` → `social_reaction` (inbound and outbound Like/EmojiReact state, keyed by direction, subject, object, kind and emoji; unique key is the reaction identity)
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
 - `src/Domain/Federation/MuteSchema.php` → `social_mute` (private per-user mutes of local accounts or remote actor URLs, with a nullable expiry)
 - `src/Domain/Timeline/AccountListSchema.php` → `social_account_list` and `social_account_list_member` (private lists and their local account membership)

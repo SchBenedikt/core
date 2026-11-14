@@ -49,6 +49,23 @@ final class NotificationService
 		$this->record($recipientId, $actorId, NotificationType::Favourite, $postId);
 	}
 
+	/**
+	 * Records an inbound Like or EmojiReact on one of the recipient's posts.
+	 *
+	 * Mastodon has no reaction notification type, so it is presented as a
+	 * favourite. The emoji is part of the deterministic id, which keeps two
+	 * different reactions from one actor on one post as two events instead of
+	 * collapsing them into one favourite notification.
+	 */
+	public function recordReaction(
+		string $recipientId,
+		string $actorId,
+		string $postId,
+		?string $emoji = null,
+	): void {
+		$this->record($recipientId, $actorId, NotificationType::Favourite, $postId, $emoji);
+	}
+
 	public function recordFollow(string $recipientId, string $actorId): void
 	{
 		$this->record($recipientId, $actorId, NotificationType::Follow, null);
@@ -153,6 +170,7 @@ final class NotificationService
 		string $actorId,
 		NotificationType $type,
 		?string $postId,
+		?string $emoji = null,
 	): void {
 		if ($recipientId === $actorId) {
 			// A self-favourite or self-follow is not an interaction worth a
@@ -160,7 +178,7 @@ final class NotificationService
 			return;
 		}
 
-		$id = $this->idFor($recipientId, $actorId, $type, $postId);
+		$id = $this->idFor($recipientId, $actorId, $type, $postId, $emoji);
 		$notification = new Notification(
 			id: $id,
 			recipientId: $recipientId,
@@ -201,9 +219,10 @@ final class NotificationService
 		string $actorId,
 		NotificationType $type,
 		?string $postId,
+		?string $emoji = null,
 	): string {
 		return 'notification-' . substr(
-			hash('sha256', $recipientId . "\0" . $actorId . "\0" . $type->value . "\0" . ($postId ?? '')),
+			hash('sha256', $recipientId . "\0" . $actorId . "\0" . $type->value . "\0" . ($postId ?? '') . "\0" . ($emoji ?? '')),
 			0,
 			32,
 		);

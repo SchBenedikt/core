@@ -31,6 +31,7 @@ use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
+use AlohaSocial\Core\Api\LikeRemotePostHandler;
 use AlohaSocial\Core\Api\NotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\NotificationsHandler;
 use AlohaSocial\Core\Api\OutboxHandler;
@@ -80,6 +81,8 @@ use AlohaSocial\Core\Api\Mastodon\MastodonVerifyCredentialsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonVotePollHandler;
 use AlohaSocial\Core\Api\PublicTimelineHandler;
 use AlohaSocial\Core\Api\PublishAtprotoHandler;
+use AlohaSocial\Core\Api\ReactToRemotePostHandler;
+use AlohaSocial\Core\Api\ShowRemotePostHandler;
 use AlohaSocial\Core\Api\ShowAtprotoPublicationHandler;
 use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
@@ -88,6 +91,8 @@ use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
+use AlohaSocial\Core\Api\UnlikeRemotePostHandler;
+use AlohaSocial\Core\Api\UnreactFromRemotePostHandler;
 use AlohaSocial\Core\Api\UploadMediaHandler;
 use AlohaSocial\Core\Api\UnfollowHandler;
 use AlohaSocial\Core\Api\UnfollowHashtagHandler;
@@ -142,6 +147,9 @@ use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
+use AlohaSocial\Core\Domain\Interaction\InMemoryReactionRepository;
+use AlohaSocial\Core\Domain\Interaction\PdoReactionRepository;
+use AlohaSocial\Core\Domain\Interaction\ReactionRepository;
 use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBookmarkRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
@@ -243,6 +251,7 @@ use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\LocalAccountService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
+use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\Mastodon\MastodonPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonService;
@@ -312,6 +321,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
 		?FavouriteRepository $favouriteRepository = null,
+		?ReactionRepository $reactionRepository = null,
 		?PollVoteRepository $pollVoteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
@@ -351,6 +361,7 @@ final readonly class Application
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository($posts, $remotePostRepository);
 		$favouriteRepository ??= new InMemoryFavouriteRepository();
+		$reactionRepository ??= new InMemoryReactionRepository();
 		$pollVoteRepository ??= new InMemoryPollVoteRepository(
 			$posts instanceof PollVoteCounter ? $posts : null,
 		);
@@ -395,6 +406,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository,
 			favouriteRepository: $favouriteRepository,
+			reactionRepository: $reactionRepository,
 			pollVoteRepository: $pollVoteRepository,
 			notificationRepository: $notificationRepository,
 			boostRepository: $boostRepository,
@@ -454,6 +466,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy = null,
 		?AttachmentRepository $attachmentRepository = null,
 		?FavouriteRepository $favouriteRepository = null,
+		?ReactionRepository $reactionRepository = null,
 		?PollVoteRepository $pollVoteRepository = null,
 		?BlobStore $blobStore = null,
 		?ImageProcessor $imageProcessor = null,
@@ -504,6 +517,7 @@ final readonly class Application
 			followPolicy: $followPolicy,
 			attachmentRepository: $attachmentRepository ?? new PdoAttachmentRepository($database),
 			favouriteRepository: $favouriteRepository ?? new PdoFavouriteRepository($database),
+			reactionRepository: $reactionRepository ?? new PdoReactionRepository($database),
 			pollVoteRepository: $pollVoteRepository ?? new PdoPollVoteRepository($database),
 			notificationRepository: $notificationRepository ?? new PdoNotificationRepository($database),
 			boostRepository: $boostRepository ?? new PdoBoostRepository($database),
@@ -553,6 +567,7 @@ final readonly class Application
 		?FollowPolicy $followPolicy,
 		AttachmentRepository $attachmentRepository,
 		FavouriteRepository $favouriteRepository,
+		ReactionRepository $reactionRepository,
 		PollVoteRepository $pollVoteRepository,
 		NotificationRepository $notificationRepository,
 		BoostRepository $boostRepository,
@@ -615,6 +630,20 @@ final readonly class Application
 			$logger,
 		);
 		$notificationService = new NotificationService($notificationRepository, $clock, $logger);
+		$reactionService = new ReactionService(
+			$posts,
+			$favouriteRepository,
+			$reactionRepository,
+			$followers,
+			$followingRepository,
+			$blockRepository,
+			$activities,
+			$queue,
+			$clock,
+			$notificationService,
+			$muteRepository,
+			$remotePosts,
+		);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
 		$followedHashtagService = new FollowedHashtagService($followedHashtagRepository, $clock);
@@ -752,7 +781,7 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService, $reactionService),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
@@ -841,6 +870,7 @@ final readonly class Application
 				$remoteMedia,
 				$notificationService,
 				$pendingRemoteUpdates,
+				$reactionService,
 			)
 			: null;
 
@@ -872,7 +902,12 @@ final readonly class Application
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
-			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService))
+			->with(ShowPostHandler::class, static fn (): ShowPostHandler => new ShowPostHandler($postService, $mediaService, $reactionService))
+			->with(ShowRemotePostHandler::class, static fn (): ShowRemotePostHandler => new ShowRemotePostHandler($reactionService))
+			->with(LikeRemotePostHandler::class, static fn (): LikeRemotePostHandler => new LikeRemotePostHandler($reactionService))
+			->with(UnlikeRemotePostHandler::class, static fn (): UnlikeRemotePostHandler => new UnlikeRemotePostHandler($reactionService))
+			->with(ReactToRemotePostHandler::class, static fn (): ReactToRemotePostHandler => new ReactToRemotePostHandler($reactionService))
+			->with(UnreactFromRemotePostHandler::class, static fn (): UnreactFromRemotePostHandler => new UnreactFromRemotePostHandler($reactionService))
 			->with(UpdatePostHandler::class, static fn (): UpdatePostHandler => new UpdatePostHandler($postService, $mediaService))
 			->with(PublishAtprotoHandler::class, static fn (): PublishAtprotoHandler => new PublishAtprotoHandler($atprotoService))
 			->with(ShowAtprotoPublicationHandler::class, static fn (): ShowAtprotoPublicationHandler => new ShowAtprotoPublicationHandler($atprotoService))
