@@ -57,6 +57,12 @@ final class JobType
 	 */
 	public const POLL_CLOSE = 'poll.close';
 
+	/**
+	 * Re-runs the idempotent story expiry sweep. The payload carries no
+	 * story state; the expiry is durable on the story row.
+	 */
+	public const STORY_EXPIRE = 'story.expire';
+
 	private function __construct()
 	{
 	}

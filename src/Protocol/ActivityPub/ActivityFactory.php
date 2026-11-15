@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\QuoteGrant;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Story\Story;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Support\Time;
@@ -445,6 +446,75 @@ final class ActivityFactory
 		}
 
 		return $note;
+	}
+
+	/**
+	 * A Pixelfed-compatible Story object, addressed only to followers.
+	 *
+	 * The Story is never added to the public collection. The attachment URL
+	 * is supplied by the caller because the media service owns local URLs;
+	 * a remote-imported story passes its stored remote URL through unchanged.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function story(Story $story, ?string $attachmentUrl = null, ?string $mediaType = null): array
+	{
+		$object = [
+			'id' => $story->objectId,
+			'type' => 'Story',
+			'attributedTo' => $this->actorId($story->ownerId),
+			'content' => $story->caption,
+			'mediaType' => 'text/plain',
+			'published' => Time::format($story->createdAt),
+			'endTime' => Time::format($story->expiresAt),
+			'to' => [$this->followersId($story->ownerId)],
+		];
+
+		$url = $attachmentUrl ?? $story->remoteMediaUrl;
+		if ($url !== null) {
+			$object['attachment'] = [[
+				'type' => 'Document',
+				'mediaType' => $mediaType ?? 'application/octet-stream',
+				'url' => $url,
+			]];
+		}
+
+		return $object;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function addStory(Story $story, ?string $attachmentUrl = null, ?string $mediaType = null): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $story->objectId . '/activity',
+			'type' => 'Add',
+			'actor' => $this->actorId($story->ownerId),
+			'published' => Time::format($story->createdAt),
+			'to' => [$this->followersId($story->ownerId)],
+			'object' => $this->story($story, $attachmentUrl, $mediaType),
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function deleteStory(Story $story, DateTimeImmutable $at): array
+	{
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $story->objectId . '/delete',
+			'type' => 'Delete',
+			'actor' => $this->actorId($story->ownerId),
+			'published' => Time::format($at),
+			'to' => [$this->followersId($story->ownerId)],
+			'object' => [
+				'id' => $story->objectId,
+				'type' => 'Tombstone',
+			],
+		];
 	}
 
 	/**

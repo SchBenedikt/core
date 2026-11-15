@@ -1,0 +1,12 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/stories/1/delete",
+  "type": "Delete",
+  "actor": "https://remote.example/users/carol",
+  "published": "2026-11-11T10:00:00Z",
+  "to": ["https://remote.example/users/carol/followers"],
+  "object": {
+    "id": "https://remote.example/stories/1",
+    "type": "Tombstone"
+  }
+}

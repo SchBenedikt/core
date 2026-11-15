@@ -39,8 +39,17 @@ the database — the core does not care.
 | `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
 | `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
 | `social` | `recommendations.enabled` | no | Enables the authenticated For You feed, preferences, feedback, signal, export and reset routes; defaults to `false` and every route answers `503 recommendations_disabled` while off. Behavioral signals are a separate per-reader opt-in and stay off by default |
+| `social` | `stories.enabled` | no | Enables the authenticated followers-only story routes and inbound Pixelfed `Add`/`Delete` handling; defaults to `false` and every story route answers `503 stories_disabled` while off |
+| `social` | `stories.ttl_hours` | no | Story lifetime in hours; defaults to 24 and is clamped to 1-24. Expiry is stored on each story and enforced by the query and the `story.expire` job |
 | `social` | `scheduling.minimum_lead_seconds` | no | Shortest accepted gap between creating a schedule and its publication time; defaults to 300 and is clamped to 0–one year |
 | `social` | `scheduling.daily_limit` | no | Scheduled posts one account may create per rolling day; defaults to 30 and is clamped to 1–1000. Cancelled rows count, because the limit bounds work, not retained rows |
+
+Stories add two keys. `stories.enabled` controls the whole feature; while it is
+off, local routes answer `503 stories_disabled` and inbound `Add` activities are
+rejected. `stories.ttl_hours` sets the default and maximum lifetime; a remote
+`endTime` is clamped to the same policy, so a peer cannot extend a story beyond
+the local 24-hour ceiling. A story always has exactly one image or video
+attachment.
 
 Recommendations add one feature switch, `recommendations.enabled`. The feed is
 private and never anonymous; it ranks only public local and cached remote posts

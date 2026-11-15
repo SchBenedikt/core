@@ -19,6 +19,17 @@ use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
 use AlohaSocial\Core\Api\CreateRecommendationSignalHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\CreateStoryHandler;
+use AlohaSocial\Core\Api\CreateStoryReactionHandler;
+use AlohaSocial\Core\Api\CreateStoryReplyHandler;
+use AlohaSocial\Core\Api\DeleteStoryHandler;
+use AlohaSocial\Core\Api\RecordStoryViewHandler;
+use AlohaSocial\Core\Api\ShowStoryHandler;
+use AlohaSocial\Core\Api\ShowStoryMediaHandler;
+use AlohaSocial\Core\Api\StoriesHandler;
+use AlohaSocial\Core\Api\StoryReactionsHandler;
+use AlohaSocial\Core\Api\StoryRepliesHandler;
+use AlohaSocial\Core\Api\StoryViewersHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
 use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
@@ -184,6 +195,9 @@ use AlohaSocial\Core\Domain\Recommendation\PdoRecommendationRepository;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateSource;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationRepository;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationSnapshotCache;
+use AlohaSocial\Core\Domain\Story\InMemoryStoryRepository;
+use AlohaSocial\Core\Domain\Story\PdoStoryRepository;
+use AlohaSocial\Core\Domain\Story\StoryRepository;
 use AlohaSocial\Core\Domain\Filter\FilterRuleRepository;
 use AlohaSocial\Core\Domain\Filter\InMemoryFilterRuleRepository;
 use AlohaSocial\Core\Domain\Filter\PdoFilterRuleRepository;
@@ -386,6 +400,9 @@ use AlohaSocial\Core\Service\FilterService;
 use AlohaSocial\Core\Service\Recommendation\DefaultRecommendationRanker;
 use AlohaSocial\Core\Service\Recommendation\RecommendationService;
 use AlohaSocial\Core\Service\Recommendation\StoredRecommendationEligibility;
+use AlohaSocial\Core\Service\Story\StoryAccess;
+use AlohaSocial\Core\Service\Story\StoryExpireHandler;
+use AlohaSocial\Core\Service\Story\StoryService;
 use AlohaSocial\Core\Service\Mastodon\MastodonFilterPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonScheduledStatusPresenter;
 use AlohaSocial\Core\Service\ScheduledPostService;
@@ -451,6 +468,7 @@ final readonly class Application
 		public ?AccountMoveService $accountMoves = null,
 		public ?AtprotoSyncService $atprotoSync = null,
 		public ?RecommendationService $recommendations = null,
+		public ?StoryService $stories = null,
 	) {
 	}
 
@@ -527,6 +545,8 @@ final readonly class Application
 		?RecommendationCandidateSource $recommendationCandidates = null,
 		?RecommendationSnapshotCache $recommendationSnapshots = null,
 		?RecommendationService $recommendationService = null,
+		?StoryRepository $storyRepository = null,
+		?StoryService $storyService = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -647,6 +667,8 @@ final readonly class Application
 			recommendationCandidates: $recommendationCandidates,
 			recommendationSnapshots: $recommendationSnapshots,
 			recommendationService: $recommendationService,
+			storyRepository: $storyRepository,
+			storyService: $storyService,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -813,6 +835,7 @@ final readonly class Application
 			recommendationRepository: new PdoRecommendationRepository($database),
 			recommendationCandidates: new PdoRecommendationCandidateSource($database),
 			recommendationSnapshots: new InMemoryRecommendationSnapshotCache(),
+			storyRepository: new PdoStoryRepository($database),
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -923,6 +946,8 @@ final readonly class Application
 		?RecommendationCandidateSource $recommendationCandidates = null,
 		?RecommendationSnapshotCache $recommendationSnapshots = null,
 		?RecommendationService $recommendationService = null,
+		?StoryRepository $storyRepository = null,
+		?StoryService $storyService = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1220,6 +1245,19 @@ final readonly class Application
 			$ids,
 			$recommendationSnapshots ?? new InMemoryRecommendationSnapshotCache(),
 		);
+		$storyRepository ??= new InMemoryStoryRepository();
+		$storyService ??= new StoryService(
+			$config,
+			$storyRepository,
+			new StoryAccess($followers, $followingRepository, $activities, $clock, $moderationPolicy),
+			$mediaService,
+			$followers,
+			$followingRepository,
+			$queue,
+			$activities,
+			$clock,
+			$ids,
+		);
 		$boostService = new BoostService(
 			$postService,
 			$boostRepository,
@@ -1356,6 +1394,7 @@ final readonly class Application
 				$moderationService,
 				$moderationPolicy,
 				$accountMoveService,
+				storyService: $storyService,
 			)
 			: null;
 
@@ -1414,6 +1453,17 @@ final readonly class Application
 			->with(CreateRecommendationSignalHandler::class, static fn (): CreateRecommendationSignalHandler => new CreateRecommendationSignalHandler($recommendationService))
 			->with(ExportRecommendationDataHandler::class, static fn (): ExportRecommendationDataHandler => new ExportRecommendationDataHandler($recommendationService))
 			->with(DeleteRecommendationDataHandler::class, static fn (): DeleteRecommendationDataHandler => new DeleteRecommendationDataHandler($recommendationService))
+			->with(StoriesHandler::class, static fn (): StoriesHandler => new StoriesHandler($storyService))
+			->with(CreateStoryHandler::class, static fn (): CreateStoryHandler => new CreateStoryHandler($storyService))
+			->with(ShowStoryHandler::class, static fn (): ShowStoryHandler => new ShowStoryHandler($storyService))
+			->with(DeleteStoryHandler::class, static fn (): DeleteStoryHandler => new DeleteStoryHandler($storyService))
+			->with(ShowStoryMediaHandler::class, static fn (): ShowStoryMediaHandler => new ShowStoryMediaHandler($storyService))
+			->with(RecordStoryViewHandler::class, static fn (): RecordStoryViewHandler => new RecordStoryViewHandler($storyService))
+			->with(StoryViewersHandler::class, static fn (): StoryViewersHandler => new StoryViewersHandler($storyService))
+			->with(CreateStoryReactionHandler::class, static fn (): CreateStoryReactionHandler => new CreateStoryReactionHandler($storyService))
+			->with(StoryReactionsHandler::class, static fn (): StoryReactionsHandler => new StoryReactionsHandler($storyService))
+			->with(CreateStoryReplyHandler::class, static fn (): CreateStoryReplyHandler => new CreateStoryReplyHandler($storyService))
+			->with(StoryRepliesHandler::class, static fn (): StoryRepliesHandler => new StoryRepliesHandler($storyService))
 			->with(RemotePollHandler::class, static fn (): RemotePollHandler => new RemotePollHandler($remotePollService))
 			->with(VoteRemotePollHandler::class, static fn (): VoteRemotePollHandler => new VoteRemotePollHandler($remotePollService, $clock))
 			->with(QuoteAuthorizationHandler::class, static fn (): QuoteAuthorizationHandler => new QuoteAuthorizationHandler($quoteService))
@@ -1554,6 +1604,7 @@ final readonly class Application
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
 			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
 			->with(JobType::CLEANUP, new CleanupJobHandler($cleanup, $logger))
+			->with(JobType::STORY_EXPIRE, new StoryExpireHandler($storyService, $logger))
 			->with(JobType::POLL_CLOSE, new RemotePollCloseHandler($remotePollService, $clock))
 			->with(JobType::SCHEDULED_POST_PUBLISH, new ScheduledPostPublishHandler($scheduledPostService));
 
@@ -1611,6 +1662,7 @@ final readonly class Application
 			$accountMoveService,
 			$atprotoSync,
 			$recommendationService,
+			$storyService,
 		);
 	}
 

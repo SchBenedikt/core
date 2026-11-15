@@ -102,6 +102,7 @@ final class InboxService
 		private readonly ?ModerationService $moderation = null,
 		private readonly ?ModerationPolicy $moderationPolicy = null,
 		private readonly ?AccountMoveService $accountMoves = null,
+		private readonly ?\AlohaSocial\Core\Service\Story\StoryService $storyService = null,
 	) {
 	}
 
@@ -195,6 +196,7 @@ final class InboxService
 				'QuoteRequest' => $this->handleQuoteRequest($actor, $activity),
 				'Move' => $this->handleMove($actor, $activity),
 				'Undo' => $this->handleUndo($actor, $activity),
+				'Add' => $this->handleAdd($actor, $activity),
 				'Create' => $this->handleCreate($actor, $activity),
 				'Update' => $this->handleUpdate($actor, $activity),
 				'Delete' => $this->handleDelete($actor, $activity),
@@ -422,11 +424,26 @@ final class InboxService
 	/**
 	 * @param array<string, mixed> $activity
 	 */
+	private function handleAdd(RemoteActor $actor, array $activity): void
+	{
+		if ($this->storyService === null) {
+			throw new InboxRejectedException('stories_not_configured', 'This instance does not accept stories.');
+		}
+
+		$this->storyService->receiveAdd($actor->actorId, $activity);
+	}
+
 	private function handleDelete(RemoteActor $actor, array $activity): void
 	{
 		$this->requireFollowedContent($actor);
 
 		$targetId = $this->remotePostFactory->targetId($activity['object'] ?? null, 'Delete');
+
+		if ($this->storyService?->hasObject($targetId) === true) {
+			$this->storyService->receiveDelete($actor->actorId, $targetId);
+
+			return;
+		}
 
 		// A peer can delete either a Create/Announce by activity id or the
 		// Note itself. The actor must own whichever row matches.

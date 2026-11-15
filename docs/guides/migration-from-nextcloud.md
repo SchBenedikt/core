@@ -304,7 +304,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `polls` | core | supported | — | local poll tables and votes plus imported remote Questions with signed votes |
 | `quotes` | core | supported | — | local and remote quote references, FEP-044f grants, revocation and policy |
 | `scheduled_posts` | core | supported | — | `social_scheduled_post` with the reserved post id and the publisher job |
-| `stories` | core | gap | — | story model and expiry (#18) |
+| `stories` | core | supported | — | `social_story`, private views/reactions/replies, expiry and Pixelfed `Add`/`Delete` |
 | `moderation` | core | supported | — | reports, domain policy, review queue and first-post holds |
 | `keyword_filters` | core | supported | — | `social_filter` rules with contexts, action and keyword list |
 | `direct_messages` | core | gap | — | conversations and delivery (#19) |

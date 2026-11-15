@@ -309,6 +309,7 @@ The core owns the schema classes, not the migration mechanism:
 - `AccountListSchema` → `social_account_list` and `social_account_list_member` (private per-user lists and their known-local-account membership; `(list_id, account_id)` primary key)
 - `FollowedHashtagSchema` → `social_followed_hashtag` (private per-user followed tags; `(user_id, hashtag)` primary key and newest-first cursor index)
 - `RecommendationSchema` → `social_recommendation_preference`, `social_recommendation_feedback` and `social_recommendation_signal` (opt-in per-reader interests/consent, explicit feedback and bounded owner-scoped signals; snapshots are a cache and need no table)
+- `StorySchema` → `social_story`, `social_story_view`, `social_story_reaction`, `social_story_reply` and `social_story_tombstone` (ephemeral followers-only stories, private receipts and a Delete-before-Add tombstone)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker, policy status/audit columns and unread index)
 - `NotificationPolicySchema`, `NotificationSenderSchema` and `ConversationMuteSchema` → policy overrides, held sender requests and private thread mutes
@@ -360,6 +361,34 @@ filters, owner isolation, stable cursor semantics and explainable reasons.
 There is no ActivityPub or Mastodon status projection for recommendation pages:
 they are an app-level read, and a client that needs statuses maps the returned
 candidate target ids through the existing post/remote-post endpoints.
+
+### Stories
+
+Stories are a separate, optional domain rather than posts. The ports are
+`StoryRepository`, `StoryAccess` and `StoryService`; the default assembly wires
+`InMemoryStoryRepository` or `PdoStoryRepository`, the owner/follower policy,
+the existing `MediaService`, the follower and following repositories and the
+job queue. `StoryService::create()` accepts only an owned image/video attachment
+that no post or other story uses, stores a 1-24 hour expiry, queues the
+Pixelfed-compatible `Add` to each accepted follower's inbox and schedules an
+idempotent `story.expire` job.
+
+Every read goes through `StoryAccess`: the owner, or a local reader with an
+accepted follow of the owner (and, for a remote owner, an accepted outgoing
+follow), may see the story and its bytes. Expired and deleted rows are refused
+even if a stale repository read returns them. Views, reactions and replies are
+private receipts; replies are never converted into posts. The media route is
+authenticated and returns `Cache-Control: private, no-store`, so a host must not
+front it with a shared cache or an unauthenticated static path.
+
+Inbound `Add` requires an actor followed by a local account, an object type of
+`Story`, no public audience and one http(s) attachment URL. The stored expiry is
+clamped to local policy. `Delete` is matched by object id; an unknown object is
+remembered as a tombstone so a replayed `Add` cannot resurrect it. The
+`story.expire` worker job sweeps expired rows in bounded batches and removes
+local media unless a post still links the attachment. A host that already has
+the social tables must create the five `StorySchema` tables through its own
+migration path; there is no post-row backfill.
 
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.

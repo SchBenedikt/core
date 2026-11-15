@@ -1,0 +1,25 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/stories/1/activity",
+  "type": "Add",
+  "actor": "https://remote.example/users/carol",
+  "published": "2026-11-11T09:00:00Z",
+  "to": ["https://remote.example/users/carol/followers"],
+  "object": {
+    "id": "https://remote.example/stories/1",
+    "type": "Story",
+    "attributedTo": "https://remote.example/users/carol",
+    "content": "A Pixelfed story",
+    "mediaType": "text/plain",
+    "published": "2026-11-11T09:00:00Z",
+    "endTime": "2026-11-12T09:00:00Z",
+    "to": ["https://remote.example/users/carol/followers"],
+    "attachment": [
+      {
+        "type": "Document",
+        "mediaType": "image/jpeg",
+        "url": "https://remote.example/media/1.jpg"
+      }
+    ]
+  }
+}

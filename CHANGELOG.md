@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Ephemeral, followers-only stories. `Story` is a separate domain with its own
+  `social_story`, `social_story_view`, `social_story_reaction`,
+  `social_story_reply` and `social_story_tombstone` tables, in-memory and PDO
+  adapters, and an authorized media route that applies the same owner/follower
+  rule as the story itself. A story needs one image or video attachment, has a
+  default 24-hour TTL clamped to 1-24 hours, one private view receipt per viewer,
+  owner-only viewer lists, private reactions and replies that never become
+  posts. Outbound federation is a Pixelfed-compatible `Add(Story)` addressed to
+  followers; withdrawal is `Delete(Tombstone)`. Inbound `Add` is accepted only
+  from a followed actor, rejects a public audience and clamps remote expiry;
+  an unknown `Delete` is remembered so a replayed `Add` cannot resurrect the
+  story. The idempotent `story.expire` job removes expired rows and unlinked
+  local media. Eleven neutral `/api/v1/stories` routes expose the feature and
+  answer 503 while `stories.enabled` is off. Checked-in Pixelfed Add/Delete
+  fixtures cover the manual interop shape. The migration inventory now marks
+  `stories` supported.
 - Consent-aware, host-neutral For You recommendations. The optional
   `recommendations.enabled` feature ranks only public local posts and cached
   remote posts, re-applies blocks, mutes, instance moderation, content-warning

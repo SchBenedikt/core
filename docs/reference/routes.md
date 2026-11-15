@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 135 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 146 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -63,6 +63,17 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `recommendations.signals.create` | `POST` | `/api/v1/recommendations/signals` | yes | 300 / 900 s |
 | `recommendations.export` | `GET` | `/api/v1/recommendations/export` | yes | — |
 | `recommendations.data.delete` | `DELETE` | `/api/v1/recommendations/data` | yes | — |
+| `stories.list` | `GET` | `/api/v1/stories` | yes | — |
+| `stories.create` | `POST` | `/api/v1/stories` | yes | 30 / 900 s |
+| `stories.get` | `GET` | `/api/v1/stories/{id}` | yes | — |
+| `stories.delete` | `DELETE` | `/api/v1/stories/{id}` | yes | — |
+| `stories.media` | `GET` | `/api/v1/stories/{id}/media` | yes | — |
+| `stories.views.create` | `POST` | `/api/v1/stories/{id}/views` | yes | 240 / 60 s |
+| `stories.viewers` | `GET` | `/api/v1/stories/{id}/viewers` | yes | — |
+| `stories.reactions.create` | `POST` | `/api/v1/stories/{id}/reactions` | yes | 120 / 900 s |
+| `stories.reactions.list` | `GET` | `/api/v1/stories/{id}/reactions` | yes | — |
+| `stories.replies.create` | `POST` | `/api/v1/stories/{id}/replies` | yes | 120 / 900 s |
+| `stories.replies.list` | `GET` | `/api/v1/stories/{id}/replies` | yes | — |
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
@@ -852,6 +863,41 @@ opaque and bound to a 300-second snapshot; an expired or malformed cursor is
 `languages`. Behavioral signals default off: without consent `POST signals`
 answers `403 recommendation_consent_required`; `GET export` and `DELETE data`
 only ever address the authenticated reader's own rows.
+
+## Stories
+
+```http
+GET    /api/v1/stories?limit=20
+POST   /api/v1/stories
+GET    /api/v1/stories/{id}
+DELETE /api/v1/stories/{id}
+GET    /api/v1/stories/{id}/media
+POST   /api/v1/stories/{id}/views
+GET    /api/v1/stories/{id}/viewers
+POST   /api/v1/stories/{id}/reactions
+GET    /api/v1/stories/{id}/reactions
+POST   /api/v1/stories/{id}/replies
+GET    /api/v1/stories/{id}/replies
+```
+
+Stories are always followers-only and short-lived; they are not posts and never
+appear in a post timeline or the outbox. Every route is authenticated and
+answers `Cache-Control: private, no-store`. With `social.stories.enabled` off
+they answer `503 stories_disabled`.
+
+A story has exactly one image or video attachment and a default 24-hour TTL
+(`social.stories.ttl_hours`, clamped to 1-24). The owner, or a local reader with
+an accepted follow, may read it; anyone else gets the same `404` as for an
+unknown id. `GET media` performs the same check before reading one byte. Views
+are one row per viewer, reactions and replies are private receipts and are
+never federated as posts; only the owner may read `viewers`.
+
+Delivery uses ActivityPub `Add` with an embedded `Story` object addressed to
+the owner's followers, and withdrawal uses `Delete` with a `Tombstone`. Inbound
+`Add` is accepted only from an actor a local account follows and is rejected if
+its audience includes `#Public`; `Delete` is matched by object id. Expired rows
+are soft-deleted by the idempotent `story.expire` worker job and local media is
+removed when no post links it.
 
 ## Inbox
 

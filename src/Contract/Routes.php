@@ -19,6 +19,17 @@ use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
 use AlohaSocial\Core\Api\CreateRecommendationSignalHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\CreateStoryHandler;
+use AlohaSocial\Core\Api\CreateStoryReactionHandler;
+use AlohaSocial\Core\Api\CreateStoryReplyHandler;
+use AlohaSocial\Core\Api\DeleteStoryHandler;
+use AlohaSocial\Core\Api\RecordStoryViewHandler;
+use AlohaSocial\Core\Api\ShowStoryHandler;
+use AlohaSocial\Core\Api\ShowStoryMediaHandler;
+use AlohaSocial\Core\Api\StoriesHandler;
+use AlohaSocial\Core\Api\StoryReactionsHandler;
+use AlohaSocial\Core\Api\StoryRepliesHandler;
+use AlohaSocial\Core\Api\StoryViewersHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
 use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
@@ -584,6 +595,98 @@ final class Routes
 				handler: DeleteRecommendationDataHandler::class,
 				requiresAuth: true,
 				summary: 'Delete the reader own recommendation data.',
+			),
+			new Route(
+				name: 'stories.list',
+				method: 'GET',
+				path: $base . '/stories',
+				handler: StoriesHandler::class,
+				requiresAuth: true,
+				summary: 'Active followers-only stories for the signed-in reader.',
+			),
+			new Route(
+				name: 'stories.create',
+				method: 'POST',
+				path: $base . '/stories',
+				handler: CreateStoryHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Publish a short-lived image or video story to followers.',
+			),
+			new Route(
+				name: 'stories.get',
+				method: 'GET',
+				path: $base . '/stories/{id}',
+				handler: ShowStoryHandler::class,
+				requiresAuth: true,
+				summary: 'Read one visible story.',
+			),
+			new Route(
+				name: 'stories.delete',
+				method: 'DELETE',
+				path: $base . '/stories/{id}',
+				handler: DeleteStoryHandler::class,
+				requiresAuth: true,
+				summary: 'Withdraw a story and federate its Delete.',
+			),
+			new Route(
+				name: 'stories.media',
+				method: 'GET',
+				path: $base . '/stories/{id}/media',
+				handler: ShowStoryMediaHandler::class,
+				requiresAuth: true,
+				summary: 'Read the bytes of one visible story image or video.',
+			),
+			new Route(
+				name: 'stories.views.create',
+				method: 'POST',
+				path: $base . '/stories/{id}/views',
+				handler: RecordStoryViewHandler::class,
+				requiresAuth: true,
+				rateLimit: '240/60',
+				summary: 'Record one private story view receipt.',
+			),
+			new Route(
+				name: 'stories.viewers',
+				method: 'GET',
+				path: $base . '/stories/{id}/viewers',
+				handler: StoryViewersHandler::class,
+				requiresAuth: true,
+				summary: 'Owner-only story view receipts.',
+			),
+			new Route(
+				name: 'stories.reactions.create',
+				method: 'POST',
+				path: $base . '/stories/{id}/reactions',
+				handler: CreateStoryReactionHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/900',
+				summary: 'Add a private reaction to a visible story.',
+			),
+			new Route(
+				name: 'stories.reactions.list',
+				method: 'GET',
+				path: $base . '/stories/{id}/reactions',
+				handler: StoryReactionsHandler::class,
+				requiresAuth: true,
+				summary: 'Read the private reactions of a visible story.',
+			),
+			new Route(
+				name: 'stories.replies.create',
+				method: 'POST',
+				path: $base . '/stories/{id}/replies',
+				handler: CreateStoryReplyHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/900',
+				summary: 'Add a private reply to a visible story.',
+			),
+			new Route(
+				name: 'stories.replies.list',
+				method: 'GET',
+				path: $base . '/stories/{id}/replies',
+				handler: StoryRepliesHandler::class,
+				requiresAuth: true,
+				summary: 'Read private replies to a visible story.',
 			),
 			new Route(
 				name: 'followers.list',

@@ -297,10 +297,9 @@ final class MigrationInventory
 				'stories',
 				'ephemeral stories/shorts',
 				self::OWNER_CORE,
-				'open: story model and expiration lifecycle (#18)',
-				self::STATUS_GAP,
-				'inventory-only',
-				gapIssue: '#18',
+				'social_story, social_story_view, social_story_reaction, social_story_reply and social_story_tombstone with expiry, private receipts and Pixelfed Add/Delete',
+				self::STATUS_SUPPORTED,
+				'v2',
 			),
 			self::entry(
 				'moderation',
