@@ -14,6 +14,13 @@ use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
+use AlohaSocial\Core\Api\ActorCollectionsHandler;
+use AlohaSocial\Core\Api\ActorFeaturedHandler;
+use AlohaSocial\Core\Api\AddCollectionItemHandler;
+use AlohaSocial\Core\Api\ArchivePostHandler;
+use AlohaSocial\Core\Api\ArchivedPostsHandler;
+use AlohaSocial\Core\Api\CollectionsHandler;
+use AlohaSocial\Core\Api\CreateCollectionHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
@@ -30,6 +37,9 @@ use AlohaSocial\Core\Api\StoriesHandler;
 use AlohaSocial\Core\Api\StoryReactionsHandler;
 use AlohaSocial\Core\Api\StoryRepliesHandler;
 use AlohaSocial\Core\Api\StoryViewersHandler;
+use AlohaSocial\Core\Api\UnarchivePostHandler;
+use AlohaSocial\Core\Api\UnpinPostHandler;
+use AlohaSocial\Core\Api\UpdateCollectionHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
 use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
@@ -39,10 +49,12 @@ use AlohaSocial\Core\Api\DeleteFilterHandler;
 use AlohaSocial\Core\Api\FiltersHandler;
 use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
 use AlohaSocial\Core\Api\ScheduledPostsHandler;
+use AlohaSocial\Core\Api\ShowCollectionHandler;
 use AlohaSocial\Core\Api\ShowFilterHandler;
 use AlohaSocial\Core\Api\ShowScheduledPostHandler;
 use AlohaSocial\Core\Api\UpdateFilterHandler;
 use AlohaSocial\Core\Api\UpdateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteCollectionHandler;
 use AlohaSocial\Core\Api\DeletePostHandler;
 use AlohaSocial\Core\Api\DismissNotificationHandler;
 use AlohaSocial\Core\Api\AcceptFollowRequestHandler;
@@ -51,6 +63,9 @@ use AlohaSocial\Core\Api\FollowRequestsHandler;
 use AlohaSocial\Core\Api\RejectFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
 use AlohaSocial\Core\Api\FollowedTagsHandler;
+use AlohaSocial\Core\Api\PinsHandler;
+use AlohaSocial\Core\Api\PinPostHandler;
+use AlohaSocial\Core\Api\RemoveCollectionItemHandler;
 use AlohaSocial\Core\Api\FollowHashtagHandler;
 use AlohaSocial\Core\Api\FollowLocalAccountHandler;
 use AlohaSocial\Core\Api\FollowRemoteActorHandler;
@@ -204,6 +219,119 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '20/900',
 				summary: 'Report a visible post, an actor or a domain to the instance moderators.',
+			),
+			new Route(
+				name: 'posts.archived',
+				method: 'GET',
+				path: $base . '/posts/archived',
+				handler: ArchivedPostsHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Owner-only archived posts, newest first.',
+			),
+			new Route(
+				name: 'posts.archive',
+				method: 'POST',
+				path: $base . '/posts/{id}/archive',
+				handler: ArchivePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Archive an own post without deleting or unfederating it.',
+			),
+			new Route(
+				name: 'posts.unarchive',
+				method: 'DELETE',
+				path: $base . '/posts/{id}/archive',
+				handler: UnarchivePostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Restore an archived post to local listings.',
+			),
+			new Route(
+				name: 'pins.list',
+				method: 'GET',
+				path: $base . '/pins',
+				handler: PinsHandler::class,
+				requiresAuth: true,
+				summary: 'The owner ordered profile pins.',
+			),
+			new Route(
+				name: 'pins.create',
+				method: 'PUT',
+				path: $base . '/pins/{postId}',
+				handler: PinPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Pin an own public post; the operation is idempotent.',
+			),
+			new Route(
+				name: 'pins.delete',
+				method: 'DELETE',
+				path: $base . '/pins/{postId}',
+				handler: UnpinPostHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Remove a profile pin; repeating it is a no-op.',
+			),
+			new Route(
+				name: 'collections.list',
+				method: 'GET',
+				path: $base . '/collections',
+				handler: CollectionsHandler::class,
+				requiresAuth: true,
+				summary: 'The owner media collections.',
+			),
+			new Route(
+				name: 'collections.create',
+				method: 'POST',
+				path: $base . '/collections',
+				handler: CreateCollectionHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				summary: 'Create an owner-scoped media collection.',
+			),
+			new Route(
+				name: 'collections.get',
+				method: 'GET',
+				path: $base . '/collections/{id}',
+				handler: ShowCollectionHandler::class,
+				requiresAuth: false,
+				summary: 'Read a visible collection with viewer-scoped items.',
+			),
+			new Route(
+				name: 'collections.update',
+				method: 'PATCH',
+				path: $base . '/collections/{id}',
+				handler: UpdateCollectionHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/900',
+				summary: 'Change an own collection title, description or audience.',
+			),
+			new Route(
+				name: 'collections.delete',
+				method: 'DELETE',
+				path: $base . '/collections/{id}',
+				handler: DeleteCollectionHandler::class,
+				requiresAuth: true,
+				summary: 'Delete a collection without deleting its member posts.',
+			),
+			new Route(
+				name: 'collections.items.create',
+				method: 'POST',
+				path: $base . '/collections/{id}/items',
+				handler: AddCollectionItemHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/900',
+				summary: 'Add an own image or video post to a collection.',
+			),
+			new Route(
+				name: 'collections.items.delete',
+				method: 'DELETE',
+				path: $base . '/collections/{id}/items/{postId}',
+				handler: RemoveCollectionItemHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/900',
+				summary: 'Remove a post from a collection without deleting the post.',
 			),
 			new Route(
 				name: 'posts.get',
@@ -966,6 +1094,24 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'OrderedCollection of the actors a local account follows.',
+			),
+			new Route(
+				name: 'actors.featured',
+				method: 'GET',
+				path: '/@{handle}/featured',
+				handler: ActorFeaturedHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'OrderedCollection of an account pinned public notes.',
+			),
+			new Route(
+				name: 'actors.collections',
+				method: 'GET',
+				path: '/@{handle}/collections',
+				handler: ActorCollectionsHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Viewer-scoped media collections of a local account.',
 			),
 			new Route(
 				name: 'actors.outbox',

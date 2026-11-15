@@ -55,6 +55,7 @@ final class PostSchema
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_state VARCHAR(16) NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_authorization_id VARCHAR(1024) NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_request_id VARCHAR(1024) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN archived_at VARCHAR(20) NULL',
 		];
 	}
 
@@ -78,7 +79,8 @@ final class PostSchema
 			. ' quoted_object_id VARCHAR(1024) NULL,'
 			. ' quote_state VARCHAR(16) NULL,'
 			. ' quote_authorization_id VARCHAR(1024) NULL,'
-			. ' quote_request_id VARCHAR(1024) NULL'
+			. ' quote_request_id VARCHAR(1024) NULL,'
+			. ' archived_at VARCHAR(20) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',

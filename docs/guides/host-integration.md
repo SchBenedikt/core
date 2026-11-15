@@ -310,6 +310,8 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowedHashtagSchema` → `social_followed_hashtag` (private per-user followed tags; `(user_id, hashtag)` primary key and newest-first cursor index)
 - `RecommendationSchema` → `social_recommendation_preference`, `social_recommendation_feedback` and `social_recommendation_signal` (opt-in per-reader interests/consent, explicit feedback and bounded owner-scoped signals; snapshots are a cache and need no table)
 - `StorySchema` → `social_story`, `social_story_view`, `social_story_reaction`, `social_story_reply` and `social_story_tombstone` (ephemeral followers-only stories, private receipts and a Delete-before-Add tombstone)
+- `PostPinSchema` → `social_post_pin` (at most five explicit positions per owner, unique by owner and post)
+- `MediaCollectionSchema` → `social_media_collection` and `social_media_collection_item` (owner title, description, audience and ordered post references)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker, policy status/audit columns and unread index)
 - `NotificationPolicySchema`, `NotificationSenderSchema` and `ConversationMuteSchema` → policy overrides, held sender requests and private thread mutes
@@ -361,6 +363,29 @@ filters, owner isolation, stable cursor semantics and explainable reasons.
 There is no ActivityPub or Mastodon status projection for recommendation pages:
 they are an app-level read, and a client that needs statuses maps the returned
 candidate target ids through the existing post/remote-post endpoints.
+
+### Archives, pins and media collections
+
+Archive is a reversible marker on `social_post.archived_at`, not a delete. An
+archived post keeps its id and public detail route, dispatches no ActivityPub
+`Delete`, and is omitted only from local public/author/followed/hashtag/search
+and outbox listings. `GET /api/v1/posts/archived` is owner-only; archive and
+unarchive are owner-only and idempotent.
+
+Pins live in `social_post_pin` and are references, never copies: at most five
+own public posts per account, with explicit one-based positions. Deleting,
+archiving or widening the audience of a post removes its pin; the stable
+`featured` `OrderedCollection` at `/@{handle}/featured` is derived from the live
+pins and re-checks author, visibility, archive and deletion state on every
+read. Unpinning never deletes the post.
+
+`MediaCollectionService` owns collections and their ordered items. A collection
+has an owner, title, optional description and an audience of public, unlisted or
+followers (never direct). Only the owner's image/video posts can be added, and
+every read resolves each item through `PostService::getVisible()` for the actual
+viewer; item counts and the cover are derived from that visible set. Deleting a
+collection removes its membership rows only. `GET /@{handle}/collections`
+is viewer-aware and never enumerates unlisted collections.
 
 ### Stories
 

@@ -101,7 +101,7 @@ authorization-code/PAR protocol client and replay-safe inbound relay/Jetstream/A
 history and ActivityPub `Update` ingestion/delivery, federated `Like` and
 `EmojiReact` in both directions with identity-keyed reactions, separate counts
 and idempotent `Undo`, public hashtag timelines,
-private followed hashtags with their own timeline, optional consent-aware For You recommendations, optional followers-only stories with private receipts, expiry and Pixelfed-compatible `Add`/`Delete`, the durable queue and replay log,
+private followed hashtags with their own timeline, optional consent-aware For You recommendations, optional followers-only stories with private receipts, expiry and Pixelfed-compatible `Add`/`Delete`, reversible post archives, ordered own-public profile pins with a derived `featured` collection, owner-scoped media collections, the durable queue and replay log,
 `Application::forHost()` and the read-only cutover validator.
 
 `@alohasocial/ui` under `ui/` provides the `HostBridge` contract, a fake

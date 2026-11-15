@@ -286,7 +286,7 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `accounts` | host | supported | v1 | host account id becomes `local_user_id` |
 | `account_moves` | core | supported | — | `social_account_move`; stable event id, target and processed follow ids, actor/key identity untouched |
 | `profile_metadata` | core | supported | — | `LocalActorProfileProvider` supplies the actor document and Mastodon account; avatar/banner bytes travel as media |
-| `posts` | core | supported | v1 | `social_post`, derived note/Create/Delete ids |
+| `posts` | core | supported | v1 | `social_post` including the reversible `archived_at` flag, derived note/Create/Delete ids |
 | `post_revisions` | core | supported | v2 | `social_post_revision` plus the live revision |
 | `attachments` | core | supported | v2 | `social_attachment` + `BlobStore`, with image, video and audio metadata |
 | `media_processing` | core | supported | — | derived thumbnails, converted not copied |
@@ -305,6 +305,8 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `quotes` | core | supported | — | local and remote quote references, FEP-044f grants, revocation and policy |
 | `scheduled_posts` | core | supported | — | `social_scheduled_post` with the reserved post id and the publisher job |
 | `stories` | core | supported | — | `social_story`, private views/reactions/replies, expiry and Pixelfed `Add`/`Delete` |
+| `post_pins` | core | supported | — | `social_post_pin` ordered positions; the `featured` collection is derived, not copied |
+| `media_collections` | core | supported | — | `social_media_collection` and ordered `social_media_collection_item`; member posts stay in `posts` |
 | `moderation` | core | supported | — | reports, domain policy, review queue and first-post holds |
 | `keyword_filters` | core | supported | — | `social_filter` rules with contexts, action and keyword list |
 | `direct_messages` | core | gap | — | conversations and delivery (#19) |

@@ -45,6 +45,8 @@ final readonly class Post
 		public ?QuoteState $quoteState = null,
 		public ?string $quoteAuthorizationId = null,
 		public ?string $quoteRequestId = null,
+		/** Set when the author archived the post locally; it stays addressable. */
+		public ?DateTimeImmutable $archivedAt = null,
 	) {
 		if ($revision < 1) {
 			throw new InvalidArgumentException('A post revision starts at one.');
@@ -52,6 +54,10 @@ final readonly class Post
 
 		if ($editedAt !== null && $editedAt < $publishedAt) {
 			throw new InvalidArgumentException('A post cannot have been edited before it was published.');
+		}
+
+		if ($archivedAt !== null && $archivedAt < $publishedAt) {
+			throw new InvalidArgumentException('A post cannot have been archived before it was published.');
 		}
 
 		if ($id === '') {
@@ -137,6 +143,39 @@ final readonly class Post
 	}
 
 	/**
+	 * An archived post stays readable by id but is omitted from every local
+	 * listing surface. It is not a deletion and never federates a Delete.
+	 */
+	public function isArchived(): bool
+	{
+		return $this->archivedAt !== null;
+	}
+
+	public function withArchivedAt(?DateTimeImmutable $archivedAt): self
+	{
+		return new self(
+			id: $this->id,
+			authorId: $this->authorId,
+			content: $this->content,
+			visibility: $this->visibility,
+			publishedAt: $this->publishedAt,
+			contentWarning: $this->contentWarning,
+			deletedAt: $this->deletedAt,
+			attachmentIds: $this->attachmentIds,
+			poll: $this->poll,
+			recipientIds: $this->recipientIds,
+			inReplyToId: $this->inReplyToId,
+			editedAt: $this->editedAt,
+			revision: $this->revision,
+			quotedObjectId: $this->quotedObjectId,
+			quoteState: $this->quoteState,
+			quoteAuthorizationId: $this->quoteAuthorizationId,
+			quoteRequestId: $this->quoteRequestId,
+			archivedAt: $archivedAt,
+		);
+	}
+
+	/**
 	 * The shape the API returns.
 	 *
 	 * @return array<string, mixed>
@@ -159,6 +198,7 @@ final readonly class Post
 			'quote_state' => $this->quoteState?->value,
 			'quote_authorization_id' => $this->quoteAuthorizationId,
 			'quote_request_id' => $this->quoteRequestId,
+			'archived_at' => $this->archivedAt === null ? null : Time::format($this->archivedAt),
 			'recipient_ids' => $this->recipientIds,
 		];
 	}

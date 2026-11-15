@@ -4,9 +4,10 @@ The manifest in [`src/Contract/Routes.php`](../../src/Contract/Routes.php) is th
 source of truth; `php bin/export-routes` prints it as JSON and
 `php bin/export-openapi` renders the same routes as OpenAPI 3.1. Paths are absolute
 and versioned under `/api/v1` except the liveness probe, the protocol
-endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
+endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
+`/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 146 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 161 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -21,6 +22,19 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `media.upload` | `POST` | `/api/v1/media` | yes | 20 / 900 s |
 | `media.get` | `GET` | `/api/v1/media/{id}` | no | 240 / 60 s |
 | `posts.create` | `POST` | `/api/v1/posts` | yes | 30 / 900 s |
+| `posts.archived` | `GET` | `/api/v1/posts/archived` | yes | 120 / 60 s |
+| `posts.archive` | `POST` | `/api/v1/posts/{id}/archive` | yes | 60 / 900 s |
+| `posts.unarchive` | `DELETE` | `/api/v1/posts/{id}/archive` | yes | 60 / 900 s |
+| `pins.list` | `GET` | `/api/v1/pins` | yes | — |
+| `pins.create` | `PUT` | `/api/v1/pins/{postId}` | yes | 60 / 900 s |
+| `pins.delete` | `DELETE` | `/api/v1/pins/{postId}` | yes | 60 / 900 s |
+| `collections.list` | `GET` | `/api/v1/collections` | yes | — |
+| `collections.create` | `POST` | `/api/v1/collections` | yes | 30 / 900 s |
+| `collections.get` | `GET` | `/api/v1/collections/{id}` | no | — |
+| `collections.update` | `PATCH` | `/api/v1/collections/{id}` | yes | 60 / 900 s |
+| `collections.delete` | `DELETE` | `/api/v1/collections/{id}` | yes | — |
+| `collections.items.create` | `POST` | `/api/v1/collections/{id}/items` | yes | 120 / 900 s |
+| `collections.items.delete` | `DELETE` | `/api/v1/collections/{id}/items/{postId}` | yes | 120 / 900 s |
 | `posts.get` | `GET` | `/api/v1/posts/{id}` | no | — |
 | `posts.update` | `PATCH` | `/api/v1/posts/{id}` | yes | 30 / 900 s |
 | `quote-authorizations.get` | `GET` | `/api/v1/quote-authorizations/{id}` | no | 120 / 60 s |
@@ -107,6 +121,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
 | `actors.followers` | `GET` | `/@{handle}/followers` | no | 120 / 60 s |
 | `actors.following` | `GET` | `/@{handle}/following` | no | 120 / 60 s |
+| `actors.featured` | `GET` | `/@{handle}/featured` | no | 120 / 60 s |
+| `actors.collections` | `GET` | `/@{handle}/collections` | no | 120 / 60 s |
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
 | `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |

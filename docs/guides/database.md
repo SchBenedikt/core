@@ -41,7 +41,9 @@ timestamp, and anything else is refused.
 
 Each table's definition lives next to its repository or adapter:
 
-- `src/Domain/Post/PostSchema.php` → `social_post`, `social_post_attachment`, ordered `social_post_recipient`, normalized `social_post_hashtag` rows and the `social_post_revision` history of edits
+- `src/Domain/Post/PostSchema.php` → `social_post` (including the reversible `archived_at` marker), `social_post_attachment`, ordered `social_post_recipient`, normalized `social_post_hashtag` rows and the `social_post_revision` history of edits
+- `src/Domain/Post/PostPinSchema.php` → `social_post_pin` (at most five explicit one-based positions per owner, unique by owner and post)
+- `src/Domain/Collection/MediaCollectionSchema.php` → `social_media_collection` and ordered `social_media_collection_item` (owner title, description, audience and per-collection post order)
 - `src/Domain/Post/PollSchema.php` → `social_poll`, ordered `social_poll_option` and `social_poll_vote` (one row per voter and poll; sorted zero-based positions)
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Filter/FilterSchema.php` → `social_filter` (one per-reader keyword rule with action, JSON contexts and keyword list; no shared row is ever rewritten by another reader)

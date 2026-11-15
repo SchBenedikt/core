@@ -64,6 +64,8 @@ use AlohaSocial\Core\Domain\Scheduling\ScheduledPostSchema;
 use AlohaSocial\Core\Domain\Story\StorySchema;
 use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PollSchema;
+use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
+use AlohaSocial\Core\Domain\Post\PostPinSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobQueue;
@@ -125,7 +127,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(146, $app->routes->routes());
+		self::assertCount(161, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1160,6 +1162,8 @@ final class ApplicationHostTest extends TestCase
 	{
 		$database = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($database);
+		PostPinSchema::create($database);
+		MediaCollectionSchema::create($database);
 		AttachmentSchema::create($database);
 		PollSchema::create($database);
 		BookmarkSchema::create($database);

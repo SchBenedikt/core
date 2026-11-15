@@ -304,6 +304,29 @@ use AlohaSocial\Core\Domain\Timeline\LocalFollowHomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoAccountListRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoFollowedHashtagRepository;
 use AlohaSocial\Core\Domain\Timeline\PdoHomeTimelineRepository;
+use AlohaSocial\Core\Api\ActorCollectionsHandler;
+use AlohaSocial\Core\Api\ActorFeaturedHandler;
+use AlohaSocial\Core\Api\AddCollectionItemHandler;
+use AlohaSocial\Core\Api\ArchivePostHandler;
+use AlohaSocial\Core\Api\ArchivedPostsHandler;
+use AlohaSocial\Core\Api\CollectionsHandler;
+use AlohaSocial\Core\Api\CreateCollectionHandler;
+use AlohaSocial\Core\Api\DeleteCollectionHandler;
+use AlohaSocial\Core\Api\PinsHandler;
+use AlohaSocial\Core\Api\PinPostHandler;
+use AlohaSocial\Core\Api\RemoveCollectionItemHandler;
+use AlohaSocial\Core\Api\ShowCollectionHandler;
+use AlohaSocial\Core\Api\UnarchivePostHandler;
+use AlohaSocial\Core\Api\UnpinPostHandler;
+use AlohaSocial\Core\Api\UpdateCollectionHandler;
+use AlohaSocial\Core\Domain\Collection\InMemoryMediaCollectionRepository;
+use AlohaSocial\Core\Domain\Collection\MediaCollectionRepository;
+use AlohaSocial\Core\Domain\Collection\PdoMediaCollectionRepository;
+use AlohaSocial\Core\Domain\Post\InMemoryPostPinRepository;
+use AlohaSocial\Core\Domain\Post\PdoPostPinRepository;
+use AlohaSocial\Core\Domain\Post\PostPinRepository;
+use AlohaSocial\Core\Service\Collection\MediaCollectionService;
+use AlohaSocial\Core\Service\PinService;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
 use AlohaSocial\Core\Http\Middleware\MastodonApiGate;
@@ -469,6 +492,8 @@ final readonly class Application
 		public ?AtprotoSyncService $atprotoSync = null,
 		public ?RecommendationService $recommendations = null,
 		public ?StoryService $stories = null,
+		public ?PinService $pins = null,
+		public ?MediaCollectionService $collections = null,
 	) {
 	}
 
@@ -547,6 +572,10 @@ final readonly class Application
 		?RecommendationService $recommendationService = null,
 		?StoryRepository $storyRepository = null,
 		?StoryService $storyService = null,
+		?PostPinRepository $pinRepository = null,
+		?MediaCollectionRepository $mediaCollectionRepository = null,
+		?PinService $pinService = null,
+		?MediaCollectionService $mediaCollectionService = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -669,6 +698,10 @@ final readonly class Application
 			recommendationService: $recommendationService,
 			storyRepository: $storyRepository,
 			storyService: $storyService,
+			pinRepository: $pinRepository,
+			mediaCollectionRepository: $mediaCollectionRepository,
+			pinService: $pinService,
+			mediaCollectionService: $mediaCollectionService,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -836,6 +869,8 @@ final readonly class Application
 			recommendationCandidates: new PdoRecommendationCandidateSource($database),
 			recommendationSnapshots: new InMemoryRecommendationSnapshotCache(),
 			storyRepository: new PdoStoryRepository($database),
+			pinRepository: new PdoPostPinRepository($database),
+			mediaCollectionRepository: new PdoMediaCollectionRepository($database),
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -948,6 +983,10 @@ final readonly class Application
 		?RecommendationService $recommendationService = null,
 		?StoryRepository $storyRepository = null,
 		?StoryService $storyService = null,
+		?PostPinRepository $pinRepository = null,
+		?MediaCollectionRepository $mediaCollectionRepository = null,
+		?PinService $pinService = null,
+		?MediaCollectionService $mediaCollectionService = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -959,6 +998,9 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
+		$pinRepository ??= new InMemoryPostPinRepository();
+		$mediaCollectionRepository ??= new InMemoryMediaCollectionRepository();
+		$pinService ??= new PinService($posts, $pinRepository, $clock);
 		$searchIndex ??= new InMemorySearchIndex();
 		$trends ??= new InMemoryTrendRepository();
 		$searchIndexer = new SearchIndexer($searchIndex, $trends, $clock, $logger);
@@ -1202,6 +1244,16 @@ final readonly class Application
 			heldPosts: $heldPostRepository,
 			holdPolicy: $postHoldPolicy,
 			searchIndexer: $searchIndexer,
+			pins: $pinRepository,
+		);
+		$mediaCollectionService ??= new MediaCollectionService(
+			$mediaCollectionRepository,
+			$postService,
+			$attachmentRepository,
+			$clock,
+			$ids,
+			$mediaService,
+			$localRelationships,
 		);
 		$moderationService = new ModerationService(
 			$reportRepository,
@@ -1284,7 +1336,7 @@ final readonly class Application
 			$config,
 			$posts,
 			$postService,
-			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService, $reactionService, $localProfiles),
+			new MastodonPresenter($instance, $activities, $mediaService, $favouriteRepository, $localRelationships, $localActors, $clock, $pollVoteRepository, $posts, $boostRepository, $bookmarkRepository, $muteService, $reactionService, $localProfiles, $pinRepository),
 			$localActors,
 			$mediaService,
 			$favouriteRepository,
@@ -1410,6 +1462,8 @@ final readonly class Application
 				$localRelationships,
 				$localProfiles,
 				$accountMoveService,
+				$pinRepository,
+				$posts,
 			)
 			: null;
 		$profileUpdateService = $profileUpdates
@@ -1485,6 +1539,19 @@ final readonly class Application
 			->with(UploadMediaHandler::class, static fn (): UploadMediaHandler => new UploadMediaHandler($mediaService))
 			->with(ShowMediaHandler::class, static fn (): ShowMediaHandler => new ShowMediaHandler($mediaService, $mediaAccess))
 			->with(DeletePostHandler::class, static fn (): DeletePostHandler => new DeletePostHandler($postService))
+			->with(ArchivedPostsHandler::class, static fn (): ArchivedPostsHandler => new ArchivedPostsHandler($postService))
+			->with(ArchivePostHandler::class, static fn (): ArchivePostHandler => new ArchivePostHandler($postService))
+			->with(UnarchivePostHandler::class, static fn (): UnarchivePostHandler => new UnarchivePostHandler($postService))
+			->with(PinsHandler::class, static fn (): PinsHandler => new PinsHandler($pinService))
+			->with(PinPostHandler::class, static fn (): PinPostHandler => new PinPostHandler($pinService))
+			->with(UnpinPostHandler::class, static fn (): UnpinPostHandler => new UnpinPostHandler($pinService))
+			->with(CollectionsHandler::class, static fn (): CollectionsHandler => new CollectionsHandler($mediaCollectionService))
+			->with(CreateCollectionHandler::class, static fn (): CreateCollectionHandler => new CreateCollectionHandler($mediaCollectionService))
+			->with(ShowCollectionHandler::class, static fn (): ShowCollectionHandler => new ShowCollectionHandler($mediaCollectionService))
+			->with(UpdateCollectionHandler::class, static fn (): UpdateCollectionHandler => new UpdateCollectionHandler($mediaCollectionService))
+			->with(DeleteCollectionHandler::class, static fn (): DeleteCollectionHandler => new DeleteCollectionHandler($mediaCollectionService))
+			->with(AddCollectionItemHandler::class, static fn (): AddCollectionItemHandler => new AddCollectionItemHandler($mediaCollectionService))
+			->with(RemoveCollectionItemHandler::class, static fn (): RemoveCollectionItemHandler => new RemoveCollectionItemHandler($mediaCollectionService))
 			->with(BoostPostHandler::class, static fn (): BoostPostHandler => new BoostPostHandler($boostService))
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
 			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService, $filterService))
@@ -1523,6 +1590,8 @@ final readonly class Application
 			->with(ActorHandler::class, static fn (): ActorHandler => new ActorHandler($actorDocuments))
 			->with(FollowersCollectionHandler::class, static fn (): FollowersCollectionHandler => new FollowersCollectionHandler($actorDocuments))
 			->with(FollowingCollectionHandler::class, static fn (): FollowingCollectionHandler => new FollowingCollectionHandler($actorDocuments))
+			->with(ActorFeaturedHandler::class, static fn (): ActorFeaturedHandler => new ActorFeaturedHandler($actorDocuments))
+			->with(ActorCollectionsHandler::class, static fn (): ActorCollectionsHandler => new ActorCollectionsHandler($mediaCollectionService, $localActors))
 			->with(OutboxHandler::class, static fn (): OutboxHandler => new OutboxHandler($actorOutbox))
 			->with(WebFingerHandler::class, static fn (): WebFingerHandler => new WebFingerHandler($webFinger))
 			->with(MastodonInstanceHandler::class, static fn (): MastodonInstanceHandler => new MastodonInstanceHandler($mastodonService))
@@ -1663,6 +1732,8 @@ final readonly class Application
 			$atprotoSync,
 			$recommendationService,
 			$storyService,
+			$pinService,
+			$mediaCollectionService,
 		);
 	}
 

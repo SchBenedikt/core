@@ -19,6 +19,7 @@ use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
 use AlohaSocial\Core\Domain\Post\PostConflictException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
+use AlohaSocial\Core\Domain\Post\PostPinRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostRevision;
 use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
@@ -73,6 +74,7 @@ final class PostService
 		private readonly ?HeldPostRepository $heldPosts = null,
 		private readonly ?PostHoldPolicy $holdPolicy = null,
 		private readonly ?SearchIndexer $searchIndexer = null,
+		private readonly ?PostPinRepository $pins = null,
 	) {
 	}
 
@@ -263,6 +265,7 @@ final class PostService
 
 		$this->runWrite(function () use ($post, $postId, $deletedAt): void {
 			$this->posts->softDelete($postId, $deletedAt);
+			$this->pins?->removeForPost($postId);
 			$this->atproto?->scheduleDelete($post);
 
 			$this->enqueueDelivery($post, fn (): array => $this->activities->deleteNote($post, $deletedAt));
@@ -334,6 +337,7 @@ final class PostService
 			quoteState: $post->quoteState,
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
+			archivedAt: $post->archivedAt,
 		);
 
 		$snapshot = new PostRevision(
@@ -363,9 +367,71 @@ final class PostService
 			}
 		});
 
+		if ($visibility !== Visibility::Public) {
+			$this->pins?->removeForPost($post->id);
+		}
+
 		$this->searchIndexer?->indexPost($edited);
 
 		return $edited;
+	}
+
+	/**
+	 * Archives a post the actor owns.
+	 *
+	 * Archiving changes only local listing state: no Delete is dispatched and
+	 * the post's public URL keeps resolving. A pinned post is unpinned because
+	 * a featured collection must not advertise a post hidden from the profile.
+	 *
+	 * @throws PostNotFoundException     when the post does not exist
+	 * @throws PostAccessDeniedException when somebody else wrote it
+	 */
+	public function archive(string $actorId, string $postId): Post
+	{
+		$post = $this->get($postId);
+		if ($post->authorId !== $actorId) {
+			throw new PostAccessDeniedException($postId, $actorId);
+		}
+
+		if (!$post->isArchived()) {
+			$archivedAt = Time::toSecondPrecision($this->clock->now());
+			$this->posts->archive($postId, $archivedAt);
+			$this->pins?->removeForPost($postId);
+			$this->searchIndexer?->removePost($postId, $post->authorId);
+		}
+
+		return $this->get($postId);
+	}
+
+	/**
+	 * Reverses {@see archive()} and restores public discovery indexing when
+	 * the post is public. No federation activity is involved either way.
+	 *
+	 * @throws PostNotFoundException     when the post does not exist
+	 * @throws PostAccessDeniedException when somebody else wrote it
+	 */
+	public function unarchive(string $actorId, string $postId): Post
+	{
+		$post = $this->get($postId);
+		if ($post->authorId !== $actorId) {
+			throw new PostAccessDeniedException($postId, $actorId);
+		}
+
+		$this->posts->unarchive($postId);
+		$restored = $this->get($postId);
+		if ($restored->visibility === Visibility::Public) {
+			$this->searchIndexer?->indexPost($restored);
+		}
+
+		return $restored;
+	}
+
+	/**
+	 * @return list<Post>
+	 */
+	public function archived(string $actorId, int $limit = 20, ?DateTimeImmutable $before = null, ?string $beforeId = null): array
+	{
+		return $this->posts->archivedTimeline($actorId, max(1, min(40, $limit)), $before, $beforeId);
 	}
 
 	/**

@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Reversible post archives, profile pins and owner-scoped media collections.
+  `social_post.archived_at` keeps an archived post addressable by its public
+  URL and federated identity while removing it only from local public, author,
+  follower, hashtag, search and outbox listings; archive/unarchive are
+  owner-only and dispatch no ActivityPub `Delete`. `social_post_pin` holds at
+  most five own public posts with explicit positions, exposes Mastodon
+  `pinned` and a stable `/@{handle}/featured` `OrderedCollection` derived from
+  the live posts. `social_media_collection` and
+  `social_media_collection_item` store owner titles, descriptions, an audience
+  (public, unlisted or followers) and ordered image/video post references;
+  every read re-checks each item through `PostService::getVisible()`. Fifteen
+  neutral routes expose archives, pins, collections, the actor featured
+  collection and the viewer-scoped actor collection list. The migration
+  inventory marks `post_pins` and `media_collections` supported.
 - Ephemeral, followers-only stories. `Story` is a separate domain with its own
   `social_story`, `social_story_view`, `social_story_reaction`,
   `social_story_reply` and `social_story_tombstone` tables, in-memory and PDO

@@ -29,7 +29,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id,'
 		. ' published_at, edited_at, revision, deleted_at, quoted_object_id, quote_state,'
-		. ' quote_authorization_id, quote_request_id';
+		. ' quote_authorization_id, quote_request_id, archived_at';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -43,9 +43,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
 					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at,'
-					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id)'
+					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id, archived_at)'
 					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at,'
-					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id)',
+					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id, :archived_at)',
 					[
 						'id' => $post->id,
 						'author_id' => $post->authorId,
@@ -61,6 +61,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'quote_state' => $post->quoteState?->value,
 						'quote_authorization_id' => $post->quoteAuthorizationId,
 						'quote_request_id' => $post->quoteRequestId,
+						'archived_at' => $post->archivedAt === null ? null : Time::format($post->archivedAt),
 					],
 				);
 
@@ -245,6 +246,57 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		);
 	}
 
+	public function archive(string $id, DateTimeImmutable $archivedAt): void
+	{
+		$this->db->execute(
+			'UPDATE ' . PostSchema::TABLE
+			. ' SET archived_at = :archived_at WHERE id = :id AND deleted_at IS NULL AND archived_at IS NULL',
+			['id' => $id, 'archived_at' => Time::format($archivedAt)],
+		);
+	}
+
+	public function unarchive(string $id): void
+	{
+		$this->db->execute(
+			'UPDATE ' . PostSchema::TABLE . ' SET archived_at = NULL WHERE id = :id',
+			['id' => $id],
+		);
+	}
+
+	public function archivedTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND archived_at IS NOT NULL AND author_id = :author';
+		$parameters = ['author' => $userId];
+
+		if ($before !== null) {
+			if ($beforeId === null) {
+				$sql .= ' AND published_at < :before';
+			} else {
+				$sql .= ' AND (published_at < :before OR (published_at = :before AND id < :before_id))';
+				$parameters['before_id'] = $beforeId;
+			}
+			$parameters['before'] = Time::format($before);
+		}
+
+		$sql .= ' ORDER BY published_at DESC, id DESC LIMIT ' . $this->limit($limit);
+
+		return $this->hydrateAll($this->db->fetchAll($sql, $parameters));
+	}
+
+	public function archivedCount(string $userId): int
+	{
+		return (int) $this->db->fetchValue(
+			'SELECT COUNT(*) FROM ' . PostSchema::TABLE
+			. ' WHERE deleted_at IS NULL AND archived_at IS NOT NULL AND author_id = :author',
+			['author' => $userId],
+		);
+	}
+
 	public function publicTimeline(
 		int $limit,
 		?DateTimeImmutable $before = null,
@@ -255,7 +307,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		// Unlisted posts are readable by link but never enumerated; only
 		// public rows belong in the public timeline.
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND visibility = :public';
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND visibility = :public';
 		$parameters = [
 			'public' => Visibility::Public->value,
 		];
@@ -293,7 +345,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
-			. ' WHERE p.deleted_at IS NULL AND p.visibility = :public'
+			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag = :hashtag';
 		$parameters = [
 			'public' => Visibility::Public->value,
@@ -337,7 +389,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 
 		$sql = 'SELECT DISTINCT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
-			. ' WHERE p.deleted_at IS NULL AND p.visibility = :public'
+			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag IN (' . implode(', ', $placeholders) . ')';
 
 		if ($before !== null) {
@@ -365,7 +417,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		bool $includeFollowers = false,
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id = :author'
 			. ' AND visibility IN (:public, :unlisted'
 			. ($includeFollowers ? ', :followers' : '') . ')';
 		$parameters = [
@@ -405,7 +457,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	public function authorPosts(string $userId): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id = :author'
 			. ' AND visibility = :public'
 			. ' ORDER BY published_at DESC, id DESC';
 
@@ -418,7 +470,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	public function authorPostsPage(string $userId, int $limit, int $offset): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id = :author'
 			. ' AND visibility = :public'
 			. ' ORDER BY published_at DESC, id DESC'
 			. ' LIMIT ' . $this->limit($limit)
@@ -434,7 +486,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	{
 		$value = $this->db->fetchValue(
 			'SELECT COUNT(*) FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id = :author'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id = :author'
 			. ' AND visibility = :public',
 			[
 				'author' => $userId,
@@ -467,7 +519,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		}
 
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')'
 			. ' AND visibility IN (:public, :unlisted, :followers)';
 		$parameters['public'] = Visibility::Public->value;
 		$parameters['unlisted'] = Visibility::Unlisted->value;
@@ -543,7 +595,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
-			. ' WHERE p.deleted_at IS NULL AND (p.author_id = :author'
+			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND (p.author_id = :author'
 			. ' OR (p.visibility = :direct AND EXISTS ('
 			. ' SELECT 1 FROM ' . PostSchema::RECIPIENT_TABLE . ' r'
 			. ' WHERE r.post_id = p.id AND r.recipient_id = :recipient)))';
@@ -584,7 +636,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'query' => '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($query)) . '%',
 		];
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
-			. ' WHERE deleted_at IS NULL'
+			. ' WHERE deleted_at IS NULL AND archived_at IS NULL'
 			. ' AND visibility = :public'
 			. " AND LOWER(content) LIKE :query ESCAPE '!'";
 
@@ -817,6 +869,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			quoteState: ($row['quote_state'] ?? null) === null ? null : QuoteState::from((string) $row['quote_state']),
 			quoteAuthorizationId: ($row['quote_authorization_id'] ?? null) === null ? null : (string) $row['quote_authorization_id'],
 			quoteRequestId: ($row['quote_request_id'] ?? null) === null ? null : (string) $row['quote_request_id'],
+			archivedAt: ($row['archived_at'] ?? null) === null ? null : Time::parse((string) $row['archived_at']),
 		);
 	}
 }

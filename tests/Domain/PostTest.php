@@ -44,6 +44,7 @@ final class PostTest extends TestCase
 			'quote_state' => null,
 			'quote_authorization_id' => null,
 			'quote_request_id' => null,
+			'archived_at' => null,
 			'recipient_ids' => [],
 		], $post->toArray());
 	}

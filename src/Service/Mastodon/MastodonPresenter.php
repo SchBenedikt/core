@@ -23,6 +23,7 @@ use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\PollVote;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostPinRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
@@ -61,6 +62,7 @@ final class MastodonPresenter
 		private readonly ?MuteService $mutes = null,
 		private readonly ?ReactionService $reactions = null,
 		private readonly ?LocalActorProfileProvider $profiles = null,
+		private readonly ?PostPinRepository $pins = null,
 	) {
 	}
 
@@ -167,7 +169,7 @@ final class MastodonPresenter
 				?? ($viewerId !== null && ($this->mutes?->isMuted($viewerId, $post->authorId) ?? false)),
 			'bookmarked' => $bookmarked
 				?? ($viewerId !== null && ($this->bookmarks?->exists($viewerId, $post->id) ?? false)),
-			'pinned' => false,
+			'pinned' => $this->pins?->find($post->authorId, $post->id) !== null,
 		];
 	}
 

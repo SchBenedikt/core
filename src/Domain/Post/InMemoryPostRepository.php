@@ -87,7 +87,55 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteState: $post->quoteState,
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
+			archivedAt: $post->archivedAt,
 		);
+	}
+
+	public function archive(string $id, DateTimeImmutable $archivedAt): void
+	{
+		$post = $this->posts[$id] ?? null;
+		if ($post === null || $post->isDeleted() || $post->isArchived()) {
+			return;
+		}
+
+		$this->posts[$id] = $post->withArchivedAt($archivedAt);
+	}
+
+	public function unarchive(string $id): void
+	{
+		$post = $this->posts[$id] ?? null;
+		if ($post !== null) {
+			$this->posts[$id] = $post->withArchivedAt(null);
+		}
+	}
+
+	public function archivedTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array {
+		return $this->slice(
+			array_values(array_filter(
+				$this->posts,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& $post->isArchived()
+					&& $post->authorId === $userId,
+			)),
+			$limit,
+			$before,
+			$beforeId,
+		);
+	}
+
+	public function archivedCount(string $userId): int
+	{
+		return count(array_filter(
+			$this->posts,
+			static fn (Post $post): bool => !$post->isDeleted()
+				&& $post->isArchived()
+				&& $post->authorId === $userId,
+		));
 	}
 
 	public function updateQuoteState(string $postId, QuoteState $state, ?string $authorizationId = null): void
@@ -119,6 +167,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteState: $state,
 			quoteAuthorizationId: $authorizationId,
 			quoteRequestId: $post->quoteRequestId,
+			archivedAt: $post->archivedAt,
 		);
 	}
 
@@ -134,7 +183,9 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return $this->slice(
 			array_values(array_filter(
 				$this->posts,
-				static fn (Post $post): bool => !$post->isDeleted() && $post->visibility->mayListPublicly(),
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
+					&& $post->visibility->mayListPublicly(),
 			)),
 			$limit,
 			$before,
@@ -154,6 +205,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
 					&& in_array($hashtag, Hashtags::extract($post->content), true),
 			)),
@@ -177,6 +229,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
 					&& array_intersect($hashtags, Hashtags::extract($post->content)) !== [],
 			)),
@@ -199,6 +252,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
 					&& $post->authorId === $userId
 					&& ($post->visibility->isPubliclyVisible()
 						|| ($includeFollowers && $post->visibility === Visibility::Followers)),
@@ -216,6 +270,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$posts = array_values(array_filter(
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
+				&& !$post->isArchived()
 				&& $post->authorId === $userId
 				&& $post->visibility->mayListPublicly(),
 		));
@@ -257,6 +312,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$posts = array_values(array_filter(
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
+				&& !$post->isArchived()
 				&& $post->visibility !== Visibility::Direct
 				&& isset($authors[$post->authorId])
 				&& ($before === null || $post->publishedAt < $before),
@@ -321,6 +377,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			array_values(array_filter(
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
 					&& ($post->authorId === $userId
 						|| ($post->visibility === Visibility::Direct && in_array($userId, $post->recipientIds, true))),
 			)),
@@ -376,6 +433,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteState: $post->quoteState,
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
+			archivedAt: $post->archivedAt,
 		);
 	}
 
@@ -411,6 +469,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		$matches = array_values(array_filter(
 			$this->posts,
 			static fn (Post $post): bool => !$post->isDeleted()
+				&& !$post->isArchived()
 				&& $post->visibility->mayListPublicly()
 				&& ($allowed === null || isset($allowed[$post->authorId]))
 				&& mb_stripos($post->content, $query) !== false,

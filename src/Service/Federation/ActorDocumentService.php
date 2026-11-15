@@ -14,6 +14,10 @@ use AlohaSocial\Core\Domain\Federation\LocalActorProfile;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileField;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
+use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostPinRepository;
+use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\OrderedCollection;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
@@ -49,6 +53,8 @@ final class ActorDocumentService
 		private readonly ?LocalRelationshipService $relationships = null,
 		private readonly ?LocalActorProfileProvider $profiles = null,
 		private readonly ?AccountMoveService $moves = null,
+		private readonly ?PostPinRepository $pins = null,
+		private readonly ?PostRepository $posts = null,
 	) {}
 
 	/**
@@ -78,6 +84,7 @@ final class ActorDocumentService
 			'outbox' => $this->activities->outboxId($userId),
 			'followers' => $this->activities->followersId($userId),
 			'following' => $this->activities->followingId($userId),
+			'featured' => $this->featuredId($userId),
 			'publicKey' => [
 				'id' => $this->activities->keyId($userId),
 				'owner' => $actorId,
@@ -148,6 +155,60 @@ final class ActorDocumentService
 		}
 
 		return $value;
+	}
+
+	/**
+	 * The stable ActivityPub `featured` collection URL advertised on the actor.
+	 */
+	public function featuredId(string $userId): string
+	{
+		return $this->activities->actorId($userId) . '/featured';
+	}
+
+	/**
+	 * The root document when `$page` is null, otherwise one page of the
+	 * account's pinned public notes. A pin is only a reference, so every
+	 * member is re-checked against the live post before it is published.
+	 *
+	 * @return array<string, mixed>
+	 *
+	 * @throws UnknownLocalActorException when the handle is not an account here
+	 */
+	public function featured(
+		string $handle,
+		?int $page = null,
+		int $limit = OrderedCollection::DEFAULT_LIMIT,
+	): array {
+		$userId = $this->knownUser($handle);
+		$limit = OrderedCollection::clampLimit($limit);
+		$id = $this->featuredId($userId);
+		$posts = [];
+		foreach ($this->pins?->forOwner($userId) ?? [] as $pin) {
+			$post = $this->posts?->find($pin->postId);
+			if ($post !== null
+				&& !$post->isDeleted()
+				&& !$post->isArchived()
+				&& $post->authorId === $userId
+				&& $post->visibility === Visibility::Public
+			) {
+				$posts[] = $post;
+			}
+		}
+
+		$total = count($posts);
+		if ($page === null) {
+			return OrderedCollection::root($id, $total, $limit);
+		}
+
+		$pagePosts = array_slice($posts, OrderedCollection::offset($page, $limit), $limit);
+
+		return OrderedCollection::page(
+			$id,
+			$page,
+			$limit,
+			$total,
+			array_map(fn (Post $post): string => $this->activities->noteId($post), $pagePosts),
+		);
 	}
 
 	/**

@@ -54,9 +54,34 @@ interface PostRepository
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void;
 
 	/**
+	 * Marks a live post archived without changing its publication or
+	 * federation state. Unknown and deleted ids are a no-op.
+	 */
+	public function archive(string $id, DateTimeImmutable $archivedAt): void;
+
+	/** Reverses {@see archive()}; unknown rows are a no-op. */
+	public function unarchive(string $id): void;
+
+	/**
+	 * Archived live posts of one author, newest first. Owner-only by contract;
+	 * the caller has already checked the account.
+	 *
+	 * @return list<Post>
+	 */
+	public function archivedTimeline(
+		string $userId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+	): array;
+
+	public function archivedCount(string $userId): int;
+
+	/**
 	 * Everything the public timelines may show.
 	 *
-	 * Only `public` posts: unlisted is dereferenceable but must not be
+	 * Archived posts are omitted from discovery even though their detail
+	 * route stays addressable. Only `public` posts: unlisted is dereferenceable but must not be
 	 * enumerated, so it never appears here.
 	 *
 	 * @return list<Post>

@@ -548,6 +548,55 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame('2026-11-11T11:00:00Z', $repository->find('p1')?->toArray()['deleted_at']);
 	}
 
+	public function testArchivingHidesAPostFromDiscoveryButKeepsItAddressable(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('archived', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('live', 'alice', Visibility::Public, '2026-11-11T10:01:00Z'));
+
+		$repository->archive('archived', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertTrue($repository->find('archived')?->isArchived() === true);
+		self::assertSame(['live'], array_map(static fn (Post $post): string => $post->id, $repository->publicTimeline(10)));
+		self::assertSame(['live'], array_map(static fn (Post $post): string => $post->id, $repository->authorTimeline('alice', 10)));
+		self::assertSame(['archived'], array_map(static fn (Post $post): string => $post->id, $repository->archivedTimeline('alice', 10)));
+		self::assertSame(1, $repository->archivedCount('alice'));
+		self::assertSame(0, $repository->archivedCount('bob'));
+	}
+
+	public function testUnarchivingRestoresThePostToLocalListings(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->archive('p1', Time::parse('2026-11-11T11:00:00Z'));
+
+		$repository->unarchive('p1');
+
+		self::assertNull($repository->find('p1')?->archivedAt);
+		self::assertSame(['p1'], array_map(static fn (Post $post): string => $post->id, $repository->publicTimeline(10)));
+		self::assertSame([], $repository->archivedTimeline('alice', 10));
+	}
+
+	public function testArchivedTimelineIsOwnerScopedOrderedAndPaginated(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('a1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('a2', 'alice', Visibility::Public, '2026-11-11T10:01:00Z'));
+		$repository->insert($this->post('b1', 'bob', Visibility::Public, '2026-11-11T10:02:00Z'));
+		$repository->archive('a1', Time::parse('2026-11-11T11:00:00Z'));
+		$repository->archive('a2', Time::parse('2026-11-11T11:01:00Z'));
+		$repository->archive('b1', Time::parse('2026-11-11T11:02:00Z'));
+
+		self::assertSame(['a2', 'a1'], array_map(
+			static fn (Post $post): string => $post->id,
+			$repository->archivedTimeline('alice', 10),
+		));
+		self::assertSame(['a1'], array_map(
+			static fn (Post $post): string => $post->id,
+			$repository->archivedTimeline('alice', 10, Time::parse('2026-11-11T10:01:00Z')),
+		));
+	}
+
 	protected function post(
 		string $id,
 		string $author,
