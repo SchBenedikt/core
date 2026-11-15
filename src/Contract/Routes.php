@@ -16,7 +16,14 @@ use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\CreateFilterHandler;
+use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
+use AlohaSocial\Core\Api\CreateRecommendationSignalHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
+use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
+use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
+use AlohaSocial\Core\Api\GetRecommendationsHandler;
+use AlohaSocial\Core\Api\UpdateRecommendationPreferencesHandler;
 use AlohaSocial\Core\Api\DeleteFilterHandler;
 use AlohaSocial\Core\Api\FiltersHandler;
 use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
@@ -519,6 +526,64 @@ final class Routes
 				handler: UnfollowHashtagHandler::class,
 				requiresAuth: true,
 				summary: 'Unfollow a hashtag; an absent follow is a successful no-op.',
+			),
+			new Route(
+				name: 'recommendations.get',
+				method: 'GET',
+				path: $base . '/recommendations',
+				handler: GetRecommendationsHandler::class,
+				requiresAuth: true,
+				summary: 'Read a consent-aware ranked For You page.',
+			),
+			new Route(
+				name: 'recommendations.preferences.get',
+				method: 'GET',
+				path: $base . '/recommendations/preferences',
+				handler: GetRecommendationPreferencesHandler::class,
+				requiresAuth: true,
+				summary: 'Read the reader recommendation preferences and consent.',
+			),
+			new Route(
+				name: 'recommendations.preferences.update',
+				method: 'PATCH',
+				path: $base . '/recommendations/preferences',
+				handler: UpdateRecommendationPreferencesHandler::class,
+				requiresAuth: true,
+				summary: 'Update interests, languages, feed opt-in and behavioral consent.',
+			),
+			new Route(
+				name: 'recommendations.feedback.create',
+				method: 'POST',
+				path: $base . '/recommendations/feedback',
+				handler: CreateRecommendationFeedbackHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/900',
+				summary: 'Record more, less or hide feedback for one candidate.',
+			),
+			new Route(
+				name: 'recommendations.signals.create',
+				method: 'POST',
+				path: $base . '/recommendations/signals',
+				handler: CreateRecommendationSignalHandler::class,
+				requiresAuth: true,
+				rateLimit: '300/900',
+				summary: 'Record an explicit behavioral signal after consent.',
+			),
+			new Route(
+				name: 'recommendations.export',
+				method: 'GET',
+				path: $base . '/recommendations/export',
+				handler: ExportRecommendationDataHandler::class,
+				requiresAuth: true,
+				summary: 'Export the reader own preferences, feedback and signals.',
+			),
+			new Route(
+				name: 'recommendations.data.delete',
+				method: 'DELETE',
+				path: $base . '/recommendations/data',
+				handler: DeleteRecommendationDataHandler::class,
+				requiresAuth: true,
+				summary: 'Delete the reader own recommendation data.',
 			),
 			new Route(
 				name: 'followers.list',

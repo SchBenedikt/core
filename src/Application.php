@@ -16,7 +16,14 @@ use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\CreateFilterHandler;
+use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
+use AlohaSocial\Core\Api\CreateRecommendationSignalHandler;
 use AlohaSocial\Core\Api\CreateScheduledPostHandler;
+use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
+use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
+use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
+use AlohaSocial\Core\Api\GetRecommendationsHandler;
+use AlohaSocial\Core\Api\UpdateRecommendationPreferencesHandler;
 use AlohaSocial\Core\Api\DeleteFilterHandler;
 use AlohaSocial\Core\Api\FiltersHandler;
 use AlohaSocial\Core\Api\DeleteScheduledPostHandler;
@@ -169,6 +176,14 @@ use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
+use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationCandidateSource;
+use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationRepository;
+use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationSnapshotCache;
+use AlohaSocial\Core\Domain\Recommendation\PdoRecommendationCandidateSource;
+use AlohaSocial\Core\Domain\Recommendation\PdoRecommendationRepository;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateSource;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationRepository;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationSnapshotCache;
 use AlohaSocial\Core\Domain\Filter\FilterRuleRepository;
 use AlohaSocial\Core\Domain\Filter\InMemoryFilterRuleRepository;
 use AlohaSocial\Core\Domain\Filter\PdoFilterRuleRepository;
@@ -368,6 +383,9 @@ use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\FilterService;
+use AlohaSocial\Core\Service\Recommendation\DefaultRecommendationRanker;
+use AlohaSocial\Core\Service\Recommendation\RecommendationService;
+use AlohaSocial\Core\Service\Recommendation\StoredRecommendationEligibility;
 use AlohaSocial\Core\Service\Mastodon\MastodonFilterPresenter;
 use AlohaSocial\Core\Service\Mastodon\MastodonScheduledStatusPresenter;
 use AlohaSocial\Core\Service\ScheduledPostService;
@@ -432,6 +450,7 @@ final readonly class Application
 		public ?ActorProfileUpdateService $profileUpdates = null,
 		public ?AccountMoveService $accountMoves = null,
 		public ?AtprotoSyncService $atprotoSync = null,
+		public ?RecommendationService $recommendations = null,
 	) {
 	}
 
@@ -504,6 +523,10 @@ final readonly class Application
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
 		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
+		?RecommendationRepository $recommendationRepository = null,
+		?RecommendationCandidateSource $recommendationCandidates = null,
+		?RecommendationSnapshotCache $recommendationSnapshots = null,
+		?RecommendationService $recommendationService = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -620,6 +643,10 @@ final readonly class Application
 			atprotoInbound: $atprotoInbound,
 			atprotoModeration: $atprotoModeration,
 			atprotoBlobs: $atprotoBlobs,
+			recommendationRepository: $recommendationRepository,
+			recommendationCandidates: $recommendationCandidates,
+			recommendationSnapshots: $recommendationSnapshots,
+			recommendationService: $recommendationService,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -783,6 +810,9 @@ final readonly class Application
 			atprotoInbound: $atprotoInbound ?? new PdoAtprotoInboundRepository($database),
 			atprotoModeration: $atprotoModeration,
 			atprotoBlobs: $atprotoBlobs,
+			recommendationRepository: new PdoRecommendationRepository($database),
+			recommendationCandidates: new PdoRecommendationCandidateSource($database),
+			recommendationSnapshots: new InMemoryRecommendationSnapshotCache(),
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -889,6 +919,10 @@ final readonly class Application
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
 		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
+		?RecommendationRepository $recommendationRepository = null,
+		?RecommendationCandidateSource $recommendationCandidates = null,
+		?RecommendationSnapshotCache $recommendationSnapshots = null,
+		?RecommendationService $recommendationService = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1176,6 +1210,16 @@ final readonly class Application
 			$ids,
 		);
 		$filterPresenter = new MastodonFilterPresenter();
+		$recommendationService ??= new RecommendationService(
+			$config,
+			$recommendationCandidates ?? new InMemoryRecommendationCandidateSource(),
+			$recommendationRepository ?? new InMemoryRecommendationRepository(),
+			new StoredRecommendationEligibility($blockRepository, $muteRepository, $moderationPolicy, $clock),
+			new DefaultRecommendationRanker(),
+			$clock,
+			$ids,
+			$recommendationSnapshots ?? new InMemoryRecommendationSnapshotCache(),
+		);
 		$boostService = new BoostService(
 			$postService,
 			$boostRepository,
@@ -1363,6 +1407,13 @@ final readonly class Application
 			->with(ShowFilterHandler::class, static fn (): ShowFilterHandler => new ShowFilterHandler($filterService))
 			->with(UpdateFilterHandler::class, static fn (): UpdateFilterHandler => new UpdateFilterHandler($filterService))
 			->with(DeleteFilterHandler::class, static fn (): DeleteFilterHandler => new DeleteFilterHandler($filterService))
+			->with(GetRecommendationsHandler::class, static fn (): GetRecommendationsHandler => new GetRecommendationsHandler($recommendationService))
+			->with(GetRecommendationPreferencesHandler::class, static fn (): GetRecommendationPreferencesHandler => new GetRecommendationPreferencesHandler($recommendationService))
+			->with(UpdateRecommendationPreferencesHandler::class, static fn (): UpdateRecommendationPreferencesHandler => new UpdateRecommendationPreferencesHandler($recommendationService))
+			->with(CreateRecommendationFeedbackHandler::class, static fn (): CreateRecommendationFeedbackHandler => new CreateRecommendationFeedbackHandler($recommendationService))
+			->with(CreateRecommendationSignalHandler::class, static fn (): CreateRecommendationSignalHandler => new CreateRecommendationSignalHandler($recommendationService))
+			->with(ExportRecommendationDataHandler::class, static fn (): ExportRecommendationDataHandler => new ExportRecommendationDataHandler($recommendationService))
+			->with(DeleteRecommendationDataHandler::class, static fn (): DeleteRecommendationDataHandler => new DeleteRecommendationDataHandler($recommendationService))
 			->with(RemotePollHandler::class, static fn (): RemotePollHandler => new RemotePollHandler($remotePollService))
 			->with(VoteRemotePollHandler::class, static fn (): VoteRemotePollHandler => new VoteRemotePollHandler($remotePollService, $clock))
 			->with(QuoteAuthorizationHandler::class, static fn (): QuoteAuthorizationHandler => new QuoteAuthorizationHandler($quoteService))
@@ -1559,6 +1610,7 @@ final readonly class Application
 			$profileUpdateService,
 			$accountMoveService,
 			$atprotoSync,
+			$recommendationService,
 		);
 	}
 

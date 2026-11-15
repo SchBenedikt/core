@@ -6,7 +6,7 @@ source of truth; `php bin/export-routes` prints it as JSON and
 and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 128 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 135 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -56,6 +56,13 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `followed_tags.list` | `GET` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.follow` | `POST` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.unfollow` | `DELETE` | `/api/v1/followed_tags/{tag}` | yes | — |
+| `recommendations.get` | `GET` | `/api/v1/recommendations` | yes | — |
+| `recommendations.preferences.get` | `GET` | `/api/v1/recommendations/preferences` | yes | — |
+| `recommendations.preferences.update` | `PATCH` | `/api/v1/recommendations/preferences` | yes | — |
+| `recommendations.feedback.create` | `POST` | `/api/v1/recommendations/feedback` | yes | 120 / 900 s |
+| `recommendations.signals.create` | `POST` | `/api/v1/recommendations/signals` | yes | 300 / 900 s |
+| `recommendations.export` | `GET` | `/api/v1/recommendations/export` | yes | — |
+| `recommendations.data.delete` | `DELETE` | `/api/v1/recommendations/data` | yes | — |
 | `followers.list` | `GET` | `/api/v1/followers` | yes | 120 / 60 s |
 | `followers.follow` | `POST` | `/api/v1/followers` | yes | 30 / 900 s |
 | `followers.unfollow` | `DELETE` | `/api/v1/followers/{id}` | yes | 60 / 900 s |
@@ -816,6 +823,35 @@ query.
 The Mastodon `GET /api/v1/search?type=hashtags` projection uses the same
 records; its `history` array stays empty because the core does not claim
 per-day account counts it does not store.
+
+## For You recommendations
+
+```http
+GET    /api/v1/recommendations?limit=20&cursor=…
+GET    /api/v1/recommendations/preferences
+PATCH  /api/v1/recommendations/preferences
+POST   /api/v1/recommendations/feedback
+POST   /api/v1/recommendations/signals
+GET    /api/v1/recommendations/export
+DELETE /api/v1/recommendations/data
+```
+
+Every route is authenticated and private (`Cache-Control: private, no-store`).
+With `social.recommendations.enabled` off they answer `503
+recommendations_disabled`; the chronological home, public and hashtag
+timelines are unaffected. The feed candidate pool is bounded; it reads only
+public local posts and cached remote posts and never makes a network request.
+Blocks, mutes, instance moderation, content warnings and the reader's language
+selection are applied before ranking and again to a cached page. The response
+contains `items` with `candidate`, `score`, `reasons` and `algorithm_version`,
+plus `next_cursor`, `snapshot_id`, `expires_at` and `underfilled`. Cursors are
+opaque and bound to a 300-second snapshot; an expired or malformed cursor is
+`400 invalid_cursor` rather than a restarted feed.
+
+`PATCH preferences` accepts `enabled`, `behavioral_consent`, `interests` and
+`languages`. Behavioral signals default off: without consent `POST signals`
+answers `403 recommendation_consent_required`; `GET export` and `DELETE data`
+only ever address the authenticated reader's own rows.
 
 ## Inbox
 

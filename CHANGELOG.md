@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Consent-aware, host-neutral For You recommendations. The optional
+  `recommendations.enabled` feature ranks only public local posts and cached
+  remote posts, re-applies blocks, mutes, instance moderation, content-warning
+  and language rules before ranking and again for a cached page, and returns
+  deterministic scored items with reasons and an explicit `for-you-v1`
+  algorithm version. A 300-second snapshot plus an opaque cursor keeps paging
+  stable; an expired or malformed cursor is refused with `invalid_cursor`.
+  Readers control interests, languages and feed opt-in, while behavioral
+  signals need a separate explicit consent opt-in. Feedback (more/less/hide),
+  signals, export and reset are owner-scoped. The additive
+  `social_recommendation_preference`, `social_recommendation_feedback` and
+  `social_recommendation_signal` tables have in-memory and PDO adapters; seven
+  neutral `/api/v1/recommendations` routes expose the feature and answer 503
+  while it is disabled.
 - Inbound AT Protocol sync. `AtprotoEventSource` is the host transport port for
   relay commits, Jetstream events and AppView reconciliation; the host
   normalizes them into bounded `AtprotoEventPage` values. `AtprotoSyncService`

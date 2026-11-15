@@ -353,6 +353,7 @@ Create the core tables with the schema classes from the host's migration:
 - `social_account_list` and `social_account_list_member` — `AccountListSchema` (private local Mastodon-compatible lists and their local account membership; no legacy import)
 - `social_followed_hashtag` — `FollowedHashtagSchema` (private local followed tags; no legacy import)
 - `social_boost` — `BoostSchema` (local Mastodon-compatible reblogs; no legacy import)
+- `social_recommendation_preference`, `social_recommendation_feedback` and `social_recommendation_signal` — `RecommendationSchema` (opt-in For You settings, feedback and consented signals; additive and empty until readers opt in, no legacy import)
 - `social_notification` — `NotificationSchema` (local favourite/follow/mention/reblog notifications; no legacy import)
 - `social_account_move` — `AccountMoveSchema` (Move progress; new table, no legacy import)
 - `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account` — `AtprotoInboundSchema` (inbound sync; only needed when an `AtprotoEventSource` is wired; no legacy import)

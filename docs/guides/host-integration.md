@@ -308,6 +308,7 @@ The core owns the schema classes, not the migration mechanism:
 - `MuteSchema` → `social_mute` (private per-user mutes of local accounts or remote actor URLs; `(user_id, actor_id)` primary key, nullable `expires_at`, newest-first cursor index)
 - `AccountListSchema` → `social_account_list` and `social_account_list_member` (private per-user lists and their known-local-account membership; `(list_id, account_id)` primary key)
 - `FollowedHashtagSchema` → `social_followed_hashtag` (private per-user followed tags; `(user_id, hashtag)` primary key and newest-first cursor index)
+- `RecommendationSchema` → `social_recommendation_preference`, `social_recommendation_feedback` and `social_recommendation_signal` (opt-in per-reader interests/consent, explicit feedback and bounded owner-scoped signals; snapshots are a cache and need no table)
 - `BoostSchema` → `social_boost` (local reblogs; the id is the Announce id, with a unique `(user_id, post_id)` pair)
 - `NotificationSchema` → `social_notification` (local favourite/follow/mention/reblog notifications; deterministic event id primary key, nullable `read_at` marker, policy status/audit columns and unread index)
 - `NotificationPolicySchema`, `NotificationSenderSchema` and `ConversationMuteSchema` → policy overrides, held sender requests and private thread mutes
@@ -328,6 +329,37 @@ A host with PDO can wrap its handle in `PdoConnection` and call the schema
 `create()` methods for a fresh installation. A host without PDO implements
 `Connection` over its own database API. The SQL is deliberately plain and the
 port is small; see [database](database.md).
+
+### For You recommendations
+
+Recommendations are a host-neutral, optional read path. `RecommendationCandidateSource`,
+`RecommendationRanker`, `RecommendationPreferenceRepository`,
+`RecommendationFeedbackRepository`, `RecommendationSignalRepository` and the
+optional `RecommendationSnapshotCache` are the ports; the default assembly wires
+the PDO stores, `PdoRecommendationCandidateSource`, `StoredRecommendationEligibility`
+and `DefaultRecommendationRanker`. A host can supply its own source or ranker
+without changing the API.
+
+**Performance budget.** One feed read loads at most 200 public candidate rows
+and returns at most 40 items (`limit`, default 20). The first page loads four
+times the requested limit, capped by the candidate bound; subsequent pages read
+a snapshot rather than re-ranking. Ranking is linear in the candidate pool
+(200 rows) plus the reader's newest 5,000 signals; there is no per-reader
+network call and no cross-user model. Snapshots live for 300 seconds. The
+default snapshot cache is process-local; a multi-worker host that wants cursor
+continuity across workers must inject a shared `RecommendationSnapshotCache`,
+otherwise a cursor from another worker is rejected as `invalid_cursor`.
+
+**Evaluation limitations.** `for-you-v1` is a deliberately small deterministic
+baseline: explicit interest matches, freshness, stored engagement, the reader's
+own consented signals and feedback. It is not a trained relevance model, does
+not learn from other readers, does not measure offline quality and its score is
+not comparable across deployments. Hosts that need evaluation must measure their
+own pool and ranking against their policy; the core only guarantees the hard
+filters, owner isolation, stable cursor semantics and explainable reasons.
+There is no ActivityPub or Mastodon status projection for recommendation pages:
+they are an app-level read, and a client that needs statuses maps the returned
+candidate target ids through the existing post/remote-post endpoints.
 
 If `social_following` already exists from an earlier core version, add the
 `inbox_url VARCHAR(512) NOT NULL` column through the host's migration path.

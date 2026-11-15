@@ -22,6 +22,9 @@ that prints or skips is a failure.
 | `tests/Http` | request, response, router, kernel |
 | `tests/Contract` | the route manifest and the documentation consistency check |
 | `tests/Contract/DocumentationTest.php` | the route reference lists every manifest route exactly once, the advertised route counts in the reference, roadmap and README match the manifest, and every `*Schema` class appears in the database guide |
+| `tests/Recommendation/RecommendationServiceTest.php` | deterministic ranking and reasons, interests, freshness, languages, private/own/sensitive/blocked/muted exclusion, snapshot cursors, expiry, malformed cursors, hide feedback, consent-gated signals and owner-scoped export/reset |
+| `tests/Recommendation/PdoRecommendationRepositoryTest.php` | preference round trip and update, per-owner feedback upsert and newest-first signals, plus reset isolation on SQLite |
+| `tests/Api/RecommendationsTest.php` | the seven recommendation routes: feed, preferences, feedback, signal consent 403, export, reset, 401, invalid cursor 400 and the disabled 503 gate |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |
 | `tests/Service/Cleanup/CleanupServiceTest.php` | dry run and real run, linked local/remote media, fresh and unread rows, per-kind limits, idempotence, a missing blob store and a terminal invalid payload; `CleanupOptionsTest` covers defaults and every payload reason; `tests/ApplicationHostTest.php` runs the job through the SQL assembly |
 | `tests/Api/InboxTest.php` | signed follow/undo and refusal paths, including a signed Follow to `/inbox/shared`, the stored shared inbox and the remote-follow notification read back through the Mastodon route |

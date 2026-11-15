@@ -38,8 +38,16 @@ the database — the core does not care.
 | `social` | `atproto.publish` | no | Enables the AT Protocol publication job, the matching remote delete and `POST /api/v1/posts/{id}/atproto`; defaults to `false`. Requires an `AtprotoAccountResolver` and an `AtprotoPublisher`; remote delete also needs an `AtprotoDeleter` (the default XRPC publisher implements both) |
 | `social` | `mastodon.api` | no | Enables the Mastodon-compatible routes; defaults to `false`. When off, every route under the prefix answers `404 mastodon_api_disabled` before auth/scope checks |
 | `social` | `mastodon.prefix` | no | Path prefix for the compatibility routes; defaults to `/api/mastodon/v1`. Must not be `/api/v1`, a child of it, `/healthz`, `/inbox`, `/@` or `/.well-known`; a bad prefix fails at boot |
+| `social` | `recommendations.enabled` | no | Enables the authenticated For You feed, preferences, feedback, signal, export and reset routes; defaults to `false` and every route answers `503 recommendations_disabled` while off. Behavioral signals are a separate per-reader opt-in and stay off by default |
 | `social` | `scheduling.minimum_lead_seconds` | no | Shortest accepted gap between creating a schedule and its publication time; defaults to 300 and is clamped to 0–one year |
 | `social` | `scheduling.daily_limit` | no | Scheduled posts one account may create per rolling day; defaults to 30 and is clamped to 1–1000. Cancelled rows count, because the limit bounds work, not retained rows |
+
+Recommendations add one feature switch, `recommendations.enabled`. The feed is
+private and never anonymous; it ranks only public local and cached remote posts
+after re-applying the reader's blocks, mutes, instance moderation and content
+warning rules. A reader has to consent separately before any behavioral signal
+is stored, and `DELETE /api/v1/recommendations/data` removes only that reader's
+preferences, feedback and signals.
 
 Search adds no configuration key. It reads the existing `social_post` rows through
 `PostSearchRepository` and the host's local account directory through
