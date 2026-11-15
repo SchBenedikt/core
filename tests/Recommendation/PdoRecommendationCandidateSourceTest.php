@@ -39,6 +39,10 @@ final class PdoRecommendationCandidateSourceTest extends TestCase
 			['at' => $at],
 		);
 		$db->execute(
+			"INSERT INTO social_post (id, author_id, content, visibility, published_at, archived_at) VALUES ('archived', 'alice', 'hidden', 'public', :at, :at)",
+			['at' => $at],
+		);
+		$db->execute(
 			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, object_author_id, kind, content, published_at) VALUES ('https://remote/activities/1', 'https://remote/objects/1', 'https://remote/actors/bob', 'https://remote/actors/bob', 'post', 'remote', :at)",
 			['at' => $at],
 		);
@@ -54,6 +58,7 @@ final class PdoRecommendationCandidateSourceTest extends TestCase
 		self::assertContains('remote:https://remote/activities/1', $ids);
 		self::assertNotContains('local:unlisted', $ids);
 		self::assertNotContains('local:deleted', $ids);
+		self::assertNotContains('local:archived', $ids);
 		self::assertNotContains('remote:https://remote/activities/2', $ids);
 		self::assertSame('https://remote/actors/bob', $candidates[0]->authorId);
 	}

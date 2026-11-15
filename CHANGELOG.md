@@ -158,6 +158,16 @@ and fails when `docs/reference/configuration.md` does not name it.
   omitted value means contract 1, so existing bridges keep working. Test counts
   are now 124 PHP files (1111 tests, 5302 assertions) and 9 UI files (69 tests).
 
+### Fixed
+
+- Archived posts no longer leak into the SQL home timeline or the For You
+  recommendation candidate pool. Both direct `social_post` readers now apply
+  the same `archived_at IS NULL` discovery predicate as the public, author,
+  hashtag, search and outbox queries. Regression coverage now exercises every
+  post-repository discovery surface, both home-timeline adapters, the
+  recommendation source and the archive/search/outbox API path; the detail URL
+  stays readable throughout.
+
 ### Changed
 
 - Finalize [ADR 0006](docs/adr/0006-host-owned-accounts.md) as accepted: the

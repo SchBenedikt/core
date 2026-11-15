@@ -67,6 +67,17 @@ final class PinsAndCollectionsApiTest extends TestCase
 		$archived = $this->request('GET', '/api/v1/posts/archived', [], 'alice');
 		self::assertSame(200, $archived->status);
 		self::assertContains($post->id, $this->ids($archived->decodedBody()['posts']));
+
+		$search = $this->request('GET', '/api/v1/search', [], null, ['q' => 'A post']);
+		self::assertSame(200, $search->status);
+		self::assertSame([], $search->decodedBody()['statuses']);
+
+		$outbox = $this->request('GET', '/@alice/outbox');
+		self::assertSame(200, $outbox->status);
+		self::assertSame(0, $outbox->decodedBody()['totalItems']);
+		$outboxPage = $this->request('GET', '/@alice/outbox', [], null, ['page' => '1']);
+		self::assertSame(200, $outboxPage->status);
+		self::assertSame([], $outboxPage->decodedBody()['orderedItems']);
 		self::assertSame(401, $this->request('GET', '/api/v1/posts/archived')->status);
 		self::assertSame(403, $this->request('POST', '/api/v1/posts/' . $post->id . '/archive', [], 'bob')->status);
 
@@ -76,6 +87,11 @@ final class PinsAndCollectionsApiTest extends TestCase
 		self::assertContains($post->id, $this->ids(
 			$this->request('GET', '/api/v1/timelines/public')->decodedBody()['posts'],
 		));
+		self::assertContains('A post', array_column(
+			$this->request('GET', '/api/v1/search', [], null, ['q' => 'A post'])->decodedBody()['statuses'],
+			'content',
+		));
+		self::assertSame(1, $this->request('GET', '/@alice/outbox')->decodedBody()['totalItems']);
 	}
 
 	public function testPinsRejectForeignAndNonPublicPostsAndAppearInFeatured(): void

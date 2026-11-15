@@ -84,6 +84,20 @@ Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
 therefore move between the two databases.
 
+### Archived posts in SQL
+
+`archived_at` is a local discovery marker, not a tombstone. Any query that
+enumerates posts for a feed, search, profile, thread listing or outbox must add
+`archived_at IS NULL`; a lookup by id deliberately does **not** filter it,
+because the detail URL and the federated note id stay addressable. Deleted and
+archived are independent: `deleted_at` still wins, and unarchiving only clears
+`archived_at`.
+
+The direct readers are `PdoPostRepository`, `PdoHomeTimelineRepository` and
+`PdoRecommendationCandidateSource`; all three apply the predicate, and the
+post-repository contract, home-timeline contract, recommendation-source test
+and archive API test fail if a later query forgets it.
+
 An existing `social_notification` table gains nullable `status`,
 `conversation_id`, `policy_category` and `policy_action` columns plus the
 `(recipient_id, status, created_at, id)` index. A null `status` is a legacy row

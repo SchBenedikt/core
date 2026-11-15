@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Recommendation;
 
+use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Support\Time;
@@ -38,8 +39,8 @@ final class PdoRecommendationCandidateSource implements RecommendationCandidateS
 		$limit = max(1, min(self::MAX_CANDIDATES, $limit));
 
 		$local = $this->db->fetchAll(
-			'SELECT id, author_id, content, content_warning, published_at FROM social_post'
-			. ' WHERE visibility = :visibility AND deleted_at IS NULL'
+			'SELECT id, author_id, content, content_warning, published_at FROM ' . PostSchema::TABLE
+			. ' WHERE visibility = :visibility AND deleted_at IS NULL AND archived_at IS NULL'
 			. ' ORDER BY published_at DESC, id DESC LIMIT ' . $limit,
 			['visibility' => Visibility::Public->value],
 		);

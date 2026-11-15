@@ -597,6 +597,38 @@ abstract class PostRepositoryTestCase extends TestCase
 		));
 	}
 
+	public function testArchivingRemovesThePostFromEveryDiscoverySurfaceButKeepsTheDetailLookup(): void
+	{
+		$repository = $this->repository();
+		$search = $this->searchRepository();
+		$post = $this->post(
+			'archived',
+			'alice',
+			Visibility::Public,
+			'2026-11-11T10:00:00Z',
+			content: 'DiscoverableNeedle #archivecheck',
+		);
+		$repository->insert($post);
+
+		$repository->archive('archived', Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame('archived', $repository->find('archived')?->id);
+		self::assertSame([], $repository->publicTimeline(10));
+		self::assertSame([], $search->search('DiscoverableNeedle', 10, 0));
+		self::assertSame([], $repository->authorTimeline('alice', 10));
+		self::assertSame([], $repository->authorPosts('alice'));
+		self::assertSame([], $repository->authorPostsPage('alice', 10, 0));
+		self::assertSame(0, $repository->authorPostCount('alice'));
+		self::assertSame([], $repository->timelineForAuthors(['alice'], 10));
+		self::assertSame([], $repository->ownTimeline('alice', 10));
+		self::assertSame([], $repository->hashtagTimeline('archivecheck', 10));
+		self::assertSame([], $repository->followedHashtagTimeline(['archivecheck'], 10));
+		self::assertSame(['archived'], array_map(
+			static fn (Post $archived): string => $archived->id,
+			$repository->archivedTimeline('alice', 10),
+		));
+	}
+
 	protected function post(
 		string $id,
 		string $author,

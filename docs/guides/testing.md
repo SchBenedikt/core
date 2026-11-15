@@ -31,7 +31,9 @@ that prints or skips is a failure.
 | `tests/Service/MediaCollectionServiceTest.php` | owner-scoped collections, image/video eligibility, anonymous/follower/owner visibility, per-item `getVisible` filtering, duplicate item ids and delete-without-post-loss |
 | `tests/Domain/PostPinRepositoryTestCase.php` | the shared pin contract (owner scoping, explicit order, duplicate post/position refusal and idempotent removal) against the in-memory and SQL adapters |
 | `tests/Domain/MediaCollectionRepositoryTestCase.php` | the shared collection contract (newest-first listing, update, ordered unique items, pagination and item removal with the collection) against the in-memory and SQL adapters |
-| `tests/Api/PinsAndCollectionsApiTest.php` | archive/unarchive/archived-list visibility, owned pins and the derived Mastodon `pinned`/`featured` projection, plus collection API ownership and item lifecycle |
+| `tests/Api/PinsAndCollectionsApiTest.php` | archive/unarchive/archived-list visibility, the detail URL, search and actor outbox after archiving, owned pins and the derived Mastodon `pinned`/`featured` projection, plus collection API ownership and item lifecycle |
+| `tests/Domain/HomeTimelineRepositoryTestCase.php` | the shared combined-timeline contract, including the archived own post that must stay out of both the in-memory and SQL readers |
+| `tests/Recommendation/PdoRecommendationCandidateSourceTest.php` | public-only candidate selection, deleted/unlisted rejection and archived-post exclusion in the SQL recommendation source |
 | `tests/Api/StoryApiTest.php` | the authenticated story routes end to end: feed, show, view receipt, owner-only viewers, reactions, replies, delete, anonymous 401, foreign-reader 404 and the disabled 503 gate |
 | `tests/Protocol/ActivityPub/StoryActivityTest.php` | `Add`/`Story` addressing and `endTime`, the attachment media type and the `Delete` tombstone object id |
 | `tests/ApplicationTest.php` | end to end through the in-memory assembly, including one batched signed job for two followers sharing an inbox and the individual-inbox fallback |

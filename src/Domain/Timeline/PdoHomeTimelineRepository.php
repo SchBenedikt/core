@@ -59,7 +59,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' p.content_warning AS content_warning, p.published_at AS published_at,'
 			. ' p.visibility AS visibility, NULL AS boosted_by'
 			. ' FROM ' . PostSchema::TABLE . ' p'
-			. ' WHERE p.deleted_at IS NULL AND (p.author_id = :local_user'
+			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND (p.author_id = :local_user'
 			. ' OR (p.visibility = :local_direct AND EXISTS ('
 			. ' SELECT 1 FROM ' . PostSchema::RECIPIENT_TABLE . ' pr'
 			. ' WHERE pr.post_id = p.id AND pr.recipient_id = :local_recipient)))'

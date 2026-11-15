@@ -74,6 +74,18 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 		self::assertSame(Visibility::Followers, $entries[3]->visibility);
 	}
 
+	public function testAnArchivedOwnPostIsAbsentFromTheHomeTimeline(): void
+	{
+		$this->addPost($this->post('archived-own', 'alice', 'hidden content', '2026-11-11T10:02:00Z')
+			->withArchivedAt(Time::parse('2026-11-11T11:00:00Z')));
+		$this->addPost($this->post('visible-own', 'alice', 'visible content', '2026-11-11T10:03:00Z'));
+
+		$ids = $this->ids($this->repository()->forUser('alice', 10));
+
+		self::assertNotContains('archived-own', $ids);
+		self::assertContains('visible-own', $ids);
+	}
+
 	public function testUnfollowedLocalPostsAndUnfollowedRemotePostsAreAbsent(): void
 	{
 		$this->seed();
