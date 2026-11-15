@@ -115,10 +115,7 @@ final readonly class MstNode
 	public static function forEntries(array $values): self
 	{
 		if ($values === []) {
-			$data = ['l' => null, 'e' => []];
-			$bytes = DagCbor::encode($data);
-
-			return new self(null, [], Cid::forData($bytes));
+			return self::fromParts(null, []);
 		}
 
 		$keys = array_keys($values);
@@ -126,8 +123,6 @@ final readonly class MstNode
 
 		$layer = MstKey::layer($keys[0]);
 		$entries = [];
-		$rawEntries = [];
-		$lastKey = '';
 
 		foreach ($keys as $key) {
 			if (!is_string($key)) {
@@ -144,31 +139,38 @@ final readonly class MstNode
 				throw new InvalidArgumentException('MST values must be CIDs.');
 			}
 
-			$prefix = MstKey::commonPrefixLength($lastKey, $key);
-			$suffix = substr($key, $prefix);
 			$entries[] = new MstEntry($key, $value, null);
-			$rawEntries[] = [
-				'p' => $prefix,
-				'k' => new Bytes($suffix),
-				'v' => $value,
-				't' => null,
-			];
-			$lastKey = $key;
 		}
 
-		$bytes = DagCbor::encode(['l' => null, 'e' => $rawEntries]);
+		return self::fromParts(null, $entries);
+	}
 
-		return new self(null, $entries, Cid::forData($bytes));
+	/**
+	 * @param list<MstEntry> $entries
+	 */
+	public static function fromParts(?Cid $left, array $entries): self
+	{
+		$bytes = self::encodeData($left, $entries);
+
+		return new self($left, $entries, Cid::forData($bytes));
 	}
 
 	public function encode(): string
 	{
-		$entries = [];
+		return self::encodeData($this->left, $this->entries);
+	}
+
+	/**
+	 * @param list<MstEntry> $entries
+	 */
+	private static function encodeData(?Cid $left, array $entries): string
+	{
+		$encoded = [];
 		$lastKey = '';
 
-		foreach ($this->entries as $entry) {
+		foreach ($entries as $entry) {
 			$prefix = MstKey::commonPrefixLength($lastKey, $entry->key);
-			$entries[] = [
+			$encoded[] = [
 				'p' => $prefix,
 				'k' => new Bytes(substr($entry->key, $prefix)),
 				'v' => $entry->value,
@@ -177,7 +179,7 @@ final readonly class MstNode
 			$lastKey = $entry->key;
 		}
 
-		return DagCbor::encode(['l' => $this->left, 'e' => $entries]);
+		return DagCbor::encode(['l' => $left, 'e' => $encoded]);
 	}
 
 	private static function optionalCid(mixed $value, string $field): ?Cid

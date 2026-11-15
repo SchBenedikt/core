@@ -14,6 +14,7 @@ use AlohaSocial\Core\Http\Middleware;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Http\Route;
+use AlohaSocial\Core\Http\XrpcException;
 
 /**
  * Refuses an unauthenticated request to a route that requires a user.
@@ -28,6 +29,10 @@ final class RequireAuthentication implements Middleware
 		$route = $request->attribute('route');
 
 		if ($route instanceof Route && $route->requiresAuth && $request->userId === null) {
+			if (str_starts_with($request->path, '/xrpc/')) {
+				throw new XrpcException(401, 'AuthRequired', 'Authentication is required.', ['WWW-Authenticate' => 'Bearer']);
+			}
+
 			throw HttpException::unauthorized();
 		}
 

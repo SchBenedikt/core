@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 161 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 169 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -125,6 +125,14 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `actors.collections` | `GET` | `/@{handle}/collections` | no | 120 / 60 s |
 | `actors.outbox` | `GET` | `/@{handle}/outbox` | no | 120 / 60 s |
 | `webfinger` | `GET` | `/.well-known/webfinger` | no | 120 / 60 s |
+| `xrpc.identity.createDid` | `POST` | `/xrpc/com.atproto.identity.createDid` | yes | 10 / 3600 s |
+| `xrpc.identity.resolveDid` | `GET` | `/xrpc/com.atproto.identity.resolveDid` | no | 120 / 60 s |
+| `xrpc.identity.rotateKeys` | `POST` | `/xrpc/com.atproto.identity.rotateKeys` | yes | 5 / 3600 s |
+| `xrpc.repo.createRecord` | `POST` | `/xrpc/com.atproto.repo.createRecord` | yes | 120 / 60 s |
+| `xrpc.repo.getRecord` | `GET` | `/xrpc/com.atproto.repo.getRecord` | no | 120 / 60 s |
+| `xrpc.repo.listRecords` | `GET` | `/xrpc/com.atproto.repo.listRecords` | no | 120 / 60 s |
+| `xrpc.repo.describeRepo` | `GET` | `/xrpc/com.atproto.repo.describeRepo` | no | 120 / 60 s |
+| `xrpc.sync.getRepo` | `GET` | `/xrpc/com.atproto.sync.getRepo` | no | 60 / 60 s |
 | `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |
 | `mastodon.media.upload` | `POST` | `/api/mastodon/v1/media` | yes, `write:media` | 20 / 900 s |
 | `mastodon.media.update` | `PUT` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |

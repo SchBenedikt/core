@@ -14,6 +14,7 @@ use AlohaSocial\Core\Protocol\Atproto\Repository\Cid;
 use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Mst;
 use AlohaSocial\Core\Protocol\Atproto\Repository\MstKey;
+use AlohaSocial\Core\Protocol\Atproto\Repository\MstBuilder;
 use AlohaSocial\Core\Protocol\Atproto\Repository\MstNode;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -71,6 +72,41 @@ final class MstTest extends TestCase
 
 		self::assertSame(self::ROOT, $node->cid->toString());
 		self::assertSame(self::NODE_HEX, bin2hex($node->encode()));
+	}
+
+	public function testItBuildsTheOfficialMultiLayerTree(): void
+	{
+		$values = [
+			'app.bsky.feed.post/0' => 'bafyreiaauo6thjgusybkdfri5irrshiyrs32745u5gvf2p37u65vypjlqe',
+			'app.bsky.feed.post/1' => 'bafyreifffzxwlzk2botzd5exvh3ajh6fmwxjyjepa4pi4cb7rt6sslqmae',
+			'app.bsky.feed.post/2' => 'bafyreifxlw63hhgkcrjvc6k66umkwbgczztpuzy5gqenxdxotr73q7euq4',
+			'app.bsky.feed.post/3' => 'bafyreicimwkqlvdcjvmm6jgwwcvo5ifi643ylphaqiul3tnwxuhzvkuaeq',
+			'app.bsky.feed.post/4' => 'bafyreiexujnhpa5flxlfg6ui3dw7i45emqocibaw3grrwudituihwxr56y',
+			'app.bsky.feed.post/5' => 'bafyreihgbrmeciyng4ezuwarfvj3t6c2javvw7kat3zk3ngnu7jk3kz3ke',
+			'app.bsky.feed.post/6' => 'bafyreiczwtyh5ps5ldbinh32pu3kor6xp4jb6gbsojn72ygapi7tgp32f4',
+			'app.bsky.feed.post/7' => 'bafyreiggm4konohff6ao7u6e3mpmg3b62y7txsbm2dmsyman3upsmpgp4u',
+			'app.bsky.feed.post/8' => 'bafyreicasccvde4kwusbcvraid4bsqlxrzowsxj53vufivysarsshxdu24',
+			'app.bsky.feed.post/9' => 'bafyreigcvscboxf47scqksyxhkcccyvecciiq4aljdqkhubranfwitecmu',
+			'app.bsky.feed.post/10' => 'bafyreiet43s7yowct7oltaskfrhxhklpm24qbtw4fxqegpq2lh2pfk66aa',
+			'app.bsky.feed.post/11' => 'bafyreiab7orpyn2kep33avhormdo7iozepnbal7kwr2wc5xvckno2wf5di',
+		];
+		$cids = [];
+		foreach ($values as $key => $cid) {
+			$cids[$key] = Cid::fromString($cid);
+		}
+
+		$built = (new MstBuilder())->build($cids);
+
+		self::assertSame(
+			'bafyreief4p5igfkypale6nytlylsqtasjgnm2ttop46tb33vxs442cndwm',
+			$built['root']->toString(),
+		);
+		self::assertCount(5, $built['blocks']);
+		$all = (new Mst($built['root'], $built['blocks']))->all();
+		self::assertCount(12, $all);
+		foreach ($cids as $key => $cid) {
+			self::assertSame($cid->toString(), $all[$key]?->toString());
+		}
 	}
 
 	public function testItBuildsTheOfficialEmptyTreeCid(): void

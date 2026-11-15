@@ -35,7 +35,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
 | [AT Protocol publishing and inbound sync](guides/atproto.md) | Records, facets, replies, media embeds, likes/reposts, profile, the AppView timeline read, replay-safe relay/Jetstream import, cursors/tombstones, publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
-| [AT Protocol repository primitives](guides/atproto-repository.md) | CID, canonical DAG-CBOR, CAR, MST, signed commits, compatibility vectors and the current native-PDS boundary |
+| [Native AT Protocol PDS](guides/atproto-repository.md) | DID/PLC keys, DID documents, durable records, multi-layer MST, signed commits, CAR export, XRPC routes, rotation and the remaining gaps |
 | [Two protocols, one local model](guides/dual-protocol.md) | How ActivityPub and AT Protocol share one local post, what is and is not combined, and why this is not a new protocol |
 | [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, private lists and list timelines, local boosts/reblogs, reply context, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |

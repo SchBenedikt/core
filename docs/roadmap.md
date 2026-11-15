@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 161 routes, 53 of them under the Mastodon prefix |
+| HTTP contract | 169 routes, 53 of them under the Mastodon prefix |
 | Persistence | 38 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 205 PHP test files (1724 tests, 9005 assertions) and 9 UI test files (69 tests) |
+| Tests | 218 PHP test files (1797 tests, 9581 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -281,11 +281,11 @@ server or a product decision.
   and the wider account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
 - **Native AT Protocol PDS (optional):** the accepted full-host target is in
-  [ADR 0008](adr/0008-native-pds.md). Canonical CID/DAG-CBOR/CAR/MST reading
-  and signed commit round-trips exist in
-  [repository primitives](guides/atproto-repository.md); the repository store,
-  PDS XRPC, DID/PLC lifecycle, blob authorization and firehose are follow-ups.
-  The external-PDS client remains independent.
+  [ADR 0008](adr/0008-native-pds.md). The durable repository store, multi-layer
+  MST writer, signed commit chain, DID/PLC key lifecycle and the identity/repo/
+  sync XRPC surface exist in
+  [repository primitives](guides/atproto-repository.md); blob authorization and
+  the firehose remain follow-ups. The external-PDS client remains independent.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
   full multi-layer repository writes.
 - **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
@@ -323,10 +323,11 @@ local gaps. The detailed lists live in the guides.
   relationship/admin APIs. See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
-  store, credential storage and PDS selection; full multi-layer repository
-  writes and the PDS store/XRPC/DID/PLC/firehose stages; video transcoding; the
+  store, credential storage and PDS selection; the native-PDS blob and firehose
+  stages plus `putRecord`/`deleteRecord`/`importRepo`; video transcoding; the
   relay/Jetstream/AppView transport and reconnect policy; link cards; migrating
-  the existing Nextcloud implementation. Canonical repository primitives are
+  the existing Nextcloud implementation. Canonical repository primitives, the
+  native identity/repository store and the identity/repo/sync XRPC routes are
   local; the AppView timeline read and inbound importer are core
   ports/services; rendering and the socket are host work. See
   [AT Protocol publishing](guides/atproto.md#remaining-external-work) and

@@ -8,13 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- The optional native-PDS foundation: canonical CIDv1, DAG-CBOR, CAR v1,
-  AT Protocol MST validation/lookup and P-256 signed repository commits under
-  `Protocol\Atproto\Repository`, with official interoperability vectors and
-  malformed-input tests. The accepted full-host architecture, DID/PLC key
-  lifecycle, threat model and staged delivery are in [ADR 0008](docs/adr/0008-native-pds.md);
-  no repository store, PDS route or firehose is enabled yet. Remote direct
-  messages are explicitly blocked behind the E2EE/MLS decision in
+- A working, optional native AT Protocol PDS. `Protocol\Atproto\Repository`
+  now includes a multi-layer `MstBuilder` that matches the reference root and
+  block set, alongside CIDv1, canonical DAG-CBOR, CAR v1, MST validation and
+  P-256 signed commits. `Domain\Atproto\Pds` adds the durable identity/key/
+  record/commit/block/PLC schema, transactional in-memory and PDO stores,
+  `did:plc` generation, DID documents, signed PLC operations, record creation
+  with chained version-3 commits and CAR export. The identity/repo/sync XRPC
+  routes are behind the normal kernel and auth middleware and are disabled by
+  default; `atproto.pds.secret_box_key` (or a host `SecretBox`) seals private
+  keys. The guide documents the surface and its remaining gaps; remote direct
+  messages stay blocked behind the E2EE/MLS decision in
   [ADR 0009](docs/adr/0009-e2ee-direct-messages.md).
 - Reversible post archives, profile pins and owner-scoped media collections.
   `social_post.archived_at` keeps an archived post addressable by its public

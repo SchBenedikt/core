@@ -76,6 +76,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 - `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
 - `src/Domain/Atproto/AtprotoInboundSchema.php` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account`
+- `src/Domain/Atproto/Pds/PdsSchema.php` → `social_pds_identity`, `social_pds_key`, `social_pds_record`, `social_pds_commit`, `social_pds_block` and `social_pds_plc_operation`. Private keys are stored only as sealed payloads; binary blocks are base64 text so the same schema runs on SQLite and relational databases. A commit, its blocks, the affected record and the identity head are written in one transaction
 - `src/Domain/Moderation/ReportSchema.php` → `social_report` (pending, reviewing, resolved and rejected reports, with the reporter, canonical target and bounded evidence JSON; the service reuses an open report per reporter and target)
 - `src/Domain/Moderation/ModerationActionSchema.php` → `social_moderation_action` (auditable actor, post and domain actions with an optional reversal note; active rows are never deleted)
 - `src/Domain/Moderation/HeldPostSchema.php` → `social_held_post` (the pending first-post draft, its JSON payload, hold reason and the published post id once approved)

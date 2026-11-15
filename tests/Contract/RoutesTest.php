@@ -23,7 +23,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(161, $manifest->routes());
+		self::assertCount(169, $manifest->routes());
 		self::assertNotNull($manifest->find('recommendations.get'));
 		self::assertNotNull($manifest->find('recommendations.preferences.get'));
 		self::assertNotNull($manifest->find('recommendations.preferences.update'));
@@ -102,6 +102,12 @@ final class RoutesTest extends TestCase
 
 			if (str_starts_with($route->name, 'mastodon.')) {
 				self::assertStringStartsWith(MastodonApiConfig::DEFAULT_PREFIX . '/', $route->path);
+
+				continue;
+			}
+
+			if (str_starts_with($route->name, 'xrpc.')) {
+				self::assertStringStartsWith('/xrpc/com.atproto.', $route->path);
 
 				continue;
 			}
@@ -242,7 +248,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(161, $decoded['routes']);
+		self::assertCount(169, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -252,6 +258,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(161, $app->routes->routes());
+		self::assertCount(169, $app->routes->routes());
 	}
 }

@@ -53,7 +53,13 @@ final class Mst
 			$visited[$cid->toString()] = true;
 
 			if ($node->entries === []) {
-				return null;
+				if ($node->left === null) {
+					return null;
+				}
+
+				$cid = $node->left;
+
+				continue;
 			}
 
 			$index = $this->firstAtOrAfter($node->entries, $key);
@@ -122,12 +128,8 @@ final class Mst
 			throw new UnexpectedValueException('An MST child must be on a lower layer than its parent.');
 		}
 
-		if ($entries === [] && $node->left !== null) {
-			throw new UnexpectedValueException('An empty MST node cannot have a left subtree.');
-		}
-
-		if ($entries === [] && $parentLayer !== null) {
-			throw new UnexpectedValueException('Only the root may be an empty MST node.');
+		if ($entries === [] && $node->left === null && $parentLayer !== null) {
+			throw new UnexpectedValueException('An empty MST child must point to a subtree or hold a key.');
 		}
 
 		if ($node->left !== null) {

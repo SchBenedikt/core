@@ -617,7 +617,7 @@ remainder (M6), not as part of this publishing foundation.
 
 The optional **native PDS** is a separate milestone, not a replacement for
 this publishing path. Its accepted architecture and security gates are in
-[ADR 0008](../adr/0008-native-pds.md); the currently implemented protocol
-primitives are documented in
-[AT Protocol repository primitives](atproto-repository.md). No PDS route, DID
-lifecycle, repository store or firehose is enabled yet.
+[ADR 0008](../adr/0008-native-pds.md); the working identity/repository store,
+DID/PLC lifecycle and XRPC routes are documented in
+[Native AT Protocol PDS](atproto-repository.md). It is disabled by default;
+blob authorization and the firehose remain follow-ups.

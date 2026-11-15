@@ -63,6 +63,7 @@ use AlohaSocial\Core\Api\FollowRequestsHandler;
 use AlohaSocial\Core\Api\RejectFollowRequestHandler;
 use AlohaSocial\Core\Api\FollowedHashtagTimelineHandler;
 use AlohaSocial\Core\Api\FollowedTagsHandler;
+use AlohaSocial\Core\Api\PdsXrpcHandler;
 use AlohaSocial\Core\Api\PinsHandler;
 use AlohaSocial\Core\Api\PinPostHandler;
 use AlohaSocial\Core\Api\RemoveCollectionItemHandler;
@@ -1651,6 +1652,78 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'Resolve an acct: handle to the actor document of a local account.',
+			),
+			new Route(
+				name: 'xrpc.identity.createDid',
+				method: 'POST',
+				path: '/xrpc/com.atproto.identity.createDid',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: true,
+				rateLimit: '10/3600',
+				summary: 'Create a DID and repository for the signed-in local account.',
+			),
+			new Route(
+				name: 'xrpc.identity.resolveDid',
+				method: 'GET',
+				path: '/xrpc/com.atproto.identity.resolveDid',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Resolve a DID hosted by this PDS to its DID document.',
+			),
+			new Route(
+				name: 'xrpc.identity.rotateKeys',
+				method: 'POST',
+				path: '/xrpc/com.atproto.identity.rotateKeys',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: true,
+				rateLimit: '5/3600',
+				summary: 'Rotate the signing and rotation keys of the signed-in repository.',
+			),
+			new Route(
+				name: 'xrpc.repo.createRecord',
+				method: 'POST',
+				path: '/xrpc/com.atproto.repo.createRecord',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Append a record and a signed repository commit.',
+			),
+			new Route(
+				name: 'xrpc.repo.getRecord',
+				method: 'GET',
+				path: '/xrpc/com.atproto.repo.getRecord',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Read one record from a public repository.',
+			),
+			new Route(
+				name: 'xrpc.repo.listRecords',
+				method: 'GET',
+				path: '/xrpc/com.atproto.repo.listRecords',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Page through a collection of a public repository.',
+			),
+			new Route(
+				name: 'xrpc.repo.describeRepo',
+				method: 'GET',
+				path: '/xrpc/com.atproto.repo.describeRepo',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Describe a public repository and its collections.',
+			),
+			new Route(
+				name: 'xrpc.sync.getRepo',
+				method: 'GET',
+				path: '/xrpc/com.atproto.sync.getRepo',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Export the full repository as a CAR archive.',
 			),
 		);
 	}

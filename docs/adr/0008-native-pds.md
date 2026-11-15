@@ -53,8 +53,8 @@ The host owns:
 
 - Process lifecycle, HTTP server/routes, TLS, request authentication and
   account-to-local-user mapping.
-- The actual secret store behind `PdsKeyStore`; private keys are sealed by the
-  host and never written into the repository, source tree, logs or CAR files.
+- The actual secret store; private keys are sealed with `Security\SecretBox`
+  and never written into a repository record, source tree, log or CAR file.
 - PLC directory transport behind a port, admin/moderation UI, abuse handling,
   deployment, backup and the decision whether native PDS is enabled.
 - Quota values and rate-limit configuration; Core enforces them.
@@ -109,19 +109,23 @@ The first implementation must cover at least:
 
 ### Delivery stages
 
-1. **ADR and protocol foundation (this change):** accepted decision, canonical
+1. **ADR and protocol foundation:** accepted decision, canonical
    CID/DAG-CBOR/CAR/MST read and commit signing/verification, official vectors
    and malformed-input tests.
-2. **Repository and blob store:** durable commit transactions, record and blob
-   schemas, quotas, owner checks and import/export.
-3. **PDS XRPC:** the record/repo/blob methods, cursors, idempotency and host
-   route mapping.
-4. **DID/PLC and auth ports:** `did:plc` operation construction, key rotation,
-   PLC directory port, handle proof and delegated session authority.
-5. **Firehose:** durable sequence, subscriber cursors, replay and resource
+2. **Repository store:** durable commit transactions, a multi-layer MST writer,
+   record/blocks/identity schemas and owner checks.
+3. **PDS XRPC:** `createDid`, `resolveDid`, `rotateKeys`, `createRecord`,
+   `getRecord`, `listRecords`, `describeRepo` and `sync.getRepo`, with XRPC
+   errors and host route mapping.
+4. **DID/PLC lifecycle:** `did:plc` genesis, signed PLC operations, sealed
+   signing/rotation keys and rotation that makes only the new signing key
+   valid.
+5. **Blob authorization:** upload/read policy, quotas and a host-backed blob
+   store.
+6. **Firehose:** durable sequence, subscriber cursors, replay and resource
    limits.
-6. **Migration:** explicit handoff from a linked or legacy PDS with
-   identity/key/record parity, rollback and no silent DID change.
+7. **Migration and the remaining repo methods:** explicit handoff from a linked
+   or legacy PDS, plus `putRecord`/`deleteRecord`/`importRepo` and blob methods.
 
 Each stage gets its own implementation issue. A successful local write is not
 proof that a relay or AppView indexed it; that requires a real-peer check.
@@ -147,9 +151,25 @@ proof that a relay or AppView indexed it; that requires a real-peer check.
 
 ## Implementation status
 
-As of 2026-11-15, stage 1 exists in `src/Protocol/Atproto/Repository`:
-CID, canonical DAG-CBOR, CAR, MST node validation, read-only MST traversal and
-P-256 signed commit round-trips, with official vectors in
-`tests/Protocol/Repository`. The repository store, PDS XRPC, DID/PLC lifecycle,
-blob authorization and firehose are **not** implemented yet. This ADR records
-the target and the gates; it does not claim a running PDS.
+As of 2026-11-15, stages 1–4 are implemented:
+
+- `src/Protocol/Atproto/Repository` has CID, canonical DAG-CBOR, CAR, MST
+  validation, read-only traversal, a multi-layer `MstBuilder` that matches the
+  reference root and blocks, and P-256 signed commits, with official vectors in
+  `tests/Protocol/Repository`.
+- `src/Domain/Atproto/Pds` has the durable PDS schema, in-memory and PDO stores,
+  `did:plc` generation, DID documents, signed PLC operations, sealed key
+  lifecycle, rotation, record writes with chained version-3 commits and CAR
+  export.
+- The XRPC routes are served by `PdsXrpcHandler` behind the normal kernel and
+  auth middleware; `Application` builds the optional service from
+  `atproto.pds.*` configuration.
+- `tests/Integration/PdsHttpTest.php` starts a real PHP HTTP server over SQLite
+  and verifies DID creation/resolution, record reads/lists, commit signatures,
+  restart persistence and rotation.
+
+**Not implemented:** blob upload/authorization and quota accounting, the
+firehose, `putRecord`/`deleteRecord`, `importRepo`, PLC directory transport,
+recovery/tombstone operations, and migration from a linked PDS. The native PDS
+remains disabled by default and is not a claim that a public relay has indexed
+its records.

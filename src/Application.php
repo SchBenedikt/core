@@ -62,6 +62,7 @@ use AlohaSocial\Core\Api\FollowersCollectionHandler;
 use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\FollowingCollectionHandler;
 use AlohaSocial\Core\Api\HealthHandler;
+use AlohaSocial\Core\Api\PdsXrpcHandler;
 use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
@@ -165,6 +166,11 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\Pds\InMemoryPdsRepository;
+use AlohaSocial\Core\Domain\Atproto\Pds\NativePdsService;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsConfig;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsRepository;
 use AlohaSocial\Core\Domain\Federation\AcceptAllFollows;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
@@ -442,6 +448,8 @@ use AlohaSocial\Core\Service\Moderation\ModerationService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Service\TimelineService;
+use AlohaSocial\Core\Security\OpenSslSecretBox;
+use AlohaSocial\Core\Security\SecretBox;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 use InvalidArgumentException;
@@ -494,6 +502,7 @@ final readonly class Application
 		public ?StoryService $stories = null,
 		public ?PinService $pins = null,
 		public ?MediaCollectionService $collections = null,
+		public ?NativePdsService $pds = null,
 	) {
 	}
 
@@ -576,6 +585,8 @@ final readonly class Application
 		?MediaCollectionRepository $mediaCollectionRepository = null,
 		?PinService $pinService = null,
 		?MediaCollectionService $mediaCollectionService = null,
+		?PdsRepository $pdsRepository = null,
+		?SecretBox $pdsSecrets = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -584,6 +595,9 @@ final readonly class Application
 				'instance.name' => 'Aloha Social',
 			],
 		]);
+		$pds = PdsConfig::enabled($config)
+			? self::assemblePds($config, $clock, $pdsRepository ?? new InMemoryPdsRepository(), $pdsSecrets)
+			: null;
 		$logger ??= new NullLogger();
 		$activityLog ??= new InMemoryActivityLog();
 		$accountMoveRepository ??= new InMemoryAccountMoveRepository();
@@ -702,6 +716,7 @@ final readonly class Application
 			mediaCollectionRepository: $mediaCollectionRepository,
 			pinService: $pinService,
 			mediaCollectionService: $mediaCollectionService,
+			pds: $pds,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -796,8 +811,13 @@ final readonly class Application
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
 		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
+		?PdsRepository $pdsRepository = null,
+		?SecretBox $pdsSecrets = null,
 	): self {
 		$clock ??= new SystemClock();
+		$pds = PdsConfig::enabled($config)
+			? self::assemblePds($config, $clock, $pdsRepository ?? new PdoPdsRepository($database), $pdsSecrets)
+			: null;
 		$logger ??= new NullLogger();
 		$ids = new RandomIdGenerator();
 		// A production host must not let a peer point delivery or actor
@@ -894,6 +914,7 @@ final readonly class Application
 			debug: $debug,
 			transactions: $transactions ?? ($database instanceof TransactionRunner ? $database : null),
 			atprotoDpop: $atprotoDpop,
+			pds: $pds,
 		);
 	}
 
@@ -987,6 +1008,7 @@ final readonly class Application
 		?MediaCollectionRepository $mediaCollectionRepository = null,
 		?PinService $pinService = null,
 		?MediaCollectionService $mediaCollectionService = null,
+		?NativePdsService $pds = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1491,6 +1513,7 @@ final readonly class Application
 
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())
+			->with(PdsXrpcHandler::class, static fn (): PdsXrpcHandler => new PdsXrpcHandler($pds))
 			->with(InstanceHandler::class, static fn (): InstanceHandler => new InstanceHandler($instance))
 			->with(CreatePostHandler::class, static fn (): CreatePostHandler => new CreatePostHandler($postService, $mediaService))
 			->with(SubmitReportHandler::class, static fn (): SubmitReportHandler => new SubmitReportHandler($moderationService))
@@ -1734,7 +1757,28 @@ final readonly class Application
 			$storyService,
 			$pinService,
 			$mediaCollectionService,
+			$pds,
 		);
+	}
+
+	private static function assemblePds(
+		Config $config,
+		Clock $clock,
+		PdsRepository $repository,
+		?SecretBox $secrets,
+	): NativePdsService {
+		if ($secrets === null) {
+			$key = PdsConfig::secretBoxKey($config);
+			if ($key === null) {
+				throw new InvalidArgumentException(
+					'atproto.pds.secret_box_key is required when the native PDS is enabled.',
+				);
+			}
+
+			$secrets = OpenSslSecretBox::fromBase64Key($key);
+		}
+
+		return new NativePdsService($config, $repository, $secrets, $clock);
 	}
 
 	public function handle(Request $request): Response
