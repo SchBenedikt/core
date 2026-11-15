@@ -595,8 +595,10 @@ The full AT Protocol stack is still host/app work:
 - the inbound event transport (WebSocket/HTTP relay or Jetstream consumption,
   reconnect/backoff and normalization into `AtprotoEvent` pages); the importer,
   cursor, tombstones, AppView reconciliation state and cached feed are local;
-- a full repository client (CAR/MST, arbitrary record listing/update)
-  (AppView timeline reads are implemented as a port);
+- a full repository client (CAR/MST writes, arbitrary record listing/update);
+  canonical CID/DAG-CBOR/CAR/MST reading and signed commit round-trips are
+  implemented in the separate native-PDS foundation, while AppView timeline
+  reads are implemented as a port;
 - video transcoding and image processing for AT Protocol (the core uploads
   bytes the caller already prepared);
 - link cards and richer mention/facet targets;
@@ -612,3 +614,10 @@ The remaining protocol follow-ups — link cards, richer media, the host-side
 firehose transport and full repository access — are listed as Later in the
 [roadmap](../roadmap.md). The rest is tracked there as the compatibility
 remainder (M6), not as part of this publishing foundation.
+
+The optional **native PDS** is a separate milestone, not a replacement for
+this publishing path. Its accepted architecture and security gates are in
+[ADR 0008](../adr/0008-native-pds.md); the currently implemented protocol
+primitives are documented in
+[AT Protocol repository primitives](atproto-repository.md). No PDS route, DID
+lifecycle, repository store or firehose is enabled yet.

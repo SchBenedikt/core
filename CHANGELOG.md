@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The optional native-PDS foundation: canonical CIDv1, DAG-CBOR, CAR v1,
+  AT Protocol MST validation/lookup and P-256 signed repository commits under
+  `Protocol\Atproto\Repository`, with official interoperability vectors and
+  malformed-input tests. The accepted full-host architecture, DID/PLC key
+  lifecycle, threat model and staged delivery are in [ADR 0008](docs/adr/0008-native-pds.md);
+  no repository store, PDS route or firehose is enabled yet. Remote direct
+  messages are explicitly blocked behind the E2EE/MLS decision in
+  [ADR 0009](docs/adr/0009-e2ee-direct-messages.md).
 - Reversible post archives, profile pins and owner-scoped media collections.
   `social_post.archived_at` keeps an archived post addressable by its public
   URL and federated identity while removing it only from local public, author,

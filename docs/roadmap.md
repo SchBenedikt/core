@@ -280,8 +280,14 @@ server or a product decision.
 - **Locally implementable Mastodon remainder:** follow requests/locked accounts
   and the wider account-management surface. These are product decisions, not
   protocol blockers; they are not part of the local slice above.
+- **Native AT Protocol PDS (optional):** the accepted full-host target is in
+  [ADR 0008](adr/0008-native-pds.md). Canonical CID/DAG-CBOR/CAR/MST reading
+  and signed commit round-trips exist in
+  [repository primitives](guides/atproto-repository.md); the repository store,
+  PDS XRPC, DID/PLC lifecycle, blob authorization and firehose are follow-ups.
+  The external-PDS client remains independent.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
-  CAR/MST repository access.
+  full multi-layer repository writes.
 - **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
 - **Operations:** backup/restore and monitoring for the standalone host,
   plus an S3-compatible blob store whose layout can be swept independently of
@@ -296,7 +302,9 @@ server or a product decision.
 - Storing configuration or keys in this repository.
 - Remote direct delivery and remote reply threading: direct posts and replies
   address the local model only. Remote recipients/inboxes and fetching a
-  remote parent are not part of this slice.
+  remote parent are not part of this slice. Remote DMs also require the E2EE
+  design in [ADR 0009](adr/0009-e2ee-direct-messages.md); unencrypted
+  server-to-server direct messages are not planned.
 - A public block collection and applying an incoming `Block` as a per-user
   moderation rule: block propagation is outbound, and the optional instance
   policy remains the host seam for instance-wide refusal.
@@ -315,12 +323,14 @@ local gaps. The detailed lists live in the guides.
   relationship/admin APIs. See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
-  store, credential storage and PDS selection; CAR/MST repository access; video
-  transcoding; the relay/Jetstream/AppView transport and reconnect policy; link
-  cards; migrating the existing Nextcloud implementation. The AppView timeline
-  read and inbound importer are core ports/services; rendering and the socket
-  are host work. See
-  [AT Protocol publishing](guides/atproto.md#remaining-external-work).
+  store, credential storage and PDS selection; full multi-layer repository
+  writes and the PDS store/XRPC/DID/PLC/firehose stages; video transcoding; the
+  relay/Jetstream/AppView transport and reconnect policy; link cards; migrating
+  the existing Nextcloud implementation. Canonical repository primitives are
+  local; the AppView timeline read and inbound importer are core
+  ports/services; rendering and the socket are host work. See
+  [AT Protocol publishing](guides/atproto.md#remaining-external-work) and
+  [native PDS](adr/0008-native-pds.md).
 - **Hosts:** login, sessions, account creation/reset, CSRF, bearer-token
   issuance, admin settings, navigation, templates, deployment and the worker
   process. The core never issues tokens or owns a session.

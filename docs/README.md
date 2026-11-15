@@ -15,6 +15,8 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0005 — shared UI](adr/0005-shared-ui.md) | The `@alohasocial/ui` package and its `HostBridge` boundary |
 | [ADR 0006 — accounts, sessions and roles stay host-owned](adr/0006-host-owned-accounts.md) | The identity boundary between the core and both hosts: `Request::$userId`, scopes, `HostBridge`, roles and the standalone account model |
 | [ADR 0007 — two protocols, one model](adr/0007-two-protocols-one-model.md) | Why ActivityPub and AT Protocol stay two wire protocols instead of becoming a third |
+| [ADR 0008 — optional native PDS](adr/0008-native-pds.md) | Core-owned DID/PLC lifecycle, repository engine, security gates and the staged native PDS |
+| [ADR 0009 — E2EE direct messages](adr/0009-e2ee-direct-messages.md) | Why remote DMs wait for MLS, what the server may store, and the threat model |
 
 ## Guides
 
@@ -33,6 +35,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [Blocks](guides/blocks.md) | Per-user blocks, the block API, home-timeline filtering and the difference from the instance-wide policy |
 | [Federation](guides/federation.md) | Actor ids, signatures, ActivityStreams documents, delivery |
 | [AT Protocol publishing and inbound sync](guides/atproto.md) | Records, facets, replies, media embeds, likes/reposts, profile, the AppView timeline read, replay-safe relay/Jetstream import, cursors/tombstones, publication rows, OAuth authorization-code/PAR/revocation, limits and the external rest |
+| [AT Protocol repository primitives](guides/atproto-repository.md) | CID, canonical DAG-CBOR, CAR, MST, signed commits, compatibility vectors and the current native-PDS boundary |
 | [Two protocols, one local model](guides/dual-protocol.md) | How ActivityPub and AT Protocol share one local post, what is and is not combined, and why this is not a new protocol |
 | [Mastodon-compatible API](guides/mastodon-api.md) | The disabled-by-default local subset, instance metadata/statistics, prefix, scopes, private lists and list timelines, local boosts/reblogs, reply context, local follow/unfollow and relationship reads, local notification listing with dismiss/unread state, media upload/update/delete, pagination, idempotency and the external rest |
 | [Inbound federation](guides/inbound-federation.md) | `POST /inbox` and `/inbox/shared`, verification order, Follow/Undo, Create/Delete/Announce and remote-post storage |
