@@ -44,10 +44,10 @@ flowchart LR
 | Reply | `in_reply_to` | strong-ref reply | core |
 | Profile | actor document | `app.bsky.actor.profile` | core |
 
-The AT Protocol write/read library is complete for everything except the
-follow record: posts, facets, replies, media, likes, reposts, profile and an
-AppView timeline read. What is not here is the host that drives it — linking,
-credentials, PDS choice and the UI; the
+The AT Protocol write/read library covers posts, facets, replies, media, likes,
+reposts, profile, an AppView timeline read, and replay-safe inbound import of
+relay/Jetstream/AppView pages. The follow record is not written, and the host
+still drives the transport — linking, credentials, PDS choice and the UI; the
 [server blueprint](docs/guides/server-architecture.md) covers that part.
 
 "Both" means one local post can be delivered to ActivityPub followers and
@@ -67,7 +67,7 @@ The full mapping, guarantees and the path to a real bridge are in
 | Federation | HTTP signatures, host-fed actor profiles with display name, bio, avatar/header, verified `rel=me` fields, locked follows and owner-only hidden member pages, WebFinger, followers/following/outbox collections, shared inboxes, signed delivery, retries and dead letters; inbound `Follow`/`Move`/`Accept`/`Reject`/`Undo`/`Create`/`Update`/`Delete`/`Announce`, `Like`/`Undo(Like)` and `EmojiReact`/`Undo(EmojiReact)`; outbound `Follow`/`Undo(Follow)`, `Block`/`Undo(Block)`, `Like`/`Undo(Like)`, `EmojiReact`/`Undo(EmojiReact)`, local `Announce`/`Undo(Announce)`, `Update` for edits and `Update(Person)` for profile changes |
 | Remote content | remote posts and boosts, follow-based home timeline, per-user block filtering, guarded remote media, outbox backfill and bounded thread/context fetching |
 | Media | image validation, originals and GD thumbnails, local upload/fetch/update/delete, attachments in posts and timelines, guarded remote-media ingestion |
-| AT Protocol | account/record primitives, deterministic TIDs, bearer or DPoP-bound XRPC `putRecord`/`deleteRecord`, byte-offset tag/mention/link facets, reply references with a `getRecord` CID lookup, image/video blob uploads with `app.bsky.embed.images`/`#video` embeds, likes and reposts as `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record, an AppView timeline read port, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
+| AT Protocol | account/record primitives, deterministic TIDs, bearer or DPoP-bound XRPC `putRecord`/`deleteRecord`, byte-offset tag/mention/link facets, reply references with a `getRecord` CID lookup, image/video blob uploads with `app.bsky.embed.images`/`#video` embeds, likes and reposts as `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record, an AppView timeline read port, replay-safe inbound relay/Jetstream/AppView import with cursors, tombstones and cached feeds, idempotent publication rows, a readable publication state, remote delete, OAuth session refresh and the authorization-code/PAR/revocation protocol client |
 | Mastodon compatibility | optional, disabled-by-default subset under the configurable prefix: instance metadata/statistics, public timeline, status read/create/edit/delete (including direct statuses and replies), reblogs, status context, poll creation/voting, favourites, private bookmarks, local mutes, private account lists with list timelines and the exclusive home filter, local follow/unfollow and relationships, notifications (including mentions and reblogs) with dismiss/unread state, local search, media upload/update/delete, account profiles, follower/following lists, account statuses and verify credentials |
 | HTTP | request/response, parameterised router, middleware, kernel, one JSON error shape, route manifest and OpenAPI export (128 routes; 53 under the compatibility prefix) |
 | Persistence | in-memory and PDO repositories behind shared contract tests; durable `PdoJobQueue` and `PdoActivityLog`; schema classes for every core table; `TransactionRunner` for atomic multi-repository writes |
@@ -122,9 +122,10 @@ The milestone order and current status are in [the roadmap](docs/roadmap.md).
   [Mastodon-compatible API](docs/guides/mastodon-api.md#what-remains-external).
 - **The AT Protocol host glue:** account-linking UI/browser callback, the
   short-lived flow store, credential storage, refresh serialization, PDS
-  selection and the firehose; CAR/MST stays optional. The protocol client,
-  publishing, media, interactions, profile and AppView reads are implemented —
-  see [AT Protocol publishing](docs/guides/atproto.md) and the
+  selection and the relay/Jetstream/AppView transport; CAR/MST stays optional.
+  The protocol client, publishing, media, interactions, profile, AppView reads
+  and the replay-safe inbound importer are implemented — see
+  [AT Protocol publishing](docs/guides/atproto.md) and the
   [server blueprint](docs/guides/server-architecture.md).
 - **Host-specific UI bridges and mount pages**, including the Nextcloud
   `HostBridge`, rollout of the shared screens and the standalone bridge. See
@@ -264,7 +265,7 @@ SQLite for the transaction section, but no external database and no network.
    `PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `BoostSchema`,
    `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `BlockSchema`,
-   `AtprotoPublicationSchema`, `ReportSchema`, `ModerationActionSchema`,
+   `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `ReportSchema`, `ModerationActionSchema`,
    	   `HeldPostSchema`, `NotificationPolicySchema`, `NotificationSenderSchema`,
 	   `ConversationMuteSchema`, `SearchIndexSchema`, `TrendSchema`, `JobSchema`
 	   and `ActivityLogSchema` are shared

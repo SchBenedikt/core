@@ -30,6 +30,13 @@ final class JobType
 
 	public const ATPROTO_DELETE = 'atproto.delete';
 
+	/**
+	 * Pulls one bounded page from the configured inbound AT Protocol source.
+	 * The source, cursor and records are durable; only the page limit travels
+	 * in the job.
+	 */
+	public const ATPROTO_SYNC = 'atproto.sync';
+
 	public const CLEANUP = 'cleanup';
 
 	/**

@@ -126,8 +126,9 @@ runner. A minimal runner:
 - run inside a transaction where the driver allows DDL transactions
   (PostgreSQL yes, MySQL no — accept the documented limitation);
 - the first migration executes the core schema classes
-  (`PostSchema`, `PollSchema`, …, `AtprotoPublicationSchema`, `JobSchema`,
-  `ActivityLogSchema`), so a fresh install and an upgrade converge;
+  (`PostSchema`, `PollSchema`, …, `AtprotoPublicationSchema`,
+  `AtprotoInboundSchema`, `JobSchema`, `ActivityLogSchema`), so a fresh install
+  and an upgrade converge;
 - refuse to start if an applied migration's checksum changed.
 
 Additive columns follow the same rule as the Nextcloud host: the core document

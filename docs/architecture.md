@@ -736,10 +736,10 @@ maximum is 40, and generated links carry a non-default limit.
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
   `BookmarkSchema`, `MuteSchema`, `BoostSchema`, `NotificationSchema`,
   `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
-  `AtprotoPublicationSchema`, `JobSchema`
+  `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`
   and `ActivityLogSchema` do the same for favourites, bookmarks,
   notifications, media metadata, remote content, per-user blocks, AT Protocol
-  publications, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
+  publications and inbound sync, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
   the same columns through its schema API. A dump can therefore move between
   the two.
 - **Media metadata and bytes are separate.** A row points at one original and
@@ -775,10 +775,13 @@ the job; the core does not start a timer. See
 | `Jobs\JobQueue` | push/reserve/complete/fail, counts | `InMemoryJobQueue` | `PdoJobQueue` |
 | `ActivityLog` | claim/release | `InMemoryActivityLog` | `PdoActivityLog` |
 
-AT Protocol has four domain-level host ports instead of new platform methods:
+AT Protocol has domain-level host ports instead of new platform methods:
 `AtprotoAccountResolver` returns a linked account, `AtprotoPublisher` writes
-one record, `AtprotoDeleter` removes it again and `AtprotoSessionStore` holds
-the host-owned OAuth session. `XrpcAtprotoPublisher` is the default adapter for
+one record, `AtprotoDeleter` removes it again, `AtprotoSessionStore` holds the
+host-owned OAuth session and `AtprotoEventSource` reads bounded inbound event
+pages. `AtprotoSyncService` keeps the cursor, tombstones, account revocation,
+moderation and cached feed in the core; it never opens the transport itself.
+`XrpcAtprotoPublisher` is the default adapter for
 both record transports over `HttpClient`; fakes cover the network in tests.
 `AtprotoFacets` and `AtprotoReplyBuilder` turn text, mentions and a parent URI
 into the record's `facets` and `reply` objects through `AtprotoIdentityResolver`
@@ -916,7 +919,7 @@ and acceptance checks are in the
 | Missing | Where it will attach |
 | --- | --- |
 | accounts, sessions, roles, password reset and administrator rights | host-owned by [ADR 0006](adr/0006-host-owned-accounts.md); the core accepts an authenticated `Request::$userId` and host-resolved scopes, and stores no user table, credentials, sessions or role model |
-| AT Protocol account-linking UI/callback, credential store, PDS selection, firehose and CAR/MST | host/app; the core owns publishing, media, likes/reposts, profile, an AppView timeline read port, OAuth session refresh and the authorization-code/PAR/revocation client in `Protocol\Atproto` and `Domain\Atproto` |
+| AT Protocol account-linking UI/callback, credential store, PDS selection, relay/Jetstream transport and CAR/MST | host/app; the core owns publishing, media, likes/reposts, profile, an AppView timeline read port, the inbound importer with cursors/tombstones, OAuth session refresh and the authorization-code/PAR/revocation client in `Protocol\Atproto` and `Domain\Atproto` |
 | Full Mastodon server API (OAuth/token issuance, remote timelines, favourite federation, remote boost federation, remote notifications, streaming, remote poll fetching/voting/federation, remote search, account/admin and remote relationship APIs) | host/integration work over the local compatibility subset; the locally implementable remainder (hashtags, filters, followed tags, scheduled posts, follow requests and account management) is listed as Later in the [roadmap](roadmap.md); see [Mastodon-compatible API](guides/mastodon-api.md) |
 | admin settings | host pages and host role checks; the core keeps the settings *rules* and never sees an administrator flag ([ADR 0006](adr/0006-host-owned-accounts.md)) |
 | migrations runner | the standalone host, executing `*Schema` statements; Nextcloud uses its own schema API |

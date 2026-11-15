@@ -408,7 +408,8 @@ Create the app's tables through Nextcloud migrations, with the same columns
 and indexes as the core's schema classes. The SQL strings in `PostSchema`,
 `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
 `RemoteThreadSchema`,
-`BlockSchema`, `JobSchema` and `ActivityLogSchema` are the canonical
+`BlockSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`
+and `ActivityLogSchema` are the canonical
 definition; translate them into the app's schema API rather than copying a
 second column list. `RemotePostSchema` now creates both
 `social_remote_post` and the ordered `social_remote_post_attachment` link

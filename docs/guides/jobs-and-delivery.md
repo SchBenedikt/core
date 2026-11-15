@@ -98,6 +98,20 @@ A terminal exception implements `TerminalJobException` and exposes a stable
 `errorCode()`. A handler that knows its input is permanently invalid should
 throw one of these rather than a generic exception.
 
+## AT Protocol sync
+
+`atproto.sync` runs one bounded inbound page. The payload is an optional
+integer `limit` between 1 and 100; anything else is terminal
+`invalid_job_payload`. The handler calls `AtprotoSyncService::sync($limit)`,
+which pulls outside the transaction and commits records and the checkpoint
+together. A source or transport failure is retried by the normal backoff; a
+source-name mismatch or handle/DID identity conflict is logged and the job
+completes so one poison page does not block the worker. The handler is
+registered only when the assembly has an `AtprotoEventSource`; a host without
+one still uses `atproto.publish` and `atproto.delete`. Schedule the job with
+`{ "limit": 50 }` or no payload; backfill is a host-called service operation,
+not an automatic queue fan-out.
+
 ## Shared-inbox batching
 
 `FollowerInboxResolver` asks the repository for one effective inbox per

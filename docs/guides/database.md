@@ -71,6 +71,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Jobs/JobSchema.php` → `social_job`
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 - `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
+- `src/Domain/Atproto/AtprotoInboundSchema.php` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account`
 - `src/Domain/Moderation/ReportSchema.php` → `social_report` (pending, reviewing, resolved and rejected reports, with the reporter, canonical target and bounded evidence JSON; the service reuses an open report per reporter and target)
 - `src/Domain/Moderation/ModerationActionSchema.php` → `social_moderation_action` (auditable actor, post and domain actions with an optional reversal note; active rows are never deleted)
 - `src/Domain/Moderation/HeldPostSchema.php` → `social_held_post` (the pending first-post draft, its JSON payload, hold reason and the published post id once approved)
@@ -251,6 +252,19 @@ remote delete. OAuth sessions are not stored here either: the access and
 refresh tokens are host credentials, and `AtprotoSessionStore` keeps them in
 the host's secret store. The core's only session adapter is the in-memory fake
 for tests. See [AT Protocol publishing](atproto.md).
+
+`AtprotoInboundSchema` stores the host-fed inbound sync. A checkpoint row per
+source holds the opaque cursor, the last sequence and event time, the last
+attempt/error and the `stale`/`reconcile_required` flags. Every remote record
+is keyed by `(source, uri)` and keeps the raw record JSON, CID, revision,
+sequence, publication time and a tombstone flag, so a delete does not erase
+the knowledge that the record existed. `(source, did, collection, deleted,
+published_at)` serves the cached author feed; `(source, sequence)` supports
+reconciliation scans. Account rows are keyed by `(source, did)` with a handle,
+status and active flag; a handle is unique per source in the service, and an
+inactive account purges its records and refuses later record events until it
+is active again. The three tables are additive and have no backfill from the
+outbound publication table. See [AT Protocol publishing](atproto.md#inbound-sync).
 
 Instance metadata and statistics add no table. The public responses read the
 `social/instance.*` configuration and, when available, count through the

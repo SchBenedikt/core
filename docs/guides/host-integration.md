@@ -17,7 +17,7 @@ you have to provide, and how to boot it without copying the service wiring.
 | Validation, JSON error shape and the `requires_auth` decision | Sessions, bearer tokens, CSRF, CORS and rate limiting |
 | ActivityPub documents, signatures, replay guard, inbound Create/Delete/Announce and delivery | Key storage, TLS, proxy configuration and DNS |
 | In-memory and PDO repositories, durable `PdoJobQueue`/`PdoActivityLog`, plus their contract tests | The migration runner |
-| ATProto record/TID publishing, remote delete, OAuth session refresh and the authorization-code/PAR/revocation client through the `AtprotoAccountResolver`, `AtprotoPublisher`, `AtprotoDeleter` and `AtprotoSessionStore` ports | Account-linking UI/browser callback, the short-lived flow store, credential storage and PDS selection; the core provides metadata discovery and the OAuth protocol client |
+| ATProto record/TID publishing, remote delete, inbound relay/Jetstream/AppView import, OAuth session refresh and the authorization-code/PAR/revocation client through the `AtprotoAccountResolver`, `AtprotoPublisher`, `AtprotoDeleter`, `AtprotoEventSource` and `AtprotoSessionStore` ports | Account-linking UI/browser callback, the short-lived flow store, credential storage, PDS selection and the inbound event transport; the core provides metadata discovery, the OAuth protocol client and the replay-safe importer |
 | A reference assembly for tests and a production assembly for hosts | The worker process/cron and its supervision |
 
 The important boundary: **the core never imports a host**. If you need
@@ -146,6 +146,10 @@ $app = Application::forHost(
     atprotoPublisher: null,      // optional; default is XrpcAtprotoPublisher($http, $atprotoDpop)
     atprotoDpop: $dpop,          // optional; DPopResourceProofProvider for DPoP-bound OAuth tokens
     atprotoPublications: null,   // optional; default is PdoAtprotoPublicationRepository($database)
+    atprotoEventSource: $relay,  // optional; enables inbound sync and the atproto.sync handler
+    atprotoInbound: null,        // optional; default is PdoAtprotoInboundRepository($database)
+    atprotoModeration: null,     // optional; default is AllowAllAtprotoContent
+    atprotoBlobs: null,          // optional; builds blob URLs for the cached post projection
     logger: $logger,             // optional PSR-3 logger
     debug: false,                // never true in production
 );
@@ -166,6 +170,7 @@ The object exposes the parts a host needs:
 | `$app->backfill` | Bounded outbox catch-up for a followed actor; `null` without an HTTP client |
 | `$app->media` | Upload/presentation service; `null` when no `BlobStore` was supplied. Remote imports use the same validation and storage when the HTTP client is bounded |
 | `$app->atproto` | AT Protocol publishing and remote-delete service; present even when disabled, but the route reports `503` until an account resolver and publisher are supplied |
+| `$app->atprotoSync` | Inbound importer, cached feed and status; `null` unless an `AtprotoEventSource` was supplied. It never opens a socket itself |
 | `$app->mastodon` | Mastodon compatibility service, including status creation with an optional poll, media upload/update/delete through the same `$app->media`, local follow/unfollow/relationship reads through `LocalRelationshipService`, private lists and list timelines through `AccountListService`, local notification listing/dismiss/clear/unread state through `NotificationService` and local status/actor search through the optional `PostSearchRepository`/`LocalActorSearch` capabilities; the routes are gated by `social/mastodon.api` and the host must pass token scopes on the request |
 
 `queue` and `activityLog` are required on purpose. An in-memory queue loses
@@ -222,6 +227,9 @@ production bootstrap.
 | `AtprotoPublisher` | Write an `app.bsky.feed.post` record to a PDS; the default authenticated XRPC adapter is sufficient unless the host has its own client. Pass `atprotoDpop` when the linked account uses a DPoP-bound OAuth token, otherwise keep the bearer token | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoDeleter` | Delete the record this core published; the default XRPC adapter implements both write and delete | `XrpcAtprotoPublisher`; fake in tests |
 | `AtprotoSessionStore` | Persist the host's OAuth session and replace it with the rotated tokens; keep tokens in the host's secret store | none; host secret store; `InMemoryAtprotoSessionStore` for tests |
+| `AtprotoEventSource` | Own the relay/Jetstream/AppView transport, reconnect policy and normalization into bounded `AtprotoEventPage` values; the cursor must round-trip unchanged | none; host adapter; `FakeAtprotoEventSource` for tests |
+| `AtprotoModerationPolicy` | Decide whether an inbound author or labeler is allowed | `AllowAllAtprotoContent` by default; host policy otherwise |
+| `AtprotoBlobUrlBuilder` | Turn a DID and blob CID into a host-served media URL; returning `null` keeps the CID without a URL | `PdsAtprotoBlobUrlBuilder`; host URL builder otherwise |
 
 ### Locked accounts and profile fields
 
@@ -314,6 +322,7 @@ The core owns the schema classes, not the migration mechanism:
 - `JobSchema` → `social_job`
 - `ActivityLogSchema` → `social_activity_log`
 - `AtprotoPublicationSchema` → `social_atproto_publication` (AT Protocol idempotency rows)
+- `AtprotoInboundSchema` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account` (host-fed inbound sync, opaque records/tombstones and account availability)
 
 A host with PDO can wrap its handle in `PdoConnection` and call the schema
 `create()` methods for a fresh installation. A host without PDO implements
@@ -387,7 +396,10 @@ answer `503 follows_not_configured`. For AT Protocol publishing, create
 `social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
 supply an `AtprotoAccountResolver`;
 supplying no resolver leaves the existing route at `503 atproto_not_configured`
-without writing anything. `0.7.0` adds no table or column and needs no data
+without writing anything. For inbound sync, create the three tables from
+`AtprotoInboundSchema::statements()` and supply an `AtprotoEventSource`; there
+is no backfill from the outbound publication table, and a host without a
+source needs no inbound tables at all. `0.7.0` adds no table or column and needs no data
 migration; it only requires the host's queue adapter to gain `deadLetter()`
 and its database adapter to expose `TransactionRunner` for atomic post writes.
 There is no migration runner, but `0.6.0` ships a

@@ -1,13 +1,14 @@
-# AT Protocol publishing
+# AT Protocol publishing and inbound sync
 
 The core owns a deliberately small, public, text-only AT Protocol publishing
 foundation. It owns deterministic record writes, the matching remote record
-delete for mirrored posts, the OAuth refresh exchange for a host-owned session
-and the authorization-code/PAR/revocation protocol client. It does not own the
-account-linking UI/callback, the credential store, PDS selection, the AppView or
-a full repository client; those remain in the host or in a future standalone
-client. This guide describes the implemented seam, its limits and what a host
-must provide.
+delete for mirrored posts, the OAuth refresh exchange for a host-owned session,
+the authorization-code/PAR/revocation protocol client and an inbound importer
+for normalized relay/Jetstream/AppView events. It does not own the
+account-linking UI/callback, the credential store, PDS selection, the event
+transport or a full repository client; those remain in the host or in a future
+standalone client. This guide describes the implemented seams, their limits and
+what a host must provide.
 
 ## What is implemented
 
@@ -57,6 +58,11 @@ must provide.
   ES256 DPoP and the mandatory `atproto` scope. It only follows the PDS URL
   chosen by the host and that PDS's single advertised authorization server;
   the browser cannot supply either endpoint.
+- `Domain\Atproto\AtprotoEventSource`, `AtprotoEvent` and
+  `Service\Atproto\AtprotoSyncService` import bounded relay/Jetstream/AppView
+  pages with a durable cursor, sequence/revision ordering, tombstones, account
+  revocation, moderation and an offline cached post feed. The `atproto.sync`
+  job runs one page; the host owns the transport. See [inbound sync](#inbound-sync).
 - `Protocol\Atproto\XrpcAtprotoOAuthClient` starts a flow with a PAR request
   (`response_type=code`, PKCE S256, `dpop_jkt`, client id, redirect URI, scope,
   state and optional `login_hint`), returns the browser authorization URL and
@@ -72,10 +78,12 @@ must provide.
 Only public posts are mirrored. Posts with attachments, non-public posts and
 text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
 the automatic hook and refused by the explicit route; they are never silently
-truncated. Facets, reply references, image/video embeds and likes/reposts are
-implemented (see below); an edit, AppView read, firehose consumer or CAR/MST
-repository is not, and neither is an interaction with a post this instance
-never published.
+truncated. Facets, reply references, image/video embeds, likes/reposts and an
+AppView timeline read are implemented (see below). The core also imports
+normalized inbound relay/Jetstream/AppView pages through
+`AtprotoEventSource`; the host owns the WebSocket/HTTP consumer and hands over
+bounded event pages. A full CAR/MST repository, a built-in firehose consumer
+and an interaction with a post this instance never published are not here.
 Remote delete is implemented for records the core itself published; deleting
 arbitrary PDS records is not, and so is deleting an uploaded blob.
 
@@ -211,6 +219,67 @@ unreadable body `timeline_invalid_response` — an empty page would falsely say
 "no posts". Caching, rendering and mapping DIDs to local users stay with the
 host.
 
+## Inbound sync
+
+`Domain\Atproto\AtprotoEventSource` is the host transport port. It names one
+stable source, pulls a bounded page for an opaque cursor and reports its own
+health. Relay commits, Jetstream events and AppView reconciliation all become
+the same `AtprotoEvent` shape: a validated DID, an account or record kind, the
+record collection/rkey/CID/revision/sequence, an opaque JSON body, optional
+labels and an account status. The core never opens a WebSocket or polls an
+AppView itself.
+
+`Service\Atproto\AtprotoSyncService` owns the replay-safe part:
+
+- One page is pulled outside the write transaction, then all records and the
+  checkpoint commit together. A crash repeats the page instead of losing it.
+- A record is ordered by `sequence` first, otherwise by `rev`. Older events are
+  skipped, an equal sequence/revision with the same CID is a duplicate, and an
+equal key with a different CID is a conflict that is counted but not applied.
+- Account events are authoritative. An inactive or taken-down account purges
+  all its records, and later record events are skipped until the account is
+  active again. A handle cannot be rebound to another DID.
+- A `delete` event stores a tombstone. A later create/update of the same URI
+  can restore it; a second delete is a no-op.
+- A sequence gap marks the checkpoint `reconcile_required`; the next bounded
+  backfill clears it only when it reaches the end of the source page.
+- A failed source poll marks the checkpoint `stale` but leaves cached posts
+  readable. `feed()` uses only stored rows and reports that staleness; it never
+  makes a network request.
+- `app.bsky.feed.post` is projected to text, reply/root references, image or
+  video blobs and validated external cards. All other collections stay opaque.
+  A malformed or unsafe post is skipped, not guessed at.
+- Labels from a blocked labeler and authors refused by
+  `AtprotoModerationPolicy` are skipped. `AllowAllAtprotoContent` is the
+  default; a host supplies its policy through the assembly.
+
+`backfill()` is bounded to 10 pages of at most 100 events and defaults to a
+30-day publication window (maximum 3650 days). Account events and tombstones
+are applied even outside the window, so a revocation is not lost because its
+timestamp is old. `status()` combines the persisted checkpoint with the
+source adapter's health; `feed($did, $limit, $cursor)` returns cached posts
+newest first with an opaque cursor, at most `100` per page.
+
+`JobType::ATPROTO_SYNC` (`atproto.sync`) runs one page from the worker with an
+optional integer `limit` between 1 and 100. A source/transport failure is left
+to the queue backoff. A source mismatch or identity conflict is logged and the
+job completes, so one poison page does not block the worker forever. The
+service is exposed as `$app->atprotoSync` when an `AtprotoEventSource` was
+supplied.
+
+`AtprotoSyncException` exposes a stable `reason`: `atproto_source_unavailable`
+(retryable), `atproto_store_failed` (retryable), `atproto_source_mismatch`
+(terminal for the page), `atproto_identity_conflict` (terminal until an
+operator resolves the handle) and `atproto_invalid_cursor` (caller error). No
+reason includes a token, a record body or a source URL.
+
+`AtprotoInboundSchema` creates `social_atproto_sync_checkpoint` (one cursor and
+outcome row per source), `social_atproto_remote_record` (opaque records and
+tombstones keyed by source and URI) and `social_atproto_remote_account`
+(handle, status, active flag). The PDO adapter is the production store; the
+in-memory adapter is for tests and tools. No schema is shared with the
+outbound `social_atproto_publication` table.
+
 ## Configuration
 
 | App | Key | Default | Meaning |
@@ -249,10 +318,21 @@ $app = Application::forHost(
     atprotoPublisher: null,
     // Optional: defaults to PdoAtprotoPublicationRepository($database).
     atprotoPublications: null,
+    // Optional: enables the inbound importer and atproto.sync handler.
+    atprotoEventSource: $relaySource,
+    // Optional: defaults to PdoAtprotoInboundRepository($database).
+    atprotoInbound: null,
+    // Optional: defaults to AllowAllAtprotoContent.
+    atprotoModeration: null,
+    // Optional: turns blob CIDs into host-served URLs.
+    atprotoBlobs: null,
 );
 ```
 
-`Application::inMemory()` accepts the same three optional arguments for tests,
+`$relaySource` is a host implementation of `AtprotoEventSource`. Without one,
+`$app->atprotoSync` and the `atproto.sync` handler are `null`, so a host that
+only publishes is unchanged. `Application::inMemory()` accepts the same
+optional arguments for tests,
 tools and the demo. Without `atprotoAccounts` the service is not configured;
 `social/atproto.publish` can be on while the route still answers `503
 atproto_not_configured`, which makes a half-finished deployment visible rather
@@ -512,8 +592,11 @@ The full AT Protocol stack is still host/app work:
 - account-linking UI and browser callback, the short-lived flow store, the
   credential store and per-account PDS selection (the protocol client and
   authorization-server discovery are implemented locally);
-- a full repository client (CAR/MST, arbitrary record listing/update) and
-  firehose consumption (AppView timeline reads are implemented as a port);
+- the inbound event transport (WebSocket/HTTP relay or Jetstream consumption,
+  reconnect/backoff and normalization into `AtprotoEvent` pages); the importer,
+  cursor, tombstones, AppView reconciliation state and cached feed are local;
+- a full repository client (CAR/MST, arbitrary record listing/update)
+  (AppView timeline reads are implemented as a port);
 - video transcoding and image processing for AT Protocol (the core uploads
   bytes the caller already prepared);
 - link cards and richer mention/facet targets;
@@ -525,7 +608,7 @@ are implemented locally. Deleting records created outside this core, the
 account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
-The remaining protocol follow-ups after this publishing slice — link cards,
-media embeds and blob uploads, plus the AppView/firehose side — are listed as
-Later in the [roadmap](../roadmap.md). The rest is tracked there as the compatibility
+The remaining protocol follow-ups — link cards, richer media, the host-side
+firehose transport and full repository access — are listed as Later in the
+[roadmap](../roadmap.md). The rest is tracked there as the compatibility
 remainder (M6), not as part of this publishing foundation.

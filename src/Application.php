@@ -135,7 +135,14 @@ use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoBlobUrlBuilder;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
+use AlohaSocial\Core\Domain\Atproto\AllowAllAtprotoContent;
+use AlohaSocial\Core\Domain\Atproto\AtprotoEventSource;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInboundRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoModerationPolicy;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInboundRepository;
+use AlohaSocial\Core\Domain\Atproto\PdoAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
@@ -319,6 +326,8 @@ use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
 use AlohaSocial\Core\Service\Atproto\AtprotoProfileService;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
+use AlohaSocial\Core\Service\Atproto\AtprotoSyncHandler;
+use AlohaSocial\Core\Service\Atproto\AtprotoSyncService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
 use AlohaSocial\Core\Service\Federation\ActorOutboxService;
 use AlohaSocial\Core\Service\Federation\ActorProfileUpdateService;
@@ -422,6 +431,7 @@ final readonly class Application
 		public ?FollowRequestService $followRequests = null,
 		public ?ActorProfileUpdateService $profileUpdates = null,
 		public ?AccountMoveService $accountMoves = null,
+		public ?AtprotoSyncService $atprotoSync = null,
 	) {
 	}
 
@@ -490,6 +500,10 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?AtprotoEventSource $atprotoEventSource = null,
+		?AtprotoInboundRepository $atprotoInbound = null,
+		?AtprotoModerationPolicy $atprotoModeration = null,
+		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -602,6 +616,10 @@ final readonly class Application
 			profileUpdates: $profileUpdates,
 			accountMoveRepository: $accountMoveRepository,
 			remoteActors: $remoteActors,
+			atprotoEventSource: $atprotoEventSource,
+			atprotoInbound: $atprotoInbound,
+			atprotoModeration: $atprotoModeration,
+			atprotoBlobs: $atprotoBlobs,
 			blobStore: $blobStore,
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
@@ -692,6 +710,10 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?AtprotoEventSource $atprotoEventSource = null,
+		?AtprotoInboundRepository $atprotoInbound = null,
+		?AtprotoModerationPolicy $atprotoModeration = null,
+		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
 	): self {
 		$clock ??= new SystemClock();
 		$logger ??= new NullLogger();
@@ -757,6 +779,10 @@ final readonly class Application
 			profileUpdates: $profileUpdates,
 			accountMoveRepository: $accountMoveRepository ?? new PdoAccountMoveRepository($database),
 			remoteActors: $remoteActors,
+			atprotoEventSource: $atprotoEventSource,
+			atprotoInbound: $atprotoInbound ?? new PdoAtprotoInboundRepository($database),
+			atprotoModeration: $atprotoModeration,
+			atprotoBlobs: $atprotoBlobs,
 			scheduledPostRepository: $scheduledPostRepository ?? new PdoScheduledPostRepository($database),
 			filterRuleRepository: $filterRuleRepository ?? new PdoFilterRuleRepository($database),
 			remotePollRepository: new PdoRemotePollRepository($database),
@@ -859,6 +885,10 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?AtprotoEventSource $atprotoEventSource = null,
+		?AtprotoInboundRepository $atprotoInbound = null,
+		?AtprotoModerationPolicy $atprotoModeration = null,
+		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1007,6 +1037,16 @@ final readonly class Application
 		$atprotoTimeline = $httpClient === null
 			? null
 			: new XrpcAtprotoTimelineReader($httpClient, $atprotoDpop);
+		$atprotoSync = $atprotoEventSource === null
+			? null
+			: new AtprotoSyncService(
+				$atprotoEventSource,
+				$atprotoInbound ?? new InMemoryAtprotoInboundRepository(),
+				$atprotoModeration ?? new AllowAllAtprotoContent(),
+				$clock,
+				$transactions,
+				$atprotoBlobs,
+			);
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$followRequestService = $followRequests
 			?? new FollowRequestService($followers, $followerService, $activities, $queue);
@@ -1453,6 +1493,12 @@ final readonly class Application
 				new AccountMoveHandler($accountMoveService),
 			);
 		}
+		if ($atprotoSync !== null) {
+			$jobHandlers = $jobHandlers->with(
+				JobType::ATPROTO_SYNC,
+				new AtprotoSyncHandler($atprotoSync, $logger),
+			);
+		}
 		$jobHandlers = $jobHandlers
 			->with(JobType::ATPROTO_PUBLISH, new AtprotoPublishHandler($atprotoService, $logger))
 			->with(JobType::ATPROTO_DELETE, new AtprotoDeleteHandler($atprotoService, $logger))
@@ -1512,6 +1558,7 @@ final readonly class Application
 			$followRequestService,
 			$profileUpdateService,
 			$accountMoveService,
+			$atprotoSync,
 		);
 	}
 

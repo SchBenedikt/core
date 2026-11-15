@@ -309,7 +309,8 @@ php bin/migration-inventory --summary  # counts and open gaps
 | `keyword_filters` | core | supported | — | `social_filter` rules with contexts, action and keyword list |
 | `direct_messages` | core | gap | — | conversations and delivery (#19) |
 | `search_index` | core | supported | — | `social_search_index`, `social_search_trend`; local post search remains |
-| `atproto_publications` | core | partial | — | publication rows; inbound relay #22 |
+| `atproto_publications` | core | supported | — | publication rows and remote delete |
+| `atproto_inbound` | core | supported | — | sync checkpoint, opaque remote records/tombstones and account availability; the host owns the event transport |
 | `queue` | core | supported | v1 | `social_job` |
 | `activity_log` | core | supported | v1 | `social_activity_log` |
 | `host_accounts_sessions` | host | host-only | — | users, sessions, roles |
@@ -354,6 +355,7 @@ Create the core tables with the schema classes from the host's migration:
 - `social_boost` — `BoostSchema` (local Mastodon-compatible reblogs; no legacy import)
 - `social_notification` — `NotificationSchema` (local favourite/follow/mention/reblog notifications; no legacy import)
 - `social_account_move` — `AccountMoveSchema` (Move progress; new table, no legacy import)
+- `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account` — `AtprotoInboundSchema` (inbound sync; only needed when an `AtprotoEventSource` is wired; no legacy import)
 - `social_follower` — `FollowerSchema`
 - `social_following` — `FollowingSchema`
 - `social_remote_post` — `RemotePostSchema` (new remote content; no legacy import)
@@ -479,12 +481,12 @@ outbound write before the actor, note and activity URLs for that account have
 passed the shadow comparison. A peer that saw a wrong URL cannot un-see it;
 deleting and re-sending the activity is not a retry, it is a second activity.
 
-The core now owns the public text-only AT Protocol publishing foundation, but
-not account linking, OAuth/session storage or the full repository/AppView
-stack. Do not migrate those account credentials or the old AT Protocol stack
-until the host adapter is ready; publication rows in
-`social_atproto_publication` are new core rows, not a copy of the old app's
-data. Remote-post backfill, thread/context fetching and media processing now
+The core now owns the public text-only AT Protocol publishing foundation and a
+replay-safe inbound importer, but not account linking, OAuth/session storage,
+the event transport or a full repository stack. Do not migrate those account
+credentials or the old AT Protocol stack until the host adapter is ready;
+publication rows in `social_atproto_publication` and inbound rows in
+`AtprotoInboundSchema` are new core rows, not a copy of the old app's data. Remote-post backfill, thread/context fetching and media processing now
 exist in the core, so migrate those only through the normal cutover phases. A
 core feature that does not exist cannot be replaced by a host-specific branch
 in `src/`. See [AT Protocol publishing](atproto.md).
@@ -546,4 +548,4 @@ Federated writes need two extra rules, because a rollback cannot unsend them:
 - A universal migration runner in this repository.
 - Replacing the Nextcloud admin UI, auth or media jobs during the core
   migration.
-- AT Protocol account/OAuth credential migration and the full repository/AppView stack before their host adapter exists.
+- AT Protocol account/OAuth credential migration, the relay/Jetstream transport and the full repository/AppView stack before their host adapter exists.

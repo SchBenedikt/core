@@ -18,8 +18,9 @@ Protocol linking flow and a phase plan with acceptance checks — is in
    statements    (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
    `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
-   `MuteSchema`, `AccountListSchema`, `AtprotoPublicationSchema`, `JobSchema`,
-   `ActivityLogSchema`) from the migration step.
+   `MuteSchema`, `AccountListSchema`, `AtprotoPublicationSchema`,
+   `AtprotoInboundSchema`, `JobSchema`, `ActivityLogSchema`) from the migration step.
+   `AtprotoInboundSchema` is only needed when an `AtprotoEventSource` is wired.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because
    `PdoPostRepository` reads polls for every status;    `social_favourite`, `social_bookmark`, `social_boost` and

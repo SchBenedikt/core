@@ -57,13 +57,13 @@ the host that serves it. See
    disabled by default where documented; no host-specific branch appears in
    `src/`.
 
-## Where we are (2026-11-14)
+## Where we are (2026-11-15)
 
 | Measure | Value |
 | --- | --- |
 | HTTP contract | 128 routes, 53 of them under the Mastodon prefix |
-| Persistence | 32 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 189 PHP test files (1633 tests, 8510 assertions) and 9 UI test files (69 tests) |
+| Persistence | 34 schema classes, in-memory and PDO adapters behind shared contract tests |
+| Tests | 195 PHP test files (1667 tests, 8671 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -155,10 +155,11 @@ the host that serves it. See
   with `app.bsky.embed.images`/`#video` embeds, likes and reposts as
   `app.bsky.feed.like`/`#.repost` records, the `app.bsky.actor.profile` record
   with avatar/banner blobs, an `app.bsky.feed.getTimeline` read port,
-  idempotent publication rows, a read
+  idempotent publication rows, replay-safe inbound relay/Jetstream/AppView
+  import with cursors, tombstones and a cached author feed, a read
   of the stored publication state, remote delete, OAuth session refresh
   and the authorization-code/PAR/revocation protocol client. Account linking
-  UI, credential storage and PDS selection stay with the host. See
+  UI, credential storage, PDS selection and the event transport stay with the host. See
   [AT Protocol publishing](guides/atproto.md) and
   [two protocols, one model](guides/dual-protocol.md).
 - **Mastodon compatibility** — 44 local routes behind a configurable,
@@ -306,9 +307,10 @@ local gaps. The detailed lists live in the guides.
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
   store, credential storage and PDS selection; CAR/MST repository access; video
-  transcoding; the firehose and incoming AppView events; link cards; migrating
-  the existing Nextcloud implementation. The AppView timeline read is a core
-  port; rendering it is host work. See
+  transcoding; the relay/Jetstream/AppView transport and reconnect policy; link
+  cards; migrating the existing Nextcloud implementation. The AppView timeline
+  read and inbound importer are core ports/services; rendering and the socket
+  are host work. See
   [AT Protocol publishing](guides/atproto.md#remaining-external-work).
 - **Hosts:** login, sessions, account creation/reset, CSRF, bearer-token
   issuance, admin settings, navigation, templates, deployment and the worker

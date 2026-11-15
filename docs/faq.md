@@ -47,8 +47,8 @@ server will use its own migration runner. The core shares the *schema*
 (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `MuteSchema`,
 `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
 `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
-`AccountListSchema`, `AtprotoPublicationSchema`, `JobSchema`,
-`ActivityLogSchema`), not the runner.
+`AccountListSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`,
+`JobSchema`, `ActivityLogSchema`), not the runner.
 
 ### How do I block an actor?
 

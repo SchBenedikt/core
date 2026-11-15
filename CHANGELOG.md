@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Inbound AT Protocol sync. `AtprotoEventSource` is the host transport port for
+  relay commits, Jetstream events and AppView reconciliation; the host
+  normalizes them into bounded `AtprotoEventPage` values. `AtprotoSyncService`
+  validates the DID/record shape, orders by sequence then revision, skips
+  duplicates and older events, counts conflicting CIDs, stores tombstones,
+  applies account takedowns (purging records and blocking later events), refuses
+  handle rebinding, applies author/label moderation, marks sequence gaps for
+  bounded reconciliation and keeps a stale cached feed readable after a source
+  failure. `feed()` projects `app.bsky.feed.post` text, replies, images, video and
+  external cards; other lexicons stay opaque. The new
+  `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and
+  `social_atproto_remote_account` tables have in-memory and PDO adapters behind
+  one contract test. `atproto.sync` runs one page from the worker;
+  `Application` wires the optional source, store, moderation policy and blob URL
+  builder, exposing `$app->atprotoSync`. Backfill is bounded to ten pages and a
+  30-day default window.
 - ActivityPub `Move` and identity portability. `AccountMoveService` verifies
   that the signed origin and target actor documents name each other in
   `alsoKnownAs`, rejects a moved target, and re-points outgoing follows and
