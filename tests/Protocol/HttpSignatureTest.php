@@ -253,6 +253,54 @@ final class HttpSignatureTest extends TestCase
 		);
 	}
 
+	public function testASignatureWithoutTheHostHeaderIsRefused(): void
+	{
+		$signed = $this->sign('body');
+		$incoming = $this->incoming($signed);
+		$incoming['signature'] = preg_replace(
+			'/headers="[^"]*"/',
+			'headers="(request-target) date digest"',
+			$incoming['signature'],
+		);
+
+		$this->assertRefusal(
+			'missing_header',
+			fn () => HttpSignature::verify(
+				self::$key->publicKeyPem(),
+				'POST',
+				self::TARGET,
+				$incoming,
+				'body',
+				300,
+				$this->now,
+			),
+		);
+	}
+
+	public function testASignatureWithoutTheDateHeaderIsRefused(): void
+	{
+		$signed = $this->sign('body');
+		$incoming = $this->incoming($signed);
+		$incoming['signature'] = preg_replace(
+			'/headers="[^"]*"/',
+			'headers="(request-target) host digest"',
+			$incoming['signature'],
+		);
+
+		$this->assertRefusal(
+			'missing_header',
+			fn () => HttpSignature::verify(
+				self::$key->publicKeyPem(),
+				'POST',
+				self::TARGET,
+				$incoming,
+				'body',
+				300,
+				$this->now,
+			),
+		);
+	}
+
 	public function testAMissingSignatureHeaderIsRefused(): void
 	{
 		$this->assertRefusal(

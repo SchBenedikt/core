@@ -136,8 +136,15 @@ final class HttpSignature
 			static fn (string $name): bool => $name !== '',
 		));
 
-		if (!in_array('(request-target)', $headerList, true)) {
-			throw SignatureException::malformed('The (request-target) header must be signed.');
+		// These are the request-line and freshness guarantees this verifier
+		// promises. A signature over only the request target would be valid
+		// forever and could be replayed against another host, so an unsigned
+		// required header is a refusal even when the RSA signature itself is
+		// valid.
+		foreach (['(request-target)', 'host', 'date'] as $required) {
+			if (!in_array($required, $headerList, true)) {
+				throw SignatureException::missingHeader($required);
+			}
 		}
 
 		$values = [];
