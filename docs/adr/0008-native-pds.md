@@ -1,6 +1,6 @@
 # ADR 0008 — Optional native PDS with Core-owned identity and repository
 
-- Status: accepted
+- Status: accepted (amended 2026-11-16: PLC publication and incremental sync added; account recovery/tombstone remains host-owned)
 - Date: 2026-11-15
 - Related: [ADR 0001](0001-shared-core-two-hosts.md),
   [ADR 0006](0006-host-owned-accounts.md),
@@ -36,8 +36,10 @@ migration with a new commit and no silent DID change.
 Core owns:
 
 - The DID lifecycle state machine for native accounts: DID creation,
-  PLC operation construction, signing-key and rotation-key references,
-  rotation, recovery and tombstone rules.
+  PLC operation construction and directory publication, signing-key and
+  rotation-key references, and rotation. Account recovery, tombstone and
+  handle proof stay with the host account lifecycle (ADR 0006); the PDS does
+  not add an account table or key escrow.
 - The repository engine: CID, canonical DAG-CBOR, CAR, MST, commit chain,
   revision/TID ordering, record validation and repository integrity checks.
 - The PDS XRPC services (`describeRepo`, `getRecord`, `listRecords`,
@@ -55,8 +57,10 @@ The host owns:
   account-to-local-user mapping.
 - The actual secret store; private keys are sealed with `Security\SecretBox`
   and never written into a repository record, source tree, log or CAR file.
-- PLC directory transport behind a port, admin/moderation UI, abuse handling,
-  deployment, backup and the decision whether native PDS is enabled.
+- PLC network policy and credentials where needed, admin/moderation UI, abuse
+  handling, deployment, backup and the decision whether native PDS is enabled.
+  The core ships the `PdsDirectory` port and an HTTP client; the host supplies
+  the client instance and its proxy/CA policy.
 - Quota values and rate-limit configuration; Core enforces them.
 
 ### Identity and keys
@@ -151,7 +155,7 @@ proof that a relay or AppView indexed it; that requires a real-peer check.
 
 ## Implementation status
 
-As of 2026-11-15, stages 1–4 are implemented:
+As of 2026-11-16, stages 1–5 are implemented:
 
 - `src/Protocol/Atproto/Repository` has CID, canonical DAG-CBOR, CAR, MST
   validation, read-only traversal, a multi-layer `MstBuilder` that matches the
@@ -159,17 +163,36 @@ As of 2026-11-15, stages 1–4 are implemented:
   `tests/Protocol/Repository`.
 - `src/Domain/Atproto/Pds` has the durable PDS schema, in-memory and PDO stores,
   `did:plc` generation, DID documents, signed PLC operations, sealed key
-  lifecycle, rotation, record writes with chained version-3 commits and CAR
-  export.
+  lifecycle, rotation, record create/put/delete and atomic batch writes with
+  chained version-3 commits, CAR export, sync metadata and blob metadata.
+- Blob bytes go through the host `BlobStore`; `uploadBlob`, `getBlob` and
+  `listBlobs` enforce authentication, DID scoping, media-type validation, a
+  5 MiB per-blob limit and a 50 MiB per-repository quota.
 - The XRPC routes are served by `PdsXrpcHandler` behind the normal kernel and
   auth middleware; `Application` builds the optional service from
-  `atproto.pds.*` configuration.
-- `tests/Integration/PdsHttpTest.php` starts a real PHP HTTP server over SQLite
-  and verifies DID creation/resolution, record reads/lists, commit signatures,
-  restart persistence and rotation.
+  `atproto.pds.*` configuration and passes the host blob store.
+- The durable event log assigns a global, monotonic sequence inside the commit
+  transaction. `bin/pds-firehose` serves a real WebSocket
+  `subscribeRepos` endpoint, replays from a `cursor` and emits DAG-CBOR
+  `#commit` frames for record mutations and blob uploads.
+- `sync.getBlocks` exports requested blocks plus the head as CARv1,
+  `sync.getRepo?since=…` exports the incremental block set, and
+  `repo.importRepo` validates and imports a CAR into an empty repository while
+  preserving record CIDs.
+- `PdsDirectory` publishes signed PLC operations. The bundled
+  `PlcDirectoryClient` posts the signed JSON operation to the standard PLC
+  endpoint; genesis and rotation submit automatically when a directory is
+  configured, and `identity.submitPlcOperation` retries a failed submission.
+- `tests/Integration/PdsHttpTest.php` starts a real PHP HTTP server and a real
+  firehose process over SQLite and verifies DID creation/resolution, record
+  reads/lists, commit signatures, restart persistence, rotation,
+  replacement/deletion/batch commits, durable blobs, CAR import/getBlocks and
+  WebSocket live delivery plus cursor replay.
 
-**Not implemented:** blob upload/authorization and quota accounting, the
-firehose, `putRecord`/`deleteRecord`, `importRepo`, PLC directory transport,
-recovery/tombstone operations, and migration from a linked PDS. The native PDS
-remains disabled by default and is not a claim that a public relay has indexed
-its records.
+**Deliberate boundary:** account recovery, tombstone and handle-proof
+workflows remain host account-lifecycle operations (ADR 0006). They need the
+host's credentials and verification transport, so the core exposes signed PLC
+operations and repository state instead of adding a second account table.
+Migration from a linked PDS is likewise a host workflow using the local
+`importRepo`/`getRepo` primitive. The native PDS remains disabled by default
+and is not a claim that a public relay has indexed its records.

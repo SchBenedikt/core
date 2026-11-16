@@ -82,10 +82,13 @@ truncated. Facets, reply references, image/video embeds, likes/reposts and an
 AppView timeline read are implemented (see below). The core also imports
 normalized inbound relay/Jetstream/AppView pages through
 `AtprotoEventSource`; the host owns the WebSocket/HTTP consumer and hands over
-bounded event pages. A full CAR/MST repository, a built-in firehose consumer
-and an interaction with a post this instance never published are not here.
-Remote delete is implemented for records the core itself published; deleting
-arbitrary PDS records is not, and so is deleting an uploaded blob.
+bounded event pages. This external-PDS publishing path does not include a
+built-in firehose consumer; the optional self-hosted native PDS does provide
+the full CAR/MST repository and `bin/pds-firehose` WebSocket server (see
+[native PDS](atproto-repository.md)). An interaction with a post this instance
+never published is not here. Remote delete is implemented for records the core
+itself published; deleting arbitrary PDS records is not, and so is deleting an
+uploaded blob.
 
 OAuth session refresh and the authorization-code/PAR/revocation protocol are
 implemented. The browser redirect, the short-lived flow store keyed by state,
@@ -610,8 +613,8 @@ are implemented locally. Deleting records created outside this core, the
 account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
-The remaining protocol follow-ups — link cards, richer media, the host-side
-firehose transport and full repository access — are listed as Later in the
+The remaining protocol follow-ups — link cards, richer media and the
+relay/AppView consumer transport — are listed as Later in the
 [roadmap](../roadmap.md). The rest is tracked there as the compatibility
 remainder (M6), not as part of this publishing foundation.
 
@@ -620,4 +623,5 @@ this publishing path. Its accepted architecture and security gates are in
 [ADR 0008](../adr/0008-native-pds.md); the working identity/repository store,
 DID/PLC lifecycle and XRPC routes are documented in
 [Native AT Protocol PDS](atproto-repository.md). It is disabled by default;
-blob authorization and the firehose remain follow-ups.
+blob authorization, CAR import/blocks and the self-hosted firehose WebSocket
+are implemented.

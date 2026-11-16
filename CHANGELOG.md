@@ -13,12 +13,23 @@ All notable changes to this project are documented here. The format follows
   block set, alongside CIDv1, canonical DAG-CBOR, CAR v1, MST validation and
   P-256 signed commits. `Domain\Atproto\Pds` adds the durable identity/key/
   record/commit/block/PLC schema, transactional in-memory and PDO stores,
-  `did:plc` generation, DID documents, signed PLC operations, record creation
-  with chained version-3 commits and CAR export. The identity/repo/sync XRPC
-  routes are behind the normal kernel and auth middleware and are disabled by
-  default; `atproto.pds.secret_box_key` (or a host `SecretBox`) seals private
-  keys. The guide documents the surface and its remaining gaps; remote direct
-  messages stay blocked behind the E2EE/MLS decision in
+  `did:plc` generation, DID documents, signed PLC operations, record
+  create/put/delete and atomic batch writes with chained version-3 commits,
+  CAR export, sync metadata, blob metadata and a durable
+  gap-free firehose sequence. Blob bytes use the host `BlobStore`;
+  upload/read/list enforce DID scoping, media-type validation, a 5 MiB
+  per-blob limit and a 50 MiB per-repository quota. `sync.getBlocks` exports
+  requested blocks as CARv1, `sync.getRepo?since=` exports only changed blocks,
+  and `repo.importRepo` validates a CAR into an empty repository while
+  preserving record CIDs. `PdsDirectory`/`PlcDirectoryClient` publish signed
+  PLC operations, with genesis and rotation submission plus an authenticated
+  retry route. `bin/pds-firehose` serves the real
+  `subscribeRepos` WebSocket, emits DAG-CBOR `#commit` frames for every
+  mutation and blob upload, and replays from a persisted cursor. The identity/
+  repo/server/sync XRPC routes are behind the normal kernel and auth middleware
+  and are disabled by default; `atproto.pds.secret_box_key` (or a host
+  `SecretBox`) seals private keys. Remote direct messages stay blocked behind
+  the E2EE/MLS decision in
   [ADR 0009](docs/adr/0009-e2ee-direct-messages.md).
 - Reversible post archives, profile pins and owner-scoped media collections.
   `social_post.archived_at` keeps an archived post addressable by its public
