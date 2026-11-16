@@ -180,7 +180,7 @@ final class DagCbor
 			throw new InvalidArgumentException('A DAG-CBOR CID link is missing its identity prefix.');
 		}
 
-		return Cid::fromBytes(substr($payload, 1));
+		return Cid::fromBytes(substr($payload, 1), true);
 	}
 
 	private static function readBytes(string $bytes, int &$offset, int $length): string

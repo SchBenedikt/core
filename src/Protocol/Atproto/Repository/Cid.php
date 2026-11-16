@@ -24,6 +24,8 @@ final readonly class Cid
 
 	private const DAG_CBOR_CODEC = 0x71;
 
+	private const RAW_CODEC = 0x55;
+
 	private const SHA2_256 = 0x12;
 
 	private const DIGEST_LENGTH = 32;
@@ -36,25 +38,31 @@ final readonly class Cid
 
 	public static function forData(string $data): self
 	{
-		return self::fromBytes(
-			Varint::encode(self::VERSION)
-			. Varint::encode(self::DAG_CBOR_CODEC)
-			. Varint::encode(self::SHA2_256)
-			. Varint::encode(self::DIGEST_LENGTH)
-			. hash('sha256', $data, true),
-		);
+		return self::forCodec(self::DAG_CBOR_CODEC, $data);
+	}
+
+	/**
+	 * A raw-codec CID for bytes that are not DAG-CBOR, such as a PDS blob.
+	 */
+	public static function forBlob(string $data): self
+	{
+		return self::forCodec(self::RAW_CODEC, $data);
 	}
 
 	public static function fromString(string $value): self
 	{
-		if ($value === '' || $value[0] !== 'b') {
-			throw new InvalidArgumentException('A repository CID must use lowercase base32 multibase.');
-		}
-
-		return self::fromBytes(self::base32Decode(substr($value, 1)));
+		return self::fromBytes(self::decodeMultibase($value));
 	}
 
-	public static function fromBytes(string $bytes): self
+	/**
+	 * Parses a raw-codec CID, as used by a PDS blob reference.
+	 */
+	public static function fromBlobString(string $value): self
+	{
+		return self::fromBytes(self::decodeMultibase($value), true);
+	}
+
+	public static function fromBytes(string $bytes, bool $allowRaw = false): self
 	{
 		$offset = 0;
 		$version = Varint::decode($bytes, $offset);
@@ -63,7 +71,8 @@ final readonly class Cid
 		$length = Varint::decode($bytes, $offset);
 
 		if ($version !== self::VERSION
-			|| $codec !== self::DAG_CBOR_CODEC
+			|| (!$allowRaw && $codec !== self::DAG_CBOR_CODEC)
+			|| ($allowRaw && $codec !== self::DAG_CBOR_CODEC && $codec !== self::RAW_CODEC)
 			|| $hash !== self::SHA2_256
 			|| $length !== self::DIGEST_LENGTH) {
 			throw new InvalidArgumentException('The CID is not a CIDv1 dag-cbor SHA-256 value.');
@@ -122,6 +131,26 @@ final readonly class Cid
 	public function __toString(): string
 	{
 		return $this->toString();
+	}
+
+	private static function forCodec(int $codec, string $data): self
+	{
+		$bytes = Varint::encode(self::VERSION)
+			. Varint::encode($codec)
+			. Varint::encode(self::SHA2_256)
+			. Varint::encode(self::DIGEST_LENGTH)
+			. hash('sha256', $data, true);
+
+		return $codec === self::DAG_CBOR_CODEC ? self::fromBytes($bytes) : new self($bytes);
+	}
+
+	private static function decodeMultibase(string $value): string
+	{
+		if ($value === '' || $value[0] !== 'b') {
+			throw new InvalidArgumentException('A repository CID must use lowercase base32 multibase.');
+		}
+
+		return self::base32Decode(substr($value, 1));
 	}
 
 	private static function base32Encode(string $bytes): string

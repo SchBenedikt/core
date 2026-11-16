@@ -149,16 +149,18 @@ final class PdoPdsRepository implements PdsRepository
 		PdsIdentity $identity,
 		PdsCommit $commit,
 		array $blocks,
-		?PdsRecord $put,
-		?array $delete,
-	): void {
-		$this->database->transaction(function (Connection $database) use (
+		array $puts,
+		array $deletes,
+		?PdsEvent $event = null,
+	): ?PdsEvent {
+		return $this->database->transaction(function (Connection $database) use (
 			$identity,
 			$commit,
 			$blocks,
-			$put,
-			$delete,
-		): void {
+			$puts,
+			$deletes,
+			$event,
+		): ?PdsEvent {
 			$database->execute(
 				'UPDATE ' . PdsSchema::IDENTITY_TABLE
 				. ' SET head_cid = ?, head_rev = ?, seq = ?, updated_at = ? WHERE did = ?',
@@ -174,14 +176,18 @@ final class PdoPdsRepository implements PdsRepository
 			$this->insertCommit($database, $commit);
 			$this->insertBlocks($database, $identity->did, $blocks);
 
-			if ($delete !== null) {
+			foreach ($deletes as $delete) {
 				$database->execute(
 					'DELETE FROM ' . PdsSchema::RECORD_TABLE . ' WHERE did = ? AND collection = ? AND rkey = ?',
 					[$identity->did, $delete[0], $delete[1]],
 				);
 			}
 
-			if ($put !== null) {
+			foreach ($puts as $put) {
+				$database->execute(
+					'DELETE FROM ' . PdsSchema::RECORD_TABLE . ' WHERE did = ? AND collection = ? AND rkey = ?',
+					[$put->did, $put->collection, $put->rkey],
+				);
 				$database->execute(
 					'INSERT INTO ' . PdsSchema::RECORD_TABLE
 					. ' (did, collection, rkey, cid, record_cbor, created_at, updated_at)'
@@ -197,7 +203,89 @@ final class PdoPdsRepository implements PdsRepository
 					],
 				);
 			}
+
+			return $event === null ? null : $this->insertEvent($database, $event);
 		});
+	}
+
+	public function appendEvent(PdsEvent $event): PdsEvent
+	{
+		return $this->database->transaction(
+			fn (Connection $database): PdsEvent => $this->insertEvent($database, $event),
+		);
+	}
+
+	public function eventsAfter(int $cursor, int $limit): array
+	{
+		$rows = $this->database->fetchAll(
+			'SELECT * FROM ' . PdsSchema::EVENT_TABLE . ' WHERE seq > ? ORDER BY seq ASC LIMIT ?',
+			[$cursor, max(1, $limit)],
+		);
+
+		return array_map(fn (array $row): PdsEvent => $this->hydrateEvent($row), $rows);
+	}
+
+	public function latestSeq(): int
+	{
+		$value = $this->database->fetchValue(
+			'SELECT COALESCE(MAX(seq), 0) FROM ' . PdsSchema::EVENT_TABLE,
+		);
+
+		return (int) ($value ?? 0);
+	}
+
+	public function identities(): array
+	{
+		$rows = $this->database->fetchAll(
+			'SELECT * FROM ' . PdsSchema::IDENTITY_TABLE . ' ORDER BY created_at ASC, did ASC',
+		);
+
+		return array_map(fn (array $row): PdsIdentity => $this->hydrateIdentity($row), $rows);
+	}
+
+	public function blobs(string $did): array
+	{
+		$rows = $this->database->fetchAll(
+			'SELECT * FROM ' . PdsSchema::BLOB_TABLE . ' WHERE did = ? ORDER BY cid ASC',
+			[$did],
+		);
+
+		$blobs = [];
+		foreach ($rows as $row) {
+			$blob = $this->hydrateBlob($row);
+			$blobs[$blob->cid] = $blob;
+		}
+
+		return $blobs;
+	}
+
+	public function blob(string $did, string $cid): ?PdsBlob
+	{
+		$row = $this->database->fetchOne(
+			'SELECT * FROM ' . PdsSchema::BLOB_TABLE . ' WHERE did = ? AND cid = ?',
+			[$did, $cid],
+		);
+
+		return $row === null ? null : $this->hydrateBlob($row);
+	}
+
+	public function putBlob(PdsBlob $blob): void
+	{
+		$this->database->execute(
+			'INSERT INTO ' . PdsSchema::BLOB_TABLE
+			. ' (did, cid, mime_type, size, created_at) VALUES (?, ?, ?, ?, ?)',
+			[$blob->did, $blob->cid, $blob->mimeType, $blob->size, $blob->createdAt],
+		);
+	}
+
+	public function totalBlobBytes(string $did): int
+	{
+		$value = $this->database->fetchValue(
+			'SELECT COALESCE(SUM(size), 0) FROM ' . PdsSchema::BLOB_TABLE . ' WHERE did = ?',
+			[$did],
+		);
+
+		return (int) ($value ?? 0);
 	}
 
 	public function commits(string $did): array
@@ -336,6 +424,74 @@ final class PdoPdsRepository implements PdsRepository
 		}
 	}
 
+	private function insertEvent(Connection $database, PdsEvent $event): PdsEvent
+	{
+		$seq = $this->nextSequence($database);
+		$stored = $event->withSeq($seq);
+		$database->execute(
+			'INSERT INTO ' . PdsSchema::EVENT_TABLE
+			. ' (seq, did, commit_cid, rev, since_rev, ops_json, blocks_car, blobs_json, created_at)'
+			. ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				$stored->seq,
+				$stored->did,
+				$stored->commitCid,
+				$stored->rev,
+				$stored->sinceRev,
+				json_encode($stored->ops, JSON_THROW_ON_ERROR),
+				base64_encode($stored->blocks),
+				json_encode($stored->blobs, JSON_THROW_ON_ERROR),
+				$stored->createdAt,
+			],
+		);
+
+		return $stored;
+	}
+
+	private function nextSequence(Connection $database): int
+	{
+		$value = $database->fetchValue(
+			'SELECT value FROM ' . PdsSchema::SEQUENCE_TABLE . ' WHERE name = ?',
+			['firehose'],
+		);
+		if ($value === null) {
+			$database->execute(
+				'INSERT INTO ' . PdsSchema::SEQUENCE_TABLE . ' (name, value) VALUES (?, ?)',
+				['firehose', 1],
+			);
+
+			return 1;
+		}
+
+		$database->execute(
+			'UPDATE ' . PdsSchema::SEQUENCE_TABLE . ' SET value = value + 1 WHERE name = ?',
+			['firehose'],
+		);
+
+		return (int) $database->fetchValue(
+			'SELECT value FROM ' . PdsSchema::SEQUENCE_TABLE . ' WHERE name = ?',
+			['firehose'],
+		);
+	}
+
+	private function hydrateEvent(array $row): PdsEvent
+	{
+		$ops = json_decode((string) $row['ops_json'], true);
+		$blobs = json_decode((string) $row['blobs_json'], true);
+
+		return new PdsEvent(
+			(int) $row['seq'],
+			(string) $row['did'],
+			(string) $row['commit_cid'],
+			(string) $row['rev'],
+			(string) $row['since_rev'],
+			is_array($ops) ? $ops : [],
+			base64_decode((string) $row['blocks_car'], true) ?: '',
+			is_array($blobs) ? array_values(array_map('strval', $blobs)) : [],
+			(string) $row['created_at'],
+		);
+	}
+
 	private function insertOperation(Connection $database, PdsPlcOperation $operation): void
 	{
 		$database->execute(
@@ -393,6 +549,17 @@ final class PdoPdsRepository implements PdsRepository
 			base64_decode((string) $row['record_cbor'], true) ?: '',
 			(string) $row['created_at'],
 			(string) $row['updated_at'],
+		);
+	}
+
+	private function hydrateBlob(array $row): PdsBlob
+	{
+		return new PdsBlob(
+			(string) $row['did'],
+			(string) $row['cid'],
+			(string) $row['mime_type'],
+			(int) $row['size'],
+			(string) $row['created_at'],
 		);
 	}
 

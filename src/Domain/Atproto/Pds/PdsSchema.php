@@ -32,6 +32,12 @@ final class PdsSchema
 
 	public const PLC_TABLE = 'social_pds_plc_operation';
 
+	public const BLOB_TABLE = 'social_pds_blob';
+
+	public const EVENT_TABLE = 'social_pds_event';
+
+	public const SEQUENCE_TABLE = 'social_pds_sequence';
+
 	/**
 	 * @return list<string>
 	 */
@@ -105,7 +111,75 @@ final class PdsSchema
 			. ' PRIMARY KEY (did, cid)'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::PLC_TABLE . '_seq ON ' . self::PLC_TABLE . ' (did, seq)',
+			'CREATE TABLE ' . self::BLOB_TABLE . ' ('
+			. ' did VARCHAR(255) NOT NULL,'
+			. ' cid VARCHAR(255) NOT NULL,'
+			. ' mime_type VARCHAR(255) NOT NULL,'
+			. ' size INTEGER NOT NULL,'
+			. ' created_at VARCHAR(20) NOT NULL,'
+			. ' PRIMARY KEY (did, cid)'
+			. ')',
+			'CREATE TABLE ' . self::EVENT_TABLE . ' ('
+			. ' seq INTEGER NOT NULL PRIMARY KEY,'
+			. ' did VARCHAR(255) NOT NULL,'
+			. ' commit_cid VARCHAR(255) NOT NULL,'
+			. ' rev VARCHAR(64) NOT NULL,'
+			. ' since_rev VARCHAR(64) NOT NULL,'
+			. ' ops_json TEXT NOT NULL,'
+			. ' blocks_car TEXT NOT NULL,'
+			. ' blobs_json TEXT NOT NULL,'
+			. ' created_at VARCHAR(20) NOT NULL'
+			. ')',
+			'CREATE INDEX ' . self::EVENT_TABLE . '_did ON ' . self::EVENT_TABLE . ' (did, seq)',
+			'CREATE TABLE ' . self::SEQUENCE_TABLE . ' ('
+			. ' name VARCHAR(32) NOT NULL PRIMARY KEY,'
+			. ' value INTEGER NOT NULL'
+			. ')',
+			'INSERT INTO ' . self::SEQUENCE_TABLE . " (name, value) VALUES ('firehose', 0)",
 		];
+	}
+
+	/**
+	 * Statements that can be applied to an installation created before blobs.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'CREATE TABLE IF NOT EXISTS ' . self::BLOB_TABLE . ' ('
+			. ' did VARCHAR(255) NOT NULL,'
+			. ' cid VARCHAR(255) NOT NULL,'
+			. ' mime_type VARCHAR(255) NOT NULL,'
+			. ' size INTEGER NOT NULL,'
+			. ' created_at VARCHAR(20) NOT NULL,'
+			. ' PRIMARY KEY (did, cid)'
+			. ')',
+			'CREATE TABLE IF NOT EXISTS ' . self::EVENT_TABLE . ' ('
+			. ' seq INTEGER NOT NULL PRIMARY KEY,'
+			. ' did VARCHAR(255) NOT NULL,'
+			. ' commit_cid VARCHAR(255) NOT NULL,'
+			. ' rev VARCHAR(64) NOT NULL,'
+			. ' since_rev VARCHAR(64) NOT NULL,'
+			. ' ops_json TEXT NOT NULL,'
+			. ' blocks_car TEXT NOT NULL,'
+			. ' blobs_json TEXT NOT NULL,'
+			. ' created_at VARCHAR(20) NOT NULL'
+			. ')',
+			'CREATE INDEX IF NOT EXISTS ' . self::EVENT_TABLE . '_did ON ' . self::EVENT_TABLE . ' (did, seq)',
+			'CREATE TABLE IF NOT EXISTS ' . self::SEQUENCE_TABLE . ' ('
+			. ' name VARCHAR(32) NOT NULL PRIMARY KEY,'
+			. ' value INTEGER NOT NULL'
+			. ')',
+			'INSERT INTO ' . self::SEQUENCE_TABLE . " (name, value) SELECT 'firehose', 0 WHERE NOT EXISTS (SELECT 1 FROM " . self::SEQUENCE_TABLE . " WHERE name = 'firehose')",
+		];
+	}
+
+	public static function upgrade(Connection $connection): void
+	{
+		foreach (self::upgradeStatements() as $statement) {
+			$connection->execute($statement);
+		}
 	}
 
 	public static function create(Connection $connection): void

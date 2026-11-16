@@ -170,6 +170,7 @@ use AlohaSocial\Core\Domain\Atproto\Pds\InMemoryPdsRepository;
 use AlohaSocial\Core\Domain\Atproto\Pds\NativePdsService;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsConfig;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsDirectory;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsRepository;
 use AlohaSocial\Core\Domain\Federation\AcceptAllFollows;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
@@ -587,6 +588,7 @@ final readonly class Application
 		?MediaCollectionService $mediaCollectionService = null,
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
+		?PdsDirectory $pdsDirectory = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -595,8 +597,9 @@ final readonly class Application
 				'instance.name' => 'Aloha Social',
 			],
 		]);
+		$blobStore ??= new InMemoryBlobStore();
 		$pds = PdsConfig::enabled($config)
-			? self::assemblePds($config, $clock, $pdsRepository ?? new InMemoryPdsRepository(), $pdsSecrets)
+			? self::assemblePds($config, $clock, $pdsRepository ?? new InMemoryPdsRepository(), $pdsSecrets, $blobStore, $pdsDirectory)
 			: null;
 		$logger ??= new NullLogger();
 		$activityLog ??= new InMemoryActivityLog();
@@ -630,7 +633,6 @@ final readonly class Application
 		$remotePollRepository ??= new InMemoryRemotePollRepository();
 		$remotePollVoteRepository ??= new InMemoryRemotePollVoteRepository();
 		$quoteGrantRepository ??= new InMemoryQuoteGrantRepository();
-		$blobStore ??= new InMemoryBlobStore();
 		$imageProcessor ??= new GdImageProcessor();
 		$homeTimeline = new InMemoryHomeTimelineRepository(
 			$posts,
@@ -813,10 +815,11 @@ final readonly class Application
 		?AtprotoBlobUrlBuilder $atprotoBlobs = null,
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
+		?PdsDirectory $pdsDirectory = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
-			? self::assemblePds($config, $clock, $pdsRepository ?? new PdoPdsRepository($database), $pdsSecrets)
+			? self::assemblePds($config, $clock, $pdsRepository ?? new PdoPdsRepository($database), $pdsSecrets, $blobStore, $pdsDirectory)
 			: null;
 		$logger ??= new NullLogger();
 		$ids = new RandomIdGenerator();
@@ -1766,6 +1769,8 @@ final readonly class Application
 		Clock $clock,
 		PdsRepository $repository,
 		?SecretBox $secrets,
+		?BlobStore $blobs = null,
+		?PdsDirectory $directory = null,
 	): NativePdsService {
 		if ($secrets === null) {
 			$key = PdsConfig::secretBoxKey($config);
@@ -1778,7 +1783,7 @@ final readonly class Application
 			$secrets = OpenSslSecretBox::fromBase64Key($key);
 		}
 
-		return new NativePdsService($config, $repository, $secrets, $clock);
+		return new NativePdsService($config, $repository, $secrets, $clock, $blobs, $directory);
 	}
 
 	public function handle(Request $request): Response

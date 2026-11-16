@@ -373,7 +373,7 @@ final class MigrationInventory
 				'atproto_pds',
 				'optional native PDS identity and repository',
 				self::OWNER_CORE,
-				'social_pds_identity, social_pds_key (sealed private keys), social_pds_record, social_pds_commit, social_pds_block and social_pds_plc_operation; the host owns the HTTP process, account auth and secret-box key',
+				'social_pds_identity, social_pds_key (sealed private keys), social_pds_record, social_pds_commit, social_pds_block, social_pds_blob, social_pds_event, social_pds_sequence and social_pds_plc_operation; the host owns the HTTP process, account auth, blob store and secret-box key',
 				self::STATUS_SUPPORTED,
 				'inventory-only',
 			),

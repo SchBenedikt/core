@@ -12,9 +12,9 @@ namespace AlohaSocial\Core\Domain\Atproto\Pds;
 /**
  * Persistence boundary for the native PDS.
  *
- * Writes that change the commit head are atomic repository operations: a
- * commit, its new blocks, the affected record and the identity head either all
- * become visible together or none do.
+ 	 * Writes that change the commit head are atomic repository operations: a
+ * commit, its new blocks, the affected records, the identity head and the
+ * firehose event either all become visible together or none do.
  */
 interface PdsRepository
 {
@@ -63,15 +63,42 @@ interface PdsRepository
 
 	/**
 	 * @param array<string, string> $blocks CID string to block bytes
-	 * @param array{0: string, 1: string}|null $delete collection and record key
+	 * @param list<PdsRecord> $puts
+	 * @param list<array{0: string, 1: string}> $deletes collection and record key
 	 */
 	public function applyCommit(
 		PdsIdentity $identity,
 		PdsCommit $commit,
 		array $blocks,
-		?PdsRecord $put,
-		?array $delete,
-	): void;
+		array $puts,
+		array $deletes,
+		?PdsEvent $event = null,
+	): ?PdsEvent;
+
+	public function appendEvent(PdsEvent $event): PdsEvent;
+
+	/**
+	 * @return list<PdsEvent>
+	 */
+	public function eventsAfter(int $cursor, int $limit): array;
+
+	public function latestSeq(): int;
+
+	/**
+	 * @return list<PdsIdentity> ordered by creation time
+	 */
+	public function identities(): array;
+
+	/**
+	 * @return array<string, PdsBlob> keyed by CID
+	 */
+	public function blobs(string $did): array;
+
+	public function blob(string $did, string $cid): ?PdsBlob;
+
+	public function putBlob(PdsBlob $blob): void;
+
+	public function totalBlobBytes(string $did): int;
 
 	/**
 	 * @return list<PdsCommit>

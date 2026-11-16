@@ -32,6 +32,12 @@ final class InMemoryPdsRepository implements PdsRepository
 	/** @var array<string, list<PdsPlcOperation>> */
 	private array $operations = [];
 
+	/** @var array<string, array<string, PdsBlob>> */
+	private array $blobs = [];
+
+	/** @var list<PdsEvent> */
+	private array $events = [];
+
 	public function identityForUser(string $localUserId): ?PdsIdentity
 	{
 		foreach ($this->identities as $identity) {
@@ -141,22 +147,85 @@ final class InMemoryPdsRepository implements PdsRepository
 		PdsIdentity $identity,
 		PdsCommit $commit,
 		array $blocks,
-		?PdsRecord $put,
-		?array $delete,
-	): void {
+		array $puts,
+		array $deletes,
+		?PdsEvent $event = null,
+	): ?PdsEvent {
 		$this->identities[$identity->did] = $identity;
 		$this->commits[$identity->did][] = $commit;
 		foreach ($blocks as $cid => $bytes) {
 			$this->blocks[$identity->did][$cid] = $bytes;
 		}
 
-		if ($delete !== null) {
+		foreach ($deletes as $delete) {
 			unset($this->records[$identity->did][$delete[0] . '/' . $delete[1]]);
 		}
 
-		if ($put !== null) {
+		foreach ($puts as $put) {
 			$this->records[$identity->did][$put->collection . '/' . $put->rkey] = $put;
 		}
+
+		return $event === null ? null : $this->appendEvent($event);
+	}
+
+	public function appendEvent(PdsEvent $event): PdsEvent
+	{
+		$stored = $event->withSeq($this->latestSeq() + 1);
+		$this->events[] = $stored;
+
+		return $stored;
+	}
+
+	public function eventsAfter(int $cursor, int $limit): array
+	{
+		$events = [];
+		foreach ($this->events as $event) {
+			if ($event->seq <= $cursor) {
+				continue;
+			}
+
+			$events[] = $event;
+			if (count($events) >= $limit) {
+				break;
+			}
+		}
+
+		return $events;
+	}
+
+	public function latestSeq(): int
+	{
+		return $this->events === [] ? 0 : $this->events[array_key_last($this->events)]->seq;
+	}
+
+	public function identities(): array
+	{
+		return array_values($this->identities);
+	}
+
+	public function blobs(string $did): array
+	{
+		return $this->blobs[$did] ?? [];
+	}
+
+	public function blob(string $did, string $cid): ?PdsBlob
+	{
+		return $this->blobs[$did][$cid] ?? null;
+	}
+
+	public function putBlob(PdsBlob $blob): void
+	{
+		$this->blobs[$blob->did][$blob->cid] = $blob;
+	}
+
+	public function totalBlobBytes(string $did): int
+	{
+		$total = 0;
+		foreach ($this->blobs[$did] ?? [] as $blob) {
+			$total += $blob->size;
+		}
+
+		return $total;
 	}
 
 	public function commits(string $did): array

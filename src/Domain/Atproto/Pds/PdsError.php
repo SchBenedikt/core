@@ -37,6 +37,11 @@ final class PdsError extends RuntimeException
 		return new self(400, 'RepoNotFound', $message);
 	}
 
+	public static function handleNotFound(): self
+	{
+		return new self(400, 'HandleNotFound', 'The handle is not hosted by this PDS.');
+	}
+
 	public static function recordNotFound(string $message = 'The record does not exist.'): self
 	{
 		return new self(404, 'RecordNotFound', $message);
@@ -55,6 +60,36 @@ final class PdsError extends RuntimeException
 	public static function notEnabled(): self
 	{
 		return new self(503, 'PdsNotEnabled', 'The native PDS is not enabled on this service.');
+	}
+
+	public static function blobsNotConfigured(): self
+	{
+		return new self(503, 'BlobPersistenceNotConfigured', 'The native PDS has no blob store.');
+	}
+
+	public static function blobNotFound(): self
+	{
+		return new self(404, 'BlobNotFound', 'The blob does not exist.');
+	}
+
+	public static function blobTooLarge(int $limit): self
+	{
+		return new self(400, 'BlobTooLarge', 'The blob exceeds the ' . $limit . ' byte limit.');
+	}
+
+	public static function blobQuotaExceeded(int $limit): self
+	{
+		return new self(400, 'BlobQuotaExceeded', 'The repository exceeds the ' . $limit . ' byte blob quota.');
+	}
+
+	public static function directoryNotConfigured(): self
+	{
+		return new self(503, 'PlcDirectoryNotConfigured', 'No PLC directory transport is configured.');
+	}
+
+	public static function directoryFailure(string $message): self
+	{
+		return new self(502, 'UpstreamFailure', 'The PLC directory did not accept the operation: ' . $message);
 	}
 
 	public static function internal(string $message = 'The repository operation failed.'): self

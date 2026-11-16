@@ -1,0 +1,301 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * SPDX-FileCopyrightText: 2026 Aloha Social contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsFirehose;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
+use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+/**
+ * A minimal, dependency-free WebSocket firehose process.
+ *
+ * The HTTP host still owns authentication and normal XRPC requests; this
+ * process owns only the long-lived socket and reads the durable event log
+ * through the same repository port.
+ */
+function firehose_accept_key(string $key): string
+{
+	return base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
+}
+
+/**
+ * @param resource $stream
+ */
+function firehose_write($stream, string $payload, int $opcode = 0x2): bool
+{
+	$length = strlen($payload);
+	if ($length < 126) {
+		$header = chr(0x80 | $opcode) . chr($length);
+	} elseif ($length <= 65_535) {
+		$header = chr(0x80 | $opcode) . chr(126) . pack('n', $length);
+	} else {
+		$header = chr(0x80 | $opcode) . chr(127) . pack('J', $length);
+	}
+
+	$data = $header . $payload;
+	while ($data !== '') {
+		$written = @fwrite($stream, $data);
+		if ($written === false || $written === 0) {
+			return false;
+		}
+
+		$data = substr($data, $written);
+	}
+
+	return true;
+}
+
+/**
+ * @param array<string, mixed> $client
+ */
+function firehose_reject(array $client, int $status, string $message): void
+{
+	$reason = $status === 404 ? 'Not Found' : 'Bad Request';
+	$response = "HTTP/1.1 {$status} {$reason}\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: "
+		. strlen($message) . "\r\n\r\n" . $message;
+	@fwrite($client['stream'], $response);
+}
+
+/**
+ * @param array<string, mixed> $client
+ * @param list<array{0: int, 1: string}> $frames
+ */
+function firehose_parse_frames(array &$client, array &$frames): void
+{
+	$buffer = $client['buffer'];
+	while (strlen($buffer) >= 2) {
+		$first = ord($buffer[0]);
+		$second = ord($buffer[1]);
+		$opcode = $first & 0x0f;
+		$masked = ($second & 0x80) !== 0;
+		$length = $second & 0x7f;
+		$offset = 2;
+
+		if ($length === 126) {
+			if (strlen($buffer) < 4) {
+				break;
+			}
+			$length = unpack('n', substr($buffer, 2, 2))[1];
+			$offset = 4;
+		} elseif ($length === 127) {
+			if (strlen($buffer) < 10) {
+				break;
+			}
+			$unpacked = unpack('J', substr($buffer, 2, 8));
+			$length = (int) ($unpacked[1] ?? 0);
+			$offset = 10;
+		}
+
+		if (!$masked || $length > 10_485_760 || strlen($buffer) < $offset + 4 + $length) {
+			break;
+		}
+
+		$mask = substr($buffer, $offset, 4);
+		$payload = substr($buffer, $offset + 4, $length);
+		$decoded = '';
+		for ($index = 0; $index < $length; ++$index) {
+			$decoded .= $payload[$index] ^ $mask[$index % 4];
+		}
+
+		$frames[] = [$opcode, $decoded];
+		$buffer = substr($buffer, $offset + 4 + $length);
+	}
+
+	$client['buffer'] = $buffer;
+}
+
+$options = getopt('', ['database:', 'host::', 'port::', 'poll-ms::']);
+$databasePath = (string) ($options['database'] ?? getenv('PDS_DATABASE') ?: '');
+$host = (string) ($options['host'] ?? getenv('PDS_FIREHOSE_HOST') ?: '127.0.0.1');
+$port = (int) ($options['port'] ?? getenv('PDS_FIREHOSE_PORT') ?: 2584);
+$pollMilliseconds = max(10, min(2_000, (int) ($options['poll-ms'] ?? 50)));
+if ($databasePath === '' || $port < 0 || $port > 65_535) {
+	fwrite(STDERR, "usage: pds-firehose --database=/path/to.sqlite [--host=127.0.0.1] [--port=2584]\n");
+	exit(2);
+}
+
+$pdo = new PDO('sqlite:' . $databasePath);
+$database = new PdoConnection($pdo);
+PdsSchema::upgrade($database);
+$firehose = new PdsFirehose(new PdoPdsRepository($database));
+
+$server = @stream_socket_server(
+	'tcp://' . $host . ':' . $port,
+	$errorCode,
+	$errorMessage,
+	STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+);
+if ($server === false) {
+	fwrite(STDERR, "pds-firehose: cannot listen on {$host}:{$port}: {$errorMessage}\n");
+	exit(1);
+}
+stream_set_blocking($server, false);
+
+$address = stream_socket_get_name($server, false);
+fwrite(STDOUT, 'pds-firehose listening on ' . (is_string($address) ? $address : $host . ':' . $port) . "\n");
+fflush(STDOUT);
+
+/** @var array<int, array<string, mixed>> $clients */
+$clients = [];
+
+while (true) {
+	$read = [$server];
+	foreach ($clients as $client) {
+		if (is_resource($client['stream'])) {
+			$read[] = $client['stream'];
+		}
+	}
+	$write = null;
+	$except = null;
+	$ready = @stream_select($read, $write, $except, 0, $pollMilliseconds * 1_000);
+	if ($ready === false) {
+		usleep(10_000);
+
+		continue;
+	}
+
+	foreach ($read as $stream) {
+		if ($stream === $server) {
+			$accepted = @stream_socket_accept($server, 0);
+			if (is_resource($accepted)) {
+				stream_set_blocking($accepted, false);
+				$clients[(int) $accepted] = [
+					'stream' => $accepted,
+					'buffer' => '',
+					'open' => false,
+					'cursor' => 0,
+				];
+			}
+
+			continue;
+		}
+
+		$id = (int) $stream;
+		if (!isset($clients[$id])) {
+			continue;
+		}
+
+		$data = @fread($stream, 8192);
+		if ($data === '' && feof($stream)) {
+			@fclose($stream);
+			unset($clients[$id]);
+
+			continue;
+		}
+
+		$client = &$clients[$id];
+		$client['buffer'] .= $data;
+		if (!$client['open']) {
+			$headerEnd = strpos($client['buffer'], "\r\n\r\n");
+			if ($headerEnd === false) {
+				continue;
+			}
+
+			$request = substr($client['buffer'], 0, $headerEnd);
+			$client['buffer'] = substr($client['buffer'], $headerEnd + 4);
+			$lines = explode("\r\n", $request);
+			$requestLine = explode(' ', (string) array_shift($lines));
+			$target = $requestLine[1] ?? '';
+			$path = parse_url($target, PHP_URL_PATH);
+			$query = [];
+			parse_str((string) parse_url($target, PHP_URL_QUERY), $query);
+			$headers = [];
+			foreach ($lines as $line) {
+				$separator = strpos($line, ':');
+				if ($separator !== false) {
+					$headers[strtolower(trim(substr($line, 0, $separator)))] = trim(substr($line, $separator + 1));
+				}
+			}
+
+			if ($path !== '/xrpc/com.atproto.sync.subscribeRepos') {
+				firehose_reject($client, 404, 'Unknown WebSocket endpoint.');
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue;
+			}
+
+			$key = $headers['sec-websocket-key'] ?? '';
+			if ($key === ''
+				|| strtolower($headers['upgrade'] ?? '') !== 'websocket'
+				|| !str_contains(strtolower($headers['connection'] ?? ''), 'upgrade')
+			) {
+				firehose_reject($client, 400, 'A WebSocket upgrade is required.');
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue;
+			}
+
+			try {
+				$cursor = $firehose->startingCursor(isset($query['cursor']) ? (string) $query['cursor'] : null);
+			} catch (InvalidArgumentException $e) {
+				firehose_reject($client, 400, $e->getMessage());
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue;
+			}
+
+			$response = "HTTP/1.1 101 Switching Protocols\r\n"
+				. "Upgrade: websocket\r\n"
+				. "Connection: Upgrade\r\n"
+				. 'Sec-WebSocket-Accept: ' . firehose_accept_key($key) . "\r\n\r\n";
+			if (@fwrite($stream, $response) === false) {
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue;
+			}
+
+			$client['open'] = true;
+			$client['cursor'] = $cursor;
+		}
+
+		$frames = [];
+		firehose_parse_frames($client, $frames);
+		foreach ($frames as [$opcode, $payload]) {
+			if ($opcode === 0x8) {
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue 2;
+			}
+			if ($opcode === 0x9) {
+				firehose_write($stream, $payload, 0xA);
+			}
+		}
+
+		unset($client);
+	}
+
+	foreach ($clients as $id => &$client) {
+		if (($client['open'] ?? false) !== true || !is_resource($client['stream'])) {
+			continue;
+		}
+
+		$events = $firehose->after((int) $client['cursor'], 500);
+		foreach ($events as $event) {
+			$frame = DagCbor::encode($event->toArray());
+			if (!firehose_write($client['stream'], $frame, 0x2)) {
+				@fclose($client['stream']);
+				unset($clients[$id]);
+
+				continue 2;
+			}
+
+			$client['cursor'] = $event->seq;
+		}
+	}
+	unset($client);
+}
