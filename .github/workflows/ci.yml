@@ -50,9 +50,8 @@ jobs:
         working-directory: ui
         run: npm test
 
-      - name: Build the UI package
-        working-directory: ui
-        run: npm run build
+      - name: Verify release artifacts
+        run: composer check:release
 
   check:
     name: PHP ${{ matrix.php }}
