@@ -1,0 +1,77 @@
+name: Release artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: openssl, pdo_sqlite, pdo_mysql, mbstring, curl
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Validate package versions against the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          core_version="$(php -r 'require "vendor/autoload.php"; echo AlohaSocial\Core\Version::CURRENT;')"
+          ui_version="$(node -e 'process.stdout.write(require("./ui/package.json").version)')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$tag_version" != "$core_version" ] || [ "$tag_version" != "$ui_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match core $core_version and UI $ui_version." >&2
+            exit 1
+          fi
+
+      - name: Run the core gate
+        run: composer check
+
+      - name: Typecheck and test the UI
+        working-directory: ui
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build and verify artifacts
+        run: bash tools/release-check.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: var/release/*
+          if-no-files-found: error

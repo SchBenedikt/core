@@ -25,6 +25,20 @@ artifacts above were built from that working tree and are installable, but a
 registry release from this state needs a new matching tag (and therefore the
 maintainer's next-version decision); the existing `0.7.0` tag is not moved.
 
+## One-command artifact check
+
+`composer check:release` runs `tools/release-check.sh`, which builds both
+artifacts, verifies their contents, installs the core archive without
+development dependencies and checks the reported versions. It never publishes
+and writes the archives to `var/release/` (or `RELEASE_OUT_DIR`). The release
+workflow runs the same script after the core gate and the UI typecheck/tests; a
+tag run also refuses a tag that differs from `Version::CURRENT` or
+`ui/package.json`.
+
+```bash
+composer check:release
+```
+
 ## Composer preflight
 
 ```bash

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A reproducible release-artifact check. `composer check:release` builds the
+  Composer and npm archives, rejects development paths, installs the core
+  archive without dev dependencies and verifies both reported versions. The
+  `Release artifacts` workflow runs the same check on tags and manual dispatch
+  and uploads the verified archives; it does not publish to a registry.
 - A working, optional native AT Protocol PDS. `Protocol\Atproto\Repository`
   now includes a multi-layer `MstBuilder` that matches the reference root and
   block set, alongside CIDv1, canonical DAG-CBOR, CAR v1, MST validation and
@@ -183,6 +188,11 @@ and fails when `docs/reference/configuration.md` does not name it.
 
 ### Fixed
 
+- HTTP Signature verification now requires the signature to cover
+  `(request-target)`, `host` and `date`. A valid signature over only the request
+  target could otherwise be replayed indefinitely and against another host;
+  the verifier refuses it before checking the RSA signature. Regression tests
+  cover a missing signed host and a missing signed date.
 - Archived posts no longer leak into the SQL home timeline or the For You
   recommendation candidate pool. Both direct `social_post` readers now apply
   the same `archived_at IS NULL` discovery predicate as the public, author,

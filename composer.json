@@ -58,6 +58,7 @@
 		"check:boundary": "@php tools/check-core-boundary.php",
 		"check:attribution": "@php tools/check-attribution.php",
 		"check:links": "@php tools/check-links.php",
+		"check:release": "bash tools/release-check.sh",
 		"migration:inventory": "@php bin/migration-inventory",
 		"migration:validate": "@php bin/validate-cutover",
 		"openapi:export": "@php bin/export-openapi",
