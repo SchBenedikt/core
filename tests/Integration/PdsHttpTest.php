@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Integration;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsRev;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Protocol\Atproto\Repository\Bytes;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Car;
 use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Ecdsa;
@@ -78,6 +79,15 @@ final class PdsHttpTest extends TestCase
 
 	private string $log;
 
+	private int $firehosePort = 0;
+
+	/**
+	 * @var resource|null
+	 */
+	private $firehoseProcess = null;
+
+	private string $firehoseLog;
+
 	protected function setUp(): void
 	{
 		$this->directory = sys_get_temp_dir() . '/alohasocial-pds-' . bin2hex(random_bytes(8));
@@ -88,10 +98,12 @@ final class PdsHttpTest extends TestCase
 		$this->databasePath = $this->directory . '/pds.sqlite';
 		$this->secret = OpenSslSecretBox::generateKey();
 		$this->log = $this->directory . '/server.log';
+		$this->firehoseLog = $this->directory . '/firehose.log';
 	}
 
 	protected function tearDown(): void
 	{
+		$this->stopFirehose();
 		$this->stopServer();
 		$this->remove($this->directory);
 	}
@@ -306,6 +318,337 @@ final class PdsHttpTest extends TestCase
 		self::assertFalse($secondCommit->verify($oldSigning->publicKeyPem));
 	}
 
+	public function testRecordReplacementDeletionAndBatchWritesAreAtomic(): void
+	{
+		$this->startServer();
+
+		$created = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', [
+			'handle' => 'alice.pds.example',
+		], 'alice');
+		self::assertSame(200, $created['status'], $created['body']);
+		$did = $created['json']['did'] ?? '';
+
+		$first = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'first'],
+		], 'alice');
+		self::assertSame(200, $first['status'], $first['body']);
+		$firstCid = $first['json']['cid'] ?? null;
+
+		$replaced = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'replaced'],
+		], 'alice');
+		self::assertSame(200, $replaced['status'], $replaced['body']);
+		self::assertSame($first['json']['uri'] ?? null, $replaced['json']['uri'] ?? null);
+		self::assertNotSame($firstCid, $replaced['json']['cid'] ?? null);
+		self::assertSame('replaced', $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		]))['json']['value']['text'] ?? null);
+
+		$second = $this->createRecord($did, 'delete me', 'alice');
+		$secondRkey = substr($second['uri'], strrpos($second['uri'], '/') + 1);
+		$batch = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.applyWrites', [
+			'repo' => $did,
+			'writes' => [
+				[
+					'action' => 'update',
+					'collection' => 'app.bsky.feed.post',
+					'rkey' => 'fixed',
+					'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'batched'],
+				],
+				[
+					'action' => 'create',
+					'collection' => 'app.bsky.feed.post',
+					'rkey' => 'third',
+					'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'third'],
+				],
+				[
+					'action' => 'delete',
+					'collection' => 'app.bsky.feed.post',
+					'rkey' => $secondRkey,
+				],
+			],
+		], 'alice');
+		self::assertSame(200, $batch['status'], $batch['body']);
+		self::assertCount(3, $batch['json']['results'] ?? []);
+		self::assertSame('batched', $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		]))['json']['value']['text'] ?? null);
+		self::assertSame(404, $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => $secondRkey,
+		]))['status']);
+
+		$records = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.listRecords?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+		]));
+		self::assertCount(2, $records['json']['records'] ?? []);
+		self::assertCount(5, $this->repository()->commits($did));
+
+		$deleted = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.deleteRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		], 'alice');
+		self::assertSame(200, $deleted['status'], $deleted['body']);
+		self::assertSame(404, $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		]))['status']);
+		self::assertCount(6, $this->repository()->commits($did));
+
+		$latest = $this->jsonRequest('GET', '/xrpc/com.atproto.sync.getLatestCommit?' . http_build_query(['did' => $did]));
+		self::assertSame(200, $latest['status'], $latest['body']);
+		self::assertSame($this->repository()->identityByDid($did)?->head?->toString(), $latest['json']['cid'] ?? null);
+		self::assertSame($did, $this->jsonRequest('GET', '/xrpc/com.atproto.identity.resolveHandle?handle=alice.pds.example')['json']['did'] ?? null);
+		self::assertNotEmpty($this->jsonRequest('GET', '/xrpc/com.atproto.sync.listRepos')['json']['repos'] ?? []);
+		self::assertSame('pds.example', $this->jsonRequest('GET', '/xrpc/com.atproto.server.describeServer')['json']['availableUserDomains'][0] ?? null);
+	}
+
+	public function testBlobUploadReadAndListAreScopedToTheRepository(): void
+	{
+		$this->startServer();
+
+		$alice = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'alice.pds.example'], 'alice');
+		$bob = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'bob.pds.example'], 'bob');
+		self::assertSame(200, $alice['status'], $alice['body']);
+		self::assertSame(200, $bob['status'], $bob['body']);
+		$aliceDid = $alice['json']['did'] ?? '';
+		$bobDid = $bob['json']['did'] ?? '';
+
+		$bytes = "\x89PNG\r\n\x1a\n" . random_bytes(32);
+		$anonymous = $this->rawRequest('POST', '/xrpc/com.atproto.repo.uploadBlob', $bytes, 'image/png');
+		self::assertSame(401, $anonymous['status']);
+
+		$uploaded = $this->rawRequest('POST', '/xrpc/com.atproto.repo.uploadBlob', $bytes, 'image/png', 'alice');
+		self::assertSame(200, $uploaded['status'], $uploaded['body']);
+		$json = json_decode($uploaded['body'], true);
+		self::assertIsArray($json);
+		$blobCid = $json['blob']['ref']['$link'] ?? '';
+		self::assertNotSame('', $blobCid);
+		self::assertSame('image/png', $json['blob']['mimeType'] ?? null);
+		self::assertSame(strlen($bytes), $json['blob']['size'] ?? null);
+
+		$repository = $this->repository();
+		self::assertNotNull($repository->identityByDid($aliceDid));
+		self::assertNotNull($repository->blob($aliceDid, $blobCid), json_encode($repository->blobs($aliceDid)));
+
+		$read = $this->rawRequest('GET', '/xrpc/com.atproto.sync.getBlob?' . http_build_query([
+			'did' => $aliceDid,
+			'cid' => $blobCid,
+		]));
+		self::assertSame(200, $read['status'], $read['body']);
+		self::assertSame($bytes, $read['body']);
+		self::assertSame('image/png', $read['contentType']);
+
+		$list = $this->jsonRequest('GET', '/xrpc/com.atproto.sync.listBlobs?' . http_build_query(['did' => $aliceDid]));
+		self::assertSame(200, $list['status'], $list['body']);
+		self::assertCount(1, $list['json']['blobs'] ?? []);
+		self::assertSame($blobCid, $list['json']['blobs'][0]['cid'] ?? null);
+
+		$foreign = $this->rawRequest('GET', '/xrpc/com.atproto.sync.getBlob?' . http_build_query([
+			'did' => $bobDid,
+			'cid' => $blobCid,
+		]));
+		self::assertSame(404, $foreign['status']);
+	}
+
+	public function testFirehoseStreamsEveryMutationAndReplaysFromACursor(): void
+	{
+		$this->startServer();
+
+		$created = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', [
+			'handle' => 'alice.pds.example',
+		], 'alice');
+		self::assertSame(200, $created['status'], $created['body']);
+		$did = $created['json']['did'] ?? '';
+
+		$this->startFirehose();
+		$live = $this->openFirehose();
+
+		$first = $this->createRecord($did, 'one', 'alice');
+		$firstRkey = substr($first['uri'], strrpos($first['uri'], '/') + 1);
+		$second = $this->createRecord($did, 'two', 'alice');
+		$secondRkey = substr($second['uri'], strrpos($second['uri'], '/') + 1);
+
+		$put = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => $firstRkey,
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'one replaced'],
+		], 'alice');
+		self::assertSame(200, $put['status'], $put['body']);
+
+		$deleted = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.deleteRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => $secondRkey,
+		], 'alice');
+		self::assertSame(200, $deleted['status'], $deleted['body']);
+
+		$batch = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.applyWrites', [
+			'repo' => $did,
+			'writes' => [[
+				'action' => 'create',
+				'collection' => 'app.bsky.feed.post',
+				'rkey' => 'third',
+				'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'three'],
+			]],
+		], 'alice');
+		self::assertSame(200, $batch['status'], $batch['body']);
+
+		$blobBytes = "\x89PNG\r\n\x1a\nfirehose";
+		$blob = $this->rawRequest('POST', '/xrpc/com.atproto.repo.uploadBlob', $blobBytes, 'image/png', 'alice');
+		self::assertSame(200, $blob['status'], $blob['body']);
+
+		$events = [];
+		for ($index = 0; $index < 6; ++$index) {
+			$events[] = $this->readFirehoseEvent($live);
+		}
+		$this->closeFirehose($live);
+
+		foreach ($events as $index => $event) {
+			self::assertSame('#commit', $event['$type'] ?? null);
+			self::assertSame($index + 1, $event['seq'] ?? null);
+			self::assertSame($did, $event['repo'] ?? null);
+			self::assertNotSame('', $event['rev'] ?? '');
+			self::assertInstanceOf(Bytes::class, $event['blocks'] ?? null);
+		}
+
+		self::assertSame('create', $events[0]['ops'][0]['action'] ?? null);
+		self::assertSame('app.bsky.feed.post/' . $firstRkey, $events[0]['ops'][0]['path'] ?? null);
+		self::assertSame('update', $events[2]['ops'][0]['action'] ?? null);
+		self::assertSame('delete', $events[3]['ops'][0]['action'] ?? null);
+		self::assertSame('create', $events[4]['ops'][0]['action'] ?? null);
+		self::assertSame([], $events[5]['ops'] ?? null);
+		self::assertCount(1, $events[5]['blobs'] ?? []);
+
+		$car = Car::decode($events[0]['blocks']->value);
+		self::assertSame($events[0]['commit']->toString(), $car->root->toString());
+		self::assertArrayHasKey($first['cid'], $car->blocks);
+
+		$replay = $this->openFirehose(1);
+		$replayed = [];
+		for ($index = 0; $index < 5; ++$index) {
+			$replayed[] = $this->readFirehoseEvent($replay);
+		}
+		$this->closeFirehose($replay);
+
+		self::assertSame([2, 3, 4, 5, 6], array_map(static fn (array $event): int => $event['seq'], $replayed));
+		self::assertSame($events[1]['commit']->toString(), $replayed[0]['commit']->toString());
+
+		$current = $this->openFirehose();
+		$this->createRecord($did, 'after replay', 'alice');
+		$liveAgain = $this->readFirehoseEvent($current);
+		$this->closeFirehose($current);
+		self::assertSame(7, $liveAgain['seq'] ?? null);
+	}
+
+	public function testCarExportImportsIntoAFreshRepositoryAndBlocksAreServed(): void
+	{
+		$this->startServer();
+
+		$alice = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'alice.pds.example'], 'alice');
+		$bob = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'bob.pds.example'], 'bob');
+		self::assertSame(200, $alice['status'], $alice['body']);
+		self::assertSame(200, $bob['status'], $bob['body']);
+		$aliceDid = $alice['json']['did'] ?? '';
+		$bobDid = $bob['json']['did'] ?? '';
+
+		$first = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $aliceDid,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'import-one',
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'exported'],
+		], 'alice');
+		$second = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $aliceDid,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'import-two',
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'also exported'],
+		], 'alice');
+		self::assertSame(200, $first['status'], $first['body']);
+		self::assertSame(200, $second['status'], $second['body']);
+
+		$export = $this->request('GET', '/xrpc/com.atproto.sync.getRepo?' . http_build_query(['did' => $aliceDid]));
+		self::assertSame(200, $export['status']);
+		$exportCar = Car::decode($export['body']);
+
+		$imported = $this->rawRequest('POST', '/xrpc/com.atproto.repo.importRepo', $export['body'], 'application/vnd.ipld.car', 'bob');
+		self::assertSame(200, $imported['status'], $imported['body']);
+		$importJson = json_decode($imported['body'], true);
+		self::assertIsArray($importJson);
+		self::assertSame(2, $importJson['records'] ?? null);
+
+		$bobFirst = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $bobDid,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'import-one',
+		]));
+		self::assertSame(200, $bobFirst['status'], $bobFirst['body']);
+		self::assertSame($first['json']['cid'] ?? null, $bobFirst['json']['cid'] ?? null);
+		self::assertSame('exported', $bobFirst['json']['value']['text'] ?? null);
+
+		$blocks = $this->request('GET', '/xrpc/com.atproto.sync.getBlocks?' . http_build_query([
+			'did' => $aliceDid,
+			'cids' => $first['json']['cid'],
+		]));
+		self::assertSame(200, $blocks['status']);
+		self::assertSame('application/vnd.ipld.car', $blocks['contentType']);
+		$blockCar = Car::decode($blocks['body']);
+		self::assertSame($exportCar->root->toString(), $blockCar->root->toString());
+		self::assertArrayHasKey($first['json']['cid'], $blockCar->blocks);
+	}
+
+	public function testGetRepoSinceReturnsOnlyBlocksChangedAfterARevision(): void
+	{
+		$this->startServer();
+
+		$created = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', [
+			'handle' => 'since.pds.example',
+		], 'since-user');
+		self::assertSame(200, $created['status'], $created['body']);
+		$did = $created['json']['did'] ?? '';
+
+		$first = $this->createRecord($did, 'unchanged', 'since-user');
+		$rev = $first['commit']['rev'] ?? '';
+		self::assertNotSame('', $rev);
+		$second = $this->createRecord($did, 'changed', 'since-user');
+
+		$full = $this->request('GET', '/xrpc/com.atproto.sync.getRepo?' . http_build_query(['did' => $did]));
+		$diff = $this->request('GET', '/xrpc/com.atproto.sync.getRepo?' . http_build_query(['did' => $did, 'since' => $rev]));
+		self::assertSame(200, $full['status']);
+		self::assertSame(200, $diff['status']);
+
+		$fullCar = Car::decode($full['body']);
+		$diffCar = Car::decode($diff['body']);
+		self::assertSame($fullCar->root->toString(), $diffCar->root->toString());
+		self::assertArrayHasKey($first['cid'], $fullCar->blocks);
+		self::assertArrayNotHasKey($first['cid'], $diffCar->blocks);
+		self::assertArrayHasKey($second['cid'], $diffCar->blocks);
+		self::assertArrayHasKey($diffCar->root->toString(), $diffCar->blocks);
+
+		$same = $this->request('GET', '/xrpc/com.atproto.sync.getRepo?' . http_build_query([
+			'did' => $did,
+			'since' => $second['commit']['rev'] ?? '',
+		]));
+		self::assertSame(200, $same['status']);
+		$sameCar = Car::decode($same['body']);
+		self::assertSame([$sameCar->root->toString()], array_keys($sameCar->blocks));
+	}
+
 	/**
 	 * @return array<string, mixed>
 	 */
@@ -351,6 +694,46 @@ final class PdsHttpTest extends TestCase
 	}
 
 	/**
+	 * @return array{status: int, body: string, contentType: string}
+	 */
+	private function rawRequest(string $method, string $path, string $body = '', ?string $contentType = null, ?string $user = null): array
+	{
+		$headers = ['Accept: application/json'];
+		if ($contentType !== null) {
+			$headers[] = 'Content-Type: ' . $contentType;
+		}
+		if ($user !== null) {
+			$headers[] = 'X-PDS-Test-User: ' . $user;
+		}
+
+		$options = ['http' => [
+			'method' => $method,
+			'header' => implode("\r\n", $headers),
+			'ignore_errors' => true,
+			'timeout' => 10,
+			'content' => $body,
+		]];
+
+		$responseBody = @file_get_contents($this->baseUrl . $path, false, stream_context_create($options));
+		if (!is_string($responseBody)) {
+			throw new RuntimeException('HTTP request failed for ' . $method . ' ' . $path);
+		}
+
+		$status = 0;
+		$responseType = '';
+		foreach ($http_response_header ?? [] as $line) {
+			if (preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $matches) === 1) {
+				$status = (int) $matches[1];
+			}
+			if (stripos($line, 'Content-Type:') === 0) {
+				$responseType = trim(substr($line, strlen('Content-Type:')));
+			}
+		}
+
+		return ['status' => $status, 'body' => $responseBody, 'contentType' => $responseType];
+	}
+
+	/**
 	 * @param array<string, mixed>|null $body
 	 *
 	 * @return array{status: int, body: string, contentType: string}
@@ -392,6 +775,225 @@ final class PdsHttpTest extends TestCase
 		}
 
 		return ['status' => $status, 'body' => $responseBody, 'contentType' => $contentType];
+	}
+
+	private function startFirehose(): void
+	{
+		if (is_resource($this->firehoseProcess)) {
+			return;
+		}
+
+		$socket = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+		if ($socket === false) {
+			throw new RuntimeException('Could not reserve a firehose test port: ' . $errorMessage);
+		}
+		$address = stream_socket_get_name($socket, false);
+		fclose($socket);
+		if (!is_string($address) || !str_contains($address, ':')) {
+			throw new RuntimeException('Could not determine the firehose test port.');
+		}
+		$this->firehosePort = (int) substr($address, strrpos($address, ':') + 1);
+
+		$command = [
+			PHP_BINARY,
+			dirname(__DIR__, 2) . '/bin/pds-firehose',
+			'--database=' . $this->databasePath,
+			'--host=127.0.0.1',
+			'--port=' . $this->firehosePort,
+			'--poll-ms=20',
+		];
+		$descriptors = [
+			0 => ['pipe', 'r'],
+			1 => ['file', $this->firehoseLog, 'a'],
+			2 => ['file', $this->firehoseLog, 'a'],
+		];
+		$process = proc_open($command, $descriptors, $pipes, $this->directory);
+		if (!is_resource($process)) {
+			throw new RuntimeException('Could not start the PDS firehose server.');
+		}
+
+		$this->firehoseProcess = $process;
+		if (isset($pipes[0]) && is_resource($pipes[0])) {
+			fclose($pipes[0]);
+		}
+
+		$deadline = microtime(true) + 8.0;
+		while (microtime(true) < $deadline) {
+			$status = proc_get_status($process);
+			if (!$status['running']) {
+				throw new RuntimeException('The PDS firehose server exited: ' . $this->firehoseLogTail());
+			}
+
+			$probe = @stream_socket_client('tcp://127.0.0.1:' . $this->firehosePort, $errorCode, $errorMessage, 0.2);
+			if (is_resource($probe)) {
+				fclose($probe);
+
+				return;
+			}
+
+			usleep(50_000);
+		}
+
+		$this->stopFirehose();
+
+		throw new RuntimeException('The PDS firehose server did not become ready: ' . $this->firehoseLogTail());
+	}
+
+	/**
+	 * @return array{stream: resource, buffer: string}
+	 */
+	private function openFirehose(?int $cursor = null): array
+	{
+		$stream = @stream_socket_client('tcp://127.0.0.1:' . $this->firehosePort, $errorCode, $errorMessage, 5.0);
+		if (!is_resource($stream)) {
+			throw new RuntimeException('Could not connect to the firehose: ' . $errorMessage);
+		}
+		stream_set_timeout($stream, 5);
+
+		$key = base64_encode(random_bytes(16));
+		$target = '/xrpc/com.atproto.sync.subscribeRepos'
+			. ($cursor === null ? '' : '?cursor=' . $cursor);
+		$request = "GET {$target} HTTP/1.1\r\n"
+			. "Host: 127.0.0.1\r\n"
+			. "Upgrade: websocket\r\n"
+			. "Connection: Upgrade\r\n"
+			. "Sec-WebSocket-Key: {$key}\r\n"
+			. "Sec-WebSocket-Version: 13\r\n\r\n";
+		if (fwrite($stream, $request) === false) {
+			throw new RuntimeException('Could not write the firehose handshake.');
+		}
+
+		$response = '';
+		while (!str_contains($response, "\r\n\r\n")) {
+			$chunk = fread($stream, 4096);
+			if (!is_string($chunk) || $chunk === '') {
+				throw new RuntimeException('The firehose closed during the handshake: ' . $response);
+			}
+			$response .= $chunk;
+		}
+
+		self::assertStringContainsString('101 Switching Protocols', $response, $response);
+		$end = strpos($response, "\r\n\r\n");
+
+		return [
+			'stream' => $stream,
+			'buffer' => substr($response, (int) $end + 4),
+		];
+	}
+
+	/**
+	 * @param array{stream: resource, buffer: string} $client
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function readFirehoseEvent(array &$client): array
+	{
+		$deadline = microtime(true) + 5.0;
+		while (microtime(true) < $deadline) {
+			$frame = $this->takeWebSocketFrame($client['buffer']);
+			if ($frame !== null) {
+				[$opcode, $payload] = $frame;
+				if ($opcode === 0x9) {
+					continue;
+				}
+				if ($opcode !== 0x2) {
+					throw new RuntimeException('The firehose sent a non-binary frame.');
+				}
+
+				$decoded = DagCbor::decode($payload);
+				self::assertIsArray($decoded);
+
+				return $decoded;
+			}
+
+			$chunk = fread($client['stream'], 8192);
+			if (!is_string($chunk) || $chunk === '') {
+				$meta = stream_get_meta_data($client['stream']);
+				if (($meta['timed_out'] ?? false) === false && feof($client['stream'])) {
+					throw new RuntimeException('The firehose closed before sending an event.');
+				}
+				continue;
+			}
+
+			$client['buffer'] .= $chunk;
+		}
+
+		throw new RuntimeException('Timed out waiting for a firehose event.');
+	}
+
+	/**
+	 * @return array{0: int, 1: string}|null
+	 */
+	private function takeWebSocketFrame(string &$buffer): ?array
+	{
+		if (strlen($buffer) < 2) {
+			return null;
+		}
+
+		$first = ord($buffer[0]);
+		$second = ord($buffer[1]);
+		$opcode = $first & 0x0f;
+		$masked = ($second & 0x80) !== 0;
+		$length = $second & 0x7f;
+		$offset = 2;
+		if ($length === 126) {
+			if (strlen($buffer) < 4) {
+				return null;
+			}
+			$length = unpack('n', substr($buffer, 2, 2))[1];
+			$offset = 4;
+		} elseif ($length === 127) {
+			if (strlen($buffer) < 10) {
+				return null;
+			}
+			$length = (int) (unpack('J', substr($buffer, 2, 8))[1] ?? 0);
+			$offset = 10;
+		}
+
+		$maskLength = $masked ? 4 : 0;
+		if (strlen($buffer) < $offset + $maskLength + $length) {
+			return null;
+		}
+
+		$payload = substr($buffer, $offset + $maskLength, $length);
+		if ($masked) {
+			$mask = substr($buffer, $offset, 4);
+			$decoded = '';
+			for ($index = 0; $index < $length; ++$index) {
+				$decoded .= $payload[$index] ^ $mask[$index % 4];
+			}
+			$payload = $decoded;
+		}
+
+		$buffer = substr($buffer, $offset + $maskLength + $length);
+
+		return [$opcode, $payload];
+	}
+
+	/**
+	 * @param array{stream: resource, buffer: string} $client
+	 */
+	private function closeFirehose(array $client): void
+	{
+		if (is_resource($client['stream'])) {
+			fclose($client['stream']);
+		}
+	}
+
+	private function stopFirehose(): void
+	{
+		if (is_resource($this->firehoseProcess)) {
+			proc_terminate($this->firehoseProcess);
+			proc_close($this->firehoseProcess);
+			$this->firehoseProcess = null;
+		}
+	}
+
+	private function firehoseLogTail(): string
+	{
+		$log = @file_get_contents($this->firehoseLog);
+
+		return is_string($log) ? substr($log, -3000) : '';
 	}
 
 	private function startServer(): void

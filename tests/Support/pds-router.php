@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Platform\Storage\LocalBlobStore;
 use AlohaSocial\Core\Security\OpenSslSecretBox;
 
 require __DIR__ . '/../../vendor/autoload.php';
@@ -42,6 +43,7 @@ if ($database->fetchValue(
 ) === null) {
 	PdsSchema::create($database);
 }
+PdsSchema::upgrade($database);
 
 $config = new ArrayConfig(['social' => [
 	'atproto.pds.enabled' => 'true',
@@ -51,8 +53,10 @@ $config = new ArrayConfig(['social' => [
 
 $app = Application::inMemory(
 	config: $config,
+	blobStore: new LocalBlobStore(dirname($databasePath) . '/blobs'),
 	pdsRepository: new PdoPdsRepository($database),
 	pdsSecrets: OpenSslSecretBox::fromBase64Key($secret),
+	debug: true,
 );
 
 $request = Request::fromGlobals();

@@ -35,6 +35,15 @@ final class CidTest extends TestCase
 		);
 	}
 
+	public function testItBuildsAStableRawCidForBlobBytes(): void
+	{
+		$first = Cid::forBlob("\x89PNG\r\n\x1a\nhello");
+
+		self::assertStringStartsWith('bafkrei', $first->toString());
+		self::assertSame($first->toString(), Cid::forBlob("\x89PNG\r\n\x1a\nhello")->toString());
+		self::assertNotSame($first->toString(), Cid::forBlob("different")->toString());
+	}
+
 	public function testItRefusesANonBase32Prefix(): void
 	{
 		$this->expectException(InvalidArgumentException::class);
