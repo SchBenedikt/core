@@ -47,6 +47,7 @@ Assets, in order of sensitivity:
 | A7 | Malicious group member | Has legitimate plaintext and can copy it | Out of scope for E2EE; abuse/reporting and recipient policy are separate product controls |
 | A8 | Key-package substitution / malicious device registration | Registers a device or replaces a key package | Account-signed device binding; one-time key packages; consume atomically; verify credential and signature; visible device list and revocation |
 | A9 | Stale or rolled-back client | Uses an old epoch, re-adds a removed device or replays a Welcome | Epoch monotonicity, membership checks, consumed key packages and server-side device status |
+| A10 | Multi-device state divergence | A new, restored or offline device misses a Commit or holds a different epoch | One leaf per device, replayable handshake envelopes, epoch/membership checks, per-device delivery and acknowledgement, visible device list and revocation |
 
 ## Security objectives
 
