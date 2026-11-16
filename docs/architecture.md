@@ -736,10 +736,11 @@ maximum is 40, and generated links carry a non-default limit.
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
   `BookmarkSchema`, `MuteSchema`, `BoostSchema`, `NotificationSchema`,
   `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
-  `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`
-  and `ActivityLogSchema` do the same for favourites, bookmarks,
-  notifications, media metadata, remote content, per-user blocks, AT Protocol
-  publications and inbound sync, the durable queue and the replay log. The standalone runs those statements; the Nextcloud host creates
+  `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`,
+  `AccountDeletionSchema` and `ActivityLogSchema` do the same for favourites,
+  bookmarks, notifications, media metadata, remote content, per-user blocks,
+  AT Protocol publications and inbound sync, the durable queue, account
+  deletion state and the replay log. The standalone runs those statements; the Nextcloud host creates
   the same columns through its schema API. A dump can therefore move between
   the two.
 - **Media metadata and bytes are separate.** A row points at one original and

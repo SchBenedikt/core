@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
@@ -207,7 +208,7 @@ final class BlockService
 					? $this->activities->undoBlock($block)
 					: $this->activities->blockActor($block),
 				'key_id' => $this->activities->keyId($block->localUserId),
-			]);
+			], subject: JobSubject::account($block->localUserId));
 		} catch (Throwable) {
 			// The local block is already committed. A queue outage must not
 			// turn a successful local block into an error or lose the row.

@@ -22,6 +22,7 @@ use AlohaSocial\Core\Api\CreateScheduledPostHandler;
 use AlohaSocial\Core\Api\CreateStoryHandler;
 use AlohaSocial\Core\Api\CreateStoryReactionHandler;
 use AlohaSocial\Core\Api\CreateStoryReplyHandler;
+use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteStoryHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -341,6 +342,7 @@ use AlohaSocial\Core\Service\PinService;
 use AlohaSocial\Core\Http\HandlerMap;
 use AlohaSocial\Core\Http\Kernel;
 use AlohaSocial\Core\Http\Middleware\MastodonApiGate;
+use AlohaSocial\Core\Http\Middleware\RejectDeletedAccountWrites;
 use AlohaSocial\Core\Http\Middleware\RequireAuthentication;
 use AlohaSocial\Core\Http\Middleware\RequireScopes;
 use AlohaSocial\Core\Http\Request;
@@ -1070,7 +1072,7 @@ final readonly class Application
 		$activities = new ActivityFactory($config, $mediaService);
 		$accountData = $accountDataRepository === null || $blobStore === null
 			? null
-			: new AccountDataService($accountDataRepository, $blobStore, $activities);
+			: new AccountDataService($accountDataRepository, $blobStore, $activities, $queue, $clock);
 		$cleanup = new CleanupService(
 			$attachmentRepository,
 			$notificationRepository,
@@ -1546,6 +1548,7 @@ final readonly class Application
 			->with(DeleteRecommendationDataHandler::class, static fn (): DeleteRecommendationDataHandler => new DeleteRecommendationDataHandler($recommendationService))
 			->with(ExportAccountDataHandler::class, static fn (): ExportAccountDataHandler => new ExportAccountDataHandler($accountData))
 			->with(DeleteAccountDataHandler::class, static fn (): DeleteAccountDataHandler => new DeleteAccountDataHandler($accountData))
+			->with(AccountDeletionStatusHandler::class, static fn (): AccountDeletionStatusHandler => new AccountDeletionStatusHandler($accountData))
 			->with(StoriesHandler::class, static fn (): StoriesHandler => new StoriesHandler($storyService))
 			->with(CreateStoryHandler::class, static fn (): CreateStoryHandler => new CreateStoryHandler($storyService))
 			->with(ShowStoryHandler::class, static fn (): ShowStoryHandler => new ShowStoryHandler($storyService))
@@ -1736,7 +1739,12 @@ final readonly class Application
 		$kernel = new Kernel(
 			new Router($routes),
 			$handlers,
-			[new MastodonApiGate($mastodonService), new RequireAuthentication(), new RequireScopes()],
+			[
+				new MastodonApiGate($mastodonService),
+				new RequireAuthentication(),
+				new RequireScopes(),
+				new RejectDeletedAccountWrites($accountDataRepository, $accountData),
+			],
 			$logger,
 			$debug,
 		);
@@ -1748,7 +1756,7 @@ final readonly class Application
 			$timelines,
 			$followerService,
 			$inboxService,
-			new JobWorker($queue, $jobHandlers, $clock, $logger),
+			new JobWorker($queue, $jobHandlers, $clock, $logger, $accountDataRepository, $accountData),
 			$queue,
 			$followingService,
 			$blockService,

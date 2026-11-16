@@ -13,6 +13,7 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\InvalidJobException;
 use AlohaSocial\Core\Jobs\JobFailureCode;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
@@ -48,6 +49,26 @@ abstract class JobQueueTestCase extends TestCase
 			self::fail('Expected an invalid job error.');
 		} catch (InvalidJobException $exception) {
 			self::assertSame(JobFailureCode::INVALID_TYPE, $exception->errorCode);
+		}
+	}
+
+	public function testCancelBySubjectRemovesPendingAndReservedJobsForThatAccount(): void
+	{
+		$this->queue()->push('account', [], null, JobSubject::account('alice'));
+		$this->queue()->push('account', [], null, JobSubject::account('alice'));
+		$this->queue()->push('other', [], null, JobSubject::account('bob'));
+		$this->queue()->push('global', []);
+
+		$reserved = $this->queue()->reserve(1, $this->clock()->now());
+		self::assertCount(1, $reserved);
+		self::assertSame(2, $this->queue()->cancelBySubject(JobSubject::account('alice')));
+		self::assertSame(2, $this->queue()->pendingCount());
+		self::assertSame(0, $this->queue()->cancelBySubject(JobSubject::account('alice')));
+
+		$remaining = $this->queue()->reserve(10, $this->clock()->now());
+		self::assertCount(2, $remaining);
+		foreach ($remaining as $job) {
+			self::assertNotSame('alice', $job->subject?->id);
 		}
 	}
 

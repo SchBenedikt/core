@@ -24,7 +24,12 @@ interface JobQueue
 	/**
 	 * @param array<string, mixed> $payload
 	 */
-	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job;
+	public function push(
+		string $type,
+		array $payload,
+		?DateTimeImmutable $availableAt = null,
+		?JobSubject $subject = null,
+	): Job;
 
 	/**
 	 * Reserves up to `$limit` due jobs for this worker.
@@ -34,6 +39,15 @@ interface JobQueue
 	public function reserve(int $limit, DateTimeImmutable $now): array;
 
 	public function complete(Job $job): void;
+
+	/**
+	 * Removes every queued and reserved job for one subject.
+	 *
+	 * A worker that already holds a reserved job still re-checks the account
+	 * write guard before running its handler, so removing the row is not the
+	 * only protection.
+	 */
+	public function cancelBySubject(JobSubject $subject): int;
 
 	/**
 	 * Records a failed attempt: the job is rescheduled with exponential

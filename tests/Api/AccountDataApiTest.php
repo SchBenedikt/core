@@ -36,6 +36,22 @@ final class AccountDataApiTest extends TestCase
 		self::assertSame('account_data_unavailable', $unavailable->decodedBody()['error']['code']);
 	}
 
+	public function testDeletionStatusRequiresAuthenticationAndTheHostAdapter(): void
+	{
+		$app = Application::inMemory();
+
+		$anonymous = $app->handle(new Request(method: 'GET', path: '/api/v1/account/deletion'));
+		self::assertSame(401, $anonymous->status);
+
+		$unavailable = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/account/deletion',
+			userId: 'alice',
+		));
+		self::assertSame(503, $unavailable->status);
+		self::assertSame('account_data_unavailable', $unavailable->decodedBody()['error']['code']);
+	}
+
 	public function testErasureRequiresAuthenticationAndTheHostAdapter(): void
 	{
 		$app = Application::inMemory();

@@ -12,12 +12,18 @@ All notable changes to this project are documented here. The format follows
   `GET /api/v1/account/export` returns the deterministic
   `alohasocial-account-archive` JSON (all attributable rows plus attachment
   and PDS blobs, with sealed PDS keys omitted), and
-  `DELETE /api/v1/account/data` removes the same rows child-first in one
-  transaction and then the account's blobs. Both routes are authenticated and
-  private/no-store, use the existing `social_*` tables rather than an archive
-  table, and report tables that have no reliable owner column instead of
-  pretending they are empty. The host account, credentials and session remain
-  host-owned (ADR 0006); see
+  `DELETE /api/v1/account/data` freezes the account in the durable
+  `social_account_deletion` tombstone, cancels its subject-tagged queued jobs,
+  removes the same rows child-first in one transaction and then the account's
+  blobs. A late write or job from an in-flight request is swept again after the
+  freeze; repeated deletes return the stored result and missing rows/blobs are
+  not errors. Existing installations add the schema with the idempotent
+  `JobSchema::upgrade()` and `AccountDeletionSchema::upgrade()` calls, which
+  preserve pending queue rows. `GET /api/v1/account/deletion` exposes the
+  durable state and report. The routes are authenticated and private/no-store, use the existing
+  `social_*` tables rather than an archive table, and report tables that have no
+  reliable owner column instead of pretending they are empty. The host
+  account, credentials and session remain host-owned (ADR 0006); see
   [ADR 0011](docs/adr/0011-account-data-export-and-erasure.md) and the
   [route reference](docs/reference/routes.md#account-export-and-erasure).
 - A reproducible release-artifact check. `composer check:release` builds the

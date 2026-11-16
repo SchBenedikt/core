@@ -19,6 +19,7 @@ use AlohaSocial\Core\Domain\Story\StoryReaction;
 use AlohaSocial\Core\Domain\Story\StoryReply;
 use AlohaSocial\Core\Domain\Story\StoryRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
@@ -522,13 +523,18 @@ final class StoryService
 				'inbox' => $inbox,
 				'activity' => $activity,
 				'key_id' => $this->activities->keyId($story->ownerId),
-			]);
+			], subject: JobSubject::account($story->ownerId));
 		}
 	}
 
 	private function queueExpiry(Story $story): void
 	{
-		$this->queue->push(JobType::STORY_EXPIRE, ['story_id' => $story->id], $story->expiresAt);
+		$this->queue->push(
+			JobType::STORY_EXPIRE,
+			['story_id' => $story->id],
+			$story->expiresAt,
+			JobSubject::account($story->ownerId),
+		);
 	}
 
 	private function storyMediaUrl(Story $story): ?string

@@ -19,7 +19,11 @@ Protocol linking flow and a phase plan with acceptance checks — is in
    `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
    `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
    `MuteSchema`, `AccountListSchema`, `AtprotoPublicationSchema`,
-   `AtprotoInboundSchema`, `JobSchema`, `ActivityLogSchema`) from the migration step.
+   `AtprotoInboundSchema`, `JobSchema`, `AccountDeletionSchema`, `ActivityLogSchema`) from the migration step.
+   A fresh database uses the schema `create()` methods. An existing database
+   uses `JobSchema::upgrade($connection)` and
+   `AccountDeletionSchema::upgrade($connection)`; both are idempotent, preserve
+   pending jobs and add the tombstone/subject schema in place.
    `AtprotoInboundSchema` is only needed when an `AtprotoEventSource` is wired.
    `social_poll`/`social_poll_option` are needed whenever status reads or
    writes are exposed through the Mastodon compatibility surface, because

@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\UnknownLocalActorException;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Support\Time;
@@ -69,7 +70,7 @@ final class ActorProfileUpdateService
 				'inbox' => $inbox,
 				'activity' => $activity,
 				'key_id' => $this->activities->keyId($localUserId),
-			]);
+			], subject: JobSubject::account($localUserId));
 		}
 
 		return count($inboxes);

@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Support;
 
 use AlohaSocial\Core\Jobs\Job;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use DateTimeImmutable;
 use RuntimeException;
 use Throwable;
@@ -21,9 +22,18 @@ use Throwable;
  */
 final class RejectingJobQueue implements JobQueue
 {
-	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job
-	{
+	public function push(
+		string $type,
+		array $payload,
+		?DateTimeImmutable $availableAt = null,
+		?JobSubject $subject = null,
+	): Job {
 		throw new RuntimeException('The delivery queue is unavailable.');
+	}
+
+	public function cancelBySubject(JobSubject $subject): int
+	{
+		return 0;
 	}
 
 	public function reserve(int $limit, DateTimeImmutable $now): array

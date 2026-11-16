@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 185 routes, 53 of them under the Mastodon prefix |
-| Persistence | 38 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 221 PHP test files (1815 tests, 9938 assertions) and 9 UI test files (69 tests) |
+| HTTP contract | 186 routes, 53 of them under the Mastodon prefix |
+| Persistence | 40 schema classes, in-memory and PDO adapters behind shared contract tests |
+| Tests | 224 PHP test files (1841 tests, 10109 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |

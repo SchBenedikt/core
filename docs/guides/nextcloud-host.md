@@ -263,6 +263,7 @@ The core supplies both adapters; the app does not implement the algorithms.
 
 ```php
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
 use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Jobs\JobSchema;
@@ -271,8 +272,11 @@ use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 
 JobSchema::create($connection);
+AccountDeletionSchema::create($connection);
 ActivityLogSchema::create($connection);
 
+// Existing app database instead: JobSchema::upgrade($connection);
+// AccountDeletionSchema::upgrade($connection);
 $queue = new PdoJobQueue($connection, new SystemClock(), new RandomIdGenerator());
 $activityLog = new PdoActivityLog($connection);
 
@@ -290,9 +294,15 @@ $app = Application::forHost(
 `$connection` is the `NextcloudConnection` adapter from section 3. Its
 `transaction()` method must really join the DBAL transaction, because
 `PdoJobQueue::reserve()` relies on the conditional update being atomic.
-`JobSchema` and `ActivityLogSchema` are the canonical definitions; the app's
-migration should translate their statements into Nextcloud's schema API rather
-than maintaining a second column list.
+`JobSchema`, `AccountDeletionSchema` and `ActivityLogSchema` are the canonical
+definitions; the app's migration should translate their statements into
+Nextcloud's schema API rather than maintaining a second column list. For an
+existing app database, the migration must add the `subject_type`/`subject_id`
+columns and `social_job_subject` index and create `social_account_deletion`
+with its state index. The core's idempotent `JobSchema::upgrade($connection)`
+and `AccountDeletionSchema::upgrade($connection)` do exactly that through the
+`Connection` adapter; the equivalent Nextcloud schema migration must be
+idempotent as well and must not drop pending `social_job` rows.
 
 ### Queue table
 
@@ -307,8 +317,11 @@ than maintaining a second column list.
 | `attempts` | `INTEGER` | no |
 | `reserved_at` | `VARCHAR(20)` | yes |
 | `dead_at` | `VARCHAR(20)` | yes |
+| `subject_type` | `VARCHAR(32)` | yes |
+| `subject_id` | `VARCHAR(255)` | yes |
 
-Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`.
+Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`,
+`social_job_subject (subject_type, subject_id)`.
 
 The adapter reserves due rows with a conditional update inside a transaction,
 so two workers cannot run the same job. It applies the same five-attempt

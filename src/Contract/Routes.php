@@ -40,6 +40,7 @@ use AlohaSocial\Core\Api\StoryViewersHandler;
 use AlohaSocial\Core\Api\UnarchivePostHandler;
 use AlohaSocial\Core\Api\UnpinPostHandler;
 use AlohaSocial\Core\Api\UpdateCollectionHandler;
+use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -742,6 +743,14 @@ final class Routes
 				handler: DeleteAccountDataHandler::class,
 				requiresAuth: true,
 				summary: 'Delete every core-owned row and blob of the signed-in account.',
+			),
+			new Route(
+				name: 'account.deletion.status',
+				method: 'GET',
+				path: $base . '/account/deletion',
+				handler: AccountDeletionStatusHandler::class,
+				requiresAuth: true,
+				summary: 'Read the durable state and result of the signed-in account deletion.',
 			),
 			new Route(
 				name: 'stories.list',

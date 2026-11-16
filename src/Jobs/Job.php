@@ -29,6 +29,7 @@ final readonly class Job
 		public array $payload,
 		public DateTimeImmutable $availableAt,
 		public int $attempts = 0,
+		public ?JobSubject $subject = null,
 	) {
 	}
 }

@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Jobs;
 
+use AlohaSocial\Core\Domain\Account\AccountDeletionSweeper;
+use AlohaSocial\Core\Domain\Account\AccountWriteGuard;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -33,6 +35,8 @@ final class JobWorker
 		private readonly JobHandlerRegistry $handlers,
 		private readonly Clock $clock,
 		private readonly LoggerInterface $logger = new NullLogger(),
+		private readonly ?AccountWriteGuard $accountWriteGuard = null,
+		private readonly ?AccountDeletionSweeper $accountDeletionSweeper = null,
 	) {
 	}
 
@@ -46,6 +50,24 @@ final class JobWorker
 
 		foreach ($reserved as $job) {
 			$handled++;
+
+			if ($this->isBlockedByAccountDeletion($job)) {
+				try {
+					$this->queue->complete($job);
+				} catch (Throwable $exception) {
+					$this->logger->error(
+						'Job {id} of type {type} was cancelled by an account deletion but could not be removed: {message}',
+						[
+							'id' => $job->id,
+							'type' => $job->type,
+							'message' => $exception->getMessage(),
+							'exception' => $exception,
+						],
+					);
+				}
+
+				continue;
+			}
 
 			try {
 				$this->handlers->handle($job);
@@ -63,6 +85,7 @@ final class JobWorker
 					],
 				);
 
+				$this->sweepIfBlocked($job);
 				$this->queue->deadLetter($job, $exception, $this->clock->now());
 
 				continue;
@@ -80,10 +103,13 @@ final class JobWorker
 					],
 				);
 
+				$this->sweepIfBlocked($job);
 				$this->queue->fail($job, $exception, $this->clock->now());
 
 				continue;
 			}
+
+			$this->sweepIfBlocked($job);
 
 			try {
 				$this->queue->complete($job);
@@ -106,5 +132,35 @@ final class JobWorker
 		}
 
 		return $handled;
+	}
+
+	private function isBlockedByAccountDeletion(Job $job): bool
+	{
+		if (!$job->subject?->isAccount() || $this->accountWriteGuard === null) {
+			return false;
+		}
+
+		return $this->accountWriteGuard->accountWriteStatus($job->subject->id) !== null;
+	}
+
+	private function sweepIfBlocked(Job $job): void
+	{
+		if ($this->accountDeletionSweeper === null || !$this->isBlockedByAccountDeletion($job)) {
+			return;
+		}
+
+		try {
+			$this->accountDeletionSweeper->sweep($job->subject->id);
+		} catch (Throwable $exception) {
+			$this->logger->error(
+				'Job {id} of type {type} completed for a deleted account, but its late writes could not be swept: {message}',
+				[
+					'id' => $job->id,
+					'type' => $job->type,
+					'message' => $exception->getMessage(),
+					'exception' => $exception,
+				],
+			);
+		}
 	}
 }

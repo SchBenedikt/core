@@ -53,8 +53,12 @@ final class InMemoryJobQueue implements JobQueue
 	) {
 	}
 
-	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job
-	{
+	public function push(
+		string $type,
+		array $payload,
+		?DateTimeImmutable $availableAt = null,
+		?JobSubject $subject = null,
+	): Job {
 		if (trim($type) === '') {
 			throw new InvalidJobException(JobFailureCode::INVALID_TYPE, 'A job needs a type.');
 		}
@@ -64,6 +68,8 @@ final class InMemoryJobQueue implements JobQueue
 			$type,
 			$payload,
 			Time::toSecondPrecision($availableAt ?? $this->clock->now()),
+			0,
+			$subject,
 		);
 
 		$this->pending[$job->id] = $job;
@@ -96,6 +102,21 @@ final class InMemoryJobQueue implements JobQueue
 		return $reserved;
 	}
 
+	public function cancelBySubject(JobSubject $subject): int
+	{
+		$cancelled = 0;
+		foreach ([$this->pending, $this->reserved] as $jobs) {
+			foreach ($jobs as $id => $job) {
+				if ($job->subject?->type === $subject->type && $job->subject->id === $subject->id) {
+					unset($this->pending[$id], $this->reserved[$id]);
+					$cancelled++;
+				}
+			}
+		}
+
+		return $cancelled;
+	}
+
 	public function complete(Job $job): void
 	{
 		unset($this->reserved[$job->id]);
@@ -115,6 +136,7 @@ final class InMemoryJobQueue implements JobQueue
 			$job->payload,
 			$job->availableAt,
 			$job->attempts + 1,
+			$job->subject,
 		);
 	}
 
@@ -123,7 +145,7 @@ final class InMemoryJobQueue implements JobQueue
 		unset($this->reserved[$job->id]);
 
 		$attempts = $job->attempts + 1;
-		$failed = new Job($job->id, $job->type, $job->payload, $job->availableAt, $attempts);
+		$failed = new Job($job->id, $job->type, $job->payload, $job->availableAt, $attempts, $job->subject);
 
 		if ($attempts >= self::MAX_ATTEMPTS) {
 			$this->dead[$job->id] = $failed;
@@ -142,6 +164,7 @@ final class InMemoryJobQueue implements JobQueue
 			$job->payload,
 			Time::toSecondPrecision($now->modify('+' . $delay . ' seconds')),
 			$attempts,
+			$job->subject,
 		);
 	}
 

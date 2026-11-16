@@ -365,10 +365,17 @@ Create the core tables with the schema classes from the host's migration:
 - `social_remote_thread_post` — `RemoteThreadSchema` (on-demand context cache; no legacy import; a host may start empty)
 - `social_block` — `BlockSchema` (per-user blocks; no legacy import)
 - `social_job` — `JobSchema`
+- `social_account_deletion` — `AccountDeletionSchema` (durable account deletion state; starts empty, no legacy import)
 - `social_activity_log` — `ActivityLogSchema`
 
 Use the host's schema API for Nextcloud; do not copy a second column list from
-this guide. The classes are the source of truth.
+this guide. The classes are the source of truth. If the staged installation
+already has `social_job`, use the idempotent
+`JobSchema::upgrade($connection)` and
+`AccountDeletionSchema::upgrade($connection)` methods (or the equivalent
+idempotent host schema migration) instead of the fresh-install `create()`
+calls; they add the subject columns/index and the tombstone table without
+dropping pending jobs.
 
 The core has no user table. A local account remains the host's user id; that
 id is written to `author_id` and `local_user_id` and is used to build the

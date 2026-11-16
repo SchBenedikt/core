@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 
@@ -113,7 +114,7 @@ final class FollowRequestService
 			'inbox' => $follower->inboxUrl,
 			'activity' => $activity,
 			'key_id' => $this->activities->keyId($localUserId),
-		]);
+		], subject: JobSubject::account($localUserId));
 
 		return $accept ? $follower->withState(FollowState::Accepted) : $follower;
 	}

@@ -23,6 +23,7 @@ use AlohaSocial\Core\Domain\Post\PollVote;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
@@ -343,7 +344,7 @@ final class RemotePollService
 					'inbox' => $inbox,
 					'activity' => $this->activities->pollVote($userId, $poll, $position, $now),
 					'key_id' => $this->activities->keyId($userId),
-				]);
+				], subject: JobSubject::account($userId));
 			}
 		} catch (Throwable) {
 			return false;

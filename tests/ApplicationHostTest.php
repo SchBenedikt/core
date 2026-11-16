@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
+use AlohaSocial\Core\Domain\Account\PdoAccountDataRepository;
 use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
@@ -70,6 +72,7 @@ use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSchema;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Jobs\PdoJobQueue;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
@@ -127,7 +130,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(185, $app->routes->routes());
+		self::assertCount(186, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -206,6 +209,64 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(200, $erasure->status, $erasure->body);
 		self::assertSame(1, $erasure->decodedBody()['deleted'][PostSchema::TABLE]);
 		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+	}
+
+	public function testForHostFreezesWritesCancelsJobsAndKeepsTheDeletionResultInspectable(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), blobStore: new InMemoryBlobStore());
+		$database->execute(
+			'INSERT INTO ' . PostSchema::TABLE . ' (id, author_id, content, visibility, published_at)'
+			. " VALUES ('deletion-post', 'alice', 'goes away', 'public', '2026-11-16T12:00:00Z')",
+		);
+		$app->queue->push('atproto.delete', ['user_id' => 'alice'], null, JobSubject::account('alice'));
+
+		$active = $app->handle(new Request('GET', '/api/v1/account/deletion', userId: 'alice'));
+		self::assertSame(200, $active->status);
+		self::assertSame('active', $active->decodedBody()['state']);
+
+		$repository = new PdoAccountDataRepository($database);
+		$repository->beginDeletion('alice', Time::parse('2026-11-16T12:00:00Z'));
+
+		$blocked = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: '{}',
+			userId: 'alice',
+		));
+		self::assertSame(403, $blocked->status);
+		self::assertSame('account_deletion_in_progress', $blocked->decodedBody()['error']['code']);
+		self::assertSame(1, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+
+		$first = $app->handle(new Request('DELETE', '/api/v1/account/data', userId: 'alice'));
+		self::assertSame(200, $first->status, $first->body);
+		self::assertSame(1, $first->decodedBody()['deleted'][PostSchema::TABLE]);
+		self::assertSame(0, $app->queue->pendingCount());
+
+		$after = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: '{}',
+			userId: 'alice',
+		));
+		self::assertSame(410, $after->status);
+		self::assertSame('account_deleted', $after->decodedBody()['error']['code']);
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
+
+		$second = $app->handle(new Request('DELETE', '/api/v1/account/data', userId: 'alice'));
+		self::assertSame(200, $second->status, $second->body);
+		self::assertSame($first->body, $second->body);
+
+		$status = $app->handle(new Request('GET', '/api/v1/account/deletion', userId: 'alice'));
+		self::assertSame(200, $status->status);
+		self::assertSame('erased', $status->decodedBody()['state']);
+		self::assertNotNull($status->decodedBody()['completed_at']);
+
+		$export = $app->handle(new Request('GET', '/api/v1/account/export', userId: 'alice'));
+		self::assertSame(200, $export->status);
+		self::assertSame('erased', $export->decodedBody()['deletion']['state']);
 	}
 
 	public function testForHostRetriesAQueuedFollowThroughTheSqlQueue(): void
@@ -1223,6 +1284,7 @@ final class ApplicationHostTest extends TestCase
 		AccountListSchema::create($database);
 		FollowedHashtagSchema::create($database);
 		JobSchema::create($database);
+		AccountDeletionSchema::create($database);
 		ActivityLogSchema::create($database);
 		AtprotoPublicationSchema::create($database);
 		ReportSchema::create($database);

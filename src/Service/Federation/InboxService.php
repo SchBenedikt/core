@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
@@ -684,7 +685,7 @@ final class InboxService
 			'inbox' => $actor->inboxUrl,
 			'activity' => $accept,
 			'key_id' => $this->activities->keyId($localUserId),
-		]);
+		], subject: JobSubject::account($localUserId));
 	}
 
 	/**

@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Jobs;
 
+use AlohaSocial\Core\Domain\Account\AccountDeletionSweeper;
+use AlohaSocial\Core\Domain\Account\AccountWriteGuard;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\Job;
 use AlohaSocial\Core\Jobs\JobFailureCode;
 use AlohaSocial\Core\Jobs\JobHandler;
 use AlohaSocial\Core\Jobs\JobHandlerRegistry;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobWorker;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Service\Federation\InvalidJobPayloadException;
@@ -24,6 +27,16 @@ use AlohaSocial\Core\Tests\Support\FailingJobHandler;
 use AlohaSocial\Core\Tests\Support\RecordingJobHandler;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use PHPUnit\Framework\TestCase;
+
+final class MutableAccountWriteGuard implements AccountWriteGuard
+{
+	public ?int $status = null;
+
+	public function accountWriteStatus(string $userId): ?int
+	{
+		return $this->status;
+	}
+}
 
 final class JobWorkerTest extends TestCase
 {
@@ -47,6 +60,70 @@ final class JobWorkerTest extends TestCase
 		self::assertSame(1, $handled);
 		self::assertCount(1, $handler->jobs);
 		self::assertSame(['n' => 1], $handler->jobs[0]->payload);
+		self::assertSame(0, $this->queue->pendingCount());
+	}
+
+	public function testAJobForAnErasedAccountNeverReachesItsHandler(): void
+	{
+		$handler = new RecordingJobHandler();
+		$this->queue->push('test', [], null, JobSubject::account('alice'));
+		$guard = new class implements AccountWriteGuard {
+			public function accountWriteStatus(string $userId): ?int
+			{
+				return $userId === 'alice' ? 410 : null;
+			}
+		};
+
+		$worker = new JobWorker(
+			$this->queue,
+			(new JobHandlerRegistry())->with('test', $handler),
+			$this->clock,
+			new ArrayPsrLogger(),
+			$guard,
+		);
+
+		self::assertSame(1, $worker->runOnce());
+		self::assertCount(0, $handler->jobs);
+		self::assertSame(0, $this->queue->pendingCount());
+		self::assertSame(0, $this->queue->deadLetterCount());
+	}
+
+	public function testAJobThatFreezesDuringItsHandlerIsSwept(): void
+	{
+		$guard = new MutableAccountWriteGuard();
+		$sweeper = new class implements AccountDeletionSweeper {
+			/** @var list<string> */
+			public array $swept = [];
+
+			public function sweep(string $userId): void
+			{
+				$this->swept[] = $userId;
+			}
+		};
+		$handler = new class($guard) implements JobHandler {
+			public function __construct(private readonly MutableAccountWriteGuard $guard)
+			{
+			}
+
+			public function handle(Job $job): void
+			{
+				// Simulate a handler that committed after the account was frozen.
+				$this->guard->status = 410;
+			}
+		};
+		$this->queue->push('test', [], null, JobSubject::account('alice'));
+		$worker = new JobWorker(
+			$this->queue,
+			(new JobHandlerRegistry())->with('test', $handler),
+			$this->clock,
+			new ArrayPsrLogger(),
+			$guard,
+			$sweeper,
+		);
+
+		$worker->runOnce();
+
+		self::assertSame(['alice'], $sweeper->swept);
 		self::assertSame(0, $this->queue->pendingCount());
 	}
 

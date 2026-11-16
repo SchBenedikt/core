@@ -19,6 +19,7 @@ use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostState;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
@@ -153,6 +154,7 @@ final class ScheduledPostService
 			JobType::SCHEDULED_POST_PUBLISH,
 			['scheduled_post_id' => $scheduled->id],
 			$scheduledAt,
+			JobSubject::account($scheduled->authorId),
 		);
 
 		return $scheduled;
@@ -179,6 +181,7 @@ final class ScheduledPostService
 			JobType::SCHEDULED_POST_PUBLISH,
 			['scheduled_post_id' => $id],
 			$scheduledAt,
+			JobSubject::account($scheduled->authorId),
 		);
 
 		return $this->scheduled->find($id) ?? $scheduled;
@@ -259,7 +262,12 @@ final class ScheduledPostService
 		if ($scheduled->scheduledAt > $now) {
 			// A reschedule or a duplicate job can make the payload early.
 			// Queueing the same row again for the new time is idempotent.
-			$this->queue->push(JobType::SCHEDULED_POST_PUBLISH, ['scheduled_post_id' => $id], $scheduled->scheduledAt);
+			$this->queue->push(
+				JobType::SCHEDULED_POST_PUBLISH,
+				['scheduled_post_id' => $id],
+				$scheduled->scheduledAt,
+				JobSubject::account($scheduled->authorId),
+			);
 
 			return;
 		}

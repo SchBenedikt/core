@@ -18,6 +18,7 @@ use AlohaSocial\Core\Domain\Post\QuoteGrant;
 use AlohaSocial\Core\Domain\Post\QuoteGrantRepository;
 use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
@@ -160,7 +161,7 @@ final class QuoteService
 				$draft->remoteTargetActorId,
 			),
 			'key_id' => $this->activities->keyId($authorId),
-		]);
+		], subject: JobSubject::account($authorId));
 	}
 
 	/**
@@ -237,7 +238,7 @@ final class QuoteService
 			'inbox' => $inboxUrl,
 			'activity' => $response,
 			'key_id' => $this->activities->keyId($post->authorId),
-		]);
+		], subject: JobSubject::account($post->authorId));
 	}
 
 	/**

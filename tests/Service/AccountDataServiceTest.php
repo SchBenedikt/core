@@ -9,7 +9,10 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Service;
 
+use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
 use AlohaSocial\Core\Domain\Account\PdoAccountDataRepository;
+use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
@@ -41,12 +44,15 @@ use AlohaSocial\Core\Domain\Search\SearchIndexSchema;
 use AlohaSocial\Core\Domain\Story\StorySchema;
 use AlohaSocial\Core\Domain\Timeline\AccountListSchema;
 use AlohaSocial\Core\Domain\Timeline\FollowedHashtagSchema;
+use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Account\AccountDataService;
+use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -69,17 +75,28 @@ final class AccountDataServiceTest extends TestCase
 
 	private AccountDataService $service;
 
+	private PdoAccountDataRepository $repository;
+
+	private InMemoryJobQueue $queue;
+
+	private FrozenClock $clock;
+
 	protected function setUp(): void
 	{
 		$this->database = new PdoConnection(new PDO('sqlite::memory:'));
 		$this->createSchemas();
 		$this->blobs = new InMemoryBlobStore();
+		$this->clock = new FrozenClock(Time::parse('2026-11-16T12:00:00Z'));
+		$this->repository = new PdoAccountDataRepository($this->database);
+		$this->queue = new InMemoryJobQueue($this->clock, new SequenceIdGenerator('job-'));
 		$this->service = new AccountDataService(
-			new PdoAccountDataRepository($this->database),
+			$this->repository,
 			$this->blobs,
 			new ActivityFactory(new ArrayConfig([
 				'social' => ['instance.url' => 'https://social.example'],
 			])),
+			$this->queue,
+			$this->clock,
 		);
 
 		$this->seed();
@@ -197,11 +214,83 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['record-b'], array_column($this->rows(PdsSchema::RECORD_TABLE), 'rkey'));
 		self::assertSame(['event-b'], array_column($this->rows(PdsSchema::EVENT_TABLE), 'commit_cid'));
 
-		// A second call is an idempotent no-op, including the blob sweep.
+		// A second call returns the stored result, not a second (smaller) pass.
 		$again = $this->service->erase('alice');
 		self::assertTrue($again->complete());
-		self::assertSame(0, $again->blobsDeleted);
-		self::assertSame(0, $again->counts[PostSchema::TABLE]);
+		self::assertSame('erased', $again->state);
+		self::assertSame($report->blobsDeleted, $again->blobsDeleted);
+		self::assertSame($report->counts, $again->counts);
+		self::assertSame($report->toArray(), $again->toArray());
+	}
+
+	public function testADeleteCallDuringAnotherOwnersRunReturnsTheCurrentStatus(): void
+	{
+		$this->repository->beginDeletion('alice', $this->clock->now());
+		self::assertTrue($this->repository->claimDeletion('alice', $this->clock->now()));
+
+		$inProgress = $this->service->erase('alice');
+
+		self::assertSame('erasing', $inProgress->state);
+		self::assertTrue($inProgress->inProgress());
+		self::assertSame(403, $this->repository->accountWriteStatus('alice'));
+
+		$this->repository->finishDeletion(
+			'alice',
+			[PostSchema::TABLE => 3],
+			2,
+			[],
+			$this->clock->now(),
+		);
+
+		$again = $this->service->erase('alice');
+		self::assertSame('erased', $again->state);
+		self::assertSame([PostSchema::TABLE => 3], $again->counts);
+		self::assertSame(2, $again->blobsDeleted);
+	}
+
+	public function testDeletionFreezesTheAccountAndCancelsItsQueuedJobsBeforeErasing(): void
+	{
+		$this->queue->push('deliver', [], null, JobSubject::account('alice'));
+		$this->queue->push('deliver', [], null, JobSubject::account('bob'));
+		$this->queue->push('cleanup', []);
+
+		$report = $this->service->erase('alice');
+
+		self::assertTrue($report->complete());
+		self::assertSame(2, $this->queue->pendingCount());
+		self::assertSame(410, $this->repository->accountWriteStatus('alice'));
+		self::assertNull($this->repository->accountWriteStatus('bob'));
+		self::assertSame('erased', $this->service->deletionStatus('alice')->state);
+	}
+
+	public function testASweepRemovesALateWriteThatCommittedAfterTheFreeze(): void
+	{
+		$this->repository->beginDeletion('alice', $this->clock->now());
+		$this->insert(PostSchema::TABLE, [
+			'id' => 'post-late',
+			'author_id' => 'alice',
+			'content' => 'late write',
+			'visibility' => 'public',
+			'published_at' => '2026-11-16T12:00:01Z',
+		]);
+
+		$this->service->sweep('alice');
+
+		self::assertNotContains('post-late', array_column($this->rows(PostSchema::TABLE), 'id'));
+		self::assertContains('post-b', array_column($this->rows(PostSchema::TABLE), 'id'));
+	}
+
+	public function testAFrozenAccountAlreadyRejectsWritesBeforeRowsAreRemoved(): void
+	{
+		$this->repository->beginDeletion('alice', $this->clock->now());
+
+		self::assertSame(403, $this->repository->accountWriteStatus('alice'));
+		self::assertContains('post-a', array_column($this->rows(PostSchema::TABLE), 'id'));
+
+		$report = $this->service->erase('alice');
+
+		self::assertSame('erased', $report->state);
+		self::assertSame(410, $this->repository->accountWriteStatus('alice'));
 	}
 
 	/**
@@ -245,6 +334,7 @@ final class AccountDataServiceTest extends TestCase
 		ReportSchema::create($this->database);
 		HeldPostSchema::create($this->database);
 		PdsSchema::create($this->database);
+		AccountDeletionSchema::create($this->database);
 	}
 
 	private function seed(): void

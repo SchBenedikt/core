@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
@@ -144,7 +145,7 @@ final class BoostService
 					'inbox' => $inbox,
 					'activity' => $activity,
 					'key_id' => $keyId,
-				]);
+				], subject: JobSubject::account($boost->userId));
 			} catch (Throwable) {
 				// The local boost is committed; the host queue can retry from
 				// its own dead-letter handling, but must not fail the request.

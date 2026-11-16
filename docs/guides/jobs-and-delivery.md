@@ -49,16 +49,25 @@ use AlohaSocial\Core\Jobs\JobSchema;
 use AlohaSocial\Core\Jobs\PdoJobQueue;
 
 JobSchema::create($connection);
+// Existing installation: JobSchema::upgrade($connection);
 $queue = new PdoJobQueue($connection, $clock, $ids);
 ```
 
 `PdoJobQueue` stores each job in `social_job`, reserves with a conditional
 update inside a transaction, and implements `complete()`/`fail()`/
-`deadLetter()` in SQL. `complete()` and `deadLetter()` require the row to still
+`deadLetter()` in SQL. Account-originated jobs also carry an optional
+`JobSubject::account($localUserId)` envelope (`subject_type`/`subject_id`),
+which `cancelBySubject()` removes when that account is deleted. The worker
+re-checks the account deletion guard before running a handler, so a reserved
+job cannot publish after its account was erased. `complete()` and `deadLetter()` require the row to still
 be reserved; an unreserved or already finished job is a no-op. A new process or
 connection sees the same pending jobs. The columns and indexes are in
-`JobSchema::statements()`; a host applies that DDL and passes the adapter to
-`Application::forHost()`. Tests may keep `InMemoryJobQueue`.
+`JobSchema::statements()`; a fresh host applies that DDL and passes the adapter
+to `Application::forHost()`. An existing host runs `JobSchema::upgrade()`
+instead: it adds the two nullable subject columns and their index without
+dropping pending jobs, and is safe to repeat. Legacy rows keep `NULL` subject
+columns and are therefore not cancelled by an account deletion; they remain
+unattributable. Tests may keep `InMemoryJobQueue`.
 
 ## Worker
 

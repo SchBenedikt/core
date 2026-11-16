@@ -20,6 +20,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
@@ -230,7 +231,7 @@ final class AccountMoveService
 				'inbox' => $inbox,
 				'activity' => $activity,
 				'key_id' => $this->activities->keyId($localUserId),
-			]);
+			], subject: JobSubject::account($localUserId));
 		}
 
 		return $move;

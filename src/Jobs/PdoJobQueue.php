@@ -51,8 +51,12 @@ final class PdoJobQueue implements JobQueue
 	) {
 	}
 
-	public function push(string $type, array $payload, ?DateTimeImmutable $availableAt = null): Job
-	{
+	public function push(
+		string $type,
+		array $payload,
+		?DateTimeImmutable $availableAt = null,
+		?JobSubject $subject = null,
+	): Job {
 		if (trim($type) === '') {
 			throw new InvalidJobException(JobFailureCode::INVALID_TYPE, 'A job needs a type.');
 		}
@@ -62,17 +66,21 @@ final class PdoJobQueue implements JobQueue
 			$type,
 			$payload,
 			Time::toSecondPrecision($availableAt ?? $this->clock->now()),
+			0,
+			$subject,
 		);
 
 		$this->db->execute(
 			'INSERT INTO ' . JobSchema::TABLE
-			. ' (id, type, payload, available_at, attempts, reserved_at, dead_at)'
-			. ' VALUES (:id, :type, :payload, :available_at, 0, NULL, NULL)',
+			. ' (id, type, payload, available_at, attempts, reserved_at, dead_at, subject_type, subject_id)'
+			. ' VALUES (:id, :type, :payload, :available_at, 0, NULL, NULL, :subject_type, :subject_id)',
 			[
 				'id' => $job->id,
 				'type' => $job->type,
 				'payload' => json_encode($job->payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
 				'available_at' => Time::format($job->availableAt),
+				'subject_type' => $subject?->type,
+				'subject_id' => $subject?->id,
 			],
 		);
 
@@ -92,7 +100,7 @@ final class PdoJobQueue implements JobQueue
 
 		return $this->db->transaction(function (Connection $db) use ($limit, $now, $staleBefore): array {
 			$rows = $db->fetchAll(
-				'SELECT id, type, payload, available_at, attempts FROM ' . JobSchema::TABLE
+				'SELECT id, type, payload, available_at, attempts, subject_type, subject_id FROM ' . JobSchema::TABLE
 				. ' WHERE dead_at IS NULL'
 				. ' AND available_at <= :now'
 				. ' AND (reserved_at IS NULL OR reserved_at <= :stale)'
@@ -127,6 +135,15 @@ final class PdoJobQueue implements JobQueue
 
 			return $jobs;
 		});
+	}
+
+	public function cancelBySubject(JobSubject $subject): int
+	{
+		return $this->db->execute(
+			'DELETE FROM ' . JobSchema::TABLE
+			. ' WHERE subject_type = :type AND subject_id = :id AND dead_at IS NULL',
+			['type' => $subject->type, 'id' => $subject->id],
+		);
 	}
 
 	public function complete(Job $job): void
@@ -217,12 +234,18 @@ final class PdoJobQueue implements JobQueue
 			throw new UnexpectedValueException('A stored job payload must be a JSON object.');
 		}
 
+		$subject = null;
+		if (isset($row['subject_type'], $row['subject_id']) && $row['subject_type'] !== null) {
+			$subject = new JobSubject((string) $row['subject_type'], (string) $row['subject_id']);
+		}
+
 		return new Job(
 			id: (string) $row['id'],
 			type: (string) $row['type'],
 			payload: $payload,
 			availableAt: Time::parse((string) $row['available_at']),
 			attempts: (int) $row['attempts'],
+			subject: $subject,
 		);
 	}
 }

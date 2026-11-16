@@ -18,9 +18,10 @@ use AlohaSocial\Core\Service\Account\AccountDataService;
 /**
  * `DELETE /api/v1/account/data`
  *
- * Removes every core-owned row and blob for the signed-in account in one
- * database transaction. The host account, credentials and session are not
- * core data (ADR 0006); the host must delete them after this route succeeds.
+ * Freezes the account, cancels its queued work, removes every core-owned row
+ * and blob, and stores a permanent deletion result. The host account,
+ * credentials and session are not core data (ADR 0006); the host must delete
+ * them after this route succeeds.
  */
 final class DeleteAccountDataHandler implements Handler
 {
@@ -45,14 +46,14 @@ final class DeleteAccountDataHandler implements Handler
 		}
 
 		$report = $this->accountData->erase($userId);
-		if (!$report->complete()) {
-			throw new HttpException(
-				500,
-				'account_data_blob_erasure_incomplete',
-				'The account rows were removed, but some blob objects could not be deleted.',
-			);
-		}
 
-		return Response::json($report->toArray(), 200, ['Cache-Control' => 'private, no-store']);
+		// 202 means another request owns the completion; the stored status is
+		// the authoritative result. Blob failures are reported in the status
+		// and do not turn a second DELETE into an error.
+		return Response::json(
+			$report->toArray(),
+			$report->inProgress() ? 202 : 200,
+			['Cache-Control' => 'private, no-store'],
+		);
 	}
 }

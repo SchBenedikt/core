@@ -72,7 +72,8 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
-- `src/Jobs/JobSchema.php` → `social_job`
+- `src/Jobs/JobSchema.php` → `social_job` (including the optional `subject_type`/`subject_id` envelope used to cancel one account's queued work)
+- `src/Domain/Account/AccountDeletionSchema.php` → `social_account_deletion` (the durable `frozen`/`erasing`/`erased` tombstone, requested/completed timestamps, deletion report and lease)
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 - `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
 - `src/Domain/Atproto/AtprotoInboundSchema.php` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account`
@@ -81,9 +82,25 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Moderation/ModerationActionSchema.php` → `social_moderation_action` (auditable actor, post and domain actions with an optional reversal note; active rows are never deleted)
 - `src/Domain/Moderation/HeldPostSchema.php` → `social_held_post` (the pending first-post draft, its JSON payload, hold reason and the published post id once approved)
 
+`social_account_deletion` keeps one row per deletion request: `user_id`, the
+`state` (`frozen`, `erasing` or `erased`), `requested_at`/`updated_at`/
+`completed_at`, the JSON `deleted_counts`, `blobs_deleted`, JSON
+`blob_failures`, `attempts` and a short `lease_until`. The row deliberately
+survives the account rows and blobs: it is both the write gate and the
+inspectable result. An existing `social_job` table adds nullable
+`subject_type`/`subject_id` columns and the `social_job_subject` index; old
+rows stay null and are treated as unattributable, which is why they are listed
+in the export's `not_attributable` map.
+
 Both hosts create the same columns. The standalone runs the statements from its
 migration step; the Nextcloud host maps them onto its schema API. A dump can
-therefore move between the two databases.
+therefore move between the two databases. A fresh installation calls
+`JobSchema::create()` and `AccountDeletionSchema::create()`. An existing one
+calls `JobSchema::upgrade($connection)` and
+`AccountDeletionSchema::upgrade($connection)` instead: the upgrade methods
+inspect the catalogue, add only the missing subject columns/index and the
+tombstone table/index, and can be rerun safely. `create()` is not an upgrade
+path and must not be used on a table that already exists.
 
 ### Archived posts in SQL
 

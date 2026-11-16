@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 185 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 186 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -79,6 +79,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `recommendations.data.delete` | `DELETE` | `/api/v1/recommendations/data` | yes | — |
 | `account.export` | `GET` | `/api/v1/account/export` | yes | — |
 | `account.data.delete` | `DELETE` | `/api/v1/account/data` | yes | — |
+| `account.deletion.status` | `GET` | `/api/v1/account/deletion` | yes | — |
 | `stories.list` | `GET` | `/api/v1/stories` | yes | — |
 | `stories.create` | `POST` | `/api/v1/stories` | yes | 30 / 900 s |
 | `stories.get` | `GET` | `/api/v1/stories/{id}` | yes | — |
@@ -1286,6 +1287,7 @@ table without `read_at`).
 ```http
 GET /api/v1/account/export
 DELETE /api/v1/account/data
+GET /api/v1/account/deletion
 ```
 
 The export returns one deterministic JSON document for the signed-in local
@@ -1305,23 +1307,39 @@ single account id; they must not be presented as an empty success. The
 read and write of the account's own rows are in the existing SQL tables; there
 is no archive table or second persistence.
 
-`DELETE /api/v1/account/data` deletes the account's rows in one database
-transaction, child-first, so posts, revisions, polls, media metadata, stories,
-follows, lists, notifications, recommendations, AT Protocol publications, PDS
-records/commits/blocks/PLCs/events and the account's blobs are removed
-without removing another account's posts or profile. The response reports the
-affected count per table and the number of deleted blobs:
+`DELETE /api/v1/account/data` first writes a durable `frozen` row to
+`social_account_deletion`, then cancels queued and reserved jobs whose
+`subject_type`/`subject_id` envelope names this account. Every non-read API
+request from a frozen or erased account is rejected with `403
+account_deletion_in_progress` or `410 account_deleted`; the deletion route
+itself, the export and the status route remain reachable. The account's rows
+are then removed child-first in one database transaction and its blobs are
+removed; a missing blob is not an error.
+
+The response reports the lifecycle and the affected count per table:
 
 ```json
-{"deleted": {"social_post": 2, "social_attachment": 1}, "blobs_deleted": 2, "blob_failures": []}
+{
+  "state": "erased",
+  "requested_at": "2026-11-16T12:00:00Z",
+  "completed_at": "2026-11-16T12:00:01Z",
+  "deleted": {"social_post": 2, "social_attachment": 1},
+  "blobs_deleted": 2,
+  "blob_failures": []
+}
 ```
 
-A blob backend failure is `500 account_data_blob_erasure_incomplete` after the
-row transaction committed; the failure list is never silently dropped. Both
-routes require authentication and are private/no-store. The host account,
-credentials and session are deliberately outside this core (ADR 0006); the
-host must delete its own account record after the core data is gone. Without
-the host SQL adapter both routes answer `503 account_data_unavailable`. See
+A repeat call returns the stored result byte for byte; if another request is
+still erasing, it answers `202` with the current state instead of failing. A
+blob backend failure stays visible in `blob_failures` but does not turn a
+repeated delete into an error. `GET /api/v1/account/deletion` is the durable
+status: `active` before a request, `frozen`/`erasing` while it runs, and
+`erased` with the timestamp and report afterwards. The export includes the
+same `deletion` object. All three routes require authentication and are
+private/no-store. The host account, credentials and session are deliberately
+outside this core (ADR 0006); the host must delete its own account record
+after the core data is gone. Without the host SQL adapter the routes answer
+`503 account_data_unavailable`. See
 [ADR 0011](../adr/0011-account-data-export-and-erasure.md).
 
 ## Cleanup job (no route)

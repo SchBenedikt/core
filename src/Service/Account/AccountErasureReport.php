@@ -26,12 +26,20 @@ final readonly class AccountErasureReport
 		public array $counts,
 		public int $blobsDeleted,
 		public array $blobFailures,
+		public string $state = 'erased',
+		public ?string $requestedAt = null,
+		public ?string $completedAt = null,
 	) {
 	}
 
 	public function complete(): bool
 	{
-		return $this->blobFailures === [];
+		return $this->state === 'erased' && $this->blobFailures === [];
+	}
+
+	public function inProgress(): bool
+	{
+		return $this->state === 'frozen' || $this->state === 'erasing';
 	}
 
 	/**
@@ -40,6 +48,9 @@ final readonly class AccountErasureReport
 	public function toArray(): array
 	{
 		return [
+			'state' => $this->state,
+			'requested_at' => $this->requestedAt,
+			'completed_at' => $this->completedAt,
 			'deleted' => $this->counts,
 			'blobs_deleted' => $this->blobsDeleted,
 			'blob_failures' => $this->blobFailures,

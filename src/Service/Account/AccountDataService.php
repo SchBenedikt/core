@@ -10,6 +10,12 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Account;
 
 use AlohaSocial\Core\Domain\Account\AccountDataRepository;
+use AlohaSocial\Core\Domain\Account\AccountDeletion;
+use AlohaSocial\Core\Domain\Account\AccountDeletionSweeper;
+use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
 use Throwable;
@@ -39,7 +45,7 @@ use function trim;
  * Host-owned account records, sessions and credentials are outside this core
  * (ADR 0006); the host must delete those after a successful core erasure.
  */
-final class AccountDataService
+final class AccountDataService implements AccountDeletionSweeper
 {
 	public const FORMAT = 'alohasocial-account-archive';
 
@@ -55,7 +61,7 @@ final class AccountDataService
 		'social_atproto_remote_account' => 'Inbound AT Protocol account cache shared by every reader.',
 		'social_atproto_remote_record' => 'Inbound AT Protocol record cache shared by every reader.',
 		'social_atproto_sync_checkpoint' => 'Inbound sync cursor for a source, not an account row.',
-		'social_job' => 'Queue rows carry no subject column; their JSON payload is not reliably attributable.',
+		'social_job' => 'Queue rows without the account subject envelope, including legacy payload-only jobs.',
 		'social_moderation_action' => 'Moderator decisions are instance moderation records, not account-owned rows.',
 		'social_pds_sequence' => 'Instance-wide firehose cursor, intentionally global.',
 		'social_remote_pending_update' => 'Inbound remote-update cache keyed by remote object.',
@@ -69,7 +75,19 @@ final class AccountDataService
 		private readonly AccountDataRepository $repository,
 		private readonly BlobStore $blobs,
 		private readonly ActivityFactory $activities,
+		private readonly ?JobQueue $queue = null,
+		private readonly Clock $clock = new SystemClock(),
 	) {
+	}
+
+	public function deletionStatus(string $userId): AccountDeletion
+	{
+		$userId = trim($userId);
+		if ($userId === '') {
+			throw new \InvalidArgumentException('An account deletion status needs a local user id.');
+		}
+
+		return $this->repository->deletion($userId) ?? AccountDeletion::active($userId);
 	}
 
 	/**
@@ -117,6 +135,7 @@ final class AccountDataService
 			'version' => self::VERSION,
 			'account' => $userId,
 			'actor' => $actorId,
+			'deletion' => $this->deletionStatus($userId)->toArray(),
 			'data' => $tables,
 			'blobs' => $blobs,
 			'missing_blobs' => $missing,
@@ -131,24 +150,95 @@ final class AccountDataService
 			throw new \InvalidArgumentException('An account erasure needs a local user id.');
 		}
 
-		$actorId = $this->activities->actorId($userId);
-		$erasure = $this->repository->erase($userId, $actorId);
-
-		$deleted = 0;
-		$failures = [];
-		foreach (array_values(array_unique($erasure->blobPaths)) as $path) {
-			try {
-				if (!$this->blobs->exists($path)) {
-					continue;
-				}
-
-				$this->blobs->delete($path);
-				$deleted++;
-			} catch (Throwable) {
-				$failures[] = $path;
-			}
+		$now = $this->clock->now();
+		$deletion = $this->repository->beginDeletion($userId, $now);
+		if ($deletion->erased()) {
+			// The tombstone is the source of truth. A repeat returns exactly
+			// the stored outcome instead of a second, smaller deletion.
+			return $this->reportFor($deletion);
 		}
 
-		return new AccountErasureReport($erasure->counts, $deleted, $failures);
+		if (!$this->repository->claimDeletion($userId, $now)) {
+			return $this->reportFor($this->repository->deletion($userId) ?? $deletion);
+		}
+
+		try {
+			// The state is already frozen before the first row is removed.
+			// Removing queued work closes the other way an old request could
+			// still publish after the account was deleted.
+			$this->queue?->cancelBySubject(JobSubject::account($userId));
+
+			$actorId = $this->activities->actorId($userId);
+			$erasure = $this->repository->erase($userId, $actorId);
+
+			$deleted = 0;
+			$failures = [];
+			foreach (array_values(array_unique($erasure->blobPaths)) as $path) {
+				try {
+					if (!$this->blobs->exists($path)) {
+						continue;
+					}
+
+					$this->blobs->delete($path);
+					$deleted++;
+				} catch (Throwable) {
+					$failures[] = $path;
+				}
+			}
+
+			return $this->reportFor($this->repository->finishDeletion(
+				$userId,
+				$erasure->counts,
+				$deleted,
+				$failures,
+				$this->clock->now(),
+			));
+		} catch (Throwable $exception) {
+			// A retry must not wait for the lease when this process can release
+			// its claim immediately.
+			$this->repository->releaseDeletion($userId, $this->clock->now());
+
+			throw $exception;
+		}
+	}
+
+	/**
+	 * Removes rows again after an in-flight handler committed past the freeze.
+	 * The stored lifecycle/report is deliberately not rewritten: the account is
+	 * still erased, and this only closes the write window.
+	 */
+	public function sweep(string $userId): void
+	{
+		$userId = trim($userId);
+		if ($userId === '') {
+			return;
+		}
+
+		$this->queue?->cancelBySubject(JobSubject::account($userId));
+
+		$actorId = $this->activities->actorId($userId);
+		$erasure = $this->repository->erase($userId, $actorId);
+		foreach (array_values(array_unique($erasure->blobPaths)) as $path) {
+			try {
+				if ($this->blobs->exists($path)) {
+					$this->blobs->delete($path);
+				}
+			} catch (Throwable) {
+				// The durable report already names blob failures from the main
+				// pass; a second failure must not hide the write cleanup.
+			}
+		}
+	}
+
+	private function reportFor(AccountDeletion $deletion): AccountErasureReport
+	{
+		return new AccountErasureReport(
+			$deletion->counts,
+			$deletion->blobsDeleted,
+			$deletion->blobFailures,
+			$deletion->state,
+			$deletion->requestedAt,
+			$deletion->completedAt,
+		);
 	}
 }

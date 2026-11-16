@@ -25,6 +25,7 @@ use AlohaSocial\Core\Domain\Post\PostRevision;
 use AlohaSocial\Core\Domain\Post\PostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
@@ -772,7 +773,7 @@ final class PostService
 				'inbox' => $inbox,
 				'activity' => $activity,
 				'key_id' => $keyId,
-			]);
+			], subject: JobSubject::account($post->authorId));
 		}
 	}
 }

@@ -20,6 +20,7 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
@@ -90,7 +91,7 @@ final class AtprotoPublishService
 		$this->queue->push(JobType::ATPROTO_PUBLISH, [
 			'user_id' => $post->authorId,
 			'post_id' => $post->id,
-		]);
+		], subject: JobSubject::account($post->authorId));
 	}
 
 	/**
@@ -113,7 +114,7 @@ final class AtprotoPublishService
 		$this->queue->push(JobType::ATPROTO_DELETE, [
 			'user_id' => $post->authorId,
 			'post_id' => $post->id,
-		]);
+		], subject: JobSubject::account($post->authorId));
 	}
 
 	/**

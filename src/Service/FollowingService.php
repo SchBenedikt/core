@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Jobs\JobQueue;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
@@ -302,7 +303,7 @@ final class FollowingService
 				'inbox' => $followed->inboxUrl,
 				'activity' => $this->activities->followActor($localUserId, $followed),
 				'key_id' => $this->activities->keyId($localUserId),
-			]);
+			], subject: JobSubject::account($localUserId));
 
 			return;
 		}
@@ -322,7 +323,7 @@ final class FollowingService
 				'inbox' => $followed->inboxUrl,
 				'activity' => $undo,
 				'key_id' => $this->activities->keyId($localUserId),
-			]);
+			], subject: JobSubject::account($localUserId));
 
 			return;
 		}

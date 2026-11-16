@@ -20,16 +20,20 @@ copy of data that could drift from the rows the application actually reads.
 The account record itself, credentials and sessions are not core data; ADR 0006
 leaves them host-owned.
 
-Some tables have no reliable local-account column. `social_job` stores a JSON
-payload and no subject id; `social_activity_log` stores only an activity id;
-remote post/thread/account caches and `social_search_trend` are shared instance
-state; `social_moderation_action` is an instance moderation record. A query
-cannot attribute those rows to one account without a schema change that would
-affect unrelated features.
+Some tables have no reliable local-account column. `social_activity_log` stores
+only an activity id; remote post/thread/account caches and
+`social_search_trend` are shared instance state; `social_moderation_action` is
+an instance moderation record. A query cannot attribute those rows to one
+account without a schema change that would affect unrelated features.
+
+`social_job` used to have the same problem: its payload was not a reliable
+owner signal. New account-originated jobs now carry an explicit
+`subject_type`/`subject_id` envelope, so a deletion can cancel exactly that
+account's queued work. Legacy jobs without an envelope remain unattributable.
 
 ## Decision
 
-The core exposes two authenticated routes:
+The core exposes three authenticated routes:
 
 - `GET /api/v1/account/export` reads the owning rows from the existing tables
   and returns a deterministic JSON archive named
@@ -38,19 +42,35 @@ The core exposes two authenticated routes:
   PDS object bytes as base64, and `missing_blobs` is explicit. There is no
   generated timestamp or random value, so the same stored data produces the
   same archive. Sealed PDS private keys are omitted from the key rows and are
-  removed on erasure.
-- `DELETE /api/v1/account/data` removes the same rows in one database
-  transaction, child-first, then removes the account's attachment and PDS
-  blobs. It reports the affected row count per table and the blob count. A
-  blob failure is reported as an incomplete erasure; it never becomes a
-  silent success.
+  removed on erasure. The archive includes the current `deletion` status.
+- `DELETE /api/v1/account/data` runs a durable lifecycle. It first writes a
+  `frozen` row to `social_account_deletion`, which is the write gate read by
+  the HTTP middleware and the job worker; it then cancels queued and reserved
+  jobs whose subject envelope names the account, removes the rows child-first
+  in one transaction, removes the blobs, and stores `erased` with the report
+  and timestamps. A missing row or blob is not an error. Repeating the call
+  returns the stored result; a concurrent call receives the current
+  `202` state instead of a second deletion result.
+- `GET /api/v1/account/deletion` returns the durable status and report. An
+  account that never requested deletion is `active`.
 
 The adapter is `PdoAccountDataRepository`, behind the
 `AccountDataRepository` port. It is not a new persistence layer: every
-statement reads or deletes one of the existing `social_*` tables. The host
+statement reads or deletes one of the existing `social_*` tables, plus the
+single `social_account_deletion` tombstone that must outlive them. The host
 assembly (`Application::forHost`) supplies the PDO connection; the in-memory
 assembly has no durable account data and the routes honestly answer
 `503 account_data_unavailable`.
+
+The HTTP gate is `RejectDeletedAccountWrites`: a non-read request for a
+frozen or erased local user is rejected with `403
+account_deletion_in_progress` or `410 account_deleted`, except for the deletion
+route itself and reads. The job worker applies the same guard to account
+subjects before invoking a handler, and deletion cancels matching queued and
+reserved rows. A request or handler that passed the check just before the
+freeze is swept once more after it returns (`AccountDeletionSweeper`), so its
+late rows and blobs do not survive the deletion. This is what keeps an in-flight
+request or job from leaving new account data after the freeze.
 
 Deletion deliberately preserves foreign data:
 
@@ -66,8 +86,9 @@ Deletion deliberately preserves foreign data:
   only the deleted account's own grants are removed.
 
 The rows in `not_attributable` are returned by the export with a reason and are
-not deleted. Changing that requires a feature-specific owner column or payload
-contract, which this ADR does not invent.
+not deleted. New jobs carry the subject envelope and are cancelled by a
+deletion; legacy payload-only queue rows remain explicitly unattributable, so
+the export still names `social_job` rather than silently omitting them.
 
 ## Consequences
 
@@ -78,4 +99,13 @@ host that wants an import format must define one on top of this archive.
 
 The host must delete its account, credentials and session after a successful
 core erasure. That is the remaining, deliberately host-owned part of "delete
-my account"; the core cannot address a table it does not own.
+my account"; the core cannot address a table it does not own. The tombstone is
+kept after `erased` so the result stays inspectable and a repeated DELETE no
+longer relies on an empty database looking like success.
+
+An existing installation upgrades with `JobSchema::upgrade($connection)` and
+`AccountDeletionSchema::upgrade($connection)`. Both are idempotent catalogue
+checks, not a second migration runner: the host still decides when to run
+them. They add the subject columns and index to the existing queue and create
+the tombstone table without removing pending jobs. Legacy payload-only jobs
+remain unattributable because their payload is not a reliable owner signal.

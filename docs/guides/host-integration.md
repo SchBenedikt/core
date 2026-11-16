@@ -323,7 +323,8 @@ The core owns the schema classes, not the migration mechanism:
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
 - `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`, `social_post_hashtag`
 - `BlockSchema` → `social_block` (per-user blocks)
-- `JobSchema` → `social_job`
+- `JobSchema` → `social_job` (optional `subject_type`/`subject_id` columns let an account deletion cancel its jobs)
+- `AccountDeletionSchema` → `social_account_deletion` (durable deletion state, report and lease)
 - `ActivityLogSchema` → `social_activity_log`
 - `AtprotoPublicationSchema` → `social_atproto_publication` (AT Protocol idempotency rows)
 - `AtprotoInboundSchema` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account` (host-fed inbound sync, opaque records/tombstones and account availability)
@@ -332,6 +333,26 @@ A host with PDO can wrap its handle in `PdoConnection` and call the schema
 `create()` methods for a fresh installation. A host without PDO implements
 `Connection` over its own database API. The SQL is deliberately plain and the
 port is small; see [database](database.md).
+
+For an existing installation, do **not** call `create()` on the existing
+`social_job` and do **not** assume `social_account_deletion` exists. Run the
+idempotent upgrade methods from the same host migration step:
+
+```php
+use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
+use AlohaSocial\Core\Jobs\JobSchema;
+
+JobSchema::upgrade($connection);
+AccountDeletionSchema::upgrade($connection);
+```
+
+`JobSchema::upgrade()` adds the nullable `subject_type`/`subject_id` columns and
+the `social_job_subject` index to an old queue and leaves every pending row in
+place. `AccountDeletionSchema::upgrade()` creates the tombstone table and its
+state index. Both check the database catalogue before changing anything, so a
+retried or partially applied migration is safe. Legacy queue rows keep
+`NULL` subject columns; they are not guessed from their JSON payload and are
+listed under `not_attributable` in the account export.
 
 ### For You recommendations
 
@@ -519,14 +540,18 @@ The core now supplies the two adapters a production host needs, both over the
 same `Connection`:
 
 ```php
+use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
 use AlohaSocial\Core\Domain\Federation\ActivityLogSchema;
 use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Jobs\JobSchema;
 use AlohaSocial\Core\Jobs\PdoJobQueue;
 
 JobSchema::create($connection);
+AccountDeletionSchema::create($connection);
 ActivityLogSchema::create($connection);
 
+// Existing installation instead: JobSchema::upgrade($connection);
+// AccountDeletionSchema::upgrade($connection);
 $queue = new PdoJobQueue($connection, $clock, $ids);
 $activityLog = new PdoActivityLog($connection);
 ```
@@ -546,8 +571,11 @@ to the same schema classes.
 | `attempts` | `INTEGER` | no |
 | `reserved_at` | `VARCHAR(20)` | yes |
 | `dead_at` | `VARCHAR(20)` | yes |
+| `subject_type` | `VARCHAR(32)` | yes |
+| `subject_id` | `VARCHAR(255)` | yes |
 
-Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`.
+Indexes: `social_job_due (available_at, id)`, `social_job_dead (dead_at)`,
+`social_job_subject (subject_type, subject_id)`.
 
 `social_activity_log`:
 
