@@ -57,7 +57,7 @@ the host that serves it. See
    disabled by default where documented; no host-specific branch appears in
    `src/`.
 
-## Where we are (2026-11-15)
+## Where we are (2026-11-16)
 
 | Measure | Value |
 | --- | --- |
@@ -304,9 +304,12 @@ server or a product decision.
 - Storing configuration or keys in this repository.
 - Remote direct delivery and remote reply threading: direct posts and replies
   address the local model only. Remote recipients/inboxes and fetching a
-  remote parent are not part of this slice. Remote DMs also require the E2EE
-  design in [ADR 0009](adr/0009-e2ee-direct-messages.md); unencrypted
-  server-to-server direct messages are not planned.
+  remote parent are not part of this slice. Remote DMs require the E2EE design
+  in [ADR 0009](adr/0009-e2ee-direct-messages.md); the threat model and
+  ciphersuite/delivery design are complete in
+  [ADR 0010](adr/0010-e2ee-direct-messages-delivery.md), but implementation
+  has not started. Unencrypted server-to-server direct messages are not
+  planned.
 - A public block collection and applying an incoming `Block` as a per-user
   moderation rule: block propagation is outbound, and the optional instance
   policy remains the host seam for instance-wide refusal.

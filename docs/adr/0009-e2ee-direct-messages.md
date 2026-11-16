@@ -3,7 +3,9 @@
 - Status: accepted
 - Date: 2026-11-15
 - Related: issue #19, [ADR 0007](0007-two-protocols-one-model.md),
-  [ADR 0008](0008-native-pds.md)
+  [ADR 0008](0008-native-pds.md),
+  [ADR 0010](0010-e2ee-direct-messages-delivery.md),
+  [threat model](../security/e2ee-direct-messages-threat-model.md)
 
 ## Context
 
@@ -41,10 +43,19 @@ Remote DMs wait for an E2EE/MLS design and threat-model review.**
    minimum routing data. A future implementation needs its own recipient port,
    signed targeted delivery, replay protection, blocked-actor checks and
    durable conversation/read markers.
+7. The threat model, ciphersuite, envelope format, device/key-package model and
+   delivery flow are accepted in
+   [ADR 0010](0010-e2ee-direct-messages-delivery.md) and the
+   [threat model](../security/e2ee-direct-messages-threat-model.md). They close
+   the design questions; no plaintext or stub implementation is permitted while
+   the remaining implementation work is pending.
 
 ## Threat model
 
-The design and review must cover:
+The detailed threat model is
+[`docs/security/e2ee-direct-messages-threat-model.md`](../security/e2ee-direct-messages-threat-model.md).
+It defines the adversaries, security objectives, non-goals and accepted
+residual risks. The design and review must cover:
 
 - a malicious or compromised server reading, modifying, replaying or dropping
   messages;
@@ -63,10 +74,14 @@ The design and review must cover:
 ## Delivery phases
 
 1. **This ADR:** record the no-plaintext boundary and the MLS target.
-2. **Threat model and ciphersuite decision:** choose the MLS ciphersuite,
-   device/key-package model, metadata minimization and abuse/reporting policy.
-3. **Crypto provider port:** an MLS implementation behind a host-neutral port,
-   with test vectors and refusal behavior.
+2. **Threat model and ciphersuite decision:** **complete** in
+   [ADR 0010](0010-e2ee-direct-messages-delivery.md) and the
+   [threat model](../security/e2ee-direct-messages-threat-model.md): MLS
+   ciphersuite `0x0001`, device/key-package model, envelope v1, metadata
+   minimization and abuse/reporting boundary.
+3. **Client MLS provider:** a vetted MLS implementation behind a client-side
+   provider, with RFC 9420 test vectors and refusal behavior. The server does
+   not implement MLS crypto.
 4. **Envelope and conversation store:** ciphertext-only persistence, delivery
    state, read/dismiss markers and stable cursors.
 5. **Transport:** targeted signed delivery, replay protection, retries and
@@ -92,7 +107,11 @@ The design and review must cover:
 
 ## Implementation status
 
-As of 2026-11-15, no remote DM, MLS provider, ciphertext envelope or
-conversation store exists. This ADR is a security boundary decision, not an
-implementation. Issue #19 stays open for the threat model, ciphersuite choice
-and delivery work.
+As of 2026-11-16, the design review is complete: the threat model,
+ciphersuite and delivery/envelope design are in
+[ADR 0010](0010-e2ee-direct-messages-delivery.md) and the
+[threat model](../security/e2ee-direct-messages-threat-model.md). No remote DM,
+MLS provider, ciphertext envelope or conversation store exists. This ADR remains
+a security boundary decision, not an implementation. Issue #19 stays open only
+for the implementation, interoperability vectors, adversarial tests and the
+independent security review.
