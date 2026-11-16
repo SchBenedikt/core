@@ -22,7 +22,9 @@ use AlohaSocial\Core\Api\CreateScheduledPostHandler;
 use AlohaSocial\Core\Api\CreateStoryHandler;
 use AlohaSocial\Core\Api\CreateStoryReactionHandler;
 use AlohaSocial\Core\Api\CreateStoryReplyHandler;
+use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteStoryHandler;
+use AlohaSocial\Core\Api\ExportAccountDataHandler;
 use AlohaSocial\Core\Api\RecordStoryViewHandler;
 use AlohaSocial\Core\Api\ShowStoryHandler;
 use AlohaSocial\Core\Api\ShowStoryMediaHandler;
@@ -153,6 +155,8 @@ use AlohaSocial\Core\Api\UnfollowLocalAccountHandler;
 use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\WebFingerHandler;
 use AlohaSocial\Core\Contract\Routes;
+use AlohaSocial\Core\Domain\Account\AccountDataRepository;
+use AlohaSocial\Core\Domain\Account\PdoAccountDataRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoBlobUrlBuilder;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
@@ -379,6 +383,7 @@ use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoTimelineReader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoTimelineReader;
+use AlohaSocial\Core\Service\Account\AccountDataService;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
@@ -504,6 +509,7 @@ final readonly class Application
 		public ?PinService $pins = null,
 		public ?MediaCollectionService $collections = null,
 		public ?NativePdsService $pds = null,
+		public ?AccountDataService $accountData = null,
 	) {
 	}
 
@@ -918,6 +924,7 @@ final readonly class Application
 			transactions: $transactions ?? ($database instanceof TransactionRunner ? $database : null),
 			atprotoDpop: $atprotoDpop,
 			pds: $pds,
+			accountDataRepository: new PdoAccountDataRepository($database),
 		);
 	}
 
@@ -1012,6 +1019,7 @@ final readonly class Application
 		?PinService $pinService = null,
 		?MediaCollectionService $mediaCollectionService = null,
 		?NativePdsService $pds = null,
+		?AccountDataRepository $accountDataRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1060,6 +1068,9 @@ final readonly class Application
 				transcoder: $mediaTranscoder,
 			);
 		$activities = new ActivityFactory($config, $mediaService);
+		$accountData = $accountDataRepository === null || $blobStore === null
+			? null
+			: new AccountDataService($accountDataRepository, $blobStore, $activities);
 		$cleanup = new CleanupService(
 			$attachmentRepository,
 			$notificationRepository,
@@ -1533,6 +1544,8 @@ final readonly class Application
 			->with(CreateRecommendationSignalHandler::class, static fn (): CreateRecommendationSignalHandler => new CreateRecommendationSignalHandler($recommendationService))
 			->with(ExportRecommendationDataHandler::class, static fn (): ExportRecommendationDataHandler => new ExportRecommendationDataHandler($recommendationService))
 			->with(DeleteRecommendationDataHandler::class, static fn (): DeleteRecommendationDataHandler => new DeleteRecommendationDataHandler($recommendationService))
+			->with(ExportAccountDataHandler::class, static fn (): ExportAccountDataHandler => new ExportAccountDataHandler($accountData))
+			->with(DeleteAccountDataHandler::class, static fn (): DeleteAccountDataHandler => new DeleteAccountDataHandler($accountData))
 			->with(StoriesHandler::class, static fn (): StoriesHandler => new StoriesHandler($storyService))
 			->with(CreateStoryHandler::class, static fn (): CreateStoryHandler => new CreateStoryHandler($storyService))
 			->with(ShowStoryHandler::class, static fn (): ShowStoryHandler => new ShowStoryHandler($storyService))
@@ -1761,6 +1774,7 @@ final readonly class Application
 			$pinService,
 			$mediaCollectionService,
 			$pds,
+			$accountData,
 		);
 	}
 

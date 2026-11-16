@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 183 routes, 53 of them under the Mastodon prefix |
+| HTTP contract | 185 routes, 53 of them under the Mastodon prefix |
 | Persistence | 38 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 219 PHP test files (1810 tests, 9832 assertions) and 9 UI test files (69 tests) |
+| Tests | 221 PHP test files (1815 tests, 9938 assertions) and 9 UI test files (69 tests) |
 | Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -106,6 +106,13 @@ the host that serves it. See
   `Create(Note)` per choice to the author's inbox. Signed votes on local polls
   are recorded idempotently after checking the poll, the option title and the
   actor; a scheduled job marks an imported poll closed at its end time.
+- **Account data export and erasure** — the existing SQL tables are read as
+  one deterministic archive (rows plus attachment/PDS blobs), and the same
+  rows are deleted child-first in one transaction with a per-table count.
+  Foreign posts and profiles are preserved, incoming quote grants stay with
+  their owner, and tables without a reliable owner column are named rather
+  than silently reported as empty. The host still owns the account record and
+  session (ADR 0006). See [ADR 0011](adr/0011-account-data-export-and-erasure.md).
 - **Ephemeral stories** — local image/video stories with a 24-hour default
   lifetime, one private view receipt per viewer, owner-only viewer lists,
   private emoji reactions and replies that never become posts. Access is the

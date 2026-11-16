@@ -40,7 +40,9 @@ use AlohaSocial\Core\Api\StoryViewersHandler;
 use AlohaSocial\Core\Api\UnarchivePostHandler;
 use AlohaSocial\Core\Api\UnpinPostHandler;
 use AlohaSocial\Core\Api\UpdateCollectionHandler;
+use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
+use AlohaSocial\Core\Api\ExportAccountDataHandler;
 use AlohaSocial\Core\Api\ExportRecommendationDataHandler;
 use AlohaSocial\Core\Api\GetRecommendationPreferencesHandler;
 use AlohaSocial\Core\Api\GetRecommendationsHandler;
@@ -724,6 +726,22 @@ final class Routes
 				handler: DeleteRecommendationDataHandler::class,
 				requiresAuth: true,
 				summary: 'Delete the reader own recommendation data.',
+			),
+			new Route(
+				name: 'account.export',
+				method: 'GET',
+				path: $base . '/account/export',
+				handler: ExportAccountDataHandler::class,
+				requiresAuth: true,
+				summary: 'Export every core-owned row and blob of the signed-in account.',
+			),
+			new Route(
+				name: 'account.data.delete',
+				method: 'DELETE',
+				path: $base . '/account/data',
+				handler: DeleteAccountDataHandler::class,
+				requiresAuth: true,
+				summary: 'Delete every core-owned row and blob of the signed-in account.',
 			),
 			new Route(
 				name: 'stories.list',

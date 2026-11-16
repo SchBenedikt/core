@@ -127,7 +127,7 @@ final class ApplicationHostTest extends TestCase
 		$http = new FakeHttpClient();
 		$app = $this->host($database, $http);
 
-		self::assertCount(183, $app->routes->routes());
+		self::assertCount(185, $app->routes->routes());
 
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -176,6 +176,36 @@ final class ApplicationHostTest extends TestCase
 
 		$timeline = $app->handle(new Request('GET', '/api/v1/timelines/public'))->decodedBody();
 		self::assertSame(1, count($timeline['posts']));
+	}
+
+	public function testForHostWiresAccountExportAndErasureToTheSqlTables(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), blobStore: new InMemoryBlobStore());
+		$database->execute(
+			'INSERT INTO ' . PostSchema::TABLE . ' (id, author_id, content, visibility, published_at)'
+			. " VALUES ('host-account-post', 'alice', 'export me', 'public', '2026-11-16T12:00:00Z')",
+		);
+
+		$export = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/account/export',
+			userId: 'alice',
+		));
+		self::assertSame(200, $export->status, $export->body);
+		self::assertSame(['host-account-post'], array_column(
+			$export->decodedBody()['data'][PostSchema::TABLE],
+			'id',
+		));
+
+		$erasure = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/account/data',
+			userId: 'alice',
+		));
+		self::assertSame(200, $erasure->status, $erasure->body);
+		self::assertSame(1, $erasure->decodedBody()['deleted'][PostSchema::TABLE]);
+		self::assertSame(0, (int) $database->fetchValue('SELECT COUNT(*) FROM ' . PostSchema::TABLE));
 	}
 
 	public function testForHostRetriesAQueuedFollowThroughTheSqlQueue(): void

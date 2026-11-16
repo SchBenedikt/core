@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 183 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 185 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -77,6 +77,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `recommendations.signals.create` | `POST` | `/api/v1/recommendations/signals` | yes | 300 / 900 s |
 | `recommendations.export` | `GET` | `/api/v1/recommendations/export` | yes | — |
 | `recommendations.data.delete` | `DELETE` | `/api/v1/recommendations/data` | yes | — |
+| `account.export` | `GET` | `/api/v1/account/export` | yes | — |
+| `account.data.delete` | `DELETE` | `/api/v1/account/data` | yes | — |
 | `stories.list` | `GET` | `/api/v1/stories` | yes | — |
 | `stories.create` | `POST` | `/api/v1/stories` | yes | 30 / 900 s |
 | `stories.get` | `GET` | `/api/v1/stories/{id}` | yes | — |
@@ -1278,6 +1280,49 @@ favourites_not_configured`, `503 bookmarks_not_configured`, `503
 mutes_not_configured`, `503 notifications_not_configured`, `503
 notifications_unavailable` (missing or unreadable notification table, or a
 table without `read_at`).
+
+## Account export and erasure
+
+```http
+GET /api/v1/account/export
+DELETE /api/v1/account/data
+```
+
+The export returns one deterministic JSON document for the signed-in local
+account. `format` is `alohasocial-account-archive` and `version` is `1`.
+`data` is keyed by the existing table names; every row is the row stored by
+the repositories, including post revisions, poll rows, interactions, stories,
+follows, lists, notifications, moderation rows, media metadata, recommendations
+and the AT Protocol publication and PDS tables. `blobs` maps every attachment
+and PDS object path to its base64 bytes; `missing_blobs` names metadata whose
+object was already absent. There is no generated timestamp or random id, so
+the same rows and bytes produce the same JSON. Sealed PDS private keys are
+omitted: the key row keeps its public metadata, not the server-side seed.
+
+`not_attributable` names tables this repository stores without a reliable
+owner column, with the reason. Those rows cannot be exported or deleted by a
+single account id; they must not be presented as an empty success. The
+read and write of the account's own rows are in the existing SQL tables; there
+is no archive table or second persistence.
+
+`DELETE /api/v1/account/data` deletes the account's rows in one database
+transaction, child-first, so posts, revisions, polls, media metadata, stories,
+follows, lists, notifications, recommendations, AT Protocol publications, PDS
+records/commits/blocks/PLCs/events and the account's blobs are removed
+without removing another account's posts or profile. The response reports the
+affected count per table and the number of deleted blobs:
+
+```json
+{"deleted": {"social_post": 2, "social_attachment": 1}, "blobs_deleted": 2, "blob_failures": []}
+```
+
+A blob backend failure is `500 account_data_blob_erasure_incomplete` after the
+row transaction committed; the failure list is never silently dropped. Both
+routes require authentication and are private/no-store. The host account,
+credentials and session are deliberately outside this core (ADR 0006); the
+host must delete its own account record after the core data is gone. Without
+the host SQL adapter both routes answer `503 account_data_unavailable`. See
+[ADR 0011](../adr/0011-account-data-export-and-erasure.md).
 
 ## Cleanup job (no route)
 

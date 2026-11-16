@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Complete account data export and erasure over the existing SQL tables.
+  `GET /api/v1/account/export` returns the deterministic
+  `alohasocial-account-archive` JSON (all attributable rows plus attachment
+  and PDS blobs, with sealed PDS keys omitted), and
+  `DELETE /api/v1/account/data` removes the same rows child-first in one
+  transaction and then the account's blobs. Both routes are authenticated and
+  private/no-store, use the existing `social_*` tables rather than an archive
+  table, and report tables that have no reliable owner column instead of
+  pretending they are empty. The host account, credentials and session remain
+  host-owned (ADR 0006); see
+  [ADR 0011](docs/adr/0011-account-data-export-and-erasure.md) and the
+  [route reference](docs/reference/routes.md#account-export-and-erasure).
 - A reproducible release-artifact check. `composer check:release` builds the
   Composer and npm archives, rejects development paths, installs the core
   archive without dev dependencies and verifies both reported versions. The
