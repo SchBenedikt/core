@@ -206,6 +206,11 @@ and fails when `docs/reference/configuration.md` does not name it.
 
 ### Fixed
 
+- Media-only posts are now accepted on the local and Mastodon write routes.
+  An empty body is still refused when the post has neither an attachment nor a
+  poll, and an edit cannot remove the last attachment while leaving the text
+  empty. This matches the composer, which already allowed an attachment without
+  text.
 - HTTP Signature verification now requires the signature to cover
   `(request-target)`, `host` and `date`. A valid signature over only the request
   target could otherwise be replayed indefinitely and against another host;

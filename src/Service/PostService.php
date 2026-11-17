@@ -547,7 +547,11 @@ final class PostService
 			$errors['author'] = 'A post needs an author.';
 		}
 
-		$errors += $this->contentErrors($content, $warning);
+		$errors += $this->contentErrors(
+			$content,
+			$warning,
+			$command->attachmentIds !== [] || $command->poll !== null,
+		);
 		$errors += $this->attachmentErrors($command->attachmentIds, $command->authorId);
 		$errors += $this->parentErrors($parent, $command->visibility);
 
@@ -573,7 +577,11 @@ final class PostService
 		Visibility $visibility,
 		?Post $parent,
 	): void {
-		$errors = $this->contentErrors($content, $warning)
+		$errors = $this->contentErrors(
+			$content,
+			$warning,
+			$attachmentIds !== [] || $post->poll !== null,
+		)
 			+ $this->attachmentErrors($attachmentIds, $post->authorId)
 			+ $this->parentErrors($parent, $visibility);
 
@@ -620,12 +628,14 @@ final class PostService
 	/**
 	 * @return array<string, string>
 	 */
-	private function contentErrors(string $content, ?string $warning): array
+	private function contentErrors(string $content, ?string $warning, bool $hasMedia): array
 	{
 		$errors = [];
 
-		if (mb_strlen($content) === 0) {
-			$errors['content'] = 'A post needs text.';
+		// A media-only post is valid. Only an empty post without an attachment
+		// or poll has nothing to publish and is refused.
+		if (mb_strlen($content) === 0 && !$hasMedia) {
+			$errors['content'] = 'A post needs text or media.';
 		} elseif (mb_strlen($content) > self::MAX_CONTENT_LENGTH) {
 			$errors['content'] = 'A post may be at most ' . self::MAX_CONTENT_LENGTH . ' characters long.';
 		}

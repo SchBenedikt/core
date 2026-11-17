@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRevisionRepository;
@@ -44,6 +45,8 @@ final class PostEditTest extends TestCase
 
 	private InMemoryPostRepository $posts;
 
+	private InMemoryAttachmentRepository $attachments;
+
 	private InMemoryPostRevisionRepository $revisions;
 
 	private InMemoryJobQueue $queue;
@@ -56,6 +59,7 @@ final class PostEditTest extends TestCase
 	{
 		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$this->posts = new InMemoryPostRepository();
+		$this->attachments = new InMemoryAttachmentRepository();
 		$this->revisions = new InMemoryPostRevisionRepository();
 		$this->queue = new InMemoryJobQueue($this->clock, new SequenceIdGenerator('job-'));
 		$this->config = new ArrayConfig([
@@ -160,6 +164,57 @@ final class PostEditTest extends TestCase
 		}
 
 		self::assertSame('text', $service->get($post->id)->content);
+	}
+
+	public function testAMediaOnlyEditCanClearTheCaption(): void
+	{
+		$this->attachments->insert(new Attachment(
+			id: 'media-1',
+			ownerId: 'alice',
+			storageKey: 'blobs/media-1',
+			thumbnailKey: 'blobs/media-1-thumb',
+			mimeType: 'image/jpeg',
+			width: 64,
+			height: 64,
+			byteSize: 1024,
+			altText: 'A cat',
+			createdAt: $this->clock->now(),
+		));
+
+		$service = $this->service();
+		$post = $service->create(new CreatePost('alice', '', attachmentIds: ['media-1']));
+		$edited = $service->edit('alice', $post->id, new UpdatePost(content: '   '));
+
+		self::assertSame('', $edited->content);
+		self::assertSame(['media-1'], $edited->attachmentIds);
+	}
+
+	public function testAnEditCannotRemoveTheLastMediaAndLeaveTheTextEmpty(): void
+	{
+		$this->attachments->insert(new Attachment(
+			id: 'media-1',
+			ownerId: 'alice',
+			storageKey: 'blobs/media-1',
+			thumbnailKey: 'blobs/media-1-thumb',
+			mimeType: 'image/jpeg',
+			width: 64,
+			height: 64,
+			byteSize: 1024,
+			altText: 'A cat',
+			createdAt: $this->clock->now(),
+		));
+
+		$service = $this->service();
+		$post = $service->create(new CreatePost('alice', '', attachmentIds: ['media-1']));
+
+		try {
+			$service->edit('alice', $post->id, new UpdatePost(content: '', attachmentIds: []));
+			self::fail('Expected a validation error.');
+		} catch (ValidationException $exception) {
+			self::assertArrayHasKey('content', $exception->fields());
+		}
+
+		self::assertSame(['media-1'], $service->get($post->id)->attachmentIds);
 	}
 
 	public function testEditingRejectsContentAboveTheLimit(): void
@@ -335,7 +390,7 @@ final class PostEditTest extends TestCase
 	{
 		return new PostService(
 			$this->posts,
-			new InMemoryAttachmentRepository(),
+			$this->attachments,
 			$this->queue,
 			$inboxes ?? new EmptyInboxResolver(),
 			$this->activities,

@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
@@ -36,6 +37,8 @@ final class PostServiceTest extends TestCase
 
 	private InMemoryPostRepository $repository;
 
+	private InMemoryAttachmentRepository $attachments;
+
 	private InMemoryJobQueue $queue;
 
 	private SequenceIdGenerator $ids;
@@ -46,6 +49,7 @@ final class PostServiceTest extends TestCase
 	{
 		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$this->repository = new InMemoryPostRepository();
+		$this->attachments = new InMemoryAttachmentRepository();
 		$this->queue = new InMemoryJobQueue($this->clock, new SequenceIdGenerator('job-'));
 		$this->ids = new SequenceIdGenerator('post-');
 		$this->config = new ArrayConfig([
@@ -80,6 +84,27 @@ final class PostServiceTest extends TestCase
 		} catch (ValidationException $exception) {
 			self::assertArrayHasKey('content', $exception->fields());
 		}
+	}
+
+	public function testAMediaOnlyPostIsAllowed(): void
+	{
+		$this->attachments->insert(new Attachment(
+			id: 'media-1',
+			ownerId: 'alice',
+			storageKey: 'blobs/media-1',
+			thumbnailKey: 'blobs/media-1-thumb',
+			mimeType: 'image/jpeg',
+			width: 64,
+			height: 64,
+			byteSize: 1024,
+			altText: 'A cat',
+			createdAt: $this->clock->now(),
+		));
+
+		$post = $this->service()->create(new CreatePost('alice', '', attachmentIds: ['media-1']));
+
+		self::assertSame('', $post->content);
+		self::assertSame(['media-1'], $post->attachmentIds);
 	}
 
 	public function testRejectsContentAboveTheLimit(): void
@@ -251,7 +276,7 @@ final class PostServiceTest extends TestCase
 	{
 		return new PostService(
 			$this->repository,
-			new InMemoryAttachmentRepository(),
+			$this->attachments,
 			$this->queue,
 			$inboxes ?? new EmptyInboxResolver(),
 			new ActivityFactory($config ?? $this->config),
