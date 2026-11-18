@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Federation\MentionResolver;
+use AlohaSocial\Core\Domain\Federation\MentionTarget;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Moderation\HeldPost;
 use AlohaSocial\Core\Domain\Moderation\HeldPostRepository;
@@ -37,6 +39,7 @@ use AlohaSocial\Core\Service\Search\SearchIndexer;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
 use Closure;
+use Throwable;
 
 /**
  * Writing and removing posts.
@@ -57,6 +60,12 @@ final class PostService
 	 */
 	public const CONFIG_MAX_ATTACHMENTS = 'media.max_attachments';
 
+	/**
+	 * `@user` or `@user@host`. The second `@` is optional, so a plain local
+	 * mention in prose is recognized without treating an e-mail address as one.
+	 */
+	private const MENTION_PATTERN = '/(?<![\p{L}\p{N}_@])@([A-Za-z0-9_][A-Za-z0-9_.-]{0,63})(?:@([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d+)?))?/u';
+
 	public function __construct(
 		private readonly PostRepository $posts,
 		private readonly AttachmentRepository $attachments,
@@ -76,6 +85,7 @@ final class PostService
 		private readonly ?PostHoldPolicy $holdPolicy = null,
 		private readonly ?SearchIndexer $searchIndexer = null,
 		private readonly ?PostPinRepository $pins = null,
+		private readonly ?MentionResolver $mentions = null,
 	) {
 	}
 
@@ -116,6 +126,8 @@ final class PostService
 			$quote = $this->quotes->prepare($command->authorId, $postId, $quotedPostId);
 		}
 
+		$mentionTargets = $this->resolveMentions($content, $command->authorId);
+
 		$post = new Post(
 			id: $postId,
 			authorId: $command->authorId,
@@ -141,14 +153,18 @@ final class PostService
 		// Notifications remain best-effort by contract: a storage failure is
 		// logged by NotificationService and does not roll back the primary
 		// write, while a successful insert joins this transaction.
-		$this->runWrite(function () use ($post, $parent, $quote, $command): void {
+		$this->runWrite(function () use ($post, $parent, $quote, $command, $mentionTargets): void {
 			$this->posts->insert($post);
 			if ($quote !== null) {
 				$this->quotes?->commit($quote, $command->authorId);
 			}
 			$this->atproto?->schedule($post);
-			$this->recordMentions($post, $parent);
-			$this->enqueueDelivery($post, fn (): array => $this->activities->createNote($post));
+			$this->recordMentions($post, $parent, $mentionTargets);
+			$this->enqueueDelivery(
+				$post,
+				fn (): array => $this->activities->createNote($post),
+				$mentionTargets,
+			);
 		});
 
 		$this->searchIndexer?->indexPost($post);
@@ -355,8 +371,9 @@ final class PostService
 		// audience change stays local: re-addressing the note could widen it
 		// or strand the previous delivery, and direct posts never federate.
 		$deliver = $visibility === $post->visibility && $visibility !== Visibility::Direct;
+		$mentionTargets = $deliver ? $this->resolveMentions($content, $post->authorId) : [];
 
-		$this->runWrite(function () use ($edited, $snapshot, $editedAt, $deliver): void {
+		$this->runWrite(function () use ($edited, $snapshot, $editedAt, $deliver, $mentionTargets): void {
 			$this->posts->update($edited);
 			$this->revisions?->add($snapshot);
 
@@ -364,6 +381,7 @@ final class PostService
 				$this->enqueueDelivery(
 					$edited,
 					fn (): array => $this->activities->updateNote($edited, $editedAt),
+					$mentionTargets,
 				);
 			}
 		});
@@ -719,21 +737,107 @@ final class PostService
 	 * recipient. The notification service uses a deterministic id, so the
 	 * parent author appearing in both sets is still one row.
 	 */
-	private function recordMentions(Post $post, ?Post $parent): void
+	/**
+	 * @param list<MentionTarget> $mentionTargets
+	 */
+	private function recordMentions(Post $post, ?Post $parent, array $mentionTargets = []): void
 	{
 		if ($this->notifications === null) {
 			return;
 		}
 
+		$notified = [$post->authorId => true];
 		if ($parent !== null && $parent->authorId !== $post->authorId) {
 			$this->notifications->recordMention($parent->authorId, $post->authorId, $post->id);
+			$notified[$parent->authorId] = true;
 		}
 
 		foreach ($post->recipientIds as $recipientId) {
-			if ($recipientId !== $post->authorId) {
+			if ($recipientId !== $post->authorId && !isset($notified[$recipientId])) {
 				$this->notifications->recordMention($recipientId, $post->authorId, $post->id);
+				$notified[$recipientId] = true;
 			}
 		}
+
+		foreach ($mentionTargets as $target) {
+			$recipientId = $target->localId;
+			if ($recipientId !== null && !isset($notified[$recipientId])) {
+				$this->notifications->recordMention($recipientId, $post->authorId, $post->id);
+				$notified[$recipientId] = true;
+			}
+		}
+	}
+
+	/**
+	 * Parses the handles in the text and resolves them to local accounts or
+	 * remote actors. Resolution is best effort: an unreachable WebFinger or
+	 * actor document must never prevent the post from being stored.
+	 *
+	 * @return list<MentionTarget>
+	 */
+	private function resolveMentions(string $content, string $authorId): array
+	{
+		if (preg_match_all(self::MENTION_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
+			return [];
+		}
+
+		$targets = [];
+		$seen = [];
+		foreach ($matches as $match) {
+			$user = rtrim((string) ($match[1] ?? ''), '.');
+			$host = isset($match[2]) && $match[2] !== '' ? strtolower((string) $match[2]) : null;
+			if ($user === '') {
+				continue;
+			}
+
+			if ($host === null || $this->isLocalMentionHost($host)) {
+				$localId = strtolower($user);
+				if ($localId === $authorId || $this->relationships?->hasLocalActor($localId) !== true) {
+					continue;
+				}
+
+				$target = new MentionTarget(
+					handle: $localId,
+					actorId: $this->activities->actorId($localId),
+					localId: $localId,
+				);
+			} else {
+				$handle = strtolower($user . '@' . $host);
+				try {
+					$target = $this->mentions?->resolve($handle);
+				} catch (Throwable) {
+					$target = null;
+				}
+
+				if ($target === null || $target->inboxUrl === null) {
+					continue;
+				}
+			}
+
+			if (isset($seen[$target->actorId])) {
+				continue;
+			}
+
+			$seen[$target->actorId] = true;
+			$targets[] = $target;
+		}
+
+		return $targets;
+	}
+
+	private function isLocalMentionHost(string $host): bool
+	{
+		$base = $this->activities->baseUrl();
+		$configured = strtolower((string) parse_url($base, PHP_URL_HOST));
+		$host = strtolower(rtrim($host, '.'));
+
+		if ($host === $configured) {
+			return true;
+		}
+
+		$port = parse_url($base, PHP_URL_PORT);
+
+		return is_int($port) && $host === $configured . ':' . $port;
 	}
 
 	/**
@@ -757,7 +861,10 @@ final class PostService
 	/**
 	 * @param Closure(): array<string, mixed> $buildActivity
 	 */
-	private function enqueueDelivery(Post $post, Closure $buildActivity): void
+	/**
+	 * @param list<MentionTarget> $mentionTargets
+	 */
+	private function enqueueDelivery(Post $post, Closure $buildActivity, array $mentionTargets = []): void
 	{
 		// Direct posts are local-only: their recipients are local ids, not
 		// remote inboxes. Delivering them to the author's followers would
@@ -766,8 +873,15 @@ final class PostService
 			return;
 		}
 
+		$mentionInboxes = [];
+		foreach ($mentionTargets as $target) {
+			if ($target->inboxUrl !== null && trim($target->inboxUrl) !== '') {
+				$mentionInboxes[] = $target->inboxUrl;
+			}
+		}
+
 		$inboxes = array_values(array_unique(array_filter(
-			$this->inboxes->inboxesFor($post->authorId),
+			array_merge($this->inboxes->inboxesFor($post->authorId), $mentionInboxes),
 			static fn (mixed $inbox): bool => is_string($inbox) && trim($inbox) !== '',
 		)));
 
@@ -775,7 +889,7 @@ final class PostService
 			return;
 		}
 
-		$activity = $buildActivity();
+		$activity = $this->withMentionTags($buildActivity(), $mentionTargets);
 		$keyId = $this->activities->keyId($post->authorId);
 
 		foreach ($inboxes as $inbox) {
@@ -785,5 +899,46 @@ final class PostService
 				'key_id' => $keyId,
 			], subject: JobSubject::account($post->authorId));
 		}
+	}
+
+	/**
+	 * Adds the standard `Mention` tags and puts the mentioned actors into the
+	 * `cc` audience. Delivery already includes their inboxes, but without the
+	 * tag a peer renders the text as plain prose and cannot notify the actor.
+	 *
+	 * @param array<string, mixed> $activity
+	 * @param list<MentionTarget>  $targets
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function withMentionTags(array $activity, array $targets): array
+	{
+		if ($targets === []) {
+			return $activity;
+		}
+
+		$tags = [];
+		$cc = is_array($activity['cc'] ?? null) ? array_values($activity['cc']) : [];
+		foreach ($targets as $target) {
+			$tags[] = [
+				'type' => 'Mention',
+				'href' => $target->actorId,
+				'name' => '@' . $target->handle,
+			];
+
+			if (!in_array($target->actorId, $cc, true)) {
+				$cc[] = $target->actorId;
+			}
+		}
+
+		$activity['tag'] = $tags;
+		$activity['cc'] = $cc;
+
+		if (is_array($activity['object'] ?? null)) {
+			$activity['object']['tag'] = $tags;
+			$activity['object']['cc'] = $cc;
+		}
+
+		return $activity;
 	}
 }

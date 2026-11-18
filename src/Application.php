@@ -198,6 +198,7 @@ use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
+use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationCandidateSource;
 use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationRepository;
@@ -522,6 +523,7 @@ final readonly class Application
 		?RsaKeyPair $signingKey = null,
 		?InboxResolver $inboxResolver = null,
 		?ActorResolver $actorResolver = null,
+		?MentionResolver $mentionResolver = null,
 		?ActivityLog $activityLog = null,
 		?LocalActorDirectory $localActors = null,
 		?FollowingRepository $followingRepository = null,
@@ -737,6 +739,7 @@ final readonly class Application
 			httpClient: $httpClient,
 			signingKey: $signingKey,
 			actorResolver: $actorResolver,
+			mentionResolver: $mentionResolver,
 			activityLog: $activityLog,
 			localActors: $localActors,
 			queue: $queue,
@@ -768,6 +771,7 @@ final readonly class Application
 		JobQueue $queue,
 		ActivityLog $activityLog,
 		?ActorResolver $actorResolver = null,
+		?MentionResolver $mentionResolver = null,
 		?InboxResolver $inboxResolver = null,
 		?Clock $clock = null,
 		?LoggerInterface $logger = null,
@@ -917,6 +921,7 @@ final readonly class Application
 			httpClient: $httpClient,
 			signingKey: $signingKey,
 			actorResolver: $actorResolver,
+			mentionResolver: $mentionResolver,
 			activityLog: $activityLog,
 			localActors: $localActors,
 			queue: $queue,
@@ -977,6 +982,7 @@ final readonly class Application
 		?HttpClient $httpClient,
 		?RsaKeyPair $signingKey,
 		?ActorResolver $actorResolver,
+		?MentionResolver $mentionResolver,
 		ActivityLog $activityLog,
 		?LocalActorDirectory $localActors,
 		JobQueue $queue,
@@ -1283,6 +1289,7 @@ final readonly class Application
 			holdPolicy: $postHoldPolicy,
 			searchIndexer: $searchIndexer,
 			pins: $pinRepository,
+			mentions: $mentionResolver,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,
