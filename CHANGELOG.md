@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Profile timelines:** `GET /api/v1/accounts/{id}/statuses` returns one local
+  account's posts with the same audience rules as the single-post route. A
+  profile no longer has to scan the public timeline and lose older posts once
+  newer ones fill the page.
+- **Nextcloud API compatibility:** every Mastodon-compatible route whose
+  native path does not already exist is also served under `/api/v1`, so the
+  Nextcloud Social app's clients find statuses, bookmarks, lists, mutes,
+  filters, scheduled posts, polls and media at their expected paths. Native
+  `/api/v1` routes always win.
 - Complete account data export and erasure over the existing SQL tables.
   `GET /api/v1/account/export` returns the deterministic
   `alohasocial-account-archive` JSON (all attributable rows plus attachment

@@ -23,6 +23,7 @@ use AlohaSocial\Core\Api\CreateStoryHandler;
 use AlohaSocial\Core\Api\CreateStoryReactionHandler;
 use AlohaSocial\Core\Api\CreateStoryReplyHandler;
 use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
+use AlohaSocial\Core\Api\AccountStatusesHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteStoryHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -1604,6 +1605,7 @@ final readonly class Application
 			->with(BoostPostHandler::class, static fn (): BoostPostHandler => new BoostPostHandler($boostService))
 			->with(UnboostPostHandler::class, static fn (): UnboostPostHandler => new UnboostPostHandler($boostService))
 			->with(PublicTimelineHandler::class, static fn (): PublicTimelineHandler => new PublicTimelineHandler($timelines, $mediaService, $filterService))
+			->with(AccountStatusesHandler::class, static fn (): AccountStatusesHandler => new AccountStatusesHandler($posts, $postService, $mediaService))
 			->with(HashtagTimelineHandler::class, static fn (): HashtagTimelineHandler => new HashtagTimelineHandler($timelines, $mediaService, $filterService))
 			->with(FollowedHashtagTimelineHandler::class, static fn (): FollowedHashtagTimelineHandler => new FollowedHashtagTimelineHandler($followedHashtagService, $timelines, $mediaService, $filterService))
 			->with(FollowedTagsHandler::class, static fn (): FollowedTagsHandler => new FollowedTagsHandler($followedHashtagService))

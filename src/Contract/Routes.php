@@ -41,6 +41,7 @@ use AlohaSocial\Core\Api\UnarchivePostHandler;
 use AlohaSocial\Core\Api\UnpinPostHandler;
 use AlohaSocial\Core\Api\UpdateCollectionHandler;
 use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
+use AlohaSocial\Core\Api\AccountStatusesHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -189,7 +190,7 @@ final class Routes
 		$base = ApiVersion::BASE_PATH;
 		$mastodon = MastodonApiConfig::normalizePrefix($mastodonPrefix ?? MastodonApiConfig::DEFAULT_PREFIX);
 
-		return new RouteManifest(
+		$routes = [
 			new Route(
 				name: 'health',
 				method: 'GET',
@@ -951,6 +952,15 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'Public profile of one local account, with the viewer relationship when authenticated.',
+			),
+			new Route(
+				name: 'accounts.statuses',
+				method: 'GET',
+				path: $base . '/accounts/{id}/statuses',
+				handler: AccountStatusesHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Profile timeline of one local account, scoped to the viewer.',
 			),
 			new Route(
 				name: 'accounts.follow',
@@ -1878,6 +1888,55 @@ final class Routes
 				rateLimit: '120/60',
 				summary: 'Page through the blobs of a public repository.',
 			),
-		);
+		];
+
+		return new RouteManifest(...array_merge($routes, self::compatibilityAliases($routes, $base, $mastodon)));
+	}
+
+	/**
+	 * The Nextcloud Social app and its clients call the Mastodon API under
+	 * `/api/v1`, while this contract keeps it under a configurable prefix.
+	 *
+	 * Every Mastodon route whose native `/api/v1` path is not already taken is
+	 * also served at that path. Native routes always win, so the alias layer
+	 * cannot change the meaning of an existing endpoint.
+	 *
+	 * @param list<Route> $routes
+	 *
+	 * @return list<Route>
+	 */
+	private static function compatibilityAliases(array $routes, string $base, string $mastodon): array
+	{
+		$taken = [];
+		foreach ($routes as $route) {
+			$taken[$route->method . ' ' . $route->path] = true;
+		}
+
+		$aliases = [];
+		foreach ($routes as $route) {
+			if (!str_starts_with($route->path, $mastodon . '/')) {
+				continue;
+			}
+
+			$path = $base . substr($route->path, strlen($mastodon));
+			$key = $route->method . ' ' . $path;
+			if (isset($taken[$key])) {
+				continue;
+			}
+
+			$taken[$key] = true;
+			$aliases[] = new Route(
+				name: 'compat.' . $route->name,
+				method: $route->method,
+				path: $path,
+				handler: $route->handler,
+				requiresAuth: $route->requiresAuth,
+				rateLimit: $route->rateLimit,
+				summary: 'Nextcloud-compatible alias of ' . $route->name . '.',
+				requiredScopes: $route->requiredScopes,
+			);
+		}
+
+		return $aliases;
 	}
 }

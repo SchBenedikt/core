@@ -23,7 +23,7 @@ final class RoutesTest extends TestCase
 	{
 		$manifest = Routes::manifest();
 
-		self::assertCount(186, $manifest->routes());
+		self::assertCount(225, $manifest->routes());
 		self::assertNotNull($manifest->find('recommendations.get'));
 		self::assertNotNull($manifest->find('recommendations.preferences.get'));
 		self::assertNotNull($manifest->find('recommendations.preferences.update'));
@@ -43,6 +43,15 @@ final class RoutesTest extends TestCase
 		self::assertNotNull($manifest->find('actors.following'));
 		self::assertNotNull($manifest->find('blocks.list'));
 		self::assertNotNull($manifest->find('blocks.block'));
+		self::assertNotNull($manifest->find('accounts.statuses'));
+		self::assertSame(
+			'/api/v1/statuses',
+			$manifest->find('compat.mastodon.statuses.create')?->path,
+		);
+		self::assertSame(
+			'/api/v1/bookmarks',
+			$manifest->find('compat.mastodon.bookmarks')?->path,
+		);
 		self::assertNotNull($manifest->find('blocks.unblock'));
 		self::assertNotNull($manifest->find('media.upload'));
 		self::assertNotNull($manifest->find('media.get'));
@@ -265,7 +274,7 @@ final class RoutesTest extends TestCase
 
 		self::assertSame(RouteManifest::VERSION, $decoded['version']);
 		self::assertSame('alohasocial/core', $decoded['generated_by']);
-		self::assertCount(186, $decoded['routes']);
+		self::assertCount(225, $decoded['routes']);
 		self::assertSame('/api/v1/posts', $decoded['routes'][2]['path']);
 	}
 
@@ -275,6 +284,6 @@ final class RoutesTest extends TestCase
 		// handler nobody registered; this test is the regression guard for it.
 		$app = Application::inMemory();
 
-		self::assertCount(186, $app->routes->routes());
+		self::assertCount(225, $app->routes->routes());
 	}
 }

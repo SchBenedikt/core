@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 186 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 225 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -103,6 +103,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `blocks.block` | `POST` | `/api/v1/blocks` | yes | 30 / 900 s |
 | `blocks.unblock` | `DELETE` | `/api/v1/blocks/{id}` | yes | 60 / 900 s |
 | `accounts.show` | `GET` | `/api/v1/accounts/{id}` | no; an optional token adds the viewer relationship | 120 / 60 s |
+| `accounts.statuses` | `GET` | `/api/v1/accounts/{id}/statuses` | no; followers-only and direct posts need the matching viewer | 120 / 60 s |
 | `accounts.follow` | `POST` | `/api/v1/accounts/{id}/follow` | yes | 30 / 900 s |
 | `accounts.unfollow` | `DELETE` | `/api/v1/accounts/{id}/follow` | yes | 60 / 900 s |
 | `notifications.list` | `GET` | `/api/v1/notifications` | yes | 60 / 60 s |
@@ -204,6 +205,44 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.notifications.clear` | `POST` | `/api/mastodon/v1/notifications/clear` | yes, `write:notifications` | 30 / 900 s |
 | `mastodon.search` | `GET` | `/api/mastodon/v1/search` | yes, `read:search` | 60 / 60 s |
 
+| `compat.mastodon.media.update` | `PUT` | `/api/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
+| `compat.mastodon.media.delete` | `DELETE` | `/api/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
+| `compat.mastodon.statuses.show` | `GET` | `/api/v1/statuses/{id}` | no | 120 / 60 s |
+| `compat.mastodon.statuses.context` | `GET` | `/api/v1/statuses/{id}/context` | no | 60 / 60 s |
+| `compat.mastodon.statuses.create` | `POST` | `/api/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.statuses.update` | `PUT` | `/api/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.statuses.delete` | `DELETE` | `/api/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.scheduled_statuses.list` | `GET` | `/api/v1/scheduled_statuses` | yes, `read:statuses` | 60 / 60 s |
+| `compat.mastodon.scheduled_statuses.show` | `GET` | `/api/v1/scheduled_statuses/{id}` | yes, `read:statuses` | 120 / 60 s |
+| `compat.mastodon.scheduled_statuses.update` | `PUT` | `/api/v1/scheduled_statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.scheduled_statuses.delete` | `DELETE` | `/api/v1/scheduled_statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.filters.update` | `PUT` | `/api/v1/filters/{id}` | yes, `write:filters` | 30 / 900 s |
+| `compat.mastodon.statuses.reblog` | `POST` | `/api/v1/statuses/{id}/reblog` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.statuses.unreblog` | `POST` | `/api/v1/statuses/{id}/unreblog` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.statuses.favourite` | `POST` | `/api/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
+| `compat.mastodon.statuses.unfavourite` | `POST` | `/api/v1/statuses/{id}/unfavourite` | yes, `write:favourites` | 30 / 900 s |
+| `compat.mastodon.statuses.bookmark` | `POST` | `/api/v1/statuses/{id}/bookmark` | yes, `write:bookmarks` | 30 / 900 s |
+| `compat.mastodon.statuses.unbookmark` | `POST` | `/api/v1/statuses/{id}/unbookmark` | yes, `write:bookmarks` | 30 / 900 s |
+| `compat.mastodon.bookmarks` | `GET` | `/api/v1/bookmarks` | yes, `read:bookmarks` | 60 / 60 s |
+| `compat.mastodon.lists.list` | `GET` | `/api/v1/lists` | yes, `read:lists` | 60 / 60 s |
+| `compat.mastodon.lists.create` | `POST` | `/api/v1/lists` | yes, `write:lists` | 30 / 900 s |
+| `compat.mastodon.lists.show` | `GET` | `/api/v1/lists/{id}` | yes, `read:lists` | 60 / 60 s |
+| `compat.mastodon.lists.update` | `PUT` | `/api/v1/lists/{id}` | yes, `write:lists` | 30 / 900 s |
+| `compat.mastodon.lists.delete` | `DELETE` | `/api/v1/lists/{id}` | yes, `write:lists` | 30 / 900 s |
+| `compat.mastodon.lists.accounts` | `GET` | `/api/v1/lists/{id}/accounts` | yes, `read:lists` | 60 / 60 s |
+| `compat.mastodon.lists.accounts.add` | `POST` | `/api/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
+| `compat.mastodon.lists.accounts.remove` | `DELETE` | `/api/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
+| `compat.mastodon.timelines.list` | `GET` | `/api/v1/timelines/list/{list_id}` | yes, `read:lists` | 60 / 60 s |
+| `compat.mastodon.polls.show` | `GET` | `/api/v1/polls/{id}` | no | 120 / 60 s |
+| `compat.mastodon.polls.vote` | `POST` | `/api/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
+| `compat.mastodon.accounts.relationships` | `GET` | `/api/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
+| `compat.mastodon.accounts.unfollow` | `POST` | `/api/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
+| `compat.mastodon.accounts.mute` | `POST` | `/api/v1/accounts/{id}/mute` | yes, `write:mutes` | 30 / 900 s |
+| `compat.mastodon.accounts.unmute` | `POST` | `/api/v1/accounts/{id}/unmute` | yes, `write:mutes` | 30 / 900 s |
+| `compat.mastodon.mutes` | `GET` | `/api/v1/mutes` | yes, `read:mutes` | 60 / 60 s |
+| `compat.mastodon.accounts.followers` | `GET` | `/api/v1/accounts/{id}/followers` | no | 60 / 60 s |
+| `compat.mastodon.accounts.following` | `GET` | `/api/v1/accounts/{id}/following` | no | 60 / 60 s |
+| `compat.mastodon.accounts.verify_credentials` | `GET` | `/api/v1/accounts/verify_credentials` | yes, `read:accounts` | 60 / 60 s |
 Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
 checked against.
