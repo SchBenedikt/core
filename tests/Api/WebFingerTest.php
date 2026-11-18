@@ -14,6 +14,7 @@ use AlohaSocial\Core\Contract\Routes;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use PHPUnit\Framework\TestCase;
@@ -69,6 +70,23 @@ final class WebFingerTest extends TestCase
 		$response = $this->webFinger($this->app(), 'ACCT:alice@LOCALHOST:8080');
 
 		self::assertSame(200, $response->status);
+	}
+
+	public function testAnIdnHostIsMatchedInItsAsciiForm(): void
+	{
+		$app = Application::inMemory(
+			config: new ArrayConfig(['social' => ['instance.url' => 'https://social.schöchner.test']]),
+			signingKey: self::$localKey,
+			localActors: new InMemoryActorDirectory(['alice']),
+		);
+
+		$response = $this->webFinger($app, 'acct:alice@social.xn--schchner-p4a.test');
+
+		self::assertSame(200, $response->status, $response->body);
+		self::assertSame(
+			'acct:alice@social.xn--schchner-p4a.test',
+			$response->decodedBody()['subject'],
+		);
 	}
 
 	public function testAForeignHostIsNotFoundWithoutEchoingIt(): void

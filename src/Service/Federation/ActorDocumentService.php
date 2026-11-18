@@ -69,10 +69,10 @@ final class ActorDocumentService
 		$profile = $this->profiles?->profile($userId);
 
 		$document = [
-			'@context' => [ActivityFactory::CONTEXT, self::CONTEXT_SECURITY],
-			'id' => $actorId,
-			'type' => 'Person',
-			'preferredUsername' => $userId,
+			'@context' => [ActivityFactory::CONTEXT, self::CONTEXT_SECURITY],            'id' => $actorId,
+            'url' => $actorId,
+            'type' => 'Person',
+            'preferredUsername' => $userId,
 			'name' => $profile?->displayName ?? $userId,
 			// One inbox endpoint serves all local actors; the activity's
 			// `object` names the account it is addressed to. The shared inbox

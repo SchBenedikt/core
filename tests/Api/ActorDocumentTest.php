@@ -71,6 +71,7 @@ final class ActorDocumentTest extends TestCase
 
 		self::assertSame([ActivityFactory::CONTEXT, ActorDocumentService::CONTEXT_SECURITY], $document['@context']);
 		self::assertSame(self::ACTOR, $document['id']);
+		self::assertSame(self::ACTOR, $document['url']);
 		self::assertSame('Person', $document['type']);
 		self::assertSame('alice', $document['preferredUsername']);
 		self::assertSame('alice', $document['name']);

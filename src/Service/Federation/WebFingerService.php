@@ -87,38 +87,65 @@ final class WebFingerService
 
 		if ($handle === '' || $host === '' || str_contains($handle, '@') || str_contains($host, '@')) {
 			throw new InvalidWebFingerResourceException('malformed acct: URI');
-		}
+		}        return [$handle, $this->normalizeHost($host)];
+    }
 
-		return [$handle, strtolower($host)];
-	}
+    /**
+     * WebFinger clients may send either the Unicode handle or its IDNA
+     * A-label. ActivityPub ids always carry the ASCII form, so both sides are
+     * compared in that form and a Unicode-configured instance URL still
+     * answers the canonical `xn--` request.
+     */
+    private function normalizeHost(string $host): string
+    {
+        $host = strtolower(rtrim(trim($host), '.'));
+        if ($host === '') {
+            return '';
+        }
 
-	private function isLocalHost(string $host, string $base): bool
-	{
-		$configured = $this->hostOf($base);
-		if ($host === $configured) {
-			return true;
-		}
+        // A WebFinger authority may carry a development port. IDNA applies to
+        // the host name only, not to `host:port`.
+        if (preg_match('/^(.+):(\d+)$/', $host, $match) === 1) {
+            return $this->normalizeHost($match[1]) . ':' . $match[2];
+        }
 
-		// Handles usually omit the port. Accept the bare host when the
-		// instance URL carries one, so a development instance at :8080 can
-		// still be resolved as @alice@localhost.
-		$port = parse_url($base, PHP_URL_PORT);
+        if (function_exists('idn_to_ascii')) {
+            $ascii = idn_to_ascii($host, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+            if (is_string($ascii) && $ascii !== '') {
+                return strtolower($ascii);
+            }
+        }
 
-		return is_int($port) && $host === $configured . ':' . $port;
-	}
+        return $host;
+    }
 
-	private function authority(string $base): string
-	{
-		$host = $this->hostOf($base);
-		$port = parse_url($base, PHP_URL_PORT);
+    private function isLocalHost(string $host, string $base): bool
+    {
+        $configured = $this->hostOf($base);
+        if ($host === $configured) {
+            return true;
+        }
 
-		return is_int($port) ? $host . ':' . $port : $host;
-	}
+        // Handles usually omit the port. Accept the bare host when the
+        // instance URL carries one, so a development instance at :8080 can
+        // still be resolved as @alice@localhost.
+        $port = parse_url($base, PHP_URL_PORT);
 
-	private function hostOf(string $base): string
-	{
-		$host = parse_url($base, PHP_URL_HOST);
+        return is_int($port) && $host === $configured . ':' . $port;
+    }
 
-		return is_string($host) ? strtolower($host) : '';
-	}
+    private function authority(string $base): string
+    {
+        $host = $this->hostOf($base);
+        $port = parse_url($base, PHP_URL_PORT);
+
+        return is_int($port) ? $host . ':' . $port : $host;
+    }
+
+    private function hostOf(string $base): string
+    {
+        $host = parse_url($base, PHP_URL_HOST);
+
+        return is_string($host) ? $this->normalizeHost($host) : '';
+    }
 }
