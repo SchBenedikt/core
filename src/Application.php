@@ -527,6 +527,7 @@ final readonly class Application
 		public ?AccountDataService $accountData = null,
 		public ?AtprotoFollowService $atprotoFollows = null,
 		public ?ReactionService $reactions = null,
+		public ?BoostService $boosts = null,
 	) {
 	}
 
@@ -1851,6 +1852,7 @@ final readonly class Application
 			$accountData,
 			$atprotoFollowService,
 			$reactionService,
+			$boostService,
 		);
 	}
 

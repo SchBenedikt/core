@@ -314,7 +314,7 @@ final class MastodonPresenter
 	 *
 	 * @return array<string, mixed>
 	 */
-	public function remoteStatus(RemotePost $post, bool $favourited): array
+	public function remoteStatus(RemotePost $post, bool $favourited, bool $reblogged = false): array
 	{
 		return [
 			'id' => $post->objectId,
@@ -328,7 +328,7 @@ final class MastodonPresenter
 			'uri' => $post->objectId,
 			'url' => $post->objectId,
 			'replies_count' => 0,
-			'reblogs_count' => 0,
+			'reblogs_count' => $reblogged ? 1 : 0,
 			'favourites_count' => 0,
 			'edited_at' => $post->updatedAt?->format('Y-m-d\\TH:i:s.000\\Z'),
 			'content' => $this->html($post->content),
@@ -343,7 +343,7 @@ final class MastodonPresenter
 			'poll' => null,
 			'quote' => null,
 			'favourited' => $favourited,
-			'reblogged' => false,
+			'reblogged' => $reblogged,
 			'bookmarked' => false,
 			'muted' => false,
 		];

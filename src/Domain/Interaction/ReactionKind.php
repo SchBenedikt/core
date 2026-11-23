@@ -21,5 +21,7 @@ enum ReactionKind: string
 {
 	case Like = 'like';
 
+	case Boost = 'boost';
+
 	case Emoji = 'emoji';
 }

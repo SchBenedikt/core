@@ -85,7 +85,7 @@ the host that serves it. See
   mention, reblog) with dismiss/unread state, polls with local voting and
   imported remote Questions, local
   follow/unfollow and relationship reads, plus federated `Like` and
-  `EmojiReact` on remote posts with their `Undo` and inbound reaction counts.
+  `EmojiReact` on remote posts with their `Undo`, outbound remote boosts and inbound reaction counts.
   Mastodon-shaped interaction routes live under the optional compatibility
   prefix; the remote reaction routes live under `/api/v1`. See
   [Mastodon-compatible API](guides/mastodon-api.md) and the

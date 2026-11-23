@@ -139,6 +139,36 @@ final class RemoteReactionTest extends TestCase
 		self::assertSame([], $this->queue->reserve(10, $this->clock->now()));
 	}
 
+	public function testRemoteBoostIsIdempotentAndUndoEmbedsTheAnnounce(): void
+	{
+		$service = $this->service();
+		$first = $service->boostRemote('alice', self::OBJECT);
+		$second = $service->boostRemote('alice', self::OBJECT);
+		self::assertTrue($first['viewer']['reblogged']);
+		self::assertTrue($second['viewer']['reblogged']);
+		self::assertSame(1, $second['reblogs_count']);
+		self::assertNotNull($this->reactions->find(ReactionDirection::Out, 'alice', self::OBJECT, ReactionKind::Boost, null));
+
+		$jobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $jobs);
+		self::assertSame('Announce', $jobs[0]->payload['activity']['type']);
+		self::assertSame(self::OBJECT, $jobs[0]->payload['activity']['object']);
+
+		$undone = $service->unboostRemote('alice', self::OBJECT);
+		self::assertFalse($undone['viewer']['reblogged']);
+		$undoJobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $undoJobs);
+		self::assertSame('Undo', $undoJobs[0]->payload['activity']['type']);
+		self::assertSame('Announce', $undoJobs[0]->payload['activity']['object']['type']);
+		self::assertSame($jobs[0]->payload['activity']['id'], $undoJobs[0]->payload['activity']['object']['id']);
+
+		$this->clock->advance(1);
+		$service->boostRemote('alice', self::OBJECT);
+		$reboostJobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $reboostJobs);
+		self::assertNotSame($jobs[0]->payload['activity']['id'], $reboostJobs[0]->payload['activity']['id']);
+	}
+
 	public function testAnEmojiReactionQueuesAnEmojiReactAndItsUndo(): void
 	{
 		$service = $this->service();

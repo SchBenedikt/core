@@ -295,7 +295,7 @@ final class MastodonService
 			$post = $this->remotePost($viewerId, $postId);
 			$interaction = $this->requireReactionService()->remoteInteractionsFor($viewerId, $post);
 
-			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited'], $interaction['viewer']['reblogged']);
 		}
 
 		$boost = $this->boosts?->find($postId);
@@ -385,7 +385,14 @@ final class MastodonService
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
 		if ($this->isRemoteObjectTarget($postId)) {
-			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+			$post = $this->remotePost($userId, $postId);
+			try {
+				$interaction = $this->requireReactionService()->boostRemote($userId, $postId);
+			} catch (ReactionException $exception) {
+				throw $this->mapRemoteReactionException($exception);
+			}
+
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited'], $interaction['viewer']['reblogged']);
 		}
 
 		$post = $this->visiblePost($postId, $userId);
@@ -411,7 +418,14 @@ final class MastodonService
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
 		if ($this->isRemoteObjectTarget($postId)) {
-			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+			$post = $this->remotePost($userId, $postId);
+			try {
+				$interaction = $this->requireReactionService()->unboostRemote($userId, $postId);
+			} catch (ReactionException $exception) {
+				throw $this->mapRemoteReactionException($exception);
+			}
+
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited'], $interaction['viewer']['reblogged']);
 		}
 
 		$post = $this->visiblePost($postId, $userId);
@@ -679,7 +693,7 @@ final class MastodonService
 				throw $this->mapRemoteReactionException($exception);
 			}
 
-			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited'], $interaction['viewer']['reblogged']);
 		}
 
 		$post = $this->visiblePost($postId, $userId);
@@ -724,7 +738,7 @@ final class MastodonService
 				throw $this->mapRemoteReactionException($exception);
 			}
 
-			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited'], $interaction['viewer']['reblogged']);
 		}
 
 		$post = $this->visiblePost($postId, $userId);

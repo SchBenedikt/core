@@ -657,6 +657,40 @@ final class ActivityFactory
 		];
 	}
 
+	/** Stable identity for sharing a remote object with followers. */
+	public function remoteBoostId(string $localUserId, string $objectId, ?DateTimeImmutable $at = null): string
+	{
+		return $this->interactionId('boosts', $localUserId, $objectId, $at?->format('U.u') ?? '');
+	}
+
+	/** @return array<string, mixed> */
+	public function announceRemote(string $localUserId, string $objectId, ?string $activityId = null): array
+	{
+		$actor = $this->actorId($localUserId);
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $activityId ?? $this->remoteBoostId($localUserId, $objectId),
+			'type' => 'Announce',
+			'actor' => $actor,
+			'object' => $objectId,
+			'to' => [self::PUBLIC_COLLECTION],
+			'cc' => [$actor . '/followers'],
+		];
+	}
+
+	/** @return array<string, mixed> */
+	public function undoRemoteAnnounce(string $localUserId, string $objectId, ?string $activityId = null): array
+	{
+		$activityId ??= $this->remoteBoostId($localUserId, $objectId);
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $activityId . '/undo',
+			'type' => 'Undo',
+			'actor' => $this->actorId($localUserId),
+			'object' => $this->announceRemote($localUserId, $objectId, $activityId),
+		];
+	}
+
 	public function reactionId(string $localUserId, string $objectId, string $emoji): string
 	{
 		return $this->interactionId('reactions', $localUserId, $objectId, $emoji);
