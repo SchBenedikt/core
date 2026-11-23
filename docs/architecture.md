@@ -721,6 +721,12 @@ maximum is 40, and generated links carry a non-default limit.
   applied only to that user's home query. A block never deletes a shared remote
   row and never changes another account's follow graph. The local write stays
   committed even when the outbound `Block`/`Undo(Block)` cannot be queued.
+- **Inbound blocks.** `social_inbound_block` stores the active remote actor
+  block by local account and the owning Block activity URI. The inbox verifies
+  the signer and local target; Undo must match that actor, target and activity
+  URI. This removes both follow edges and rejects new follows and reactions
+  from that actor for the addressed account without hiding content from other
+  local accounts.
 - **Private mutes.** `social_mute` is unique by (local user, actor) and is
   applied only to that user's home query and notification reads. A mute never
   deletes a shared remote row or changes another account's graph. An optional
@@ -736,7 +742,7 @@ maximum is 40, and generated links carry a non-default limit.
   post-attachment and post-recipient tables once; `PollSchema`, `FavouriteSchema`,
   `BookmarkSchema`, `MuteSchema`, `BoostSchema`, `NotificationSchema`,
   `AttachmentSchema`, `RemotePostSchema`, `BlockSchema`,
-  `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`,
+  `InboundBlockSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`,
   `AccountDeletionSchema` and `ActivityLogSchema` do the same for favourites,
   bookmarks, notifications, media metadata, remote content, per-user blocks,
   AT Protocol publications and inbound sync, the durable queue, account

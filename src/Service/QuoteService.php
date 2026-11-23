@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -53,6 +54,7 @@ final class QuoteService
 		private readonly Clock $clock,
 		private readonly ?ActorInboxResolver $inboxes = null,
 		private readonly ?BlockService $blocks = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -106,6 +108,11 @@ final class QuoteService
 		if ($this->blocks?->isBlocked($authorId, $remote->actorId) === true) {
 			throw new ValidationException([
 				'quoted_post_id' => 'This actor is blocked by the signed-in account.',
+			]);
+		}
+		if ($this->inboundBlocks?->isBlocked($authorId, $remote->actorId) === true) {
+			throw new ValidationException([
+				'quoted_post_id' => 'This remote actor has blocked the signed-in account.',
 			]);
 		}
 
@@ -206,6 +213,9 @@ final class QuoteService
 		$post = $this->posts->find($postId);
 		if ($post === null || $post->isDeleted()) {
 			throw new InboxRejectedException('quote_not_available', 'The quoted post is not available.');
+		}
+		if ($this->inboundBlocks?->isBlocked($post->authorId, $remoteActorId) === true) {
+			throw new InboxRejectedException('blocked_actor', 'This account blocks quote requests from the actor.');
 		}
 
 		$grantId = self::grantId(trim($object), trim($instrument));

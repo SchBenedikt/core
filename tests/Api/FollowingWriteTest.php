@@ -13,6 +13,7 @@ use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -103,6 +104,20 @@ final class FollowingWriteTest extends TestCase
 
 		self::assertSame(1, $this->collection($app)['totalItems']);
 		self::assertSame([self::BOB], $this->collection($app)['orderedItems']);
+	}
+
+	public function testAReceivedBlockPreventsAnOutgoingFollowAttempt(): void
+	{
+		$inboundBlocks = new InMemoryInboundBlockRepository();
+		$inboundBlocks->block('alice', self::BOB, 'https://remote.example/activities/block-alice');
+		$app = $this->app(new FakeHttpClient(), $inboundBlocks);
+
+		$response = $this->followRequest($app);
+
+		self::assertSame(403, $response->status);
+		self::assertSame('blocked_actor', $response->decodedBody()['error']['code']);
+		self::assertSame(0, $app->following->count('alice'));
+		self::assertSame(0, $app->queue->pendingCount());
 	}
 
 	public function testFollowIsIdempotentAndDoesNotQueueTwice(): void
@@ -272,7 +287,7 @@ final class FollowingWriteTest extends TestCase
 		self::assertSame(404, $this->unfollowRequest($app, 'unknown', 'alice')->status);
 	}
 
-	private function app(?FakeHttpClient $http = null): Application
+	private function app(?FakeHttpClient $http = null, ?InMemoryInboundBlockRepository $inboundBlocks = null): Application
 	{
 		return Application::inMemory(
 			clock: $this->clock,
@@ -280,6 +295,7 @@ final class FollowingWriteTest extends TestCase
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice', 'bob']),
 			followingRepository: new InMemoryFollowingRepository(),
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 

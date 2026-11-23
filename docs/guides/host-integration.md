@@ -323,6 +323,7 @@ The core owns the schema classes, not the migration mechanism:
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
 - `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`, `social_post_hashtag`
 - `BlockSchema` → `social_block` (per-user blocks)
+- `InboundBlockSchema` → `social_inbound_block` (remote actor blocks per local account, including the owning Block activity URI)
 - `JobSchema` → `social_job` (optional `subject_type`/`subject_id` columns let an account deletion cancel its jobs)
 - `AccountDeletionSchema` → `social_account_deletion` (durable deletion state, report and lease)
 - `ActivityLogSchema` → `social_activity_log`
@@ -784,7 +785,7 @@ owners for the same handle. Milestone order and current status are in the
 
 1. Add the Composer dependency and implement the ports; keep the host's UI.
 2. Create the core tables through the host's migration system (including
-   `social_remote_post`, `social_remote_post_attachment`, `social_block`,
+   `social_remote_post`, `social_remote_post_attachment`, `social_block`, `social_inbound_block`,
    `social_attachment` and `social_post_attachment`).
 3. Boot `Application::forHost()` in a test with SQLite, `PdoJobQueue`,
    `PdoActivityLog` and a fake HTTP client.

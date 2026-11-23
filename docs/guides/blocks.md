@@ -135,9 +135,11 @@ sent for a received block.
 
 An accepted Block removes that actor's follower edge for the addressed local
 account and the account's outgoing follow to that actor. New Follow requests
-are refused while the relationship is active, and the actor cannot add
-reactions to that local account's posts. Other local accounts keep their own
-relationships and visibility. The relationship row records the Block activity
+from either side are refused while the relationship is active. The local
+account also cannot send reactions, quote requests, poll votes or direct
+mention deliveries to that actor. Incoming quote requests and reactions from
+the actor are refused for the blocked local account. Other local accounts keep
+their own relationships and visibility. The relationship row records the Block activity
 URI so a nested Undo must match the original actor, target and activity; a
 URI-only Undo is looked up by the signing actor and the stored activity URI.
 Unknown and already-removed Undo references are successful no-ops.

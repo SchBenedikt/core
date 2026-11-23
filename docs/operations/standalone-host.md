@@ -17,7 +17,7 @@ Protocol linking flow and a phase plan with acceptance checks — is in
 2. **Database** — connect PDO, wrap it in `PdoConnection`, run the schema
    statements    (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`,
    `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
-   `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`, `InboundBlockSchema`,
    `MuteSchema`, `AccountListSchema`, `AtprotoPublicationSchema`,
    `AtprotoInboundSchema`, `JobSchema`, `AccountDeletionSchema`, `ActivityLogSchema`) from the migration step.
    A fresh database uses the schema `create()` methods. An existing database
@@ -83,7 +83,8 @@ Protocol linking flow and a phase plan with acceptance checks — is in
    `InboxService` and, when `social_remote_post` exists, a `RemotePostRepository`
    for signed Create/Delete/Announce. Both `/inbox` and `/inbox/shared` use
    that service. The home timeline additionally needs `social_block` for the
-   per-user filter. Without the resolver, client and key, both inbox routes
+   per-user filter, and `social_inbound_block` for actor-specific Block/Undo
+   policy. Without the resolver, client and key, both inbox routes
    answer 503.
 9. **Handlers and kernel** — register every handler from the route manifest and
    fail at boot if one is missing.

@@ -603,6 +603,7 @@ final readonly class Application
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -751,6 +752,7 @@ final readonly class Application
 			logger: $logger,
 			debug: $debug,
 			atprotoDpop: $atprotoDpop,
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 
@@ -832,6 +834,7 @@ final readonly class Application
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -848,7 +851,7 @@ final readonly class Application
 		$inboxResolver ??= new FollowerInboxResolver($followers);
 		$remotePosts = new PdoRemotePostRepository($database);
 		$blockRepository ??= new PdoBlockRepository($database);
-		$inboundBlocks = new PdoInboundBlockRepository($database);
+		$inboundBlocks ??= new PdoInboundBlockRepository($database);
 		$muteRepository ??= new PdoMuteRepository($database);
 		$accountListRepository ??= new PdoAccountListRepository($database);
 		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
@@ -1222,6 +1225,7 @@ final readonly class Application
 			$queue,
 			$actorInboxResolver,
 			$clock,
+			$inboundBlocks,
 		);
 		$quoteService = new QuoteService(
 			$posts,
@@ -1232,6 +1236,7 @@ final readonly class Application
 			$clock,
 			$actorInboxResolver,
 			$blockService,
+			$inboundBlocks,
 		);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock, $targetGuard)
@@ -1244,6 +1249,7 @@ final readonly class Application
 			$federationDelivery,
 			$queue,
 			$transactions,
+			$inboundBlocks,
 		);
 		$remoteActors ??= $httpClient instanceof BoundedHttpClient
 			? new HttpActorResolver($httpClient, $targetGuard)
@@ -1299,6 +1305,7 @@ final readonly class Application
 			searchIndexer: $searchIndexer,
 			pins: $pinRepository,
 			mentions: $mentionResolver,
+			inboundBlocks: $inboundBlocks,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,

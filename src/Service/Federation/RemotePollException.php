@@ -48,4 +48,9 @@ final class RemotePollException extends RuntimeException
 	{
 		return new self('delivery_unavailable', 503, 'This instance cannot reach the poll author.');
 	}
+
+	public static function blockedActor(): self
+	{
+		return new self('blocked_actor', 403, 'This remote actor has blocked your account.');
+	}
 }
