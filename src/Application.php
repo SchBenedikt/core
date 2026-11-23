@@ -1438,6 +1438,9 @@ final readonly class Application
 			$accountListService,
 			$trends,
 			$localProfiles,
+			$followingService,
+			$followingRepository,
+			$remoteActors,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();

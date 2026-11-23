@@ -10,9 +10,14 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\Mute;
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
@@ -41,14 +46,19 @@ use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Storage\StorageException;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
+use AlohaSocial\Core\Service\FollowingBlockedException;
+use AlohaSocial\Core\Service\FollowingNotConfiguredException;
+use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\PostHeldException;
 use AlohaSocial\Core\Service\ValidationException;
+use AlohaSocial\Core\Service\Federation\DeliveryFailedException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
@@ -64,7 +74,8 @@ use InvalidArgumentException;
  * for reads. There is no second status table: a Mastodon status is a core
  * post with an API-shaped projection. Remote posts, remote boosts and
  * streaming are intentionally outside this local slice. Favourites, local
- * boosts, follow edges and notifications are local bookkeeping; notifications
+ * boosts, local follow edges and notifications are local bookkeeping; outgoing
+ * remote follows use the shared federation lifecycle. Notifications
  * are recorded from local favourites/follows/replies/boosts and verified
  * inbound Follows, and read from the notification repository without a second
  * account or post model.
@@ -108,6 +119,9 @@ final class MastodonService
 		private readonly ?AccountListService $lists = null,
 		private readonly ?TrendRepository $trends = null,
 		private readonly ?LocalActorProfileProvider $profiles = null,
+		private readonly ?FollowingService $federatedFollowing = null,
+		private readonly ?FollowingRepository $followingRepository = null,
+		private readonly ?RemoteActorFetcher $remoteActors = null,
 	) {
 	}
 
@@ -1033,6 +1047,34 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteActorTarget($targetId)) {
+			$existing = $this->followingRepository?->find($userId, $targetId);
+			if ($existing !== null && $existing->state !== FollowState::Rejected) {
+				return $this->remoteRelationship($userId, $targetId);
+			}
+
+			$actor = $this->fetchRemoteActor($targetId);
+			$following = $this->federatedFollowing ?? throw new MastodonRequestException(
+				503,
+				'follows_not_configured',
+				'Remote following is not configured.',
+			);
+
+			try {
+				$following->follow($userId, $actor->actorId, $actor->inboxUrl);
+			} catch (FollowingBlockedException $exception) {
+				throw new MastodonRequestException(403, 'blocked_actor', $exception->getMessage());
+			} catch (FollowingNotConfiguredException $exception) {
+				throw new MastodonRequestException(503, 'follows_not_configured', $exception->getMessage());
+			} catch (DeliveryFailedException|HttpClientException $exception) {
+				throw new MastodonRequestException(502, 'delivery_failed', 'The remote inbox did not accept the Follow.');
+			} catch (ValidationException $exception) {
+				throw new MastodonRequestException(422, 'validation_failed', $exception->getMessage());
+			}
+
+			return $this->remoteRelationship($userId, $actor->actorId);
+		}
+
 		$this->requireLocalAccount($targetId);
 		$this->requireRelationships()->follow($userId, $targetId);
 
@@ -1051,6 +1093,23 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteActorTarget($targetId)) {
+			$following = $this->federatedFollowing ?? throw new MastodonRequestException(
+				503,
+				'follows_not_configured',
+				'Remote following is not configured.',
+			);
+			try {
+				$following->unfollow($userId, $targetId);
+			} catch (FollowingNotConfiguredException $exception) {
+				throw new MastodonRequestException(503, 'follows_not_configured', $exception->getMessage());
+			} catch (DeliveryFailedException|HttpClientException) {
+				throw new MastodonRequestException(502, 'delivery_failed', 'The remote inbox did not accept the Unfollow.');
+			}
+
+			return $this->remoteRelationship($userId, $targetId);
+		}
+
 		$this->requireLocalAccount($targetId);
 		$this->requireRelationships()->unfollow($userId, $targetId);
 
@@ -1161,11 +1220,14 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
-		foreach ($targetIds as $targetId) {
-			$this->requireLocalAccount($targetId);
-		}
+		return array_map(function (string $targetId) use ($userId): array {
+			if ($this->isRemoteActorTarget($targetId)) {
+				return $this->remoteRelationship($userId, $targetId);
+			}
 
-		return $this->requireRelationships()->relationships($userId, $targetIds);
+			$this->requireLocalAccount($targetId);
+			return $this->requireRelationships()->relationship($userId, $targetId);
+		}, $targetIds);
 	}
 
 	/**
@@ -1891,6 +1953,61 @@ final class MastodonService
 		}
 
 		throw new MastodonRequestException(404, 'not_found', 'Status cursor not found.');
+	}
+
+	private function isRemoteActorTarget(string $targetId): bool
+	{
+		if ($this->localActors?->has($targetId) === true) {
+			return false;
+		}
+
+		$parts = parse_url($targetId);
+		return is_array($parts)
+			&& in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
+			&& isset($parts['host']);
+	}
+
+	private function fetchRemoteActor(string $actorId): RemoteActor
+	{
+		if ($this->remoteActors === null) {
+			throw new MastodonRequestException(503, 'remote_accounts_not_configured', 'Remote account resolution is not configured.');
+		}
+
+		try {
+			$actor = $this->remoteActors->fetch($actorId);
+		} catch (UnknownActorException) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+
+		if ($actor->actorId !== $actorId) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+
+		return $actor;
+	}
+
+	/** @return array<string, mixed> */
+	private function remoteRelationship(string $userId, string $actorId): array
+	{
+		$followed = $this->followingRepository?->find($userId, $actorId);
+		$state = $followed?->state;
+
+		return [
+			'id' => $actorId,
+			'following' => $state === FollowState::Accepted,
+			'showing_reblogs' => true,
+			'notifying' => false,
+			'languages' => [],
+			'followed_by' => false,
+			'blocking' => false,
+			'blocked_by' => false,
+			'muting' => false,
+			'muting_notifications' => false,
+			'requested' => $state === FollowState::Pending,
+			'domain_blocking' => false,
+			'endorsed' => false,
+			'note' => '',
+		];
 	}
 
 	private function requireRelationships(): LocalRelationshipService
