@@ -202,7 +202,7 @@ function currentPath(): string {
 	gap: 0.4rem;
 	padding: 0.9rem 1rem;
 	border: 1px solid var(--aloha-border-color, #d9dee7);
-	border-radius: 0.75rem;
+	border-radius: 0.5rem;
 }
 
 .aloha-notifications__text {
