@@ -1178,6 +1178,7 @@ final readonly class Application
 			$httpClient === null ? null : new AtprotoFacets(new XrpcAtprotoIdentityResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
+			$mediaService,
 		);
 		$atprotoFollowService = new AtprotoFollowService(
 			$config,
