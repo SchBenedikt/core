@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\AccountMoveRepository;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
@@ -88,11 +89,18 @@ final class PostService
 		private readonly ?PostPinRepository $pins = null,
 		private readonly ?MentionResolver $mentions = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
+		private readonly ?AccountMoveRepository $accountMoves = null,
 	) {
 	}
 
 	public function create(CreatePost $command, bool $applyHold = true): Post
 	{
+		if ($this->accountMoves?->findOutboundByOrigin($this->activities->actorId($command->authorId)) !== null) {
+			throw new ValidationException([
+				'account' => 'This account has moved and can no longer publish posts.',
+			]);
+		}
+
 		$content = trim($command->content);
 		$warning = $command->contentWarning === null ? null : trim($command->contentWarning);
 		if ($warning === '') {

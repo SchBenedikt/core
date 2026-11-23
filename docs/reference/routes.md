@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 225 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 227 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -78,6 +78,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `recommendations.export` | `GET` | `/api/v1/recommendations/export` | yes | — |
 | `recommendations.data.delete` | `DELETE` | `/api/v1/recommendations/data` | yes | — |
 | `account.export` | `GET` | `/api/v1/account/export` | yes | — |
+| `accounts.move.status` | `GET` | `/api/v1/accounts/me/move` | yes | — |
+| `accounts.move.start` | `POST` | `/api/v1/accounts/me/move` | yes | 10 / 900 s |
 | `account.data.delete` | `DELETE` | `/api/v1/account/data` | yes | — |
 | `account.deletion.status` | `GET` | `/api/v1/account/deletion` | yes | — |
 | `stories.list` | `GET` | `/api/v1/stories` | yes | — |

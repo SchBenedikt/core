@@ -42,6 +42,7 @@ use AlohaSocial\Core\Api\UnpinPostHandler;
 use AlohaSocial\Core\Api\UpdateCollectionHandler;
 use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
 use AlohaSocial\Core\Api\AccountStatusesHandler;
+use AlohaSocial\Core\Api\AccountMoveStatusHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteRecommendationDataHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -102,6 +103,7 @@ use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\SubmitReportHandler;
+use AlohaSocial\Core\Api\StartAccountMoveHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
 use AlohaSocial\Core\Api\UnboostPostHandler;
@@ -961,6 +963,24 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '120/60',
 				summary: 'Profile timeline of one local account, scoped to the viewer.',
+			),
+			new Route(
+				name: 'accounts.move.status',
+				method: 'GET',
+				path: $base . '/accounts/me/move',
+				handler: AccountMoveStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/60',
+				summary: 'Read the signed-in account’s ActivityPub move status.',
+			),
+			new Route(
+				name: 'accounts.move.start',
+				method: 'POST',
+				path: $base . '/accounts/me/move',
+				handler: StartAccountMoveHandler::class,
+				requiresAuth: true,
+				rateLimit: '3/3600',
+				summary: 'Start an irreversible ActivityPub account move to a reciprocating actor.',
 			),
 			new Route(
 				name: 'accounts.follow',

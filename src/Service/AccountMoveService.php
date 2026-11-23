@@ -205,8 +205,19 @@ final class AccountMoveService
 		}
 
 		$eventId = $this->activities->moveId($origin, $targetActorId);
-		$existing = $this->moves->find($eventId);
+		$existing = $this->moves->findOutboundByOrigin($origin);
 		if ($existing !== null) {
+			if ($existing->targetActorId !== $targetActorId) {
+				throw new AccountMoveException(
+					'move_already_started',
+					'This account has already started moving to another actor.',
+				);
+			}
+
+			// The first request may have failed while queueing inbox deliveries.
+			// Replaying the same stable Move id is safe and restores missing work.
+			$this->queueOutboundMove($localUserId, $origin, $targetActorId);
+
 			return $existing;
 		}
 
@@ -224,7 +235,24 @@ final class AccountMoveService
 			$at,
 		);
 		$this->moves->insert($move);
+		$this->queueOutboundMove($localUserId, $origin, $targetActorId);
 
+		return $move;
+	}
+
+	/** The public, owner-scoped status of a local account's outbound move. */
+	public function statusForLocalAccount(string $localUserId): ?AccountMove
+	{
+		$localUserId = trim($localUserId);
+		if ($localUserId === '') {
+			throw new AccountMoveException('invalid_activity', 'A move status needs a local user.');
+		}
+
+		return $this->moves->findOutboundByOrigin($this->activities->actorId($localUserId));
+	}
+
+	private function queueOutboundMove(string $localUserId, string $origin, string $targetActorId): void
+	{
 		$activity = $this->activities->move($origin, $targetActorId);
 		foreach (array_values(array_unique($this->followers->inboxesFor($localUserId))) as $inbox) {
 			$this->queue->push(JobType::FEDERATION_DELIVER, [
@@ -233,8 +261,6 @@ final class AccountMoveService
 				'key_id' => $this->activities->keyId($localUserId),
 			], subject: JobSubject::account($localUserId));
 		}
-
-		return $move;
 	}
 
 	/**

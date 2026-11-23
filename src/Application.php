@@ -24,6 +24,7 @@ use AlohaSocial\Core\Api\CreateStoryReactionHandler;
 use AlohaSocial\Core\Api\CreateStoryReplyHandler;
 use AlohaSocial\Core\Api\AccountDeletionStatusHandler;
 use AlohaSocial\Core\Api\AccountStatusesHandler;
+use AlohaSocial\Core\Api\AccountMoveStatusHandler;
 use AlohaSocial\Core\Api\DeleteAccountDataHandler;
 use AlohaSocial\Core\Api\DeleteStoryHandler;
 use AlohaSocial\Core\Api\ExportAccountDataHandler;
@@ -144,6 +145,7 @@ use AlohaSocial\Core\Api\ShowLocalAccountHandler;
 use AlohaSocial\Core\Api\ShowMediaHandler;
 use AlohaSocial\Core\Api\ShowPostHandler;
 use AlohaSocial\Core\Api\SubmitReportHandler;
+use AlohaSocial\Core\Api\StartAccountMoveHandler;
 use AlohaSocial\Core\Api\UpdatePostHandler;
 use AlohaSocial\Core\Api\ShowRemoteThreadHandler;
 use AlohaSocial\Core\Api\UnblockActorHandler;
@@ -1326,6 +1328,7 @@ final readonly class Application
 			pins: $pinRepository,
 			mentions: $mentionResolver,
 			inboundBlocks: $inboundBlocks,
+			accountMoves: $accountMoveRepository,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,
@@ -1594,6 +1597,8 @@ final readonly class Application
 			->with(ExportAccountDataHandler::class, static fn (): ExportAccountDataHandler => new ExportAccountDataHandler($accountData))
 			->with(DeleteAccountDataHandler::class, static fn (): DeleteAccountDataHandler => new DeleteAccountDataHandler($accountData))
 			->with(AccountDeletionStatusHandler::class, static fn (): AccountDeletionStatusHandler => new AccountDeletionStatusHandler($accountData))
+			->with(AccountMoveStatusHandler::class, static fn (): AccountMoveStatusHandler => new AccountMoveStatusHandler($accountMoveService))
+			->with(StartAccountMoveHandler::class, static fn (): StartAccountMoveHandler => new StartAccountMoveHandler($accountMoveService))
 			->with(StoriesHandler::class, static fn (): StoriesHandler => new StoriesHandler($storyService))
 			->with(CreateStoryHandler::class, static fn (): CreateStoryHandler => new CreateStoryHandler($storyService))
 			->with(ShowStoryHandler::class, static fn (): ShowStoryHandler => new ShowStoryHandler($storyService))

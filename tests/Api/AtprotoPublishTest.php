@@ -99,7 +99,7 @@ final class AtprotoPublishTest extends TestCase
 		$app = Application::inMemory(
 			clock: $this->clock,
 			config: new ArrayConfig([
-				InstanceInfo::CONFIG_APP => ['atproto.publish' => 'true'],
+				InstanceInfo::CONFIG_APP => ['instance.url' => 'https://social.example', 'atproto.publish' => 'true'],
 			]),
 			httpClient: $this->http,
 			attachmentRepository: $attachments,
@@ -440,7 +440,10 @@ final class AtprotoPublishTest extends TestCase
 		return Application::inMemory(
 			clock: $this->clock,
 			config: new ArrayConfig([
-				InstanceInfo::CONFIG_APP => ['atproto.publish' => $enabled ? 'true' : 'false'],
+				InstanceInfo::CONFIG_APP => [
+				'instance.url' => 'https://social.example',
+				'atproto.publish' => $enabled ? 'true' : 'false',
+			],
 			]),
 			httpClient: $this->http,
 			atprotoAccounts: $accounts,
