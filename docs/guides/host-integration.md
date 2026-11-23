@@ -49,7 +49,7 @@ Nextcloud app:
     }
   ],
   "require": {
-    "alohasocial/core": "^0.7"
+    "alohasocial/core": "^0.8"
   }
 }
 ```
@@ -61,9 +61,9 @@ composer update alohasocial/core
 composer dump-autoload -o
 ```
 
-For a reproducible deployment, use the tagged `^0.7` line; if you are testing
+For a reproducible deployment, use the tagged `^0.8` line; if you are testing
 an unreleased commit, pin it explicitly (`dev-main#c05f1aa`). For 0.x releases
-the minor line is the compatibility boundary, so `^0.7` means 0.7.x; see
+the minor line is the compatibility boundary, so `^0.8` means 0.8.x; see
 [Compatibility](#compatibility). The package requires PHP 8.3+ and the
 extensions listed in the [README](../../README.md#requirements). The host's
 own autoloader includes the package's PSR-4 mapping; no extra bootstrap file is
@@ -92,12 +92,12 @@ an incomplete `capabilities()` object. The HTTP API remains [`v1`](../../src/Htt
 
 | Artifact | Current | Supported together | Authority |
 | --- | --- | --- | --- |
-| `alohasocial/core` | `0.7.0` | `0.7.x` | `src/Version.php` (`Version::CURRENT`); the release tag is the distribution version |
-| `@alohasocial/ui` | `0.7.0` | `0.7.x` | `ui/package.json`; `UI_VERSION` in the build |
+| `alohasocial/core` | `0.8.0` release candidate | `0.8.x` after `v0.8.0` is tagged | `src/Version.php` (`Version::CURRENT`); the release tag is the distribution version |
+| `@alohasocial/ui` | `0.8.0` release candidate | `0.8.x` after `v0.8.0` is tagged | `ui/package.json`; `UI_VERSION` in the build |
 | `HostBridge` | contract `1` | contract `1`; an omitted `contractVersion` means 1 | `Version::HOST_BRIDGE_CONTRACT`; `HOST_BRIDGE_CONTRACT_VERSION` in `ui/src/version.ts` |
 | HTTP API | `v1` | `v1` | `src/Http/ApiVersion.php` (`ApiVersion::CURRENT`) |
-| Nextcloud host (`AlohaSocial/social`) | not in this repository | pin core `0.7.x`, UI `0.7.x`, bridge contract `1` when it adopts them | host repository; adapter work has not started |
-| Standalone host (`AlohaSocial/server`) | does not exist yet | pin core `0.7.x`, UI `0.7.x`, bridge contract `1` when created | host repository; not created |
+| Nextcloud host (`AlohaSocial/social`) | not in this repository | pin core `0.8.x`, UI `0.8.x`, bridge contract `1` when it adopts them | host repository; adapter work has not started |
+| Standalone host (`AlohaSocial/server`) | active host; still on `dev-main` | pin core `0.8.x`, UI `0.8.x`, bridge contract `1` after the Core release | host repository; server issue #15 tracks the pin |
 
 A host integration test can call
 `Compatibility::assertSupported($installedUiVersion, $bridgeContract)` with the

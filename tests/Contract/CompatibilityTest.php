@@ -53,8 +53,14 @@ final class CompatibilityTest extends TestCase
 		);
 
 		$matrix = $this->read('docs/guides/host-integration.md');
-		self::assertStringContainsString('| `alohasocial/core` | `' . Version::CURRENT . '` |', $matrix);
-		self::assertStringContainsString('| `@alohasocial/ui` | `' . $package['version'] . '` |', $matrix);
+		self::assertStringContainsString(
+			'| `alohasocial/core` | `' . Version::CURRENT . '` release candidate | `0.8.x` after `v0.8.0` is tagged |',
+			$matrix,
+		);
+		self::assertStringContainsString(
+			'| `@alohasocial/ui` | `' . $package['version'] . '` release candidate | `0.8.x` after `v0.8.0` is tagged |',
+			$matrix,
+		);
 		self::assertStringContainsString(
 			'| `HostBridge` | contract `' . Version::HOST_BRIDGE_CONTRACT . '` |',
 			$matrix,
@@ -68,15 +74,20 @@ final class CompatibilityTest extends TestCase
 		foreach (['/vendor', '/tests', '/ui', '/docs', '/tools', '/composer.lock'] as $path) {
 			self::assertContains($path, $excluded, 'The Composer archive must not ship ' . $path . '.');
 		}
+
+		$releaseWorkflow = $this->read('.github/workflows/release.yml');
+		self::assertStringContainsString('Require an annotated tag verified by GitHub', $releaseWorkflow);
+		self::assertStringContainsString('uses: actions/attest@v4', $releaseWorkflow);
+		self::assertStringContainsString('gh release create', $releaseWorkflow);
 	}
 
 	public function testTheCurrentPairIsAccepted(): void
 	{
-		Compatibility::assertSupported('0.7.0');
-		Compatibility::assertSupported('0.7.9', Version::HOST_BRIDGE_CONTRACT);
+		Compatibility::assertSupported('0.8.0');
+		Compatibility::assertSupported('0.8.9', Version::HOST_BRIDGE_CONTRACT);
 		Compatibility::assertSupported('1.9.0', 1, '1.2.3');
 
-		self::assertSame('0.7.0', Version::CURRENT);
+		self::assertSame('0.8.0', Version::CURRENT);
 	}
 
 	public function testAnOlderMinorLineIsRejected(): void
@@ -84,7 +95,7 @@ final class CompatibilityTest extends TestCase
 		$this->expectException(ConfigurationException::class);
 		$this->expectExceptionMessage('not on the same compatibility line');
 
-		Compatibility::assertSupported('0.6.9');
+		Compatibility::assertSupported('0.7.9');
 	}
 
 	public function testANewerMinorLineIsRejected(): void
@@ -92,7 +103,7 @@ final class CompatibilityTest extends TestCase
 		$this->expectException(ConfigurationException::class);
 		$this->expectExceptionMessage('not on the same compatibility line');
 
-		Compatibility::assertSupported('0.8.0');
+		Compatibility::assertSupported('0.9.0');
 	}
 
 	public function testANewerMajorLineIsRejected(): void
@@ -108,7 +119,7 @@ final class CompatibilityTest extends TestCase
 		$this->expectException(ConfigurationException::class);
 		$this->expectExceptionMessage('HostBridge contract 2 is not supported');
 
-		Compatibility::assertSupported('0.7.0', 2);
+		Compatibility::assertSupported('0.8.0', 2);
 	}
 
 	public function testAnInvalidVersionIsRejected(): void
