@@ -1,6 +1,6 @@
 # Roadmap
 
-Status of the core, not a promise about dates. Last reviewed: 2026-11-14.
+Status of the core, not a promise about dates. Last reviewed: 2026-11-23.
 
 This is the canonical status document. The guides explain how a part works;
 this page says what exists, what is next and which repository owns it. If a
@@ -64,8 +64,8 @@ the host that serves it. See
 | HTTP contract | 228 routes, 53 of them under the Mastodon prefix |
 | Persistence | 40 schema classes, in-memory and PDO adapters behind shared contract tests |
 | Tests | 224 PHP test files (1841 tests, 10109 assertions) and 9 UI test files (69 tests) |
-| Versions | core `0.7.0` / UI `0.7.0` / HostBridge contract `1` / HTTP `v1`; the `0.7.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
-| Release | `0.7.0` (2026-11-13) is released together with `0.2.0`-`0.6.0`; `0.1.0` exists only as a CHANGELOG entry; neither Packagist nor npm has a published package yet ([artifacts](operations/release.md)) |
+| Versions | core `0.8.0` / UI `0.8.0` / HostBridge contract `1` / HTTP `v1`; the `0.8.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
+| Release | `0.8.0` is the source release candidate, not tagged yet; the signed-tag GitHub workflow will publish the Composer archive, npm tarball and checksums ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
 | Hosts | Nextcloud adapter not started; the standalone host lives in [SchBenedikt/server](https://github.com/SchBenedikt/server) |
 
@@ -236,7 +236,7 @@ server or a product decision.
 | --- | --- | --- | --- | --- |
 | M0 | Core foundation | done (`0.1.0`) | core | Ports, posts, HTTP signatures, delivery queue, kernel and boundary guard are green |
 | M1 | Local social slice | done | core | The local post/follow/media/interaction surface is complete, disabled-by-default compatibility surfaces included |
-| M2 | Release and documentation consistency | done (`0.2.0`-`0.7.0` released; registry publication pending) | core | `composer check` green, documentation matches the manifest, `0.2.0`-`0.7.0` released |
+| M2 | Release and documentation consistency | partial (`0.8.0` packaging prepared; signed tag and release not published) | core | Package archives install cleanly, release artifacts are versioned and traceable |
 | M3 | Nextcloud host cutover | open | `social` | Adapters, bridge, import, shadow run, validator `PASS`, one account cut over and rolled back by flag |
 | M4 | Standalone host | partial | `server` | Fresh install with its own accounts, sessions and roles (host-owned, accepted ADR 0006), worker and installer publishes a post and federates; built against the [server blueprint](guides/server-architecture.md). The PHP host, its migrations, worker, login, `/app` mount and standalone `HostBridge` exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); installer hardening, deployment and a real-peer QA pass remain |
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
@@ -251,9 +251,10 @@ server or a product decision.
    counts in the README and this page, verifies that every `*Schema` class
    appears in the database guide and that every configuration key the core reads
    appears in the [configuration reference](reference/configuration.md).
-2. **Publish the registries.** `0.7.0` is cut and tagged; Packagist and the npm
-   registry still need maintainer credentials. A host should be able to install
-   a version instead of `dev-main`.
+2. **Publish the release artifacts.** Push the signed `v0.8.0` tag after its
+   pull request merges. CI verifies the tag and publishes versioned Composer
+   and npm-installable artifacts as a GitHub release, so hosts can stop using
+   `dev-main` without registry credentials.
 3. **Keep the settled identity boundary.** [ADR 0006](adr/0006-host-owned-accounts.md)
    is accepted: accounts, sessions, credentials, roles and instance-admin
    rights stay host-owned. Any new account or permission feature goes to the
@@ -280,7 +281,7 @@ server or a product decision.
 | Standalone installer hardening and container packaging | `server` | `server` | The installer and container images are reproducible and covered by the server's own tests |
 | Mount the shared actor/follow, composer and notification screens | host bridges | `ui` + hosts | Both hosts complete one read and one write through the real bridge |
 | Mastodon OAuth/token issuance and app registration | host identity service | `social` / `server` | A third-party client can authorize and call the compatibility routes |
-| Registry publication: Packagist and npm | core | core | A host installs the tagged `0.7.x` release instead of `dev-main`; verified artifacts await registry credentials ([release](operations/release.md)) |
+| Versioned artifacts | core | core | Signed `v0.8.0` creates a verified GitHub release with Composer and UI archives; Packagist/npm mirrors can follow later ([release](operations/release.md)) |
 
 ## Later
 
@@ -360,6 +361,6 @@ local gaps. The detailed lists live in the guides.
 | `0.6.0` | 2026-11-13 | Core retention cleanup job for unreferenced media, read notifications and thread caches, with dry run, per-kind limits, stable reasons and a real demo |
 | `0.7.0` | 2026-11-13 | Atomic post writes through `TransactionRunner`, immediate dead letters for terminal job errors, completion-failure handling and stable worker codes |
 
-`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0`-`0.7.0` are released and
-recorded in the [changelog](../CHANGELOG.md); registry publication is the
-remaining M2 step.
+`0.1.0` has a CHANGELOG entry but no git tag. `0.2.0`-`0.7.0` are tagged and
+recorded in the [changelog](../CHANGELOG.md). The next `0.8.0` tag will publish
+versioned GitHub release assets after the release workflow verifies it.

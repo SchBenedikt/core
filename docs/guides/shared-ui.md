@@ -137,7 +137,7 @@ ui/
 
 The PHP autoloader and the npm package must not import each other's internals.
 A release publishes the npm artifact and the Composer package separately; a
-host pins both versions. The supported pair is one line, currently `0.7.x`
+host pins both versions. The supported pair is one line, currently `0.8.x`
 for both packages, with HostBridge contract `1`. A missing `contractVersion`
 means `1` for backwards compatibility; a declared different contract is
 rejected at `createAlohaUi()`. See the

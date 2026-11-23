@@ -7,7 +7,7 @@
  * Mirrors `ui/package.json`. The compatibility tests enforce this pair; the
  * value is part of the built package so a host can inspect it.
  */
-export const UI_VERSION = '0.7.0';
+export const UI_VERSION = '0.8.0';
 
 /** Mirrors AlohaSocial\Core\Http\ApiVersion::CURRENT. */
 export const CORE_API_VERSION = 'v1';

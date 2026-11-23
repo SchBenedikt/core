@@ -51,7 +51,7 @@ hosts around it.**
    opens the bump PR. A feature is therefore one code PR in the core plus two
    automated version bumps — not two implementations. The runtime source is
    `Version::CURRENT`; the UI package source is `ui/package.json`. Both are
-   released on the same compatibility line (`0.7.x`; for 0.x the minor line is
+   released on the same compatibility line (`0.8.x`; for 0.x the minor line is
    breaking), and the HostBridge contract is versioned separately (`1`, with an
    omitted field meaning 1). PHPUnit and the UI suite enforce the pair. See the
    [compatibility matrix](../guides/host-integration.md#compatibility).
