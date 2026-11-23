@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
@@ -181,7 +182,11 @@ final class AccountMoveTest extends TestCase
 
 		$again = $app->accountMoves?->moveLocalAccount('alice', self::TARGET);
 		self::assertSame($move->eventId, $again?->eventId);
-		self::assertSame(1, $app->queue->pendingCount());
+		self::assertSame(2, $app->queue->pendingCount(), 'A same-target retry requeues the stable Move to every follower inbox.');
+		$app->queue->cancelBySubject(JobSubject::account('alice'));
+		self::assertSame(0, $app->queue->pendingCount());
+		$app->accountMoves?->moveLocalAccount('alice', self::TARGET);
+		self::assertSame(1, $app->queue->pendingCount(), 'A retry restores deliveries cancelled by a failed request path.');
 
 		$app->worker->runOnce();
 		self::assertCount(1, $this->http->requests);
@@ -189,6 +194,50 @@ final class AccountMoveTest extends TestCase
 		self::assertSame('Move', $activity['type']);
 		self::assertSame('https://localhost:8080/@alice', $activity['object']);
 		self::assertSame(self::TARGET, $activity['target']);
+	}
+
+	public function testOwnerCanStartAndInspectMoveThroughAuthenticatedApiAndCannotPublishAfterward(): void
+	{
+		$app = $this->app(
+			['https://localhost:8080/@alice'],
+			[self::TARGET],
+			['alice'],
+		);
+		$body = json_encode(['target_actor_id' => self::TARGET], JSON_THROW_ON_ERROR);
+		$started = $app->handle(new Request(
+			'POST',
+			'/api/v1/accounts/me/move',
+			headers: ['Content-Type' => 'application/json'],
+			body: $body,
+			userId: 'alice',
+		));
+
+		self::assertSame(202, $started->status, $started->body);
+		$summary = $started->decodedBody()['move'];
+		self::assertSame(self::TARGET, $summary['target_actor_id']);
+		self::assertArrayNotHasKey('target_inbox_url', $summary);
+		self::assertArrayNotHasKey('processed_follower_ids', $summary);
+
+		$status = $app->handle(new Request('GET', '/api/v1/accounts/me/move', userId: 'alice'));
+		self::assertSame(200, $status->status);
+		self::assertSame(self::TARGET, $status->decodedBody()['move']['target_actor_id']);
+
+		$publish = $app->handle(new Request(
+			'POST',
+			'/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'after move'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(422, $publish->status, $publish->body);
+		self::assertArrayHasKey('account', $publish->decodedBody()['error']['fields']);
+	}
+
+	public function testMoveApiRequiresAuthentication(): void
+	{
+		$app = $this->app(['https://localhost:8080/@alice'], [self::TARGET], ['alice']);
+		$response = $app->handle(new Request('GET', '/api/v1/accounts/me/move'));
+		self::assertSame(401, $response->status);
 	}
 
 	/**

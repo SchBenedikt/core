@@ -136,8 +136,14 @@ rather than auto-accepted. The move runs in batches of 20 and stores the
 processed edge ids on the move row, so an interrupted worker resumes instead
 of repeating work; a duplicate Move activity is idempotent. Actor id, key id
 and post URLs never change. The local actor document advertises `movedTo` and
-`alsoKnownAs` after `$app->accountMoves->moveLocalAccount()`. See the
-[inbox refusals](../reference/inbox-activities.md).
+`alsoKnownAs` after `$app->accountMoves->moveLocalAccount()`. Authenticated
+clients can start a move with `POST /api/v1/accounts/me/move` and
+`{"target_actor_id":"https://new.example/@alice"}`; `GET` on the same path
+returns the signed-in account's move status. The target must already list the
+old actor in its `alsoKnownAs`. Repeating the same request requeues the stable
+Move id after a partial queue failure, while a different second target is
+refused. Once a move is recorded, Core rejects new posts from the old account.
+See the [inbox refusals](../reference/inbox-activities.md).
 
 Per-user blocks are queued asynchronously instead. The local block is stored
 before the actor document is resolved; when the actor's inbox is known, a
