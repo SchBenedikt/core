@@ -389,6 +389,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoQuoteBuilder;
 use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoBlobUploader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoIdentityResolver;
@@ -1182,6 +1183,8 @@ final readonly class Application
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
 			$mediaService,
+			$httpClient === null ? null : new AtprotoQuoteBuilder(new XrpcAtprotoRecordResolver($httpClient)),
+			$activities,
 		);
 		$atprotoFollowService = new AtprotoFollowService(
 			$config,

@@ -36,6 +36,8 @@ final class AtprotoEmbed
 
 	public const VIDEO = 'app.bsky.embed.video';
 
+	public const RECORD = 'app.bsky.embed.record';
+
 	public const MAX_IMAGES = 4;
 
 	public const MAX_VIDEOS = 1;

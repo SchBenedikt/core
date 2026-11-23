@@ -17,10 +17,9 @@ use InvalidArgumentException;
 /**
  * The `app.bsky.feed.post` record built from a local post.
  *
- * Only text is represented in this first slice. Images would need a blob
- * upload and an embed, and followers-only/direct visibility has no equivalent
- * in the public AT Protocol record, so the service refuses those posts rather
- * than silently dropping part of them.
+ * The builder accepts optional replies, facets and embeds. Followers-only and
+ * direct visibility have no equivalent in public AT Protocol records, so the
+ * publishing service refuses those posts rather than widening their audience.
  */
 final class AtprotoPostRecord
 {
