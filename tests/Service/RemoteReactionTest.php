@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Service;
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
@@ -21,6 +22,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Interaction\InMemoryReactionRepository;
 use AlohaSocial\Core\Domain\Interaction\ReactionDirection;
 use AlohaSocial\Core\Domain\Interaction\ReactionKind;
+use AlohaSocial\Core\Domain\Interaction\Reaction;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
@@ -241,6 +243,67 @@ final class RemoteReactionTest extends TestCase
 		}
 	}
 
+	public function testAnActorThatBlockedTheLocalAccountCannotReceiveNewReactions(): void
+	{
+		$inboundBlocks = new InMemoryInboundBlockRepository();
+		$inboundBlocks->block('alice', self::ACTOR, 'https://remote.example/activities/block-1');
+		$service = $this->service(inboundBlocks: $inboundBlocks);
+
+		foreach ([
+			fn () => $service->likeRemote('alice', self::OBJECT),
+			fn () => $service->reactToRemote('alice', self::OBJECT, '❤'),
+		] as $action) {
+			try {
+				$action();
+				self::fail('Expected a remote actor block to refuse the interaction.');
+			} catch (ReactionException $exception) {
+				self::assertSame('blocked_actor', $exception->reason);
+			}
+		}
+
+		self::assertSame([], $this->queue->reserve(10, $this->clock->now()));
+	}
+
+	public function testAnInboundBlockLetsTheLocalAccountRemoveAReactionWithoutSendingAnUndo(): void
+	{
+		$reaction = new Reaction(
+			direction: ReactionDirection::Out,
+			subjectId: 'alice',
+			objectId: self::OBJECT,
+			localPostId: null,
+			kind: ReactionKind::Like,
+			emoji: null,
+			iconUrl: null,
+			activityId: $this->activities->likeId('alice', self::OBJECT),
+			createdAt: Time::parse('2026-11-11T09:30:00Z'),
+		);
+		$this->reactions->insert($reaction);
+		$emojiReaction = new Reaction(
+			direction: ReactionDirection::Out,
+			subjectId: 'alice',
+			objectId: self::OBJECT,
+			localPostId: null,
+			kind: ReactionKind::Emoji,
+			emoji: '❤',
+			iconUrl: null,
+			activityId: $this->activities->reactionId('alice', self::OBJECT, '❤'),
+			createdAt: Time::parse('2026-11-11T09:30:00Z'),
+		);
+		$this->reactions->insert($emojiReaction);
+		$inboundBlocks = new InMemoryInboundBlockRepository();
+		$inboundBlocks->block('alice', self::ACTOR, 'https://remote.example/activities/block-1');
+		$this->following->remove('alice', self::ACTOR);
+
+		$interaction = $this->service(inboundBlocks: $inboundBlocks)->unlikeRemote('alice', self::OBJECT);
+		$emojiInteraction = $this->service(inboundBlocks: $inboundBlocks)->unreactFromRemote('alice', self::OBJECT, '❤');
+
+		self::assertFalse($interaction['viewer']['favourited']);
+		self::assertNull($this->reactions->find(ReactionDirection::Out, 'alice', self::OBJECT, ReactionKind::Like, null));
+		self::assertSame([], $emojiInteraction['viewer']['reactions']);
+		self::assertNull($this->reactions->find(ReactionDirection::Out, 'alice', self::OBJECT, ReactionKind::Emoji, '❤'));
+		self::assertSame([], $this->queue->reserve(10, $this->clock->now()));
+	}
+
 	public function testTheLocalLikeSurvivesADeliveryQueueFailure(): void
 	{
 		$service = $this->service(new RejectingJobQueue());
@@ -296,7 +359,7 @@ final class RemoteReactionTest extends TestCase
 		$this->service()->remotePostFor('alice', self::OBJECT);
 	}
 
-	private function service(?JobQueue $queue = null): ReactionService
+	private function service(?JobQueue $queue = null, ?InMemoryInboundBlockRepository $inboundBlocks = null): ReactionService
 	{
 		return new ReactionService(
 			posts: new InMemoryPostRepository(),
@@ -310,6 +373,7 @@ final class RemoteReactionTest extends TestCase
 			clock: $this->clock,
 			mutes: new InMemoryMuteRepository(),
 			remotePosts: $this->remotePosts,
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 
