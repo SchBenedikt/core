@@ -28,6 +28,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [HTTP and routes](guides/http-and-routes.md) | The request lifecycle, adding a route, the error shape |
 | [The standalone server blueprint](guides/server-architecture.md) | How the server is built: processes, module layout, boot order, configuration, migrations, the AT Protocol linking flow, worker, security and the phase plan with acceptance checks |
 | [Using the core from a host](guides/host-integration.md) | Composer setup, the core/UI compatibility matrix, ports, boot, HTTP mapping, worker, tests and what the core buys a host |
+| [S3-compatible BlobStore](guides/s3-blob-store.md) | Inject an S3 client without changing the local storage default |
 | [Nextcloud host integration](guides/nextcloud-host.md) | The concrete OCP adapters, URL prefixes, controller, migrations and rollout for `AlohaSocial/social` |
 | [Migrating a Nextcloud installation](guides/migration-from-nextcloud.md) | Data mapping, neutral export format, the cutover validator, shadow runs and rollback for the existing app |
 | [Shared UI and HostBridge](guides/shared-ui.md) | The extracted Vue package, versioned bridge contract, package layout, read/write screens and host wiring |

@@ -138,7 +138,7 @@ $app = Application::forHost(
     actorResolver: $resolver,    // optional; without it both inbox routes are 503
     remoteActors: null,          // optional RemoteActorFetcher; derived from a bounded HTTP client otherwise
     blockedActors: $policy,      // optional; instance-wide block policy
-    blobStore: $blobs,           // optional; without it media routes are 503
+    blobStore: $blobs,           // optional; LocalBlobStore or host-injected S3BlobStore
     imageProcessor: $images,     // optional; default is GdImageProcessor
     hostResolver: $dns,          // optional; default is DnsHostResolver; guards all federation targets
     accountListRepository: null,  // optional; default is PdoAccountListRepository($database)
@@ -724,6 +724,10 @@ The core's contract tests are the definition of a port. A new host adapter is
 done when it passes the existing case, not when its own smoke test passes:
 
 - `tests/Platform/Storage/BlobStoreTestCase.php`
+
+For S3-compatible storage, see the [BlobStore guide](s3-blob-store.md). The
+host configures and injects `S3CompatibleClient`; endpoint, region, credentials
+and timeouts remain host-owned.
 - `tests/Domain/PostRepositoryTestCase.php`
 - `tests/Domain/AttachmentRepositoryTestCase.php`
 - `tests/Domain/FollowerRepositoryTestCase.php`
