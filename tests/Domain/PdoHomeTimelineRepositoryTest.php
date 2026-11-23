@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollow;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
+use AlohaSocial\Core\Domain\Atproto\PdoAtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
@@ -45,16 +48,19 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 
 	private HomeTimelineRepository $repository;
 
+	private PdoConnection $connection;
+
 	private int $followCounter = 0;
 
 	private int $blockCounter = 0;
 
 	protected function setUp(): void
 	{
-		$connection = new PdoConnection(new PDO('sqlite::memory:'));
+		$connection = $this->connection = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($connection);
 		PollSchema::create($connection);
 		FollowingSchema::create($connection);
+		AtprotoFollowSchema::create($connection);
 		RemotePostSchema::create($connection);
 		BlockSchema::create($connection);
 		MuteSchema::create($connection);
@@ -65,6 +71,30 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 		$this->blocks = new PdoBlockRepository($connection);
 		$this->mutes = new PdoMuteRepository($connection);
 		$this->repository = new PdoHomeTimelineRepository($connection);
+	}
+
+	public function testActiveAtprotoFollowAddsRemotePostsOnlyToThatUsersHomeTimeline(): void
+	{
+		$uri = 'at://did:plc:followed/app.bsky.feed.post/3kpost';
+		$this->addRemote(new RemotePost(
+			$uri,
+			$uri,
+			'did:plc:followed',
+			\AlohaSocial\Core\Domain\Federation\RemotePostKind::Post,
+			'Bluesky post',
+			null,
+			Time::parse('2026-11-11T10:00:00Z'),
+		));
+		(new PdoAtprotoFollowRepository($this->connection))->save(new AtprotoFollow(
+			'alice', 'did:plc:alice', 'did:plc:followed', '3kfollow',
+			'at://did:plc:alice/app.bsky.graph.follow/3kfollow', 'bafyfollow',
+			AtprotoFollow::ACTIVE, Time::parse('2026-11-11T09:00:00Z'),
+		));
+
+		$aliceIds = array_map(static fn ($entry): string => $entry->id, $this->repository()->forUser('alice', 10));
+		$bobIds = array_map(static fn ($entry): string => $entry->id, $this->repository()->forUser('bob', 10));
+		self::assertSame([$uri], $aliceIds);
+		self::assertSame([], $bobIds);
 	}
 
 	protected function repository(): HomeTimelineRepository
