@@ -99,6 +99,35 @@ final class InboxTest extends TestCase
 		self::assertSame(202, $this->deliver($this->follow('https://remote.example/activities/follow-after-undo'))->status);
 	}
 
+	public function testInboundBlockIsIdempotentAndRejectsAForgedUndo(): void
+	{
+		$block = [
+			'id' => 'https://remote.example/activities/block-idempotent',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => ['id' => self::LOCAL_ACTOR, 'type' => 'Person'],
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+		$duplicate = $block;
+		$duplicate['id'] = 'https://remote.example/activities/block-idempotent-retry';
+		self::assertSame(202, $this->deliver($duplicate)->status);
+
+		$forgedUndo = [
+			'id' => 'https://remote.example/activities/forged-undo',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => [
+				'type' => 'Block',
+				'actor' => 'https://attacker.example/users/forged',
+				'object' => self::LOCAL_ACTOR,
+			],
+		];
+		$response = $this->deliver($forgedUndo);
+		self::assertSame(403, $response->status);
+		self::assertSame('actor_mismatch', $response->decodedBody()['error']['code']);
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-still-blocked'))->decodedBody()['error']['code']);
+	}
+
 	public function testTheSharedInboxAlsoRequiresASignature(): void
 	{
 		$response = $this->app->handle(new Request(
