@@ -17,16 +17,21 @@ final class PdoInboundBlockRepository implements InboundBlockRepository
 {
 	public function __construct(private readonly Connection $db) {}
 
-	public function block(string $localUserId, string $actorId): void
+	public function block(string $localUserId, string $actorId, string $activityId): void
 	{
 		try {
 			$this->db->execute(
-				'INSERT INTO ' . InboundBlockSchema::TABLE . ' (local_user_id, actor_id)'
-				. ' VALUES (:local_user_id, :actor_id)',
-				['local_user_id' => $localUserId, 'actor_id' => $actorId],
+				'INSERT INTO ' . InboundBlockSchema::TABLE . ' (local_user_id, actor_id, activity_id)'
+				. ' VALUES (:local_user_id, :actor_id, :activity_id)',
+				['local_user_id' => $localUserId, 'actor_id' => $actorId, 'activity_id' => $activityId],
 			);
 		} catch (Throwable $exception) {
 			if ($this->isBlocked($localUserId, $actorId)) {
+				$this->db->execute(
+					'UPDATE ' . InboundBlockSchema::TABLE . ' SET activity_id = :activity_id'
+					. ' WHERE local_user_id = :local_user_id AND actor_id = :actor_id',
+					['local_user_id' => $localUserId, 'actor_id' => $actorId, 'activity_id' => $activityId],
+				);
 				return;
 			}
 			if ($exception instanceof DatabaseException) {
@@ -36,13 +41,17 @@ final class PdoInboundBlockRepository implements InboundBlockRepository
 		}
 	}
 
-	public function unblock(string $localUserId, string $actorId): void
+	public function unblockByActivityId(string $actorId, string $activityId, ?string $localUserId = null): bool
 	{
-		$this->db->execute(
-			'DELETE FROM ' . InboundBlockSchema::TABLE
-			. ' WHERE local_user_id = :local_user_id AND actor_id = :actor_id',
-			['local_user_id' => $localUserId, 'actor_id' => $actorId],
-		);
+		$sql = 'DELETE FROM ' . InboundBlockSchema::TABLE
+			. ' WHERE actor_id = :actor_id AND activity_id = :activity_id';
+		$parameters = ['actor_id' => $actorId, 'activity_id' => $activityId];
+		if ($localUserId !== null) {
+			$sql .= ' AND local_user_id = :local_user_id';
+			$parameters['local_user_id'] = $localUserId;
+		}
+
+		return $this->db->execute($sql, $parameters) > 0;
 	}
 
 	public function isBlocked(string $localUserId, string $actorId): bool

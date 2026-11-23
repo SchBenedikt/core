@@ -12,9 +12,10 @@ namespace AlohaSocial\Core\Domain\Federation;
 /** Stores remote actors that have blocked a local account. */
 interface InboundBlockRepository
 {
-	public function block(string $localUserId, string $actorId): void;
+	public function block(string $localUserId, string $actorId, string $activityId): void;
 
-	public function unblock(string $localUserId, string $actorId): void;
+	/** Removes only the block activity identified by its actor-owned URI. */
+	public function unblockByActivityId(string $actorId, string $activityId, ?string $localUserId = null): bool;
 
 	public function isBlocked(string $localUserId, string $actorId): bool;
 }

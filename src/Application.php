@@ -1502,6 +1502,7 @@ final readonly class Application
 				$accountMoveService,
 				storyService: $storyService,
 				inboundBlocks: $inboundBlocks ?? new InMemoryInboundBlockRepository(),
+				localActors: $localActors,
 			)
 			: null;
 

@@ -124,11 +124,33 @@ is the actor URL, not the local block row id. `Undo(Block)` wraps the original
 `id`, or has no valid inbox, the local block remains and no job is queued. A
 later `DELETE` still removes the local row and attempts its own `Undo`.
 
+## Blocks received from remote actors
+
+Incoming `Block` activities are stored separately in `social_inbound_block`,
+keyed by the local account URI and the remote actor. The inbox accepts a Block
+only after signature verification and requires its object to resolve to one of
+this instance's local actor URIs. Nested actor objects are reduced to their
+`id`; a Block for a remote or unknown object is refused. No notification is
+sent for a received block.
+
+An accepted Block removes that actor's follower edge for the addressed local
+account and the account's outgoing follow to that actor. New Follow requests
+are refused while the relationship is active, and the actor cannot add
+reactions to that local account's posts. Other local accounts keep their own
+relationships and visibility. The relationship row records the Block activity
+URI so a nested Undo must match the original actor, target and activity; a
+URI-only Undo is looked up by the signing actor and the stored activity URI.
+Unknown and already-removed Undo references are successful no-ops.
+
+These checks authenticate the remote actor and protect this instance's local
+state; they do not establish whether the remote actor's block decision is
+truthful or expose private remote block lists.
+
 ## What is not implemented
 
 - a public block collection;
-- applying an incoming `Block` as a local moderation rule (the optional
-  instance-wide `BlockedActorPolicy` is the host seam for that);
+- publishing an inbound `blocked_by` relationship through account APIs;
+- filtering remote content globally when one local account receives a Block;
 - server-wide defederation management beyond the optional policy seam;
 - backfilling a block list into the home timeline (the filter is evaluated on
   every read).

@@ -11,17 +11,35 @@ namespace AlohaSocial\Core\Domain\Federation;
 
 final class InMemoryInboundBlockRepository implements InboundBlockRepository
 {
-	/** @var array<string, true> */
+	/** @var array<string, array{actor_id: string, activity_id: string}> */
 	private array $blocks = [];
 
-	public function block(string $localUserId, string $actorId): void
+	/** @var array<string, string> activity id to identity key */
+	private array $activityKeys = [];
+
+	public function block(string $localUserId, string $actorId, string $activityId): void
 	{
-		$this->blocks[$this->key($localUserId, $actorId)] = true;
+		$key = $this->key($localUserId, $actorId);
+		$existing = $this->blocks[$key] ?? null;
+		if ($existing !== null) {
+			unset($this->activityKeys[$this->activityKey($actorId, $existing['activity_id'])]);
+		}
+		$this->blocks[$key] = ['actor_id' => $actorId, 'activity_id' => $activityId];
+		$this->activityKeys[$this->activityKey($actorId, $activityId)] = $key;
 	}
 
-	public function unblock(string $localUserId, string $actorId): void
+	public function unblockByActivityId(string $actorId, string $activityId, ?string $localUserId = null): bool
 	{
-		unset($this->blocks[$this->key($localUserId, $actorId)]);
+		$key = $this->activityKeys[$this->activityKey($actorId, $activityId)] ?? null;
+		if ($key === null
+			|| ($this->blocks[$key]['actor_id'] ?? null) !== $actorId
+			|| ($localUserId !== null && $key !== $this->key($localUserId, $actorId))
+		) {
+			return false;
+		}
+		unset($this->blocks[$key], $this->activityKeys[$this->activityKey($actorId, $activityId)]);
+
+		return true;
 	}
 
 	public function isBlocked(string $localUserId, string $actorId): bool
@@ -32,5 +50,10 @@ final class InMemoryInboundBlockRepository implements InboundBlockRepository
 	private function key(string $localUserId, string $actorId): string
 	{
 		return $localUserId . "\0" . $actorId;
+	}
+
+	private function activityKey(string $actorId, string $activityId): string
+	{
+		return $actorId . "\0" . $activityId;
 	}
 }

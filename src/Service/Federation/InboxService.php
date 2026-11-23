@@ -106,6 +106,7 @@ final class InboxService
 		private readonly ?AccountMoveService $accountMoves = null,
 		private readonly ?\AlohaSocial\Core\Service\Story\StoryService $storyService = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
+		private readonly ?\AlohaSocial\Core\Domain\Federation\LocalActorDirectory $localActors = null,
 	) {
 	}
 
@@ -177,7 +178,7 @@ final class InboxService
 			// Reactions are keyed by identity, not by the activity id, so a
 			// retransmitted Like/EmojiReact/Undo is already applied. Refusing it
 			// would make a peer retry a delivery that can never change state.
-			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Flag'
+			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Block' || $type === 'Flag'
 				|| $type === 'Move'
 			) {
 				return;
@@ -698,15 +699,18 @@ final class InboxService
 	private function handleBlock(RemoteActor $actor, array $activity): void
 	{
 		$object = $activity['object'] ?? null;
+		if (is_array($object) && !$this->isActorType($object['type'] ?? null)) {
+			throw new InboxRejectedException('invalid_activity', 'A nested Block object must describe an actor.');
+		}
 		$target = is_string($object) ? $object : (is_array($object) ? ($object['id'] ?? null) : null);
 		if (!is_string($target) || trim($target) === '') {
 			throw new InboxRejectedException('invalid_activity', 'A Block needs a local actor URI.');
 		}
-		$localUserId = $this->localUserFromActorId(trim($target));
+		$localUserId = $this->requireKnownLocalUser(trim($target));
 		if ($this->inboundBlocks === null) {
 			throw new InboxRejectedException('unsupported_activity', 'Inbound block storage is not configured.');
 		}
-		$this->inboundBlocks->block($localUserId, $actor->actorId);
+		$this->inboundBlocks->block($localUserId, $actor->actorId, (string) $activity['id']);
 		$this->followers->unfollowByActor($localUserId, $actor->actorId);
 		$this->following->unfollow($localUserId, $actor->actorId);
 	}
@@ -717,14 +721,23 @@ final class InboxService
 		if (($block['actor'] ?? null) !== $actor->actorId) {
 			throw new InboxRejectedException('actor_mismatch', 'An actor may only undo its own Block.');
 		}
-		$target = $block['object'] ?? null;
+		$object = $block['object'] ?? null;
+		if (is_array($object) && !$this->isActorType($object['type'] ?? null)) {
+			throw new InboxRejectedException('invalid_activity', 'A nested Block object must describe an actor.');
+		}
+		$target = is_string($object) ? $object : (is_array($object) ? ($object['id'] ?? null) : null);
 		if (!is_string($target) || trim($target) === '') {
 			throw new InboxRejectedException('invalid_activity', 'A Block needs a local actor URI.');
+		}
+		$activityId = $block['id'] ?? null;
+		if (!is_string($activityId) || trim($activityId) === '') {
+			throw new InboxRejectedException('invalid_activity', 'An Undo(Block) needs the Block activity id.');
 		}
 		if ($this->inboundBlocks === null) {
 			throw new InboxRejectedException('unsupported_activity', 'Inbound block storage is not configured.');
 		}
-		$this->inboundBlocks->unblock($this->localUserFromActorId(trim($target)), $actor->actorId);
+		$localUserId = $this->requireKnownLocalUser(trim($target));
+		$this->inboundBlocks->unblockByActivityId($actor->actorId, trim($activityId), $localUserId);
 	}
 
 	/**
@@ -739,6 +752,9 @@ final class InboxService
 			// store first: an actor that liked a public post need not be followed,
 			// and the Announce handler would refuse it as "not_followed".
 			if ($this->reactions !== null && $this->reactions->undoByActivityId($actor, $object)) {
+				return;
+			}
+			if ($this->inboundBlocks?->unblockByActivityId($actor->actorId, trim($object)) === true) {
 				return;
 			}
 
@@ -847,8 +863,6 @@ final class InboxService
 
 	private function undoAnnounceById(RemoteActor $actor, string $activityId): void
 	{
-		$this->requireFollowedContent($actor);
-
 		$activityId = trim($activityId);
 		if ($activityId === '') {
 			throw new InboxRejectedException('invalid_activity', 'An Undo needs an Announce id.');
@@ -906,5 +920,20 @@ final class InboxService
 		}
 
 		return $userId;
+	}
+
+	private function requireKnownLocalUser(string $actorId): string
+	{
+		$userId = $this->localUserFromActorId($actorId);
+		if ($this->localActors === null || !$this->localActors->has($userId)) {
+			throw new InboxRejectedException('unknown_object', 'The activity does not address a known local actor.');
+		}
+
+		return $userId;
+	}
+
+	private function isActorType(mixed $type): bool
+	{
+		return is_string($type) && in_array($type, ['Person', 'Group', 'Organization', 'Service', 'Application'], true);
 	}
 }

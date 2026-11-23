@@ -23,6 +23,7 @@ final class InboundBlockSchema
 			'CREATE TABLE ' . self::TABLE . ' ('
 			. ' local_user_id VARCHAR(255) NOT NULL,'
 			. ' actor_id VARCHAR(255) NOT NULL,'
+			. ' activity_id VARCHAR(512) NOT NULL,'
 			. ' PRIMARY KEY (local_user_id, actor_id)'
 			. ')',
 		];
