@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
@@ -104,6 +105,7 @@ final class InboxService
 		private readonly ?ModerationPolicy $moderationPolicy = null,
 		private readonly ?AccountMoveService $accountMoves = null,
 		private readonly ?\AlohaSocial\Core\Service\Story\StoryService $storyService = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -190,6 +192,7 @@ final class InboxService
 		try {
 			match ($type) {
 				'Follow' => $this->handleFollow($actor, $activity),
+				'Block' => $this->handleBlock($actor, $activity),
 				'Like' => $this->requireReactions()->receiveLike($actor, $activity),
 				'EmojiReact' => $this->requireReactions()->receiveEmojiReact($actor, $activity),
 				'Accept' => $this->handleFollowOrQuoteResponse($actor, $activity, FollowState::Accepted),
@@ -648,6 +651,9 @@ final class InboxService
 		}
 
 		$localUserId = $this->localUserFromActorId($object);
+		if ($this->inboundBlocks?->isBlocked($localUserId, $actor->actorId) === true) {
+			throw new InboxRejectedException('blocked_actor', 'This account blocks the actor.');
+		}
 
 		if ($this->followPolicy?->accepts($actor, $localUserId) === false) {
 			throw new InboxRejectedException(
@@ -686,6 +692,39 @@ final class InboxService
 			'activity' => $accept,
 			'key_id' => $this->activities->keyId($localUserId),
 		], subject: JobSubject::account($localUserId));
+	}
+
+	/** @param array<string, mixed> $activity */
+	private function handleBlock(RemoteActor $actor, array $activity): void
+	{
+		$object = $activity['object'] ?? null;
+		$target = is_string($object) ? $object : (is_array($object) ? ($object['id'] ?? null) : null);
+		if (!is_string($target) || trim($target) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A Block needs a local actor URI.');
+		}
+		$localUserId = $this->localUserFromActorId(trim($target));
+		if ($this->inboundBlocks === null) {
+			throw new InboxRejectedException('unsupported_activity', 'Inbound block storage is not configured.');
+		}
+		$this->inboundBlocks->block($localUserId, $actor->actorId);
+		$this->followers->unfollowByActor($localUserId, $actor->actorId);
+		$this->following->unfollow($localUserId, $actor->actorId);
+	}
+
+	/** @param array<string, mixed> $block */
+	private function undoBlock(RemoteActor $actor, array $block): void
+	{
+		if (($block['actor'] ?? null) !== $actor->actorId) {
+			throw new InboxRejectedException('actor_mismatch', 'An actor may only undo its own Block.');
+		}
+		$target = $block['object'] ?? null;
+		if (!is_string($target) || trim($target) === '') {
+			throw new InboxRejectedException('invalid_activity', 'A Block needs a local actor URI.');
+		}
+		if ($this->inboundBlocks === null) {
+			throw new InboxRejectedException('unsupported_activity', 'Inbound block storage is not configured.');
+		}
+		$this->inboundBlocks->unblock($this->localUserFromActorId(trim($target)), $actor->actorId);
 	}
 
 	/**
@@ -728,6 +767,12 @@ final class InboxService
 			return;
 		}
 
+		if ($type === 'Block') {
+			$this->undoBlock($actor, $object);
+
+			return;
+		}
+
 		if ($type === 'Announce') {
 			$this->undoAnnounce($actor, $object);
 
@@ -736,7 +781,7 @@ final class InboxService
 
 		throw new InboxRejectedException(
 			'unsupported_activity',
-			'Only Undo(Follow), Undo(Announce), Undo(Like) and Undo(EmojiReact) are supported.',
+			'Only Undo(Follow), Undo(Block), Undo(Announce), Undo(Like) and Undo(EmojiReact) are supported.',
 		);
 	}
 

@@ -190,6 +190,9 @@ use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\PdoInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
@@ -845,6 +848,7 @@ final readonly class Application
 		$inboxResolver ??= new FollowerInboxResolver($followers);
 		$remotePosts = new PdoRemotePostRepository($database);
 		$blockRepository ??= new PdoBlockRepository($database);
+		$inboundBlocks = new PdoInboundBlockRepository($database);
 		$muteRepository ??= new PdoMuteRepository($database);
 		$accountListRepository ??= new PdoAccountListRepository($database);
 		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
@@ -933,6 +937,7 @@ final readonly class Application
 			atprotoDpop: $atprotoDpop,
 			pds: $pds,
 			accountDataRepository: new PdoAccountDataRepository($database),
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 
@@ -1029,6 +1034,7 @@ final readonly class Application
 		?MediaCollectionService $mediaCollectionService = null,
 		?NativePdsService $pds = null,
 		?AccountDataRepository $accountDataRepository = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1493,6 +1499,7 @@ final readonly class Application
 				$moderationPolicy,
 				$accountMoveService,
 				storyService: $storyService,
+				inboundBlocks: $inboundBlocks ?? new InMemoryInboundBlockRepository(),
 			)
 			: null;
 

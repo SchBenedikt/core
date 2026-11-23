@@ -76,6 +76,29 @@ final class InboxTest extends TestCase
 		self::assertSame('signature_required', $response->decodedBody()['error']['code']);
 	}
 
+	public function testInboundBlockRemovesFollowEdgesAndUndoRestoresOnlyItsActor(): void
+	{
+		self::assertSame(202, $this->deliver($this->follow())->status);
+		$block = [
+			'id' => 'https://remote.example/activities/block-1',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => self::LOCAL_ACTOR,
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+		self::assertSame(0, $this->app->followers->count('alice'));
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-after-block'))->decodedBody()['error']['code']);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-block-1',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => $block,
+		];
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame(202, $this->deliver($this->follow('https://remote.example/activities/follow-after-undo'))->status);
+	}
+
 	public function testTheSharedInboxAlsoRequiresASignature(): void
 	{
 		$response = $this->app->handle(new Request(

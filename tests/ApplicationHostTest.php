@@ -1280,6 +1280,7 @@ final class ApplicationHostTest extends TestCase
 		PendingRemoteUpdateSchema::create($database);
 		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
+	\AlohaSocial\Core\Domain\Federation\InboundBlockSchema::create($database);
 		MuteSchema::create($database);
 		AccountListSchema::create($database);
 		FollowedHashtagSchema::create($database);
