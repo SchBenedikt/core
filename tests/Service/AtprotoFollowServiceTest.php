@@ -10,11 +10,14 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollow;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowRecord;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoFollowRepository;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
@@ -78,6 +81,50 @@ final class AtprotoFollowServiceTest extends TestCase
 		self::assertSame('active', $active->state);
 	}
 
+	public function testConcurrentInsertRaceResumesTheWinningPendingRow(): void
+	{
+		$inner = new InMemoryAtprotoFollowRepository();
+		$repository = new class($inner) implements AtprotoFollowRepository {
+			private bool $firstInsert = true;
+
+			public function __construct(private readonly InMemoryAtprotoFollowRepository $inner)
+			{
+			}
+
+			public function findForSubject(string $localUserId, string $subjectDid): ?AtprotoFollow
+			{
+				return $this->inner->findForSubject($localUserId, $subjectDid);
+			}
+
+			public function forUser(string $localUserId): array
+			{
+				return $this->inner->forUser($localUserId);
+			}
+
+			public function save(AtprotoFollow $follow): void
+			{
+				$this->inner->save($follow);
+				if ($this->firstInsert) {
+					$this->firstInsert = false;
+					throw new DatabaseException('Simulated duplicate pending row.');
+				}
+			}
+
+			public function remove(string $localUserId, string $subjectDid): bool
+			{
+				return $this->inner->remove($localUserId, $subjectDid);
+			}
+		};
+
+		$this->queuePublishedAndResolvedRecord();
+		$follow = $this->serviceWithRepository($repository)->follow('alice', self::SUBJECT_DID);
+		self::assertSame(AtprotoFollow::ACTIVE, $follow->state);
+		self::assertSame(
+			AtprotoFollowRecord::rkey(Time::parse('2026-11-20T10:00:00Z'), 'alice', self::ACCOUNT_DID, self::SUBJECT_DID),
+			$follow->rkey,
+		);
+	}
+
 	public function testUnfollowDeletesTheStoredRecordAndIsIdempotent(): void
 	{
 		$this->queuePublishedAndResolvedRecord();
@@ -118,10 +165,18 @@ final class AtprotoFollowServiceTest extends TestCase
 
 	private function service(string $accountDid, bool $enabled = true): AtprotoFollowService
 	{
+		return $this->serviceWithRepository($this->follows, $accountDid, $enabled);
+	}
+
+	private function serviceWithRepository(
+		AtprotoFollowRepository $follows,
+		string $accountDid = self::ACCOUNT_DID,
+		bool $enabled = true,
+	): AtprotoFollowService {
 		$publisher = new XrpcAtprotoPublisher($this->http);
 		return new AtprotoFollowService(
 			new ArrayConfig(['social' => ['atproto.publish' => $enabled ? 'true' : 'false']]),
-			$this->follows,
+			$follows,
 			new InMemoryAtprotoAccountResolver([
 				'alice' => new AtprotoAccount($accountDid, 'alice.example', self::PDS, 'secret-token'),
 			]),
