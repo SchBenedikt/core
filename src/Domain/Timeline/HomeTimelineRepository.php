@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Timeline;
 
 use DateTimeImmutable;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 
 /**
  * The read side of the home timeline.
@@ -28,6 +29,6 @@ interface HomeTimelineRepository
 	public function forUser(
 		string $localUserId,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array;
 }

@@ -116,13 +116,15 @@ final class InMemoryBoostRepository implements BoostRepository
 		return $exists;
 	}
 
-	public function timelineForUsers(array $userIds, int $limit, ?DateTimeImmutable $before = null): array
+	public function timelineForUsers(array $userIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		$users = array_fill_keys(array_values($userIds), true);
 		$boosts = array_values(array_filter(
 			$this->boosts,
 			static fn (Boost $boost): bool => isset($users[$boost->userId])
-				&& ($before === null || $boost->createdAt < $before),
+				&& ($before === null || ($before instanceof TimelineCursor
+					? ($boost->createdAt < $before->publishedAt || ($boost->createdAt == $before->publishedAt && strcmp($boost->id, $before->id) < 0))
+					: $boost->createdAt < $before)),
 		));
 
 		usort($boosts, static function (Boost $a, Boost $b): int {

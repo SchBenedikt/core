@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Domain\Federation;
 
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Throwable;
@@ -154,7 +155,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 	public function timelineForActors(
 		array $actorIds,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
 		$actorIds = array_values(array_unique($actorIds));
 		if ($actorIds === []) {
@@ -173,7 +174,12 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 			. ' WHERE deleted_at IS NULL'
 			. ' AND actor_id IN (' . implode(', ', $placeholders) . ')';
 
-		if ($before !== null) {
+		if ($before instanceof TimelineCursor) {
+			$sql .= ' AND (published_at < :before OR (published_at = :before_equal AND activity_id < :before_id))';
+			$parameters['before'] = Time::format($before->publishedAt);
+			$parameters['before_equal'] = Time::format($before->publishedAt);
+			$parameters['before_id'] = $before->id;
+		} elseif ($before !== null) {
 			$sql .= ' AND published_at < :before';
 			$parameters['before'] = Time::format($before);
 		}

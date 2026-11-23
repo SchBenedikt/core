@@ -374,7 +374,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return $counts;
 	}
 
-	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
+	public function ownTimeline(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		return $this->slice(
 			array_values(array_filter(
@@ -385,7 +385,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 						|| ($post->visibility === Visibility::Direct && in_array($userId, $post->recipientIds, true))),
 			)),
 			$limit,
-			$before,
+			$before instanceof TimelineCursor ? $before->publishedAt : $before,
+			$before instanceof TimelineCursor ? $before->id : null,
 		);
 	}
 

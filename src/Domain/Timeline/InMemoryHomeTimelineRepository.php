@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use DateTimeImmutable;
@@ -43,7 +44,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 	public function forUser(
 		string $localUserId,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
 		$entries = [];
 		$muted = array_fill_keys(

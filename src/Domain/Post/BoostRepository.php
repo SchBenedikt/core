@@ -59,5 +59,5 @@ interface BoostRepository
 	 *
 	 * @return list<Boost>
 	 */
-	public function timelineForUsers(array $userIds, int $limit, ?DateTimeImmutable $before = null): array;
+	public function timelineForUsers(array $userIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
 }

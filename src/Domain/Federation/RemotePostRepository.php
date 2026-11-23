@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Federation;
 
 use DateTimeImmutable;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 
 /**
  * Storage of posts and boosts received from remote actors.
@@ -85,7 +86,7 @@ interface RemotePostRepository
 	public function timelineForActors(
 		array $actorIds,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array;
 
 	/**

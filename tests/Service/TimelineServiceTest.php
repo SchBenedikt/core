@@ -80,6 +80,24 @@ final class TimelineServiceTest extends TestCase
 		self::assertSame(['old'], array_map(static fn (Post $post): string => $post->id, $page));
 	}
 
+	public function testCursorIdKeepsTheRestOfTheSecond(): void
+	{
+		$this->repository->insert($this->post('aaa', '2026-11-11T10:05:00Z'));
+		$this->repository->insert($this->post('bbb', '2026-11-11T10:05:00Z'));
+		$this->repository->insert($this->post('ccc', '2026-11-11T10:05:00Z'));
+
+		$page = $this->timelines->public(20, '2026-11-11T10:05:00Z', 'ccc');
+
+		self::assertSame(['bbb', 'aaa'], array_map(static fn (Post $post): string => $post->id, $page));
+	}
+
+	public function testCursorIdWithoutATimestampIsRejected(): void
+	{
+		$this->expectException(InvalidCursorException::class);
+
+		$this->timelines->public(20, null, 'post-id');
+	}
+
 	public function testAnEmptyCursorMeansTheFirstPage(): void
 	{
 		$this->repository->insert($this->post('p1', '2026-11-11T10:00:00Z'));

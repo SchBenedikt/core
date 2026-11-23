@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
 use AlohaSocial\Core\Support\Time;
@@ -108,6 +109,29 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 			['remote-boost', 'remote-post'],
 			$this->ids($this->repository()->forUser('alice', 2)),
 		);
+	}
+
+	public function testIdAwareCursorKeepsEntriesFromTheSameSecond(): void
+	{
+		$this->addPost($this->post('local-a', 'alice', 'first', '2026-11-11T10:05:00Z'));
+		$this->addPost($this->post('local-b', 'alice', 'second', '2026-11-11T10:05:00Z'));
+		$this->addRemote($this->remote(
+			'remote-c',
+			'note-c',
+			self::BOB,
+			'remote third',
+			'2026-11-11T10:05:00Z',
+			RemotePostKind::Post,
+		));
+		$this->follow('alice', self::BOB);
+
+		$entries = $this->repository()->forUser(
+			'alice',
+			10,
+			new TimelineCursor(Time::parse('2026-11-11T10:05:00Z'), 'remote-c'),
+		);
+
+		self::assertSame(['local-b', 'local-a'], $this->ids($entries));
 	}
 
 	public function testDeletingARemotePostRemovesOnlyThatEntry(): void

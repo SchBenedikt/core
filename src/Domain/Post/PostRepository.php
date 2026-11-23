@@ -183,7 +183,7 @@ interface PostRepository
 	 *
 	 * @return list<Post>
 	 */
-	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array;
+	public function ownTimeline(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
 
 	/**
 	 * Live posts of several local authors, newest first.

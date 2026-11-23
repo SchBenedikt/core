@@ -597,7 +597,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		return $counts;
 	}
 
-	public function ownTimeline(string $userId, int $limit, ?DateTimeImmutable $before = null): array
+	public function ownTimeline(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND (p.author_id = :author'
@@ -610,7 +610,12 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'direct' => Visibility::Direct->value,
 		];
 
-		if ($before !== null) {
+		if ($before instanceof TimelineCursor) {
+			$sql .= ' AND (p.published_at < :before OR (p.published_at = :before_equal AND p.id < :before_id))';
+			$parameters['before'] = Time::format($before->publishedAt);
+			$parameters['before_equal'] = Time::format($before->publishedAt);
+			$parameters['before_id'] = $before->id;
+		} elseif ($before !== null) {
 			$sql .= ' AND p.published_at < :before';
 			$parameters['before'] = Time::format($before);
 		}

@@ -157,7 +157,7 @@ rejected at `createAlohaUi()`. See the
 The extracted read-only screens are `PublicTimeline` (optionally bound to a
 hashtag) plus `PostCard` and `PostDetail`. The timeline reads
 `GET /api/v1/timelines/public` or, with a `tag` prop,
-`GET /api/v1/timelines/tag/{tag}`; it uses the core's `limit`/`before` cursor
+`GET /api/v1/timelines/tag/{tag}`; it uses the core's `limit`/`before`/`before_id` cursor
 and covers loading, empty, error, retry and load-more states. `PostDetail` reads the existing `GET /api/v1/posts/{id}` route through
 `CoreApi.getPost()`, renders the same `PostCard`, and covers loading, not-found,
 error and retry states. A late response for a previous post id is ignored when

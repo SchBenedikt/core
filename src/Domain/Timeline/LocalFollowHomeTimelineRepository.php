@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Domain\Timeline;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Service\LocalRelationshipService;
@@ -52,7 +53,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 	public function forUser(
 		string $localUserId,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
 		$entries = $this->base->forUser($localUserId, $limit, $before);
 		$muted = array_fill_keys(

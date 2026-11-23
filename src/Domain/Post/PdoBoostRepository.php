@@ -149,7 +149,7 @@ final class PdoBoostRepository implements BoostRepository
 		return $exists;
 	}
 
-	public function timelineForUsers(array $userIds, int $limit, ?DateTimeImmutable $before = null): array
+	public function timelineForUsers(array $userIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		if ($userIds === []) {
 			return [];
@@ -158,7 +158,12 @@ final class PdoBoostRepository implements BoostRepository
 		[$placeholders, $parameters] = $this->placeholders($userIds);
 		$sql = 'SELECT id, user_id, post_id, created_at FROM ' . BoostSchema::TABLE
 			. ' WHERE user_id IN (' . implode(', ', $placeholders) . ')';
-		if ($before !== null) {
+		if ($before instanceof TimelineCursor) {
+			$sql .= ' AND (created_at < :before OR (created_at = :before_equal AND id < :before_id))';
+			$parameters['before'] = Time::format($before->publishedAt);
+			$parameters['before_equal'] = Time::format($before->publishedAt);
+			$parameters['before_id'] = $before->id;
+		} elseif ($before !== null) {
 			$sql .= ' AND created_at < :before';
 			$parameters['before'] = Time::format($before);
 		}
