@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Media\Attachment;
@@ -1872,6 +1873,24 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(2, $app->queue->pendingCount());
 	}
 
+	public function testRemoteRelationshipReportsInboundBlocks(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$fetcher = (new InMemoryRemoteActorFetcher())->with(new RemoteActor(
+			actorId: $actorId,
+			keyId: $actorId . '#main-key',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			publicKeyPem: 'fixture public key',
+		));
+		$inboundBlocks = new InMemoryInboundBlockRepository();
+		$inboundBlocks->block('alice', $actorId, 'https://remote.example/activities/block-1');
+		$app = $this->app(actors: ['alice'], remoteActors: $fetcher, inboundBlocks: $inboundBlocks);
+
+		$relationship = $this->relationships($app, [$actorId])->decodedBody()[0];
+		self::assertTrue($relationship['blocked_by']);
+		self::assertFalse($relationship['blocking']);
+	}
+
 	public function testAccountProfileAndLocalFollowListsArePublicAndPaginated(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob', 'carol']);
@@ -2837,6 +2856,7 @@ final class MastodonApiTest extends TestCase
 		?RemoteActorFetcher $remoteActors = null,
 		?HttpClient $httpClient = null,
 		?RsaKeyPair $signingKey = null,
+		?InMemoryInboundBlockRepository $inboundBlocks = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -2861,6 +2881,7 @@ final class MastodonApiTest extends TestCase
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
 			followingRepository: $followingRepository,
 			remoteActors: $remoteActors,
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 

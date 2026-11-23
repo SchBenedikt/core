@@ -1441,6 +1441,8 @@ final readonly class Application
 			$followingService,
 			$followingRepository,
 			$remoteActors,
+			$blockRepository,
+			$inboundBlocks,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();

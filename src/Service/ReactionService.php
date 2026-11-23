@@ -225,9 +225,24 @@ final class ReactionService
 	 * The stored remote post a local account may react to.
 	 *
 	 * @throws ReactionException when the post is unknown, its author is not
-	 *                           followed or the actor is blocked
+	 *                           followed or either account has blocked the other
 	 */
 	public function remotePostFor(string $userId, string $objectId): RemotePost
+	{
+		return $this->findRemotePost($userId, $objectId, false);
+	}
+
+	/**
+	 * Resolve a post only to remove local reaction state after a follow or block
+	 * edge has changed. Cleanup never contacts an actor that has blocked this
+	 * account, or an actor the local account has blocked.
+	 */
+	private function remotePostForUndo(string $userId, string $objectId): RemotePost
+	{
+		return $this->findRemotePost($userId, $objectId, true);
+	}
+
+	private function findRemotePost(string $userId, string $objectId, bool $allowRelationlessCleanup): RemotePost
 	{
 		$objectId = trim($objectId);
 		if ($objectId === '' || $this->remotePosts === null) {
@@ -239,16 +254,21 @@ final class ReactionService
 			throw new ReactionException('remote_post_not_found', 'Remote post not found.');
 		}
 
-		$followed = $this->following->find($userId, $post->actorId);
-		if ($followed === null || $followed->state !== FollowState::Accepted) {
-			throw new ReactionException(
-				'remote_post_not_followed',
-				'Follow the author before reacting to this post.',
-			);
-		}
+		if (!$allowRelationlessCleanup) {
+			$followed = $this->following->find($userId, $post->actorId);
+			if ($followed === null || $followed->state !== FollowState::Accepted) {
+				throw new ReactionException(
+					'remote_post_not_followed',
+					'Follow the author before reacting to this post.',
+				);
+			}
 
-		if ($this->blocks->findByActor($userId, $post->actorId) !== null) {
-			throw new ReactionException('blocked_actor', 'This actor is blocked.');
+			if ($this->blocks->findByActor($userId, $post->actorId) !== null) {
+				throw new ReactionException('blocked_actor', 'This actor is blocked.');
+			}
+			if ($this->inboundBlocks?->isBlocked($userId, $post->actorId) === true) {
+				throw new ReactionException('blocked_actor', 'This remote actor has blocked this account.');
+			}
 		}
 
 		return $post;
@@ -274,7 +294,7 @@ final class ReactionService
 			createdAt: $this->now(),
 		);
 
-		if ($this->insertOutbound($reaction)) {
+		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
 			$this->deliver($userId, $post->actorId, $this->activities->like($userId, $post->objectId));
 		}
 
@@ -288,7 +308,7 @@ final class ReactionService
 	 */
 	public function unlikeRemote(string $userId, string $objectId): array
 	{
-		$post = $this->remotePostFor($userId, $objectId);
+		$post = $this->remotePostForUndo($userId, $objectId);
 		$removed = $this->reactions->remove(
 			ReactionDirection::Out,
 			$userId,
@@ -297,7 +317,7 @@ final class ReactionService
 			null,
 		);
 
-		if ($removed) {
+		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
 			$this->deliver($userId, $post->actorId, $this->activities->undoLike($userId, $post->objectId));
 		}
 
@@ -325,7 +345,7 @@ final class ReactionService
 			createdAt: $this->now(),
 		);
 
-		if ($this->insertOutbound($reaction)) {
+		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
 			$this->deliver(
 				$userId,
 				$post->actorId,
@@ -343,7 +363,7 @@ final class ReactionService
 	 */
 	public function unreactFromRemote(string $userId, string $objectId, string $emoji): array
 	{
-		$post = $this->remotePostFor($userId, $objectId);
+		$post = $this->remotePostForUndo($userId, $objectId);
 		$emoji = RemoteEmoji::forOutbound($emoji);
 		$removed = $this->reactions->remove(
 			ReactionDirection::Out,
@@ -353,7 +373,7 @@ final class ReactionService
 			$emoji,
 		);
 
-		if ($removed) {
+		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
 			$this->deliver(
 				$userId,
 				$post->actorId,
@@ -659,6 +679,12 @@ final class ReactionService
 			'activity' => $activity,
 			'key_id' => $this->activities->keyId($userId),
 		], subject: JobSubject::account($userId));
+	}
+
+	private function mayDeliverRemoteInteraction(string $userId, string $actorId): bool
+	{
+		return $this->blocks->findByActor($userId, $actorId) === null
+			&& $this->inboundBlocks?->isBlocked($userId, $actorId) !== true;
 	}
 
 	private function now(): DateTimeImmutable
