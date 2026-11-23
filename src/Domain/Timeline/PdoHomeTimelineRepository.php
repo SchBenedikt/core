@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Post\TimelineCursor;
@@ -30,9 +31,9 @@ use DateTimeImmutable;
  * the local and remote pages separately and merging them in PHP would let a
  * page contain the wrong number of items at a cursor boundary.
  *
- * The remote half joins `social_following` on `actor_id` and scopes the join
- * to the reader, so unfollowing immediately removes the actor's content
- * without deleting the shared remote rows. A reader's `social_block` rows are
+ * The remote half scopes ActivityPub and AT Protocol follows to the reader,
+ * so unfollowing immediately removes the actor's content without deleting
+ * shared remote rows. A reader's `social_block` rows are
  * excluded by signing actor and object author, so a block also hides a boost
  * of the blocked actor's content by somebody else.
  */
@@ -86,8 +87,12 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' CASE WHEN r.kind = :boost_kind THEN r.actor_id ELSE NULL END AS boosted_by,'
 			. ' r.in_reply_to_id AS in_reply_to_id'
 			. ' FROM ' . RemotePostSchema::TABLE . ' r'
-			. ' INNER JOIN ' . FollowingSchema::TABLE . ' f ON f.actor_id = r.actor_id'
-			. " WHERE f.local_user_id = :remote_user AND f.state = 'accepted'"
+			. ' WHERE ('
+			. ' EXISTS (SELECT 1 FROM ' . FollowingSchema::TABLE . ' f'
+			. " WHERE f.actor_id = r.actor_id AND f.local_user_id = :remote_user AND f.state = 'accepted')"
+			. ' OR EXISTS (SELECT 1 FROM ' . AtprotoFollowSchema::TABLE . ' af'
+			. " WHERE af.subject_did = r.actor_id AND af.local_user_id = :atproto_user AND af.state = 'active')"
+			. ')'
 			. ' AND r.deleted_at IS NULL'
 			. ' AND NOT EXISTS ('
 			. ' SELECT 1 FROM ' . BlockSchema::TABLE . ' b'
@@ -111,6 +116,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			'local_direct' => Visibility::Direct->value,
 			'local_mute_user' => $localUserId,
 			'remote_user' => $localUserId,
+			'atproto_user' => $localUserId,
 			'remote_mute_user' => $localUserId,
 			'block_user' => $localUserId,
 			'boost_kind' => RemotePostKind::Boost->value,

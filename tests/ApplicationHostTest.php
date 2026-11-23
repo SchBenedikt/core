@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Federation\PdoActivityLog;
 use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
@@ -1275,6 +1276,7 @@ final class ApplicationHostTest extends TestCase
 		TrendSchema::create($database);
 		FollowerSchema::create($database);
 		FollowingSchema::create($database);
+		AtprotoFollowSchema::create($database);
 		AccountMoveSchema::create($database);
 		RemotePostSchema::create($database);
 		PendingRemoteUpdateSchema::create($database);
