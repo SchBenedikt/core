@@ -14,15 +14,18 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoInteractionRecord;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoRecordResolver;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoStrongRef;
 use AlohaSocial\Core\Protocol\Atproto\Tid;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 
 /**
  * Publishes and removes likes and reposts as AT Protocol records.
@@ -34,6 +37,7 @@ use AlohaSocial\Core\Protocol\Atproto\Tid;
  * record instead of creating a second one, and an undo removes exactly that
  * record without a local interaction table.
  *
+ * Writes honor the instance's per-account local blocks in either direction.
  * This is a host-called operation with no route, like session refresh: the
  * host owns authentication and decides when a local favourite or boost becomes
  * an AT Protocol record.
@@ -57,6 +61,8 @@ final class AtprotoInteractionService
 		private readonly ?AtprotoRecordResolver $records,
 		private readonly Clock $clock,
 		private readonly ?AtprotoDeleter $deleter = null,
+		private readonly ?BlockRepository $blocks = null,
+		private readonly ?ActivityFactory $activities = null,
 	) {
 	}
 
@@ -117,6 +123,7 @@ final class AtprotoInteractionService
 
 		$account = $this->account($localUserId);
 		$post = $this->post($postId, true);
+		$this->assertNotBlocked($localUserId, $post->authorId);
 		$subject = $this->subject($post, $account);
 
 		return $this->publisher->publish(
@@ -151,6 +158,25 @@ final class AtprotoInteractionService
 	{
 		if (!$this->isEnabled()) {
 			throw new AtprotoPublishDisabledException();
+		}
+	}
+
+	private function assertNotBlocked(string $localUserId, string $postAuthorId): void
+	{
+		if ($this->blocks === null || $this->activities === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+
+		try {
+			$interactingActorId = $this->activities->actorId($localUserId);
+			$postAuthorActorId = $this->activities->actorId($postAuthorId);
+		} catch (ConfigurationException) {
+			throw new AtprotoNotConfiguredException();
+		}
+		if ($this->blocks->findByActor($localUserId, $postAuthorActorId) !== null
+			|| $this->blocks->findByActor($postAuthorId, $interactingActorId) !== null
+		) {
+			throw new AtprotoInteractionRejectedException(AtprotoInteractionRejectedException::BLOCKED_ACTOR);
 		}
 	}
 

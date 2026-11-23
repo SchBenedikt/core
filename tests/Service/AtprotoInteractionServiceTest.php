@@ -13,6 +13,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
@@ -22,9 +24,11 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoAccountNotConnectedException;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionRejectedException;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
+use AlohaSocial\Core\Service\Atproto\AtprotoNotConfiguredException;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishDisabledException;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
@@ -38,6 +42,8 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 	private InMemoryAtprotoPublicationRepository $publications;
 
+	private InMemoryBlockRepository $blocks;
+
 	private FakeHttpClient $http;
 
 	private AtprotoInteractionService $service;
@@ -46,6 +52,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 	{
 		$this->posts = new InMemoryPostRepository();
 		$this->publications = new InMemoryAtprotoPublicationRepository();
+		$this->blocks = new InMemoryBlockRepository();
 		$this->http = new FakeHttpClient();
 
 		$this->service = $this->service(enabled: true);
@@ -175,6 +182,74 @@ final class AtprotoInteractionServiceTest extends TestCase
 		self::assertCount(0, $this->http->requests);
 	}
 
+	public function testBlocksInEitherDirectionPreventLikeAndRepostPublication(): void
+	{
+		$target = new Post(
+			'target-post',
+			'bob',
+			'public subject',
+			Visibility::Public,
+			Time::parse('2026-11-11T10:00:00Z'),
+		);
+		$this->posts->insert($target);
+		$this->publications->insert(new AtprotoPublication(
+			'bob',
+			'target-post',
+			'target1rkey',
+			'at://did:plc:bob/app.bsky.feed.post/target1rkey',
+			Time::parse('2026-11-11T10:00:00Z'),
+		));
+
+		foreach ([
+			['alice', 'bob'], // the interacting account blocked the post author
+			['bob', 'alice'], // the post author blocked the interacting account
+		] as [$blocker, $blocked]) {
+			$this->blocks->insert(new Block(
+				id: 'block-' . $blocker . '-' . $blocked,
+				localUserId: $blocker,
+				actorId: 'https://social.example/@' . $blocked,
+				blockedAt: Time::parse('2026-11-11T09:00:00Z'),
+			));
+
+			foreach (['like', 'repost'] as $interaction) {
+				try {
+					$this->service->{$interaction}('alice', 'target-post');
+					self::fail('A block in either direction must prevent publishing the interaction.');
+				} catch (AtprotoInteractionRejectedException $exception) {
+					self::assertSame(AtprotoInteractionRejectedException::BLOCKED_ACTOR, $exception->reason);
+				}
+			}
+			self::assertTrue($this->blocks->remove('block-' . $blocker . '-' . $blocked, $blocker));
+		}
+
+		self::assertCount(0, $this->http->requests);
+	}
+
+	public function testMissingBlockPolicyRefusesToPublishAnInteraction(): void
+	{
+		$this->publishedPost();
+		$publisher = new XrpcAtprotoPublisher($this->http);
+		$service = new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			$publisher,
+			new XrpcAtprotoRecordResolver($this->http),
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			$publisher,
+		);
+
+		try {
+			$service->like('alice', 'post-1');
+			self::fail('The interaction must refuse to publish without a block policy.');
+		} catch (AtprotoNotConfiguredException) {
+			self::assertCount(0, $this->http->requests);
+		}
+	}
+
 	public function testAnUnresolvableSubjectIsRefused(): void
 	{
 		$this->publishedPost();
@@ -206,6 +281,8 @@ final class AtprotoInteractionServiceTest extends TestCase
 			new XrpcAtprotoRecordResolver($this->http),
 			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
 			new XrpcAtprotoPublisher($this->http),
+			$this->blocks,
+			$this->activities(),
 		);
 
 		$this->expectException(AtprotoAccountNotConnectedException::class);
@@ -235,7 +312,16 @@ final class AtprotoInteractionServiceTest extends TestCase
 			new XrpcAtprotoRecordResolver($this->http),
 			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
 			$publisher,
+			$this->blocks,
+			$this->activities(),
 		);
+	}
+
+	private function activities(): ActivityFactory
+	{
+		return new ActivityFactory(new ArrayConfig([
+			'social' => ['instance.url' => 'https://social.example'],
+		]));
 	}
 
 	private function publishedPost(): void

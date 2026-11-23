@@ -1193,7 +1193,7 @@ final readonly class Application
 			$clock,
 		);
 		// Likes and reposts mirror only posts this instance published; the
-		// subject CID is read from the PDS, so they share the record resolver.
+		// subject CID is read from the PDS. Local blocks gate both directions.
 		$atprotoInteractions = new AtprotoInteractionService(
 			$config,
 			$posts,
@@ -1203,6 +1203,8 @@ final readonly class Application
 			$httpClient === null ? null : new XrpcAtprotoRecordResolver($httpClient),
 			$clock,
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
+			$blockRepository,
+			$activities,
 		);
 		// The profile write shares the blob uploader with post media; the
 		// timeline read is a port so a host can cache or map it as it likes.
