@@ -41,6 +41,8 @@ final class AtprotoPostRejectedException extends RuntimeException
 
 	public const MEDIA_UNSUPPORTED = 'media_unsupported';
 
+	public const PUBLICATION_MISSING = 'publication_missing';
+
 	public function __construct(
 		public readonly string $reason,
 	) {
@@ -54,6 +56,7 @@ final class AtprotoPostRejectedException extends RuntimeException
 			self::REPLY_ROOT_UNRESOLVABLE => 'The reply root could not be read from the PDS.',
 			self::MENTION_UNRESOLVED => 'A mentioned handle does not resolve to an AT Protocol DID.',
 			self::MEDIA_UNSUPPORTED => 'Attachments are not configured on this instance.',
+			self::PUBLICATION_MISSING => 'The existing AT Protocol publication no longer exists.',
 			AtprotoBlobException::MIME_UNSUPPORTED => 'The attached media type is not supported by AT Protocol.',
 			AtprotoBlobException::TOO_LARGE => 'The attached media is too large for AT Protocol.',
 			AtprotoBlobException::MISSING => 'The AT Protocol PDS returned no blob reference.',
