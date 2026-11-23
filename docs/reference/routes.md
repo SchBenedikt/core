@@ -247,6 +247,12 @@ Auth and rate limits are **declared** here and enforced by the host. A host that
 ignores the declaration is a host bug; the manifest is what both hosts are
 checked against.
 
+`GET /api/v1/accounts/{id}/statuses` accepts `limit` and an optional `before`
+cursor. Pass the returned `next_before` value back unchanged. New cursors encode
+both the publication timestamp and post ID, preserving the stable descending
+`(published_at, id)` order when multiple posts share a timestamp. Legacy
+timestamp-only cursors remain accepted for existing clients.
+
 ## Health
 
 ```http

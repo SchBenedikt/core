@@ -25,11 +25,13 @@ use PHPUnit\Framework\TestCase;
 final class AccountStatusesTest extends TestCase
 {
 	private Application $app;
+	private FrozenClock $clock;
 
 	protected function setUp(): void
 	{
+		$this->clock = new FrozenClock(Time::parse('2026-11-18T10:00:00Z'));
 		$this->app = Application::inMemory(
-			clock: new FrozenClock(Time::parse('2026-11-18T10:00:00Z')),
+			clock: $this->clock,
 			config: new ArrayConfig([
 				InstanceInfo::CONFIG_APP => ['instance.url' => 'https://social.example'],
 			]),
@@ -99,6 +101,71 @@ final class AccountStatusesTest extends TestCase
 
 		self::assertSame(400, $response->status);
 		self::assertSame('invalid_cursor', $response->decodedBody()['error']['code']);
+	}
+
+	public function testPaginationPreservesPostsWithIdenticalTimestampsAndSkipsHiddenRows(): void
+	{
+		for ($index = 0; $index < 12; $index++) {
+			$this->createPost('bob', 'public ' . $index, 'public');
+			$this->createPost('bob', 'hidden ' . $index, 'followers');
+		}
+
+		$cursor = null;
+		$contents = [];
+		$seen = [];
+		do {
+			$query = ['limit' => '2'];
+			if ($cursor !== null) {
+				$query['before'] = $cursor;
+			}
+			$body = $this->app->handle(new Request('GET', '/api/v1/accounts/bob/statuses', $query))->decodedBody();
+			foreach ($body['posts'] as $post) {
+				self::assertNotContains($post['id'], $seen, 'Pages must not repeat a post.');
+				$seen[] = $post['id'];
+				$contents[] = $post['content'];
+			}
+			$cursor = $body['next_before'];
+		} while ($cursor !== null);
+
+		self::assertCount(13, $contents); // the setup's original public post plus twelve new public posts
+		self::assertCount(13, array_unique($contents));
+		self::assertNotContains('hidden 0', $contents);
+	}
+
+	public function testMalformedCompoundCursorIsRejected(): void
+	{
+		$response = $this->app->handle(new Request(
+			'GET',
+			'/api/v1/accounts/bob/statuses',
+			['before' => 'v1.bm90LWpzb24'],
+		));
+
+		self::assertSame(400, $response->status);
+		self::assertSame('invalid_cursor', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnonymousHiddenOnlyPagesStillAdvanceToOlderPublicPosts(): void
+	{
+		$this->clock->advance(1);
+		for ($index = 0; $index < 8; $index++) {
+			$this->createPost('bob', 'new hidden ' . $index, 'followers');
+		}
+
+		$first = $this->app->handle(new Request('GET', '/api/v1/accounts/bob/statuses', ['limit' => '2']))->decodedBody();
+		self::assertSame([], $first['posts']);
+		self::assertNotNull($first['next_before']);
+
+		$second = $this->app->handle(new Request('GET', '/api/v1/accounts/bob/statuses', [
+			'limit' => '2', 'before' => $first['next_before'],
+		]))->decodedBody();
+		self::assertSame([], $second['posts']);
+		self::assertNotNull($second['next_before']);
+
+		$third = $this->app->handle(new Request('GET', '/api/v1/accounts/bob/statuses', [
+			'limit' => '2', 'before' => $second['next_before'],
+		]))->decodedBody();
+		self::assertSame(['public post'], array_column($third['posts'], 'content'));
+		self::assertNull($third['next_before']);
 	}
 
 	/**

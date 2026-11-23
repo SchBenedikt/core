@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Post\PostCount;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
@@ -286,6 +287,25 @@ abstract class PostRepositoryTestCase extends TestCase
 			),
 		);
 		self::assertSame([], $repository->timelineForAuthors([], 10));
+	}
+
+	public function testTimelineCursorUsesIdToContinueAcrossMatchingTimestamps(): void
+	{
+		$repository = $this->repository();
+		$at = '2026-11-11T10:00:00Z';
+		foreach (['post-a', 'post-b', 'post-c', 'post-d'] as $id) {
+			$repository->insert($this->post($id, 'alice', Visibility::Public, $at));
+		}
+
+		$page = $repository->timelineForAuthors(['alice'], 2);
+		self::assertSame(['post-d', 'post-c'], array_map(static fn (Post $post): string => $post->id, $page));
+
+		$next = $repository->timelineForAuthors(
+			['alice'],
+			2,
+			new TimelineCursor(Time::parse($at), 'post-c'),
+		);
+		self::assertSame(['post-b', 'post-a'], array_map(static fn (Post $post): string => $post->id, $next));
 	}
 
 	public function testSoftDeleteHidesThePostButKeepsTheRow(): void

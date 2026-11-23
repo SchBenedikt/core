@@ -504,7 +504,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		);
 	}
 
-	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		if ($authorIds === []) {
 			return [];
@@ -525,7 +525,12 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$parameters['unlisted'] = Visibility::Unlisted->value;
 		$parameters['followers'] = Visibility::Followers->value;
 
-		if ($before !== null) {
+		if ($before instanceof TimelineCursor) {
+			$sql .= ' AND (published_at < :before_time OR (published_at = :before_equal_time AND id < :before_id))';
+			$parameters['before_time'] = Time::format($before->publishedAt);
+			$parameters['before_equal_time'] = Time::format($before->publishedAt);
+			$parameters['before_id'] = $before->id;
+		} elseif ($before !== null) {
 			$sql .= ' AND published_at < :before';
 			$parameters['before'] = Time::format($before);
 		}

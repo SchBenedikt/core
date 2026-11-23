@@ -196,7 +196,7 @@ interface PostRepository
 	 *
 	 * @return list<Post>
 	 */
-	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array;
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
 
 	/**
 	 * Live direct replies to one post, newest first.
