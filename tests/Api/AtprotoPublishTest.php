@@ -134,6 +134,24 @@ final class AtprotoPublishTest extends TestCase
 		self::assertSame('A small test image', $recordRequest['record']['embed']['images'][0]['alt']);
 		self::assertSame(['$link' => 'bafy-image'], $recordRequest['record']['embed']['images'][0]['image']['ref']);
 		self::assertNotNull($this->publications->findForPost(self::ALICE, $post->id));
+
+		$gifId = 'attachment-image-gif';
+		$attachments->insert(new Attachment(
+			id: $gifId,
+			ownerId: self::ALICE,
+			storageKey: 'media/' . $gifId . '/original.gif',
+			thumbnailKey: 'media/' . $gifId . '/thumbnail.gif',
+			mimeType: 'image/gif',
+			width: 20,
+			height: 20,
+			byteSize: 3,
+			altText: 'Animated image',
+			createdAt: $this->clock->now(),
+			kind: MediaKind::Image,
+		));
+		$blobs->put('media/' . $gifId . '/original.gif', 'gif');
+		$app->posts->create(new CreatePost(self::ALICE, 'GIF post', attachmentIds: [$gifId]));
+		self::assertCount(0, $app->queue->pending(), 'Unsupported media should not be queued for a permanent refusal.');
 	}
 
 	public function testARetryAfterAPdsFailureUsesTheSameRecordKey(): void

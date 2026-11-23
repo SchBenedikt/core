@@ -439,6 +439,9 @@ final class AtprotoPublishService
 			if ($attachment === null || $attachment->ownerId !== $post->authorId) {
 				throw new AtprotoPostRejectedException(AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED);
 			}
+			if (!AtprotoEmbed::supportsMimeType($attachment->mimeType)) {
+				throw new AtprotoPostRejectedException(AtprotoBlobException::MIME_UNSUPPORTED);
+			}
 
 			if ($attachment->kind === MediaKind::Image) {
 				$imageCount++;
