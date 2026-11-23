@@ -324,6 +324,44 @@ final class ReactionService
 		return $this->remoteInteractionsFor($userId, $post);
 	}
 
+	/** @return array<string, mixed> */
+	public function boostRemote(string $userId, string $objectId): array
+	{
+		$post = $this->remotePostFor($userId, $objectId);
+		$createdAt = $this->now();
+		$reaction = new Reaction(
+			direction: ReactionDirection::Out,
+			subjectId: $userId,
+			objectId: $post->objectId,
+			localPostId: null,
+			kind: ReactionKind::Boost,
+			emoji: null,
+			iconUrl: null,
+			activityId: $this->activities->remoteBoostId($userId, $post->objectId, $createdAt),
+			createdAt: $createdAt,
+		);
+
+		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
+			$this->deliver($userId, $post->actorId, $this->activities->announceRemote($userId, $post->objectId, $reaction->activityId));
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
+	/** @return array<string, mixed> */
+	public function unboostRemote(string $userId, string $objectId): array
+	{
+		$post = $this->remotePostForUndo($userId, $objectId);
+		$stored = $this->reactions->find(ReactionDirection::Out, $userId, $post->objectId, ReactionKind::Boost, null);
+		$removed = $this->reactions->remove(ReactionDirection::Out, $userId, $post->objectId, ReactionKind::Boost, null);
+
+		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
+			$this->deliver($userId, $post->actorId, $this->activities->undoRemoteAnnounce($userId, $post->objectId, $stored?->activityId));
+		}
+
+		return $this->remoteInteractionsFor($userId, $post);
+	}
+
 	/**
 	 * @return array<string, mixed>
 	 *
@@ -403,11 +441,16 @@ final class ReactionService
 		)[$post->objectId] ?? [];
 
 		$favourited = false;
+		$reblogged = false;
 		$emoji = [];
 		$viewerEmoji = [];
 		foreach ($rows as $row) {
 			if ($row->kind === ReactionKind::Like) {
 				$favourited = true;
+				continue;
+			}
+			if ($row->kind === ReactionKind::Boost) {
+				$reblogged = true;
 				continue;
 			}
 
@@ -417,9 +460,11 @@ final class ReactionService
 
 		return [
 			'favourites_count' => $favourited ? 1 : 0,
+			'reblogs_count' => $reblogged ? 1 : 0,
 			'emoji_reactions' => $emoji,
 			'viewer' => [
 				'favourited' => $favourited,
+				'reblogged' => $reblogged,
 				'reactions' => $viewerEmoji,
 			],
 		];

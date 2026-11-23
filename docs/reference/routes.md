@@ -522,20 +522,23 @@ DELETE /api/v1/remote-posts/{id}/reactions/{emoji}
 `{id}` is the stored remote object id, URL-encoded as one path segment. The
 post must be a live row from an actor the caller follows; otherwise the answer
 is `404 remote_post_not_found`. The local reaction is stored before the signed
-`Like`, `Undo(Like)`, `EmojiReact` or `Undo(EmojiReact)` is queued, so the read
-model changes even when delivery is retried. A repeated call is idempotent and
-queues no second activity. `EmojiReact` accepts Unicode emoji only; a custom
+`Like`, `Undo(Like)`, `EmojiReact`, `Undo(EmojiReact)`, `Announce` or
+`Undo(Announce)` is queued, so the read model changes even when delivery is
+retried. A repeated call is idempotent and queues no second activity. Remote
+boosts get a fresh activity id after each unboost/reboost cycle, and Undo
+embeds the exact Announce it reverses. `EmojiReact` accepts Unicode emoji only; a custom
 emoji shortcode is refused because the core has no verified local emoji source.
 
 ```json
 {"interaction": {
   "favourites_count": 1,
+  "reblogs_count": 1,
   "emoji_reactions": [{"emoji": "❤", "count": 1}],
-  "viewer": {"favourited": true, "reactions": ["❤"]}
+  "viewer": {"favourited": true, "reblogged": true, "reactions": ["❤"]}
 }}
 ```
 
-The remote projection is the caller's own state, not a remote total: the core
+The remote projection counts only this caller's own state, not a remote total: the core
 does not fetch a remote count on a read. Inbound reactions on local posts are
 counted in the neutral post detail (`post.interactions`) and in the Mastodon
 `favourites_count`; emoji reactions stay a separate list.

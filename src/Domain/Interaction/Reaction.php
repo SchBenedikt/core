@@ -83,7 +83,7 @@ final readonly class Reaction
 				throw new InvalidArgumentException('An emoji reaction needs an emoji of at most 64 characters.');
 			}
 		} elseif ($emoji !== null) {
-			throw new InvalidArgumentException('A like cannot carry an emoji; use an emoji reaction.');
+			throw new InvalidArgumentException('A like or boost cannot carry an emoji; use an emoji reaction.');
 		}
 
 		if ($iconUrl !== null && ($kind !== ReactionKind::Emoji || mb_strlen($iconUrl) > self::MAX_ICON_LENGTH)) {

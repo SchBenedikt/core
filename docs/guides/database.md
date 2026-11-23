@@ -48,7 +48,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Post/FavouriteSchema.php` → `social_favourite` (per-user post favourites, keyed by user and post)
 - `src/Domain/Filter/FilterSchema.php` → `social_filter` (one per-reader keyword rule with action, JSON contexts and keyword list; no shared row is ever rewritten by another reader)
 - `src/Domain/Scheduling/ScheduledPostSchema.php` → `social_scheduled_post` (pending, publishing, published, cancelled and failed writes, with a reserved post id whose unique key makes retries idempotent)
-- `src/Domain/Interaction/ReactionSchema.php` → `social_reaction` (inbound and outbound Like/EmojiReact state, keyed by direction, subject, object, kind and emoji; unique key is the reaction identity)
+- `src/Domain/Interaction/ReactionSchema.php` → `social_reaction` (inbound/outbound Like and EmojiReact state plus outbound remote Announce boosts, keyed by direction, subject, object, kind and emoji; unique key is the interaction identity)
 - `src/Domain/Post/BookmarkSchema.php` → `social_bookmark` (private per-user bookmarks, keyed by user and post)
 - `src/Domain/Federation/MuteSchema.php` → `social_mute` (private per-user mutes of local accounts or remote actor URLs, with a nullable expiry)
 - `src/Domain/Timeline/AccountListSchema.php` → `social_account_list` and `social_account_list_member` (private lists and their local account membership)
