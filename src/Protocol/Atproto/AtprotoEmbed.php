@@ -57,6 +57,12 @@ final class AtprotoEmbed
 	) {
 	}
 
+	public static function supportsMimeType(string $mimeType): bool
+	{
+		return in_array($mimeType, self::IMAGE_MIME_TYPES, true)
+			|| in_array($mimeType, self::VIDEO_MIME_TYPES, true);
+	}
+
 	/**
 	 * @param list<AtprotoMedia> $media
 	 *
