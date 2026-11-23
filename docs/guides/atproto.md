@@ -202,6 +202,9 @@ account might use elsewhere.
   A repeated like or repost therefore updates the same record, and the undo
   deletes exactly that key without a local interaction table. Liking again after
   an undo recreates the same key.
+- A write is refused with `blocked_actor` if either local account has blocked
+  the other in the instance's per-user ActivityPub block list. Unlike and
+  unrepost remain available so a user can remove an existing PDS interaction.
 - `AtprotoPublisher::publish()` and `AtprotoDeleter::delete()` take the
   collection as their last argument (default `app.bsky.feed.post`), so one
   adapter writes and removes all three record types. A non-NSID value is
