@@ -11,7 +11,8 @@ request.
 | --- | --- | --- | --- |
 | `Clock` | `now()` | `FrozenClock` | `SystemClock` |
 | `Config` | `get`/`set`/`delete`/`has`/`all`, typed getters | `ArrayConfig` | host configuration |
-| `Storage\BlobStore` | `put`/`read`/`exists`/`delete`/`size`/`list` | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
+| `Storage\BlobStore` | `put`/`read`/`exists`/`delete`/`size`/`list` | `InMemoryBlobStore` | `LocalBlobStore`, `S3BlobStore` over a host-injected `S3CompatibleClient` |
+| `Storage\StreamingBlobStore` | `putStream`/`readStream` | — | `S3BlobStore`; optional capability for bounded large-object transfer |
 | `Db\Connection` | `execute`/`fetchAll`/`fetchOne`/`fetchValue`/`transaction`/`driver` | — | `PdoConnection` |
 | `Db\TransactionRunner` | `transaction()` | — | `PdoConnection`; a host database adapter |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
@@ -44,6 +45,12 @@ Keys are relative paths, never absolute, and `BlobPath` rejects empty segments,
 `..` and backslashes before a driver sees them. A store may be backed by a
 directory, an object bucket or memory, but `list($prefix)` must return sorted
 paths that match by path segment, not by string prefix.
+
+`S3BlobStore` is optional and keeps its network client host-owned. The host
+injects a configured `S3CompatibleClient` that owns endpoint, region,
+credentials and timeouts; the adapter applies bucket/prefix isolation,
+no public ACL option, optional server-side encryption, size bounds and
+paginated listing. See [S3-compatible BlobStore](s3-blob-store.md).
 
 ### ImageProcessor
 
