@@ -24,12 +24,15 @@ final class AtprotoInteractionRejectedException extends RuntimeException
 
 	public const SUBJECT_UNRESOLVABLE = 'interaction_subject_unresolvable';
 
+	public const SUBJECT_NOT_PUBLIC = 'interaction_subject_not_public';
+
 	public function __construct(
 		public readonly string $reason,
 	) {
 		parent::__construct(match ($reason) {
 			self::SUBJECT_NOT_PUBLISHED => 'The post has no published AT Protocol record.',
 			self::SUBJECT_UNRESOLVABLE => 'The AT Protocol subject record could not be read from the PDS.',
+			self::SUBJECT_NOT_PUBLIC => 'Only public posts can receive AT Protocol interactions.',
 			default => 'This interaction cannot be published to AT Protocol.',
 		});
 	}

@@ -140,6 +140,41 @@ final class AtprotoInteractionServiceTest extends TestCase
 		self::assertCount(0, $this->http->requests);
 	}
 
+	public function testPrivateSubjectsAreNeverMirroredAsPublicInteractions(): void
+	{
+		foreach ([Visibility::Unlisted, Visibility::Followers, Visibility::Direct] as $visibility) {
+			$postId = 'private-' . $visibility->value;
+			$rkey = 'post1' . $visibility->value;
+			$post = new Post(
+				$postId,
+				'alice',
+				'private content',
+				$visibility,
+				Time::parse('2026-11-11T10:00:00Z'),
+			);
+			$this->posts->insert($post);
+			$this->publications->insert(new AtprotoPublication(
+				'alice',
+				$postId,
+				$rkey,
+				'at://did:plc:alice/app.bsky.feed.post/' . $rkey,
+				Time::parse('2026-11-11T10:00:00Z'),
+			));
+
+			try {
+				$this->service->like('alice', $postId);
+				self::fail('A non-public post must not produce a public AT Protocol interaction.');
+			} catch (AtprotoInteractionRejectedException $exception) {
+				self::assertSame(
+					AtprotoInteractionRejectedException::SUBJECT_NOT_PUBLIC,
+					$exception->reason,
+				);
+			}
+		}
+
+		self::assertCount(0, $this->http->requests);
+	}
+
 	public function testAnUnresolvableSubjectIsRefused(): void
 	{
 		$this->publishedPost();
