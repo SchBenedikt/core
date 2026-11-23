@@ -279,6 +279,11 @@ final class NotificationPolicyService
 		return $this->conversationMutes->remove($userId, trim($conversationId));
 	}
 
+	public function conversationMute(string $userId, string $conversationId): ?ConversationMute
+	{
+		return $this->conversationMutes->find($userId, trim($conversationId));
+	}
+
 	private function owned(string $recipientId, string $requestId): NotificationSender
 	{
 		$sender = $this->senders->findById(trim($requestId));

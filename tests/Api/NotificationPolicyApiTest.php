@@ -148,6 +148,14 @@ final class NotificationPolicyApiTest extends TestCase
 		));
 		self::assertSame(201, $muted->status);
 		self::assertSame($root, $muted->decodedBody()['conversation']['conversation_id']);
+		$muteStatus = $this->app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/conversations/' . rawurlencode($root) . '/mute',
+			userId: 'alice',
+		));
+		self::assertSame(200, $muteStatus->status);
+		self::assertTrue($muteStatus->decodedBody()['muted']);
+		self::assertSame($root, $muteStatus->decodedBody()['conversation']['conversation_id']);
 
 		$this->post('bob', 'muted reply', $root);
 		self::assertSame(1, $this->app->handle(
@@ -160,6 +168,12 @@ final class NotificationPolicyApiTest extends TestCase
 			userId: 'alice',
 		));
 		self::assertSame(['unmuted' => true], $unmuted->decodedBody());
+		$muteStatus = $this->app->handle(new Request(
+			method: 'GET',
+			path: '/api/v1/conversations/' . rawurlencode($root) . '/mute',
+			userId: 'alice',
+		));
+		self::assertSame(['muted' => false, 'conversation' => null], $muteStatus->decodedBody());
 
 		$this->post('bob', 'visible again', $root);
 		self::assertSame(2, $this->app->handle(
@@ -172,6 +186,7 @@ final class NotificationPolicyApiTest extends TestCase
 		foreach ([
 			['GET', '/api/v1/notifications/requests'],
 			['GET', '/api/v1/notifications/policy'],
+			['GET', '/api/v1/conversations/post-1/mute'],
 			['POST', '/api/v1/conversations/post-1/mute'],
 		] as [$method, $path]) {
 			$response = $this->app->handle(new Request($method, $path));

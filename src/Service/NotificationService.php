@@ -265,6 +265,14 @@ final class NotificationService
 		return $this->requirePolicy()->unmuteConversation($userId, $this->conversationRoot($postId));
 	}
 
+	/** @return array<string, mixed>|null */
+	public function conversationMute(string $userId, string $postId): ?array
+	{
+		$mute = $this->requirePolicy()->conversationMute($userId, $this->conversationRoot($postId));
+
+		return $mute?->toArray();
+	}
+
 	private function record(
 		string $recipientId,
 		string $actorId,

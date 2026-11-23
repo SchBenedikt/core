@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 227 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 228 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -122,6 +122,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `trends` | `GET` | `/api/v1/trends` | no | 60 / 60 s |
 | `conversations.mute` | `POST` | `/api/v1/conversations/{id}/mute` | yes | 30 / 900 s |
 | `conversations.unmute` | `DELETE` | `/api/v1/conversations/{id}/mute` | yes | 60 / 900 s |
+| `conversations.mute.status` | `GET` | `/api/v1/conversations/{id}/mute` | yes | 120 / 60 s |
 | `inbox` | `POST` | `/inbox` | signature | 120 / 60 s |
 | `inbox.shared` | `POST` | `/inbox/shared` | signature | 120 / 60 s |
 | `actors.get` | `GET` | `/@{handle}` | no | 120 / 60 s |
@@ -888,9 +889,13 @@ transitions never change the follow, favourite, boost or post that caused the
 event. Request ids are scoped to the caller, so a foreign id is `404`.
 
 ```http
+GET    /api/v1/conversations/{id}/mute
 POST   /api/v1/conversations/{id}/mute
 DELETE /api/v1/conversations/{id}/mute
 ```
+
+The GET reports whether the signed-in account muted the resolved thread root;
+it never reveals another account's mute.
 
 A conversation mute is keyed by the resolved thread root, local or remote. It
 suppresses alerts for that thread only; the posts stay visible. An unknown root
