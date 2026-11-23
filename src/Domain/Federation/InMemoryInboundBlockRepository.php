@@ -22,7 +22,9 @@ final class InMemoryInboundBlockRepository implements InboundBlockRepository
 		$key = $this->key($localUserId, $actorId);
 		$existing = $this->blocks[$key] ?? null;
 		if ($existing !== null) {
-			unset($this->activityKeys[$this->activityKey($actorId, $existing['activity_id'])]);
+			// Match the PDO repository: duplicate or newer Block deliveries must
+			// not change which actor-owned activity can undo this relationship.
+			return;
 		}
 		$this->blocks[$key] = ['actor_id' => $actorId, 'activity_id' => $activityId];
 		$this->activityKeys[$this->activityKey($actorId, $activityId)] = $key;

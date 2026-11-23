@@ -27,11 +27,8 @@ final class PdoInboundBlockRepository implements InboundBlockRepository
 			);
 		} catch (Throwable $exception) {
 			if ($this->isBlocked($localUserId, $actorId)) {
-				$this->db->execute(
-					'UPDATE ' . InboundBlockSchema::TABLE . ' SET activity_id = :activity_id'
-					. ' WHERE local_user_id = :local_user_id AND actor_id = :actor_id',
-					['local_user_id' => $localUserId, 'actor_id' => $actorId, 'activity_id' => $activityId],
-				);
+				// A replay or a second Block from this actor must not replace the
+				// activity URI that is allowed to undo the stored relationship.
 				return;
 			}
 			if ($exception instanceof DatabaseException) {
