@@ -11,9 +11,12 @@ namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
@@ -27,12 +30,15 @@ use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Http\HttpClient;
+use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FailingNotificationRepository;
+use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use PHPUnit\Framework\TestCase;
 
 use function imagecolorallocate;
@@ -1827,6 +1833,45 @@ final class MastodonApiTest extends TestCase
 		self::assertFalse($bobViewAfter[0]['followed_by']);
 	}
 
+	public function testRemoteFollowUnfollowAndRelationshipsUseFederationLifecycle(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$fetcher = (new InMemoryRemoteActorFetcher())->with(new RemoteActor(
+			actorId: $actorId,
+			keyId: $actorId . '#main-key',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			publicKeyPem: 'fixture public key',
+		));
+		$app = $this->app(
+			actors: ['alice'],
+			remoteActors: $fetcher,
+			httpClient: new FakeHttpClient(),
+			signingKey: RsaKeyPair::generate(),
+		);
+
+		$followed = $this->followAccount($app, $actorId);
+		self::assertSame(200, $followed->status);
+		self::assertSame($actorId, $followed->decodedBody()['id']);
+		self::assertFalse($followed->decodedBody()['following']);
+		self::assertTrue($followed->decodedBody()['requested']);
+		self::assertSame(1, $app->queue->pendingCount());
+
+		$repeated = $this->followAccount($app, $actorId);
+		self::assertSame(200, $repeated->status);
+		self::assertSame(1, $app->queue->pendingCount());
+
+		$relationships = $this->relationships($app, [$actorId]);
+		self::assertSame(200, $relationships->status);
+		self::assertSame($actorId, $relationships->decodedBody()[0]['id']);
+		self::assertTrue($relationships->decodedBody()[0]['requested']);
+
+		$unfollowed = $this->followAccount($app, $actorId, 'unfollow');
+		self::assertSame(200, $unfollowed->status);
+		self::assertFalse($unfollowed->decodedBody()['following']);
+		self::assertFalse($unfollowed->decodedBody()['requested']);
+		self::assertSame(2, $app->queue->pendingCount());
+	}
+
 	public function testAccountProfileAndLocalFollowListsArePublicAndPaginated(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob', 'carol']);
@@ -2789,6 +2834,9 @@ final class MastodonApiTest extends TestCase
 		?string $instanceUrl = 'https://social.example',
 		array $instanceConfig = [],
 		?FollowingRepository $followingRepository = null,
+		?RemoteActorFetcher $remoteActors = null,
+		?HttpClient $httpClient = null,
+		?RsaKeyPair $signingKey = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -2801,6 +2849,8 @@ final class MastodonApiTest extends TestCase
 
 		return Application::inMemory(
 			clock: $this->clock,
+			httpClient: $httpClient,
+			signingKey: $signingKey,
 			config: new ArrayConfig([InstanceInfo::CONFIG_APP => $config]),
 			attachmentRepository: $attachments,
 			favouriteRepository: $favourites,
@@ -2810,6 +2860,7 @@ final class MastodonApiTest extends TestCase
 			blobStore: $blobs,
 			localActors: $actors === null ? null : new InMemoryActorDirectory($actors),
 			followingRepository: $followingRepository,
+			remoteActors: $remoteActors,
 		);
 	}
 

@@ -78,11 +78,10 @@ The local subset covers public/unlisted/followers-only text posts, local poll
 creation on an own status, local favourite/unfavourite, private bookmark and
 mute bookkeeping, private list bookkeeping with list timelines and the
 exclusive home filter, boost/reblog bookkeeping, reply context, local
-follow/unfollow and relationship bookkeeping,
+follow/unfollow and remote Follow/Undo lifecycle, relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
-does **not** implement remote timelines, following a remote actor through this
-compatibility prefix, remote favourite federation (outbound `Like`/`Undo` or
+does **not** implement remote timelines, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), remote boost federation, remote notifications,
 streaming, voting on or fetching remote polls, followed tags, OAuth
 authorization/token endpoints, remote search, remote profile fetching, admin
@@ -90,6 +89,13 @@ APIs or the full account management surface. Keyword filters are supported
 locally (see below). Scheduled statuses are
 supported locally (see below). Lists are limited to known local account ids; remote list membership
 is external.
+
+The follow/unfollow routes also accept a remote actor URL. The host must
+provide the guarded remote actor fetcher and signed federation delivery; a new
+follow is pending until a verified `Accept`, and the relationship reports
+`requested: true` while pending. Repeating a follow does not queue a duplicate
+activity. Remote profile lookup and account search remain unsupported.
+
 Local search over local accounts and statuses is implemented below; remote
 search and hashtag search are external. The locally implementable remainder —
 hashtags and hashtag search, followed tags, follow requests/locked accounts
