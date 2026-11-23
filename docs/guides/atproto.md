@@ -31,6 +31,14 @@ what a host must provide.
 - `Domain\Atproto\AtprotoPublication` and its repository (in-memory and PDO
   behind one contract test) store the local idempotency record in
   `social_atproto_publication`.
+- `Domain\Atproto\AtprotoFollowRecord` and `Service\Atproto\AtprotoFollowService`
+  write `app.bsky.graph.follow` records for remote DIDs. The service first
+  stores a pending local projection, uses an account-and-subject deterministic
+  rkey so concurrent retries converge on one PDS record, verifies the record
+  returned by `getRecord`, and only deletes records belonging to the same DID
+  that created them. Hosts persist this projection with
+  `AtprotoFollowSchema` and supply an `AtprotoFollowRepository` to
+  `Application::forHost()`; in-memory assembly uses an in-memory repository.
 - `Service\Atproto\AtprotoPublishService` schedules an automatic attempt after
   a post is written and implements the explicit publish operation. The
   `atproto.publish` job is handled by `AtprotoPublishHandler`.
@@ -344,6 +352,13 @@ than pretending to publish.
 The host must create `AtprotoPublicationSchema` (see [database](database.md))
 and grant the PDS account permission to write `app.bsky.feed.post` records.
 The core never reads or writes the host's credential store.
+
+For remote graph follows, create `AtprotoFollowSchema` as well and grant the
+connected account permission to write and delete `app.bsky.graph.follow`
+records. Follow operations are available only when `social/atproto.publish` is
+enabled and the host supplies a connected account, publisher, deleter, record
+resolver and durable follow repository. A failed PDS request leaves a pending
+row that a repeated request can resume with the same rkey.
 
 ## OAuth session refresh
 

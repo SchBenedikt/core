@@ -169,6 +169,9 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoModerationPolicy;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowRepository;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoFollowRepository;
+use AlohaSocial\Core\Domain\Atproto\PdoAtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoPublicationRepository;
@@ -397,6 +400,7 @@ use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
 use AlohaSocial\Core\Service\Atproto\AtprotoProfileService;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
+use AlohaSocial\Core\Service\Atproto\AtprotoFollowService;
 use AlohaSocial\Core\Service\Atproto\AtprotoSyncHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoSyncService;
 use AlohaSocial\Core\Service\Federation\ActorDocumentService;
@@ -517,6 +521,7 @@ final readonly class Application
 		public ?MediaCollectionService $collections = null,
 		public ?NativePdsService $pds = null,
 		public ?AccountDataService $accountData = null,
+		public ?AtprotoFollowService $atprotoFollows = null,
 	) {
 	}
 
@@ -604,6 +609,7 @@ final readonly class Application
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
 		?InboundBlockRepository $inboundBlocks = null,
+		?AtprotoFollowRepository $atprotoFollowRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -738,6 +744,7 @@ final readonly class Application
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
 			atprotoPublications: $atprotoPublications,
+			atprotoFollowRepository: $atprotoFollowRepository ?? new InMemoryAtprotoFollowRepository(),
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher,
 			inboxResolver: $inboxResolver,
@@ -835,6 +842,7 @@ final readonly class Application
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
 		?InboundBlockRepository $inboundBlocks = null,
+		?AtprotoFollowRepository $atprotoFollowRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -923,6 +931,7 @@ final readonly class Application
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
 			atprotoPublications: $atprotoPublications ?? new PdoAtprotoPublicationRepository($database),
+			atprotoFollowRepository: $atprotoFollowRepository ?? new PdoAtprotoFollowRepository($database),
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient, $atprotoDpop),
 			inboxResolver: $inboxResolver,
@@ -1038,6 +1047,7 @@ final readonly class Application
 		?NativePdsService $pds = null,
 		?AccountDataRepository $accountDataRepository = null,
 		?InboundBlockRepository $inboundBlocks = null,
+		?AtprotoFollowRepository $atprotoFollowRepository = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1168,6 +1178,15 @@ final readonly class Application
 			$httpClient === null ? null : new AtprotoFacets(new XrpcAtprotoIdentityResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
+		);
+		$atprotoFollowService = new AtprotoFollowService(
+			$config,
+			$atprotoFollowRepository ?? new InMemoryAtprotoFollowRepository(),
+			$atprotoAccounts,
+			$atprotoPublisher,
+			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
+			$httpClient === null ? null : new XrpcAtprotoRecordResolver($httpClient),
+			$clock,
 		);
 		// Likes and reposts mirror only posts this instance published; the
 		// subject CID is read from the PDS, so they share the record resolver.
@@ -1809,6 +1828,7 @@ final readonly class Application
 			$mediaCollectionService,
 			$pds,
 			$accountData,
+			$atprotoFollowService,
 		);
 	}
 
