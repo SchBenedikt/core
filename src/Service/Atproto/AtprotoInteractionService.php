@@ -182,6 +182,12 @@ final class AtprotoInteractionService
 	 */
 	private function subject(Post $post, AtprotoAccount $account): AtprotoStrongRef
 	{
+		if (!$post->visibility->mayListPublicly()) {
+			throw new AtprotoInteractionRejectedException(
+				AtprotoInteractionRejectedException::SUBJECT_NOT_PUBLIC,
+			);
+		}
+
 		$publication = $this->publications->findForPost($post->authorId, $post->id);
 		if ($publication === null) {
 			throw new AtprotoInteractionRejectedException(
