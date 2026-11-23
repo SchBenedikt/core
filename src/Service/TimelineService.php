@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Post\Hashtags;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
 use AlohaSocial\Core\Support\Time;
@@ -23,8 +24,9 @@ use InvalidArgumentException;
  * Reading timelines.
  *
  * Limits are clamped rather than rejected: a client asking for 500 posts gets
- * 40. A cursor that is not a timestamp is an error, because silently ignoring
- * it would hand the client the first page again and it would loop.
+ * 40. Cursor timestamps must be canonical. The optional ID breaks ties for
+ * posts published in the same second. Silently ignoring a bad cursor would
+ * hand the client the first page again and it would loop.
  */
 final class TimelineService
 {
@@ -44,10 +46,15 @@ final class TimelineService
 	 *
 	 * @throws InvalidCursorException
 	 */
-	public function home(string $userId, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	public function home(
+		string $userId,
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+		?string $beforeId = null,
+	): array
 	{
 		return array_values(array_filter(
-			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before)),
+			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before, $beforeId)),
 			fn (TimelineEntry $entry): bool => $this->moderation?->allowsActor($entry->authorId) !== false
 				&& ($entry->objectAuthorId === null || $this->moderation?->allowsActor($entry->objectAuthorId) !== false),
 		));
@@ -58,9 +65,19 @@ final class TimelineService
 	 *
 	 * @throws InvalidCursorException
 	 */
-	public function public(int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	public function public(
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+		?string $beforeId = null,
+	): array
 	{
-		return $this->onlyAllowed($this->posts->publicTimeline($this->clamp($limit), $this->cursor($before)));
+		$cursor = $this->cursor($before, $beforeId);
+
+		return $this->onlyAllowed($this->posts->publicTimeline(
+			$this->clamp($limit),
+			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
+			$cursor instanceof TimelineCursor ? $cursor->id : null,
+		));
 	}
 
 	/**
@@ -69,16 +86,28 @@ final class TimelineService
 	 * @return list<Post>
 	 *
 	 * @throws InvalidHashtagException when the tag is empty or malformed
-	 * @throws InvalidCursorException  when `before` is not a timestamp
+	 * @throws InvalidCursorException  when the cursor is malformed
 	 */
-	public function tag(string $tag, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	public function tag(
+		string $tag,
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+		?string $beforeId = null,
+	): array
 	{
 		$normalized = Hashtags::normalize($tag);
 		if ($normalized === null) {
 			throw new InvalidHashtagException($tag);
 		}
 
-		return $this->onlyAllowed($this->posts->hashtagTimeline($normalized, $this->clamp($limit), $this->cursor($before)));
+		$cursor = $this->cursor($before, $beforeId);
+
+		return $this->onlyAllowed($this->posts->hashtagTimeline(
+			$normalized,
+			$this->clamp($limit),
+			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
+			$cursor instanceof TimelineCursor ? $cursor->id : null,
+		));
 	}
 
 	/**
@@ -91,17 +120,21 @@ final class TimelineService
 	 *
 	 * @return list<Post>
 	 *
-	 * @throws InvalidCursorException when `before` is not a timestamp
+	 * @throws InvalidCursorException when the cursor is malformed
 	 */
 	public function followedTags(
 		array $hashtags,
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
+		?string $beforeId = null,
 	): array {
+		$cursor = $this->cursor($before, $beforeId);
+
 		return $this->onlyAllowed($this->posts->followedHashtagTimeline(
 			$hashtags,
 			$this->clamp($limit),
-			$this->cursor($before),
+			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
+			$cursor instanceof TimelineCursor ? $cursor->id : null,
 		));
 	}
 
@@ -130,14 +163,23 @@ final class TimelineService
 	/**
 	 * @throws InvalidCursorException
 	 */
-	private function cursor(?string $before): ?DateTimeImmutable
+	private function cursor(?string $before, ?string $beforeId = null): DateTimeImmutable|TimelineCursor|null
 	{
 		if ($before === null || trim($before) === '') {
+			if ($beforeId !== null && trim($beforeId) !== '') {
+				throw new InvalidCursorException($beforeId);
+			}
+
 			return null;
 		}
 
 		try {
-			return Time::parse(trim($before));
+			$timestamp = Time::parse(trim($before));
+			if ($beforeId === null || trim($beforeId) === '') {
+				return $timestamp;
+			}
+
+			return new TimelineCursor($timestamp, trim($beforeId));
 		} catch (InvalidArgumentException) {
 			throw new InvalidCursorException($before);
 		}

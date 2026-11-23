@@ -581,7 +581,7 @@ request: they are logged with a stable `thread_*` reason and omitted. See
 ## Timelines
 
 ```http
-GET /api/v1/timelines/public?limit=20&before=2026-11-11T10:00:00Z
+GET /api/v1/timelines/public?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
 GET /api/v1/timelines/home
 ```
 
@@ -589,8 +589,10 @@ GET /api/v1/timelines/home
 {"posts": [ … ]}
 ```
 
-`limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. A cursor
-that is not a canonical timestamp is `400 invalid_cursor`. `GET
+`limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. Pass
+`before_id` with it to break ties between posts published in the same second.
+A cursor that is not a canonical timestamp, or an ID without a timestamp, is
+`400 invalid_cursor`. `GET
 /api/v1/timelines/tag/{tag}` uses the same limit and cursor rules, normalizes
 the tag by stripping one leading `#` and lowercasing it, and returns
 `{"tag": "devops", "posts": […]}`. Tags are extracted from post content when
@@ -620,7 +622,7 @@ Content-Type: application/json
 {"tag": "#DevOps"}
 
 DELETE /api/v1/followed_tags/devops
-GET /api/v1/timelines/followed_tags?limit=20&before=2026-11-11T10:00:00Z
+GET /api/v1/timelines/followed_tags?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
 ```
 
 Follows are private to the signed-in account and persist in

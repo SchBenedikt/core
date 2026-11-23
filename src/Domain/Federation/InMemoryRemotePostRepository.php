@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Federation;
 
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use DateTimeImmutable;
 
 /**
@@ -136,14 +137,16 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 	public function timelineForActors(
 		array $actorIds,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
 		$wanted = array_fill_keys($actorIds, true);
 		$posts = array_values(array_filter(
 			$this->posts,
 			static fn (RemotePost $post): bool => $post->deletedAt === null
 				&& isset($wanted[$post->actorId])
-				&& ($before === null || $post->publishedAt < $before),
+				&& ($before === null || ($before instanceof TimelineCursor
+					? ($post->publishedAt < $before->publishedAt || ($post->publishedAt == $before->publishedAt && strcmp($post->activityId, $before->id) < 0))
+					: $post->publishedAt < $before)),
 		));
 
 		usort($posts, static function (RemotePost $a, RemotePost $b): int {

@@ -24,7 +24,7 @@ use AlohaSocial\Core\Service\TimelineService;
 use function array_map;
 
 /**
- * `GET /api/v1/timelines/followed_tags?limit=&before=&include_filtered=`
+ * `GET /api/v1/timelines/followed_tags?limit=&before=&before_id=&include_filtered=`
  *
  * Posts carrying any tag the caller follows. The same limit, exclusive
  * timestamp cursor and public/unlisted visibility rules as the public tag
@@ -59,6 +59,7 @@ final class FollowedHashtagTimelineHandler implements Handler
 				$tags,
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
+				$request->queryParam('before_id'),
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

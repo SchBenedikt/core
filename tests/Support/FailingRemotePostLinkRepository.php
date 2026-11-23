@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Support;
 
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use DateTimeImmutable;
 
@@ -68,7 +69,7 @@ final class FailingRemotePostLinkRepository implements RemotePostRepository
 	public function timelineForActors(
 		array $actorIds,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
 		return $this->inner->timelineForActors($actorIds, $limit, $before);
 	}

@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Db\Connection;
@@ -46,10 +47,14 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 	public function forUser(
 		string $localUserId,
 		int $limit,
-		?DateTimeImmutable $before = null,
+		DateTimeImmutable|TimelineCursor|null $before = null,
 	): array {
-		$localCursor = $before === null ? '' : ' AND p.published_at < :local_before';
-		$remoteCursor = $before === null ? '' : ' AND r.published_at < :remote_before';
+		$localCursor = $before === null ? '' : ($before instanceof TimelineCursor
+			? ' AND (p.published_at < :local_before OR (p.published_at = :local_before_equal AND p.id < :local_before_id))'
+			: ' AND p.published_at < :local_before');
+		$remoteCursor = $before === null ? '' : ($before instanceof TimelineCursor
+			? ' AND (r.published_at < :remote_before OR (r.published_at = :remote_before_equal AND r.activity_id < :remote_before_id))'
+			: ' AND r.published_at < :remote_before');
 
 		$sql = 'SELECT item_id, author_id, object_id, object_author_id, content,'
 			. ' content_warning, published_at, visibility, boosted_by'
@@ -108,8 +113,15 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		];
 
 		if ($before !== null) {
-			$parameters['local_before'] = Time::format($before);
-			$parameters['remote_before'] = Time::format($before);
+			$time = $before instanceof TimelineCursor ? $before->publishedAt : $before;
+			$parameters['local_before'] = Time::format($time);
+			$parameters['remote_before'] = Time::format($time);
+			if ($before instanceof TimelineCursor) {
+				$parameters['local_before_equal'] = Time::format($time);
+				$parameters['remote_before_equal'] = Time::format($time);
+				$parameters['local_before_id'] = $before->id;
+				$parameters['remote_before_id'] = $before->id;
+			}
 		}
 
 		$rows = $this->db->fetchAll($sql, $parameters);

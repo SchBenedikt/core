@@ -23,7 +23,7 @@ use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
 
 /**
- * `GET /api/v1/timelines/home?limit=&before=&include_filtered=`
+ * `GET /api/v1/timelines/home?limit=&before=&before_id=&include_filtered=`
  *
  * Filters run after the timeline has applied visibility and block rules. A
  * hidden entry is removed from the page; a warned entry stays, carries its
@@ -55,6 +55,7 @@ final class HomeTimelineHandler implements Handler
 				$userId,
 				$fetch,
 				$request->queryParam('before'),
+				$request->queryParam('before_id'),
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

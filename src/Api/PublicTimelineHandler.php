@@ -20,7 +20,7 @@ use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
 
 /**
- * `GET /api/v1/timelines/public?limit=&before=&include_filtered=`
+ * `GET /api/v1/timelines/public?limit=&before=&before_id=&include_filtered=`
  *
  * Anonymous readers have no rules, so the page is unfiltered. A signed-in
  * reader gets the same visibility decision as before, followed by the
@@ -46,6 +46,7 @@ final class PublicTimelineHandler implements Handler
 			$posts = $this->timelines->public(
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
+				$request->queryParam('before_id'),
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

@@ -23,7 +23,7 @@ use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
 
 /**
- * `GET /api/v1/timelines/tag/{tag}?limit=&before=&include_filtered=`
+ * `GET /api/v1/timelines/tag/{tag}?limit=&before=&before_id=&include_filtered=`
  *
  * A public tag timeline. Followers-only and direct posts are never included,
  * so the route needs no viewer and cannot leak a restricted post through a
@@ -51,6 +51,7 @@ final class HashtagTimelineHandler implements Handler
 				$rawTag,
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
+				$request->queryParam('before_id'),
 			);
 		} catch (InvalidHashtagException $exception) {
 			throw HttpException::badRequest('invalid_tag', $exception->getMessage());
