@@ -163,7 +163,7 @@ The object exposes the parts a host needs:
 | `$app->routes` | The manifest to serve and to test against |
 | `$app->worker` | `runOnce()` from cron or a worker loop |
 | `$app->queue` | The same queue the services write to |
-| `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following` | Services for host pages or commands; the home timeline includes remote posts from followed actors |
+| `$app->posts`, `$app->timelines`, `$app->followers`, `$app->following`, `$app->reactions` | Services for host pages or commands; the home timeline includes remote posts from followed actors, and `reactions` exposes policy-checked local/remote reactions outside the optional Mastodon HTTP routes |
 | `$app->followRequests`, `$app->profileUpdates` | Accept/reject a pending request for a locked account and publish a signed `Update(Person)` after the host changed the profile; `null` only if the host injected its own service |
 | `$app->inbox` | `null` when inbound federation is not configured |
 | `$app->accountMoves` | Receive a signed `Move`, start a local move and continue a batched migration; `null` without a `RemoteActorFetcher` |

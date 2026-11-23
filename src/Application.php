@@ -526,6 +526,7 @@ final readonly class Application
 		public ?NativePdsService $pds = null,
 		public ?AccountDataService $accountData = null,
 		public ?AtprotoFollowService $atprotoFollows = null,
+		public ?ReactionService $reactions = null,
 	) {
 	}
 
@@ -1849,6 +1850,7 @@ final readonly class Application
 			$pds,
 			$accountData,
 			$atprotoFollowService,
+			$reactionService,
 		);
 	}
 
