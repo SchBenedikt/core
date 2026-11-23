@@ -81,14 +81,21 @@ exclusive home filter, boost/reblog bookkeeping, reply context, local
 follow/unfollow and remote Follow/Undo lifecycle, relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
-does **not** implement remote timelines, remote favourite federation (outbound `Like`/`Undo` or
-remote favourite counts), remote boost federation, remote notifications,
+does **not** implement remote timelines, remote favourite counts, remote boost federation, remote notifications,
 streaming, fetching remote polls, followed tags, OAuth
 authorization/token endpoints, remote search, remote profile fetching, admin
 APIs or the full account management surface. Keyword filters are supported
 locally (see below). Scheduled statuses are
 supported locally (see below). Lists are limited to known local account ids; remote list membership
 is external.
+
+The favourite/unfavourite routes also accept the object URL of a cached remote
+post, but only when the signed-in account follows its author and neither side
+has blocked the other. They send ActivityPub `Like`/`Undo(Like)` through the
+shared reaction service; repeat actions are idempotent. `GET /statuses/{id}`
+can read the same cached remote status for that follower. The remote projection
+does not claim remote favourite counts, imported media, or remote boosts;
+remote timeline delivery remains outside this API slice.
 
 The follow/unfollow routes also accept a remote actor URL. The host must
 provide the guarded remote actor fetcher and signed federation delivery; a new

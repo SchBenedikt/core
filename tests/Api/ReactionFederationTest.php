@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
@@ -19,7 +20,11 @@ use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Interaction\InMemoryReactionRepository;
+use AlohaSocial\Core\Domain\Interaction\ReactionDirection;
+use AlohaSocial\Core\Domain\Interaction\ReactionKind;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -424,6 +429,118 @@ final class ReactionFederationTest extends TestCase
 		self::assertSame(200, $mastodon->status);
 		self::assertSame(2, $mastodon->decodedBody()['favourites_count']);
 		self::assertTrue($mastodon->decodedBody()['favourited']);
+	}
+
+	public function testMastodonCanLikeAndUnlikeAFollowedRemoteStatus(): void
+	{
+		$objectId = 'https://remote.example/objects/post-1';
+		$this->remotePosts->insert(new RemotePost(
+			'https://remote.example/activities/create-1',
+			$objectId,
+			self::ACTOR,
+			RemotePostKind::Post,
+			'<script>alert(1)</script> hello',
+			null,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+		$this->following->insert(new FollowedActor(
+			'follow-alice-remote',
+			'alice',
+			self::ACTOR,
+			self::INBOX,
+			Time::parse('2026-11-11T08:00:00Z'),
+		));
+		$encodedId = rawurlencode($objectId);
+
+		$like = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $encodedId . '/favourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(200, $like->status, (string) json_encode($like->decodedBody()));
+		self::assertTrue($like->decodedBody()['favourited']);
+		self::assertSame($objectId, $like->decodedBody()['uri']);
+		self::assertStringContainsString('&lt;script&gt;', $like->decodedBody()['content']);
+
+		$repeated = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $encodedId . '/favourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(200, $repeated->status);
+		self::assertCount(1, array_filter(
+			$this->app->queue->pending(),
+			static fn ($job): bool => $job->type === 'federation.deliver',
+		));
+
+		$read = $this->app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/statuses/' . $encodedId,
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(200, $read->status);
+		self::assertTrue($read->decodedBody()['favourited']);
+
+		$unlike = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $encodedId . '/unfavourite',
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(200, $unlike->status, (string) json_encode($unlike->decodedBody()));
+		self::assertFalse($unlike->decodedBody()['favourited']);
+		self::assertNull($this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			$objectId,
+			ReactionKind::Like,
+			null,
+		));
+	}
+
+	public function testMastodonRemoteFavouriteRequiresAnUnblockedFollowedAuthor(): void
+	{
+		$objectId = 'https://remote.example/objects/post-private-to-followers';
+		$this->remotePosts->insert(new RemotePost(
+			'https://remote.example/activities/create-2',
+			$objectId,
+			self::ACTOR,
+			RemotePostKind::Post,
+			'cached remote post',
+			null,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+		$path = '/api/mastodon/v1/statuses/' . rawurlencode($objectId) . '/favourite';
+		$notFollowed = $this->app->handle(new Request(
+			method: 'POST',
+			path: $path,
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(404, $notFollowed->status);
+		self::assertSame([], $this->app->queue->pending());
+
+		$this->following->insert(new FollowedActor(
+			'follow-alice-remote',
+			'alice',
+			self::ACTOR,
+			self::INBOX,
+			Time::parse('2026-11-11T08:00:00Z'),
+		));
+		$this->blocks->insert(new Block('local-block-remote', 'alice', self::ACTOR, Time::parse('2026-11-11T09:30:00Z')));
+
+		$blocked = $this->app->handle(new Request(
+			method: 'POST',
+			path: $path,
+			userId: 'alice',
+			scopes: ['write:favourites'],
+		));
+		self::assertSame(403, $blocked->status);
+		self::assertSame('blocked_actor', $blocked->decodedBody()['error']['code']);
+		self::assertSame([], $this->app->queue->pending());
 	}
 
 	private function app(): Application
