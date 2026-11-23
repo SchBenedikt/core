@@ -162,7 +162,7 @@ final class InboundTimelineTest extends TestCase
 			'reply post',
 			'2026-11-11T10:02:00Z',
 		);
-		$reply['object']['inReplyTo'] = self::NOTE_1;
+		$reply['object']['inReplyTo'] = ['type' => 'Link', 'href' => self::NOTE_1];
 		self::assertSame(202, $this->deliver($app, $reply)->status);
 
 		self::assertSame([self::NOTE_1], array_column($this->feed($app)->decodedBody()['posts'], 'object_id'));

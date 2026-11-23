@@ -381,14 +381,14 @@ final class RemotePostFactory
 			return null;
 		}
 
-		$id = is_array($value) ? ($value['id'] ?? $value['@id'] ?? null) : $value;
+		$id = is_array($value) ? ($value['id'] ?? $value['@id'] ?? $value['href'] ?? null) : $value;
 		if (!is_string($id) || trim($id) === '' || mb_strlen(trim($id)) > RemotePost::MAX_ID_LENGTH) {
 			throw new InboxRejectedException('invalid_activity', 'The reply target must have a valid id.');
 		}
 
 		$id = trim($id);
 		$scheme = parse_url($id, PHP_URL_SCHEME);
-		if ($scheme !== 'http' && $scheme !== 'https') {
+		if (!is_string($scheme) || !in_array(strtolower($scheme), ['http', 'https'], true)) {
 			throw new InboxRejectedException('invalid_activity', 'The reply target must be an http(s) URL.');
 		}
 
