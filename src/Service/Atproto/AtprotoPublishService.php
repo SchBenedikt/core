@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\MediaKind;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -123,6 +124,40 @@ final class AtprotoPublishService
 	}
 
 	/**
+	 * Queues an upsert of an existing public post record after a local edit.
+	 *
+	 * AT Protocol has no in-place edit operation, but the PDS record key is
+	 * stable, so `putRecord` can replace the record while preserving its URI.
+	 * If the edited post can no longer be represented, remove its public mirror
+	 * instead of leaving stale content visible there.
+	 */
+	public function scheduleUpdate(Post $post): void
+	{
+		if (!$this->isEnabled() || !$this->isConfigured()) {
+			return;
+		}
+
+		if ($this->publications->findForPost($post->authorId, $post->id) === null) {
+			return;
+		}
+
+		if ($this->rejectionReason($post) !== null) {
+			$this->scheduleDelete($post);
+			return;
+		}
+
+		if ($this->accounts?->resolve($post->authorId) === null) {
+			return;
+		}
+
+		$this->queue->push(JobType::ATPROTO_PUBLISH, [
+			'user_id' => $post->authorId,
+			'post_id' => $post->id,
+			'update' => true,
+		], subject: JobSubject::account($post->authorId));
+	}
+
+	/**
 	 * Deletes the remote AT Protocol record for a local post and removes the
 	 * local publication row. Repeating this operation is a no-op.
 	 *
@@ -198,7 +233,7 @@ final class AtprotoPublishService
 	/**
 	 * @param list<AtprotoMedia> $media images or one video to upload and embed
 	 */
-	public function publish(string $localUserId, string $postId, array $media = []): AtprotoPublication
+	public function publish(string $localUserId, string $postId, array $media = [], bool $update = false): AtprotoPublication
 	{
 		if (!$this->isEnabled()) {
 			throw new AtprotoPublishDisabledException();
@@ -214,8 +249,11 @@ final class AtprotoPublishService
 		}
 
 		$existing = $this->publications->findForPost($localUserId, $postId);
-		if ($existing !== null) {
+		if ($existing !== null && !$update) {
 			return $existing;
+		}
+		if ($update && $existing === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::PUBLICATION_MISSING);
 		}
 
 		$rejection = $this->rejectionReason($post, $media);
@@ -233,6 +271,14 @@ final class AtprotoPublishService
 		}
 
 		$rkey = Tid::forRecord($post->publishedAt, $post->id . '|' . $account->did);
+		if ($existing !== null) {
+			$expectedUri = 'at://' . $account->did . '/app.bsky.feed.post/' . $existing->rkey;
+			if ($existing->uri !== $expectedUri) {
+				throw new AtprotoAccountNotConnectedException();
+			}
+
+			$rkey = $existing->rkey;
+		}
 		$uri = $this->publisher?->publish(
 			$account,
 			$rkey,
@@ -241,6 +287,13 @@ final class AtprotoPublishService
 
 		if ($uri === null) {
 			throw new AtprotoNotConfiguredException();
+		}
+		if ($existing !== null) {
+			if ($uri !== $existing->uri) {
+				throw new AtprotoPublishFailedException(502, 'The PDS changed the URI of an existing publication.');
+			}
+
+			return $existing;
 		}
 
 		$publication = new AtprotoPublication(

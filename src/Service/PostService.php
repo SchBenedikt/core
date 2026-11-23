@@ -391,6 +391,8 @@ final class PostService
 				// public, remove that record in the same durable transaction as
 				// the audience change so a stale public copy cannot leak it.
 				$this->atproto?->scheduleDelete($post);
+			} elseif ($edited->visibility === Visibility::Public) {
+				$this->atproto?->scheduleUpdate($edited);
 			}
 
 			if ($deliver) {

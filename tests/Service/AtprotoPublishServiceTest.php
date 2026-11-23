@@ -189,6 +189,64 @@ final class AtprotoPublishServiceTest extends TestCase
 		self::assertCount(0, $this->queue->pending());
 	}
 
+	public function testEditedPublishedPostCanUpsertItsExistingPdsRecord(): void
+	{
+		$post = $this->post(content: 'edited public text');
+		$this->posts->insert($post);
+		$publication = new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z'));
+		$this->publications->insert($publication);
+		$this->http->queueResponse($this->published(self::URI));
+
+		$result = $this->serviceWith()->publish('alice', $post->id, update: true);
+
+		$write = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('post1', $write['rkey']);
+		self::assertSame('edited public text', $write['record']['text']);
+		self::assertSame($publication, $result);
+		self::assertSame($publication, $this->publications->findForPost('alice', $post->id));
+	}
+
+	public function testUpdateJobDoesNotCreateANewPublicationWhenTheOriginalRowIsGone(): void
+	{
+		$post = $this->post();
+		$this->posts->insert($post);
+
+		try {
+			$this->serviceWith()->publish('alice', $post->id, update: true);
+			self::fail('An update job must not create a publication from scratch.');
+		} catch (AtprotoPostRejectedException $exception) {
+			self::assertSame(AtprotoPostRejectedException::PUBLICATION_MISSING, $exception->reason);
+		}
+
+		self::assertCount(0, $this->http->requests);
+	}
+
+	public function testScheduleUpdateUsesExistingPublicationAndSameAccountSubject(): void
+	{
+		$post = $this->post(content: 'edited');
+		$this->publications->insert(new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z')));
+
+		$this->service->scheduleUpdate($post);
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('atproto.publish', $jobs[0]->type);
+		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1', 'update' => true], $jobs[0]->payload);
+	}
+
+	public function testUnrepresentableEditSchedulesDeletionOfExistingPublicMirror(): void
+	{
+		$post = $this->post(content: str_repeat('x', 301));
+		$this->publications->insert(new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z')));
+
+		$this->service->scheduleUpdate($post);
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('atproto.delete', $jobs[0]->type);
+		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1'], $jobs[0]->payload);
+	}
+
 	public function testFacetsArePartOfThePublishedRecord(): void
 	{
 		$post = $this->post(content: 'hello #tag and https://example.com/x');
