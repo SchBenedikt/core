@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
@@ -18,6 +19,10 @@ use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePoll;
+use AlohaSocial\Core\Domain\Federation\RemotePollOption;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
@@ -32,6 +37,7 @@ use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Http\HttpClient;
+use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Service\InstanceInfo;
@@ -2525,6 +2531,55 @@ final class MastodonApiTest extends TestCase
 		self::assertSame($poll, $statusRead->decodedBody()['poll']);
 	}
 
+	public function testImportedRemotePollsCanBeReadAndVotedThroughMastodonApi(): void
+	{
+		$pollId = 'https://remote.example/questions/42';
+		$polls = new InMemoryRemotePollRepository();
+		$polls->upsert(new RemotePoll(
+			objectId: $pollId,
+			actorId: 'https://remote.example/users/bob',
+			activityId: 'https://remote.example/activities/42',
+			title: 'A remote question',
+			options: [new RemotePollOption('Yes'), new RemotePollOption('No', 3)],
+			multiple: false,
+			endsAt: $this->clock->now()->modify('+1 hour'),
+			closedAt: null,
+			votersCount: 3,
+			updatedAt: $this->clock->now(),
+		));
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-remote-bob',
+			localUserId: 'alice',
+			actorId: 'https://remote.example/users/bob',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Accepted,
+		));
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode([
+			'id' => 'https://remote.example/users/bob',
+			'inbox' => 'https://remote.example/users/bob/inbox',
+		], JSON_THROW_ON_ERROR)));
+		$app = $this->app(httpClient: $http, remotePollRepository: $polls, followingRepository: $following);
+
+		self::assertSame(404, $this->showPoll($app, $pollId)->status);
+		$read = $this->showPoll($app, $pollId, userId: 'alice');
+		self::assertSame(200, $read->status);
+		self::assertSame($pollId, $read->decodedBody()['id']);
+		self::assertSame(3, $read->decodedBody()['votes_count']);
+		self::assertSame([
+			['title' => 'Yes', 'votes_count' => 0],
+			['title' => 'No', 'votes_count' => 3],
+		], $read->decodedBody()['options']);
+
+		$vote = $this->votePoll($app, $pollId, ['0'], userId: 'alice');
+		self::assertSame(200, $vote->status);
+		self::assertSame([0], $vote->decodedBody()['own_votes']);
+		self::assertTrue($vote->decodedBody()['voted']);
+		self::assertSame(1, count($http->requests));
+	}
+
 	public function testAnIdenticalPollVoteIsIdempotentButADifferentSecondVoteIsRejected(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob']);
@@ -2857,6 +2912,7 @@ final class MastodonApiTest extends TestCase
 		?HttpClient $httpClient = null,
 		?RsaKeyPair $signingKey = null,
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
+		?InMemoryRemotePollRepository $remotePollRepository = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -2882,6 +2938,7 @@ final class MastodonApiTest extends TestCase
 			followingRepository: $followingRepository,
 			remoteActors: $remoteActors,
 			inboundBlocks: $inboundBlocks,
+			remotePollRepository: $remotePollRepository,
 		);
 	}
 

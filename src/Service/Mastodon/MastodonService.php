@@ -61,6 +61,8 @@ use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\PostHeldException;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Service\Federation\DeliveryFailedException;
+use AlohaSocial\Core\Service\Federation\RemotePollException;
+use AlohaSocial\Core\Service\Federation\RemotePollService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
@@ -75,7 +77,10 @@ use InvalidArgumentException;
  * It reuses the existing post service for writes and the existing repositories
  * for reads. There is no second status table: a Mastodon status is a core
  * post with an API-shaped projection. Remote posts, remote boosts and
- * streaming are intentionally outside this local slice. Favourites, local
+ * streaming are intentionally outside this local slice. Remote poll reads
+ * and votes use the federation Question lifecycle and require an accepted
+ * follow because stored Questions do not retain their original audience.
+ * Favourites, local
  * boosts, local follow edges and notifications are local bookkeeping; outgoing
  * remote follows use the shared federation lifecycle. Notifications
  * are recorded from local favourites/follows/replies/boosts and verified
@@ -126,6 +131,7 @@ final class MastodonService
 		private readonly ?RemoteActorFetcher $remoteActors = null,
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
+		private readonly ?RemotePollService $remotePolls = null,
 	) {
 	}
 
@@ -401,6 +407,14 @@ final class MastodonService
 	public function showPoll(string $pollId, ?string $viewerId): array
 	{
 		$this->requireEnabled();
+		if ($this->isRemotePollId($pollId)) {
+			try {
+				$this->requireRemotePollAccess($pollId, $viewerId);
+				return $this->remoteMastodonPoll($this->requireRemotePolls()->present($pollId, $viewerId));
+			} catch (RemotePollException $exception) {
+				throw new MastodonRequestException($exception->status, $exception->reason, $exception->getMessage());
+			}
+		}
 
 		$post = $this->pollPost($pollId, $viewerId);
 		$poll = $this->presenter->poll($post, $viewerId);
@@ -426,6 +440,25 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemotePollId($pollId)) {
+			$positions = [];
+			foreach ($choices as $choice) {
+				if (is_int($choice)) {
+					$positions[] = $choice;
+				} elseif (is_string($choice) && preg_match('/^\\d+$/', trim($choice)) === 1) {
+					$positions[] = (int) $choice;
+				} else {
+					throw new MastodonRequestException(422, 'validation_failed', 'choices must contain poll option positions.');
+				}
+			}
+
+			try {
+				$this->requireRemotePollAccess($pollId, $userId);
+				return $this->remoteMastodonPoll($this->requireRemotePolls()->vote($userId, $pollId, $positions, $this->now()));
+			} catch (RemotePollException $exception) {
+				throw new MastodonRequestException($exception->status, $exception->reason, $exception->getMessage());
+			}
+		}
 
 		$post = $this->pollPost($pollId, $userId);
 		$poll = $post->poll;
@@ -1569,6 +1602,50 @@ final class MastodonService
 		}
 
 		return $post;
+	}
+
+	private function isRemotePollId(string $pollId): bool
+	{
+		return filter_var($pollId, FILTER_VALIDATE_URL) !== false
+			&& in_array(strtolower((string) parse_url($pollId, PHP_URL_SCHEME)), ['http', 'https'], true);
+	}
+
+	private function requireRemotePolls(): RemotePollService
+	{
+		if ($this->remotePolls === null) {
+			throw new MastodonRequestException(503, 'polls_not_configured', 'Remote poll storage is not configured.');
+		}
+
+		return $this->remotePolls;
+	}
+
+	private function requireRemotePollAccess(string $pollId, ?string $viewerId): void
+	{
+		$polls = $this->requireRemotePolls();
+		$poll = $polls->find($pollId);
+		$follow = $viewerId === null ? null : $this->followingRepository?->find($viewerId, $poll->actorId);
+		if ($follow?->state !== FollowState::Accepted) {
+			// Remote Question rows do not retain their original audience. Only
+			// expose them through this compatibility endpoint to accepted followers.
+			throw new MastodonRequestException(404, 'not_found', 'Poll not found.');
+		}
+	}
+
+	/** @param array<string, mixed> $poll */
+	private function remoteMastodonPoll(array $poll): array
+	{
+		return [
+			'id' => $poll['object_id'],
+			'expires_at' => $poll['ends_at'],
+			'expired' => $poll['closed'],
+			'multiple' => $poll['multiple'],
+			'votes_count' => $poll['votes_count'],
+			'voters_count' => $poll['voters_count'],
+			'voted' => $poll['voted'],
+			'own_votes' => $poll['own_votes'],
+			'options' => $poll['options'],
+			'emojis' => [],
+		];
 	}
 
 	/**

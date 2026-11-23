@@ -83,7 +83,7 @@ local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. It deliberately
 does **not** implement remote timelines, remote favourite federation (outbound `Like`/`Undo` or
 remote favourite counts), remote boost federation, remote notifications,
-streaming, voting on or fetching remote polls, followed tags, OAuth
+streaming, fetching remote polls, followed tags, OAuth
 authorization/token endpoints, remote search, remote profile fetching, admin
 APIs or the full account management surface. Keyword filters are supported
 locally (see below). Scheduled statuses are
@@ -497,13 +497,18 @@ followers-only status is readable and votable by its author and by an accepted
 local follower, through the same visibility rule as statuses; everyone else
 gets `404`.
 
-`GET {prefix}/polls/{id}` is public and returns the poll object; when the host
-supplies an authenticated user id it includes that viewer's `voted` and
-`own_votes`. Without a vote repository, or before the host has created its
-table, the read still works but reports `voted: false`; only the write route
-answers `503 polls_not_configured`. Poll voting is local bookkeeping only and does not federate an
-ActivityPub `Question`; remote poll fetching/voting and federation remain
-external.
+`GET {prefix}/polls/{id}` reads local polls by their `poll-<postId>` id. It can
+also read an imported ActivityPub `Question` when `{id}` is that exact
+Question URL (URL-encoded as one path segment). The remote response includes
+the peer's option counts plus locally recorded votes, and the viewer's own
+choices when authenticated. Remote Question rows do not retain their original
+audience, so remote reads and votes are available only to a local account with
+an accepted follow of the Question author; other requests receive `404`.
+Remote votes use the existing signed ActivityPub `Create(Note)` delivery. A
+host without remote actor lookup/delivery configured receives `503
+delivery_unavailable` instead of a successful-looking vote. This endpoint
+does not fetch Questions itself, and poll creation still does not federate a
+Question.
 
 Poll creation does not federate an ActivityPub `Question` in this slice.
 
@@ -1281,8 +1286,8 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
-  Remote profile fetching, remote relationship APIs, remote polls (fetching,
-  voting or federating a `Question`), domain blocks that would need a remote
+  Remote profile fetching, remote relationship APIs, remote poll fetching,
+  domain blocks that would need a remote
   moderation feed, and remote search remain external; the local
   follow/unfollow, relationship, profile, follower/following list,
   bookmark, mute, list, notification, search, poll-creation/voting and
