@@ -61,7 +61,7 @@ function formatDate(value: string): string {
 .aloha-post-card {
 	background: var(--aloha-post-background, transparent);
 	border: 1px solid var(--aloha-border-color, #d9dee7);
-	border-radius: 0.75rem;
+	border-radius: 0.5rem;
 	padding: 1rem;
 }
 
