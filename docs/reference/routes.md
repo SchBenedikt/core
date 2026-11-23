@@ -1196,6 +1196,13 @@ written in the same transaction as its post; invalid options or expiry are
 `422 validation_failed` and leave no status. `Idempotency-Key` makes a retry
 return the same status, including its poll, instead of inserting a duplicate.
 
+The poll routes also accept an imported ActivityPub Question URL as `{id}`
+(URL-encoded into one path segment). Remote Questions can be read and voted
+only by an account with an accepted follow of the author because their stored
+rows do not retain audience metadata. Votes are delivered as signed
+`Create(Note)` activities through the federation queue; the Mastodon route does
+not fetch Questions itself.
+
 `POST /api/mastodon/v1/statuses/{id}/favourite` and
 `POST /api/mastodon/v1/statuses/{id}/unfavourite` require
 `write:favourites`. They write only the caller's row in `social_favourite` and

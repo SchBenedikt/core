@@ -1543,7 +1543,7 @@ final class Routes
 				handler: MastodonPollHandler::class,
 				requiresAuth: false,
 				rateLimit: '120/60',
-				summary: 'Read one local poll, including the viewer\'s own choices when authenticated.',
+				summary: 'Read one local poll or an imported remote poll from an accepted follow, including the viewer\'s own choices.',
 			),
 			new Route(
 				name: 'mastodon.polls.vote',
@@ -1553,7 +1553,7 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
-				summary: 'Vote in a visible local poll; an identical retry is idempotent.',
+				summary: 'Vote in a visible local poll or an imported remote poll from an accepted follow; an identical retry is idempotent.',
 			),
 			new Route(
 					name: 'mastodon.accounts.relationships',
