@@ -13,6 +13,10 @@ use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRevisionRepository;
 use AlohaSocial\Core\Domain\Post\PostAccessDeniedException;
@@ -20,14 +24,18 @@ use AlohaSocial\Core\Domain\Post\PostConflictException;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
+use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
+use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use PHPUnit\Framework\TestCase;
@@ -51,6 +59,8 @@ final class PostEditTest extends TestCase
 
 	private InMemoryJobQueue $queue;
 
+	private InMemoryAtprotoPublicationRepository $atprotoPublications;
+
 	private ArrayConfig $config;
 
 	private ActivityFactory $activities;
@@ -62,8 +72,12 @@ final class PostEditTest extends TestCase
 		$this->attachments = new InMemoryAttachmentRepository();
 		$this->revisions = new InMemoryPostRevisionRepository();
 		$this->queue = new InMemoryJobQueue($this->clock, new SequenceIdGenerator('job-'));
+		$this->atprotoPublications = new InMemoryAtprotoPublicationRepository();
 		$this->config = new ArrayConfig([
-			'social' => ['instance.url' => 'https://social.example'],
+			'social' => [
+				'instance.url' => 'https://social.example',
+				'atproto.publish' => 'true',
+			],
 		]);
 		$this->activities = new ActivityFactory($this->config);
 	}
@@ -374,6 +388,29 @@ final class PostEditTest extends TestCase
 		));
 	}
 
+	public function testNarrowingAudienceQueuesDeleteForAnExistingAtprotoPublication(): void
+	{
+		$service = $this->service(atproto: $this->atprotoService());
+		$post = $service->create(new CreatePost('alice', 'public text'));
+		$this->atprotoPublications->insert(new AtprotoPublication(
+			'alice',
+			$post->id,
+			'post1',
+			'at://did:plc:alice/app.bsky.feed.post/post1',
+			$post->publishedAt,
+		));
+
+		$service->edit('alice', $post->id, new UpdatePost(content: 'private now', visibility: Visibility::Followers));
+
+		$deleteJobs = array_values(array_filter(
+			$this->queue->pending(),
+			static fn ($job): bool => $job->type === JobType::ATPROTO_DELETE,
+		));
+		self::assertCount(1, $deleteJobs);
+		self::assertSame('alice', $deleteJobs[0]->payload['user_id']);
+		self::assertSame($post->id, $deleteJobs[0]->payload['post_id']);
+	}
+
 	public function testAnEmptyCommandStillBumpsTheRevision(): void
 	{
 		$service = $this->service();
@@ -386,7 +423,7 @@ final class PostEditTest extends TestCase
 		self::assertCount(1, $this->revisions->forPost($post->id));
 	}
 
-	private function service(?InboxResolver $inboxes = null): PostService
+	private function service(?InboxResolver $inboxes = null, ?AtprotoPublishService $atproto = null): PostService
 	{
 		return new PostService(
 			$this->posts,
@@ -396,7 +433,26 @@ final class PostEditTest extends TestCase
 			$this->activities,
 			$this->clock,
 			new SequenceIdGenerator('post-'),
+			atproto: $atproto,
 			revisions: $this->revisions,
+		);
+	}
+
+	private function atprotoService(): AtprotoPublishService
+	{
+		$publisher = new XrpcAtprotoPublisher(new FakeHttpClient());
+
+		return new AtprotoPublishService(
+			$this->config,
+			$this->posts,
+			$this->atprotoPublications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			$publisher,
+			$this->queue,
+			$this->clock,
+			$publisher,
 		);
 	}
 }

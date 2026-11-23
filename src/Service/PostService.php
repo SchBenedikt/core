@@ -383,9 +383,15 @@ final class PostService
 		$deliver = $visibility === $post->visibility && $visibility !== Visibility::Direct;
 		$mentionTargets = $deliver ? $this->resolveMentions($content, $post->authorId) : [];
 
-		$this->runWrite(function () use ($edited, $snapshot, $editedAt, $deliver, $mentionTargets): void {
+		$this->runWrite(function () use ($post, $edited, $snapshot, $editedAt, $deliver, $mentionTargets): void {
 			$this->posts->update($edited);
 			$this->revisions?->add($snapshot);
+			if (!$edited->visibility->mayListPublicly()) {
+				// AT Protocol records are public. If this post was mirrored while
+				// public, remove that record in the same durable transaction as
+				// the audience change so a stale public copy cannot leak it.
+				$this->atproto?->scheduleDelete($post);
+			}
 
 			if ($deliver) {
 				$this->enqueueDelivery(
