@@ -12,6 +12,8 @@ namespace AlohaSocial\Core\Service\Mastodon;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
 use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\Mute;
@@ -122,6 +124,8 @@ final class MastodonService
 		private readonly ?FollowingService $federatedFollowing = null,
 		private readonly ?FollowingRepository $followingRepository = null,
 		private readonly ?RemoteActorFetcher $remoteActors = null,
+		private readonly ?BlockRepository $blocks = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -1991,6 +1995,8 @@ final class MastodonService
 	{
 		$followed = $this->followingRepository?->find($userId, $actorId);
 		$state = $followed?->state;
+		$blocking = $this->blocks?->findByActor($userId, $actorId) !== null;
+		$blockedBy = $this->inboundBlocks?->isBlocked($userId, $actorId) ?? false;
 
 		return [
 			'id' => $actorId,
@@ -1999,8 +2005,8 @@ final class MastodonService
 			'notifying' => false,
 			'languages' => [],
 			'followed_by' => false,
-			'blocking' => false,
-			'blocked_by' => false,
+			'blocking' => $blocking,
+			'blocked_by' => $blockedBy,
 			'muting' => false,
 			'muting_notifications' => false,
 			'requested' => $state === FollowState::Pending,
