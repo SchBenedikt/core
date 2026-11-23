@@ -28,7 +28,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 	public const MAX_ATTACHMENTS = 10;
 
 	private const COLUMNS = 'activity_id, object_id, object_author_id, actor_id, kind,'
-		. ' object_type, object_metadata, quoted_object_id, content, content_warning,'
+		. ' object_type, object_metadata, quoted_object_id, in_reply_to_id, content, content_warning,'
 		. ' published_at, updated_at, deleted_at';
 
 	public function __construct(
@@ -43,7 +43,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 				'INSERT INTO ' . RemotePostSchema::TABLE
 				. ' (' . self::COLUMNS . ')'
 				. ' VALUES (:activity_id, :object_id, :object_author_id, :actor_id, :kind,'
-				. ' :object_type, :object_metadata, :quoted_object_id, :content, :content_warning,'
+				. ' :object_type, :object_metadata, :quoted_object_id, :in_reply_to_id, :content, :content_warning,'
 				. ' :published_at, :updated_at, :deleted_at)',
 				[
 					'activity_id' => $post->activityId,
@@ -54,6 +54,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 					'object_type' => $post->objectType->value,
 					'object_metadata' => $post->metadata?->toJson(),
 					'quoted_object_id' => $post->quotedObjectId,
+					'in_reply_to_id' => $post->inReplyToId,
 					'content' => $post->content,
 					'content_warning' => $post->contentWarning,
 					'published_at' => Time::format($post->publishedAt),
@@ -314,6 +315,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 				isset($row['object_metadata']) && is_string($row['object_metadata']) ? $row['object_metadata'] : null,
 			),
 			quotedObjectId: ($row['quoted_object_id'] ?? null) === null ? null : (string) $row['quoted_object_id'],
+			inReplyToId: ($row['in_reply_to_id'] ?? null) === null ? null : (string) $row['in_reply_to_id'],
 		);
 	}
 }

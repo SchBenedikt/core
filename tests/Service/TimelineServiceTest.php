@@ -80,6 +80,23 @@ final class TimelineServiceTest extends TestCase
 		self::assertSame(['old'], array_map(static fn (Post $post): string => $post->id, $page));
 	}
 
+	public function testSignedInPublicTimelineCanHideRepliesBeforePaging(): void
+	{
+		$this->repository->insert($this->post('root', '2026-11-11T10:02:00Z'));
+		$this->repository->insert(new Post(
+			'reply',
+			'alice',
+			'reply',
+			Visibility::Public,
+			Time::parse('2026-11-11T10:03:00Z'),
+			inReplyToId: 'root',
+		));
+
+		$posts = $this->timelines->public(1, hideReplies: true);
+
+		self::assertSame(['root'], array_map(static fn (Post $post): string => $post->id, $posts));
+	}
+
 	public function testCursorIdKeepsTheRestOfTheSecond(): void
 	{
 		$this->repository->insert($this->post('aaa', '2026-11-11T10:05:00Z'));

@@ -48,6 +48,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		string $localUserId,
 		int $limit,
 		DateTimeImmutable|TimelineCursor|null $before = null,
+		bool $hideReplies = false,
 	): array {
 		$localCursor = $before === null ? '' : ($before instanceof TimelineCursor
 			? ' AND (p.published_at < :local_before OR (p.published_at = :local_before_equal AND p.id < :local_before_id))'
@@ -55,19 +56,23 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		$remoteCursor = $before === null ? '' : ($before instanceof TimelineCursor
 			? ' AND (r.published_at < :remote_before OR (r.published_at = :remote_before_equal AND r.activity_id < :remote_before_id))'
 			: ' AND r.published_at < :remote_before');
+		$localReplies = $hideReplies ? ' AND p.in_reply_to_id IS NULL' : '';
+		$remoteReplies = $hideReplies ? ' AND r.in_reply_to_id IS NULL' : '';
 
 		$sql = 'SELECT item_id, author_id, object_id, object_author_id, content,'
-			. ' content_warning, published_at, visibility, boosted_by'
+			. ' content_warning, published_at, visibility, boosted_by, in_reply_to_id'
 			. ' FROM ('
 			. ' SELECT p.id AS item_id, p.author_id AS author_id, p.id AS object_id,'
 			. ' p.author_id AS object_author_id, p.content AS content,'
 			. ' p.content_warning AS content_warning, p.published_at AS published_at,'
-			. ' p.visibility AS visibility, NULL AS boosted_by'
+			. ' p.visibility AS visibility, NULL AS boosted_by,'
+			. ' p.in_reply_to_id AS in_reply_to_id'
 			. ' FROM ' . PostSchema::TABLE . ' p'
 			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND (p.author_id = :local_user'
 			. ' OR (p.visibility = :local_direct AND EXISTS ('
 			. ' SELECT 1 FROM ' . PostSchema::RECIPIENT_TABLE . ' pr'
 			. ' WHERE pr.post_id = p.id AND pr.recipient_id = :local_recipient)))'
+			. $localReplies
 			. ' AND NOT EXISTS ('
 			. ' SELECT 1 FROM ' . MuteSchema::TABLE . ' pm'
 			. ' WHERE pm.user_id = :local_mute_user AND pm.actor_id = p.author_id'
@@ -78,7 +83,8 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' r.object_author_id AS object_author_id, r.content AS content,'
 			. ' r.content_warning AS content_warning, r.published_at AS published_at,'
 			. ' NULL AS visibility,'
-			. ' CASE WHEN r.kind = :boost_kind THEN r.actor_id ELSE NULL END AS boosted_by'
+			. ' CASE WHEN r.kind = :boost_kind THEN r.actor_id ELSE NULL END AS boosted_by,'
+			. ' r.in_reply_to_id AS in_reply_to_id'
 			. ' FROM ' . RemotePostSchema::TABLE . ' r'
 			. ' INNER JOIN ' . FollowingSchema::TABLE . ' f ON f.actor_id = r.actor_id'
 			. " WHERE f.local_user_id = :remote_user AND f.state = 'accepted'"
@@ -93,7 +99,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' WHERE rm.user_id = :remote_mute_user'
 			. ' AND (rm.actor_id = r.actor_id OR rm.actor_id = r.object_author_id)'
 			. ' AND (rm.expires_at IS NULL OR rm.expires_at > :remote_mute_now)'
-			. ')' . $remoteCursor
+			. ')' . $remoteReplies . $remoteCursor
 			. ') timeline'
 			. ' ORDER BY published_at DESC, item_id DESC'
 			. ' LIMIT ' . max(1, $limit);
@@ -144,6 +150,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			publishedAt: Time::parse((string) $row['published_at']),
 			visibility: $row['visibility'] === null ? null : Visibility::from((string) $row['visibility']),
 			boostedBy: $row['boosted_by'] === null ? null : (string) $row['boosted_by'],
+			inReplyToId: $row['in_reply_to_id'] === null ? null : (string) $row['in_reply_to_id'],
 		);
 	}
 }

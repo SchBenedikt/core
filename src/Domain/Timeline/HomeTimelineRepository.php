@@ -30,5 +30,6 @@ interface HomeTimelineRepository
 		string $localUserId,
 		int $limit,
 		DateTimeImmutable|TimelineCursor|null $before = null,
+		bool $hideReplies = false,
 	): array;
 }

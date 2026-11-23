@@ -52,6 +52,7 @@ final class HashtagTimelineHandler implements Handler
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
+				hideReplies: $request->userId !== null,
 			);
 		} catch (InvalidHashtagException $exception) {
 			throw HttpException::badRequest('invalid_tag', $exception->getMessage());

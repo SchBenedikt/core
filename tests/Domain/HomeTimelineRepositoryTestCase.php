@@ -87,6 +87,28 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 		self::assertContains('visible-own', $ids);
 	}
 
+	public function testHideRepliesFiltersLocalAndRemoteEntriesBeforeTheLimit(): void
+	{
+		$this->addPost($this->post('local-root', 'alice', 'root', '2026-11-11T10:01:00Z'));
+		$this->addPost(new Post(
+			'local-reply', 'alice', 'reply', Visibility::Public,
+			Time::parse('2026-11-11T10:04:00Z'), inReplyToId: 'local-root',
+		));
+		$this->addRemote($this->remote(
+			'remote-root', 'remote-note-root', self::BOB, 'remote root',	'2026-11-11T10:02:00Z',
+		));
+		$this->addRemote($this->remote(
+			'remote-reply', 'remote-note-reply', self::BOB, 'remote reply', '2026-11-11T10:05:00Z',
+			inReplyToId: 'remote-note-root',
+		));
+		$this->follow('alice', self::BOB);
+
+		self::assertSame(
+			['remote-root', 'local-root'],
+			$this->ids($this->repository()->forUser('alice', 2, hideReplies: true)),
+		);
+	}
+
 	public function testUnfollowedLocalPostsAndUnfollowedRemotePostsAreAbsent(): void
 	{
 		$this->seed();
@@ -278,6 +300,7 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 		string $publishedAt,
 		RemotePostKind $kind = RemotePostKind::Post,
 		?string $objectAuthorId = null,
+		?string $inReplyToId = null,
 	): RemotePost {
 		return new RemotePost(
 			$activityId,
@@ -288,6 +311,7 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 			null,
 			Time::parse($publishedAt),
 			$objectAuthorId ?? $actorId,
+			inReplyToId: $inReplyToId,
 		);
 	}
 

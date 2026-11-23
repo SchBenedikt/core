@@ -147,6 +147,27 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
 	}
 
+	public function testSignedInHomeFeedHidesRemoteRepliesButKeepsRootPosts(): void
+	{
+		$app = $this->app();
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-root',
+			self::NOTE_1,
+			'root post',
+			'2026-11-11T10:01:00Z',
+		))->status);
+		$reply = $this->create(
+			'https://remote.example/activities/create-reply',
+			self::NOTE_2,
+			'reply post',
+			'2026-11-11T10:02:00Z',
+		);
+		$reply['object']['inReplyTo'] = ['type' => 'Link', 'href' => self::NOTE_1];
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+
+		self::assertSame([self::NOTE_1], array_column($this->feed($app)->decodedBody()['posts'], 'object_id'));
+	}
+
 	public function testUndoAnnounceRemovesTheBoostAndIsIdempotent(): void
 	{
 		$app = $this->app();

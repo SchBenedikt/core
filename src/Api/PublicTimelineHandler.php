@@ -47,6 +47,7 @@ final class PublicTimelineHandler implements Handler
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
+				hideReplies: $request->userId !== null,
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

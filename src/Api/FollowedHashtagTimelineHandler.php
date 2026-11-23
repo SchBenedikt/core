@@ -60,6 +60,7 @@ final class FollowedHashtagTimelineHandler implements Handler
 				min(TimelineService::MAX_LIMIT, $limit * 2),
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
+				hideReplies: true,
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

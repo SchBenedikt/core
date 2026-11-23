@@ -39,6 +39,7 @@ final class RemotePostSchema
 			"ALTER TABLE " . self::TABLE . " ADD COLUMN object_type VARCHAR(16) NOT NULL DEFAULT 'note'",
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN object_metadata TEXT NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quoted_object_id VARCHAR(512) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN in_reply_to_id VARCHAR(512) NULL',
 		];
 	}
 
@@ -57,6 +58,7 @@ final class RemotePostSchema
 			. " object_type VARCHAR(16) NOT NULL DEFAULT 'note',"
 			. ' object_metadata TEXT NULL,'
 			. ' quoted_object_id VARCHAR(512) NULL,'
+			. ' in_reply_to_id VARCHAR(512) NULL,'
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'

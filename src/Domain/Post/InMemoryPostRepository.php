@@ -177,6 +177,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $hideReplies = false,
 	): array {
 		// Unlisted posts are readable by link but never enumerated; only public
 		// rows belong in the public timeline.
@@ -185,7 +186,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				$this->posts,
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
-					&& $post->visibility->mayListPublicly(),
+					&& $post->visibility->mayListPublicly()
+					&& (!$hideReplies || $post->inReplyToId === null),
 			)),
 			$limit,
 			$before,
@@ -200,6 +202,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array {
 		return $this->slice(
 			array_values(array_filter(
@@ -207,6 +210,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
+					&& (!$hideReplies || $post->inReplyToId === null)
 					&& in_array($hashtag, Hashtags::extract($post->content), true),
 			)),
 			$limit,
@@ -220,6 +224,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array {
 		if ($hashtags === []) {
 			return [];
@@ -231,6 +236,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
+					&& (!$hideReplies || $post->inReplyToId === null)
 					&& array_intersect($hashtags, Hashtags::extract($post->content)) !== [],
 			)),
 			$limit,
@@ -302,7 +308,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		));
 	}
 
-	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null, bool $hideReplies = false): array
 	{
 		$authors = array_fill_keys(array_values($authorIds), true);
 		if ($authors === []) {
@@ -314,6 +320,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			static fn (Post $post): bool => !$post->isDeleted()
 				&& !$post->isArchived()
 				&& $post->visibility !== Visibility::Direct
+				&& (!$hideReplies || $post->inReplyToId === null)
 				&& isset($authors[$post->authorId])
 				&& ($before === null || ($before instanceof TimelineCursor
 					? ($post->publishedAt < $before->publishedAt
