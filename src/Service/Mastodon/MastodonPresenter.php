@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Mastodon;
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfile;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
@@ -304,6 +305,48 @@ final class MastodonPresenter
 			),
 			$posts,
 		);
+	}
+
+	/**
+	 * Projects a cached, followed remote post for Mastodon status reads and
+	 * remote favourite actions. Remote counts and imported media are not
+	 * represented here; the local viewer's favourite state is exact.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function remoteStatus(RemotePost $post, bool $favourited): array
+	{
+		return [
+			'id' => $post->objectId,
+			'created_at' => $post->publishedAt->format('Y-m-d\\TH:i:s.000\\Z'),
+			'in_reply_to_id' => $post->inReplyToId,
+			'in_reply_to_account_id' => null,
+			'sensitive' => $post->contentWarning !== null,
+			'spoiler_text' => $post->contentWarning ?? '',
+			'visibility' => 'public',
+			'language' => null,
+			'uri' => $post->objectId,
+			'url' => $post->objectId,
+			'replies_count' => 0,
+			'reblogs_count' => 0,
+			'favourites_count' => 0,
+			'edited_at' => $post->updatedAt?->format('Y-m-d\\TH:i:s.000\\Z'),
+			'content' => $this->html($post->content),
+			'reblog' => null,
+			'application' => null,
+			'account' => $this->actorAccount($post->objectAuthorId ?? $post->actorId),
+			'media_attachments' => [],
+			'mentions' => [],
+			'tags' => [],
+			'emojis' => [],
+			'card' => null,
+			'poll' => null,
+			'quote' => null,
+			'favourited' => $favourited,
+			'reblogged' => false,
+			'bookmarked' => false,
+			'muted' => false,
+		];
 	}
 
 	/**

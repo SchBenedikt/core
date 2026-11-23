@@ -19,6 +19,7 @@ use AlohaSocial\Core\Domain\Federation\LocalActorSearch;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
@@ -66,6 +67,8 @@ use AlohaSocial\Core\Service\Federation\RemotePollService;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Service\ReactionException;
+use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -132,6 +135,7 @@ final class MastodonService
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?RemotePollService $remotePolls = null,
+		private readonly ?ReactionService $reactions = null,
 	) {
 	}
 
@@ -283,6 +287,16 @@ final class MastodonService
 	public function status(string $postId, ?string $viewerId): array
 	{
 		$this->requireEnabled();
+		if ($this->isRemoteObjectTarget($postId)) {
+			if ($viewerId === null) {
+				throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+			}
+
+			$post = $this->remotePost($viewerId, $postId);
+			$interaction = $this->requireReactionService()->remoteInteractionsFor($viewerId, $post);
+
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+		}
 
 		$boost = $this->boosts?->find($postId);
 		if ($boost !== null) {
@@ -370,6 +384,10 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteObjectTarget($postId)) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		}
+
 		$post = $this->visiblePost($postId, $userId);
 
 		try {
@@ -392,6 +410,10 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteObjectTarget($postId)) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		}
+
 		$post = $this->visiblePost($postId, $userId);
 		$this->requireBoostService()->unboost($userId, $post->id);
 
@@ -649,6 +671,16 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteObjectTarget($postId)) {
+			$post = $this->remotePost($userId, $postId);
+			try {
+				$interaction = $this->requireReactionService()->likeRemote($userId, $postId);
+			} catch (ReactionException $exception) {
+				throw $this->mapRemoteReactionException($exception);
+			}
+
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+		}
 
 		$post = $this->visiblePost($postId, $userId);
 		$favourites = $this->requireFavourites();
@@ -684,6 +716,16 @@ final class MastodonService
 	{
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
+		if ($this->isRemoteObjectTarget($postId)) {
+			$post = $this->remotePost($userId, $postId);
+			try {
+				$interaction = $this->requireReactionService()->unlikeRemote($userId, $postId);
+			} catch (ReactionException $exception) {
+				throw $this->mapRemoteReactionException($exception);
+			}
+
+			return $this->presenter->remoteStatus($post, $interaction['viewer']['favourited']);
+		}
 
 		$post = $this->visiblePost($postId, $userId);
 		$this->requireFavourites()->remove($userId, $post->id);
@@ -2046,6 +2088,42 @@ final class MastodonService
 		return is_array($parts)
 			&& in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
 			&& isset($parts['host']);
+	}
+
+	private function isRemoteObjectTarget(string $targetId): bool
+	{
+		$parts = parse_url($targetId);
+
+		return is_array($parts)
+			&& in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
+			&& isset($parts['host']);
+	}
+
+	private function requireReactionService(): ReactionService
+	{
+		if ($this->reactions === null) {
+			throw new MastodonRequestException(503, 'reactions_not_configured', 'Remote reactions are not configured.');
+		}
+
+		return $this->reactions;
+	}
+
+	private function remotePost(string $userId, string $objectId): RemotePost
+	{
+		try {
+			return $this->requireReactionService()->remotePostFor($userId, $objectId);
+		} catch (ReactionException $exception) {
+			throw $this->mapRemoteReactionException($exception);
+		}
+	}
+
+	private function mapRemoteReactionException(ReactionException $exception): MastodonRequestException
+	{
+		return match ($exception->reason) {
+			'remote_post_not_found', 'remote_post_not_followed' => new MastodonRequestException(404, 'not_found', 'Status not found.'),
+			'blocked_actor' => new MastodonRequestException(403, 'blocked_actor', $exception->getMessage()),
+			default => new MastodonRequestException(422, $exception->reason, $exception->getMessage()),
+		};
 	}
 
 	private function fetchRemoteActor(string $actorId): RemoteActor
