@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -28,9 +29,11 @@ use AlohaSocial\Core\Protocol\Atproto\AtprotoRecord;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoRecordResolver;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoMedia;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoQuoteBuilder;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoBlobUploader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishDisabledException;
 use AlohaSocial\Core\Service\Atproto\AtprotoPostRejectedException;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
@@ -216,6 +219,74 @@ final class AtprotoPublishServiceTest extends TestCase
 			self::fail('An update job must not create a publication from scratch.');
 		} catch (AtprotoPostRejectedException $exception) {
 			self::assertSame(AtprotoPostRejectedException::PUBLICATION_MISSING, $exception->reason);
+		}
+
+		self::assertCount(0, $this->http->requests);
+	}
+
+	public function testAcceptedLocalQuotePublishesVerifiedRecordEmbed(): void
+	{
+		$target = $this->post(id: 'quoted-post');
+		$this->posts->insert($target);
+		$quotedUri = 'at://did:plc:alice/app.bsky.feed.post/quoted';
+		$this->publications->insert(new AtprotoPublication(
+			'alice',
+			$target->id,
+			'quoted',
+			$quotedUri,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+		$config = new ArrayConfig([InstanceInfo::CONFIG_APP => [
+			'atproto.publish' => 'true',
+			'instance.url' => 'https://social.example',
+		]]);
+		$quotePost = $this->post(
+			id: 'quote-post',
+			quotedObjectId: (new ActivityFactory($config))->noteId($target),
+			quoteState: QuoteState::Accepted,
+		);
+		$this->posts->insert($quotePost);
+		$records = new class ($quotedUri) implements AtprotoRecordResolver {
+			public function __construct(private readonly string $uri)
+			{
+			}
+
+			public function getRecord(string $pdsUrl, string $uri): ?AtprotoRecord
+			{
+				return $uri === $this->uri
+					? new AtprotoRecord($uri, 'bafkquotedcid', ['$type' => 'app.bsky.feed.post'])
+					: null;
+			}
+		};
+		$this->http->queueResponse($this->blobResponse('bafkimagecid', 'image/jpeg', 5));
+		$this->http->queueResponse($this->published(self::URI));
+
+		$this->serviceWith(quoteRecords: $records)->publish('alice', $quotePost->id, [
+			new AtprotoMedia('image/jpeg', 'bytes', 'a sample image'),
+		]);
+
+		$write = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		$embed = $write['record']['embed'];
+		self::assertSame('app.bsky.embed.recordWithMedia', $embed['$type']);
+		self::assertSame('app.bsky.embed.record', $embed['record']['$type']);
+		self::assertSame(['uri' => $quotedUri, 'cid' => 'bafkquotedcid'], $embed['record']['record']);
+		self::assertSame('app.bsky.embed.images', $embed['media']['$type']);
+	}
+
+	public function testAcceptedQuoteWithoutAnAtprotoTargetIsRefusedBeforeWriting(): void
+	{
+		$quotePost = $this->post(
+			id: 'quote-post',
+			quotedObjectId: 'https://remote.example/posts/1',
+			quoteState: QuoteState::Accepted,
+		);
+		$this->posts->insert($quotePost);
+
+		try {
+			$this->serviceWith(quoteRecords: $this->recordResolver())->publish('alice', $quotePost->id);
+			self::fail('An external quote without an AT URI mapping must be refused.');
+		} catch (AtprotoPostRejectedException $exception) {
+			self::assertSame(AtprotoPostRejectedException::QUOTE_UNSUPPORTED, $exception->reason);
 		}
 
 		self::assertCount(0, $this->http->requests);
@@ -455,9 +526,15 @@ final class AtprotoPublishServiceTest extends TestCase
 
 	private function serviceWith(
 		?AtprotoIdentityResolver $identities = null,
+		?AtprotoRecordResolver $quoteRecords = null,
 	): AtprotoPublishService {
+		$config = new ArrayConfig([InstanceInfo::CONFIG_APP => [
+			'atproto.publish' => 'true',
+			'instance.url' => 'https://social.example',
+		]]);
+
 		return new AtprotoPublishService(
-			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'true']]),
+			$config,
 			$this->posts,
 			$this->publications,
 			new InMemoryAtprotoAccountResolver([
@@ -470,6 +547,9 @@ final class AtprotoPublishServiceTest extends TestCase
 			new AtprotoFacets($identities),
 			new AtprotoReplyBuilder($this->recordResolver()),
 			new AtprotoEmbed(new XrpcAtprotoBlobUploader($this->http)),
+			null,
+			$quoteRecords === null ? null : new AtprotoQuoteBuilder($quoteRecords),
+			new ActivityFactory($config),
 		);
 	}
 
@@ -549,6 +629,8 @@ final class AtprotoPublishServiceTest extends TestCase
 		array $attachmentIds = [],
 		string $id = 'post-1',
 		?string $inReplyToId = null,
+		?string $quotedObjectId = null,
+		?QuoteState $quoteState = null,
 	): Post {
 		return new Post(
 			$id,
@@ -558,6 +640,8 @@ final class AtprotoPublishServiceTest extends TestCase
 			Time::parse('2026-11-11T10:00:00Z'),
 			attachmentIds: $attachmentIds,
 			inReplyToId: $inReplyToId,
+			quotedObjectId: $quotedObjectId,
+			quoteState: $quoteState,
 		);
 	}
 }

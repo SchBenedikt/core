@@ -196,6 +196,16 @@ written. A blob uploaded before a later upload failed stays on the PDS without
 a record — the core does not delete it, because it never deletes a blob the
 account might use elsewhere.
 
+An accepted quote of a local post that already has a publication for a linked
+AT Protocol account becomes `app.bsky.embed.record`, using the quoted record's
+verified URI and CID from that account's PDS. When the quoting post also has
+images or video, the record and media embeds are combined as
+`app.bsky.embed.recordWithMedia`. Pending, rejected and revoked quotes do not
+expose a target. An accepted quote that points at a remote ActivityPub object
+or a post without a verified AT Protocol publication is refused by the
+publisher instead of being emitted as plain text. Link cards and remote quote
+resolution remain unsupported.
+
 ## Reposts and likes
 
 `AtprotoInteractionService` writes `app.bsky.feed.like` and

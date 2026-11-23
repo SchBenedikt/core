@@ -21,6 +21,7 @@ use AlohaSocial\Core\Domain\Media\MediaKind;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
@@ -35,10 +36,13 @@ use AlohaSocial\Core\Protocol\Atproto\AtprotoFacetException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoMedia;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoPostRecord;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoQuoteBuilder;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoQuoteException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyRef;
 use AlohaSocial\Core\Protocol\Atproto\Tid;
+use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Support\Time;
 
@@ -70,6 +74,8 @@ final class AtprotoPublishService
 		private readonly ?AtprotoReplyBuilder $replies = null,
 		private readonly ?AtprotoEmbed $embeds = null,
 		private readonly ?MediaService $mediaService = null,
+		private readonly ?AtprotoQuoteBuilder $quotes = null,
+		private readonly ?ActivityFactory $activities = null,
 	) {
 	}
 
@@ -345,6 +351,7 @@ final class AtprotoPublishService
 		$reply = $this->replyReference($post, $account);
 		$facets = [];
 		$embed = null;
+		$quote = $this->quoteEmbed($post);
 
 		if ($this->facets !== null) {
 			try {
@@ -365,8 +372,61 @@ final class AtprotoPublishService
 				throw new AtprotoPostRejectedException($exception->reason);
 			}
 		}
+		if ($quote !== null) {
+			$embed = $embed === null
+				? $quote
+				: [
+					'$type' => 'app.bsky.embed.recordWithMedia',
+					'record' => $quote,
+					'media' => $embed,
+				];
+		}
 
 		return AtprotoPostRecord::fromPost($post, $reply, $facets, $embed);
+	}
+
+	/**
+	 * Builds an authorized local quote reference from its published record.
+	 * Quotes that are pending, rejected or revoked stay as text only; an
+	 * accepted quote that cannot be represented is refused rather than silently
+	 * published without its authorized target.
+	 *
+	 * @return array<string, mixed>|null
+	 *
+	 * @throws AtprotoPostRejectedException
+	 */
+	private function quoteEmbed(Post $post): ?array
+	{
+		if ($post->quotedObjectId === null || $post->quoteState !== QuoteState::Accepted) {
+			return null;
+		}
+
+		$quotePostId = $this->activities?->postIdFromUrl($post->quotedObjectId);
+		if ($quotePostId === null || $this->quotes === null || $this->activities === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_UNSUPPORTED);
+		}
+
+		$quotedPost = $this->posts->find($quotePostId);
+		if ($quotedPost === null || $quotedPost->isDeleted() || !$quotedPost->visibility->mayListPublicly()) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_UNSUPPORTED);
+		}
+
+		$publication = $this->publications->findForPost($quotedPost->authorId, $quotedPost->id);
+		$account = $this->accounts?->resolve($quotedPost->authorId);
+		if ($publication === null || $account === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED);
+		}
+
+		$expectedUri = 'at://' . $account->did . '/app.bsky.feed.post/' . $publication->rkey;
+		if ($publication->uri !== $expectedUri) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED);
+		}
+
+		try {
+			return $this->quotes->build($account->pdsUrl, $publication->uri);
+		} catch (AtprotoQuoteException) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_TARGET_UNRESOLVABLE);
+		}
 	}
 
 	/**
@@ -436,6 +496,28 @@ final class AtprotoPublishService
 			// record to reply to; a local-only parent has no AT URI.
 			if ($this->publications->findForPost($post->authorId, $post->inReplyToId) === null) {
 				return AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED;
+			}
+		}
+
+		if ($post->quotedObjectId !== null && $post->quoteState === QuoteState::Accepted) {
+			if ($this->quotes === null || $this->activities === null) {
+				return AtprotoPostRejectedException::QUOTE_UNSUPPORTED;
+			}
+
+			$quotePostId = $this->activities->postIdFromUrl($post->quotedObjectId);
+			$quotedPost = $quotePostId === null ? null : $this->posts->find($quotePostId);
+			if ($quotedPost === null || $quotedPost->isDeleted() || !$quotedPost->visibility->mayListPublicly()) {
+				return AtprotoPostRejectedException::QUOTE_UNSUPPORTED;
+			}
+
+			$publication = $this->publications->findForPost($quotedPost->authorId, $quotedPost->id);
+			$quoteAccount = $this->accounts?->resolve($quotedPost->authorId);
+			if ($publication === null || $quoteAccount === null) {
+				return AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED;
+			}
+
+			if ($publication->uri !== 'at://' . $quoteAccount->did . '/app.bsky.feed.post/' . $publication->rkey) {
+				return AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED;
 			}
 		}
 
