@@ -421,7 +421,7 @@ Create the app's tables through Nextcloud migrations, with the same columns
 and indexes as the core's schema classes. The SQL strings in `PostSchema`,
 `AttachmentSchema`, `FollowerSchema`, `FollowingSchema`, `RemotePostSchema`,
 `RemoteThreadSchema`,
-`BlockSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`
+`BlockSchema`, `InboundBlockSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `JobSchema`
 and `ActivityLogSchema` are the canonical
 definition; translate them into the app's schema API rather than copying a
 second column list. `RemotePostSchema` now creates both
@@ -465,6 +465,8 @@ Create `social_remote_post` before enabling inbound `Create`/`Delete`/`Announce`
 or reading the combined home timeline; it has no legacy rows to import. Create
 `social_block` before enabling `GET`/`POST /api/v1/blocks` or the combined home
 timeline; its query reads the table on every page.
+Create `social_inbound_block` before enabling the signed inbox's Block/Undo
+handling; it stores the Block URI needed to verify nested and URI-only Undo.
 
 ## 7. Test the integration in the app
 

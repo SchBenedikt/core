@@ -76,6 +76,129 @@ final class InboxTest extends TestCase
 		self::assertSame('signature_required', $response->decodedBody()['error']['code']);
 	}
 
+	public function testInboundBlockRemovesFollowEdgesAndUndoRestoresOnlyItsActor(): void
+	{
+		self::assertSame(202, $this->deliver($this->follow())->status);
+		$block = [
+			'id' => 'https://remote.example/activities/block-1',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => self::LOCAL_ACTOR,
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+		self::assertSame(202, $this->deliver($block)->status, 'An exact Block redelivery is an idempotent success.');
+		self::assertSame(0, $this->app->followers->count('alice'));
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-after-block'))->decodedBody()['error']['code']);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-block-1',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => $block,
+		];
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame(202, $this->deliver($this->follow('https://remote.example/activities/follow-after-undo'))->status);
+	}
+
+	public function testUndoBlockUriOnlyMustMatchTheStoredBlockActivity(): void
+	{
+		$block = [
+			'id' => 'https://remote.example/activities/block-uri-only',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => self::LOCAL_ACTOR,
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+
+		$wrongUndo = [
+			'id' => 'https://remote.example/activities/undo-wrong-block',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => 'https://remote.example/activities/other-block',
+		];
+		self::assertSame(202, $this->deliver($wrongUndo)->status);
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-after-wrong-undo'))->decodedBody()['error']['code']);
+
+		$undo = $wrongUndo;
+		$undo['id'] = 'https://remote.example/activities/undo-correct-block';
+		$undo['object'] = $block['id'];
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame(202, $this->deliver($this->follow('https://remote.example/activities/follow-after-correct-undo'))->status);
+		$undo['id'] = 'https://remote.example/activities/undo-correct-block-retry';
+		self::assertSame(202, $this->deliver($undo)->status);
+	}
+
+	public function testInboundBlockIsIdempotentAndRejectsAForgedUndo(): void
+	{
+		$block = [
+			'id' => 'https://remote.example/activities/block-idempotent',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => ['id' => self::LOCAL_ACTOR, 'type' => 'Person'],
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+		$duplicate = $block;
+		$duplicate['id'] = 'https://remote.example/activities/block-idempotent-retry';
+		self::assertSame(202, $this->deliver($duplicate)->status);
+
+		$forgedUndo = [
+			'id' => 'https://remote.example/activities/forged-undo',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => [
+				'type' => 'Block',
+				'actor' => 'https://attacker.example/users/forged',
+				'object' => self::LOCAL_ACTOR,
+			],
+		];
+		$response = $this->deliver($forgedUndo);
+		self::assertSame(403, $response->status);
+		self::assertSame('actor_mismatch', $response->decodedBody()['error']['code']);
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-still-blocked'))->decodedBody()['error']['code']);
+	}
+
+	public function testEmbeddedUndoCannotRetargetAnotherLocalActor(): void
+	{
+		$block = [
+			'id' => 'https://remote.example/activities/block-alice-only',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => self::LOCAL_ACTOR,
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-retargeted-block',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => [
+				'id' => $block['id'],
+				'type' => 'Block',
+				'actor' => self::ACTOR,
+				'object' => 'https://localhost:8080/@mallory',
+			],
+		];
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame('blocked_actor', $this->deliver($this->follow('https://remote.example/activities/follow-alice-still-blocked'))->decodedBody()['error']['code']);
+	}
+
+	public function testBlockRequiresAnActorObjectOwnedByThisInstance(): void
+	{
+		$base = [
+			'id' => 'https://remote.example/activities/block-invalid-target',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+		];
+		$invalidNested = $base + ['object' => ['id' => self::LOCAL_ACTOR, 'type' => 'Note']];
+		$response = $this->deliver($invalidNested);
+		self::assertSame(400, $response->status);
+		self::assertSame('invalid_activity', $response->decodedBody()['error']['code']);
+
+		$unknownLocal = $base + ['object' => 'https://localhost:8080/@ghost'];
+		$response = $this->deliver($unknownLocal);
+		self::assertSame(404, $response->status);
+		self::assertSame('unknown_object', $response->decodedBody()['error']['code']);
+	}
+
 	public function testTheSharedInboxAlsoRequiresASignature(): void
 	{
 		$response = $this->app->handle(new Request(
@@ -363,7 +486,7 @@ final class InboxTest extends TestCase
 				'instance.url' => 'https://localhost:8080',
 				'mastodon.api' => 'true',
 			]]),
-			localActors: new InMemoryActorDirectory(['alice']),
+			localActors: new InMemoryActorDirectory(['alice', 'mallory']),
 			httpClient: $this->http,
 			signingKey: self::$localKey,
 			actorResolver: new InMemoryActorResolver([

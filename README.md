@@ -267,7 +267,7 @@ SQLite for the transaction section, but no external database and no network.
 4. **Data** — each table's schema lives next to its repository or adapter.
    `PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `BoostSchema`,
    `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
-   `FollowingSchema`, `RemotePostSchema`, `BlockSchema`,
+   `FollowingSchema`, `RemotePostSchema`, `BlockSchema`, `InboundBlockSchema`,
    `AtprotoPublicationSchema`, `AtprotoInboundSchema`, `ReportSchema`, `ModerationActionSchema`,
    	   `HeldPostSchema`, `NotificationPolicySchema`, `NotificationSenderSchema`,
 	   `ConversationMuteSchema`, `SearchIndexSchema`, `TrendSchema`, `JobSchema`,

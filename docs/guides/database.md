@@ -72,6 +72,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
+- `src/Domain/Federation/InboundBlockSchema.php` → `social_inbound_block` (remote actor blocks per local account, with the owning Block activity URI)
 - `src/Jobs/JobSchema.php` → `social_job` (including the optional `subject_type`/`subject_id` envelope used to cancel one account's queued work)
 - `src/Domain/Account/AccountDeletionSchema.php` → `social_account_deletion` (the durable `frozen`/`erasing`/`erased` tombstone, requested/completed timestamps, deletion report and lease)
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`

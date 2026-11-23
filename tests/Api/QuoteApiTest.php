@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Api;
 use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -56,6 +57,8 @@ final class QuoteApiTest extends TestCase
 
 	private InMemoryRemotePostRepository $remotePosts;
 
+	private InMemoryInboundBlockRepository $inboundBlocks;
+
 	private Application $app;
 
 	public static function setUpBeforeClass(): void
@@ -69,6 +72,7 @@ final class QuoteApiTest extends TestCase
 		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$this->http = new FakeHttpClient();
 		$this->remotePosts = new InMemoryRemotePostRepository();
+		$this->inboundBlocks = new InMemoryInboundBlockRepository();
 		$this->app = Application::inMemory(
 			clock: $this->clock,
 			config: new ArrayConfig([InstanceInfo::CONFIG_APP => [
@@ -88,6 +92,7 @@ final class QuoteApiTest extends TestCase
 			]),
 			activityLog: new InMemoryActivityLog(),
 			remotePostRepository: $this->remotePosts,
+			inboundBlocks: $this->inboundBlocks,
 		);
 	}
 
@@ -335,6 +340,26 @@ final class QuoteApiTest extends TestCase
 		self::assertSame(201, $block->status);
 
 		self::assertSame(422, $this->post('alice', 'blocked quote', quotedPostId: self::OBJECT)->status);
+	}
+
+	public function testAReceivingBlockPreventsAnOutgoingQuoteRequest(): void
+	{
+		$this->remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/2',
+			objectId: self::OBJECT,
+			actorId: self::ACTOR,
+			kind: RemotePostKind::Post,
+			content: 'remote words',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
+			objectAuthorId: self::ACTOR,
+		));
+		$this->inboundBlocks->block('alice', self::ACTOR, 'https://remote.example/activities/block-alice');
+
+		$response = $this->post('alice', 'blocked quote', quotedPostId: self::OBJECT);
+
+		self::assertSame(422, $response->status);
+		self::assertSame([], $this->app->queue->pending());
 	}
 
 	private function grantId(string $targetId, string $quoteId): string

@@ -190,6 +190,9 @@ use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\PdoInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
@@ -600,6 +603,7 @@ final readonly class Application
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -748,6 +752,7 @@ final readonly class Application
 			logger: $logger,
 			debug: $debug,
 			atprotoDpop: $atprotoDpop,
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 
@@ -829,6 +834,7 @@ final readonly class Application
 		?PdsRepository $pdsRepository = null,
 		?SecretBox $pdsSecrets = null,
 		?PdsDirectory $pdsDirectory = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -845,6 +851,7 @@ final readonly class Application
 		$inboxResolver ??= new FollowerInboxResolver($followers);
 		$remotePosts = new PdoRemotePostRepository($database);
 		$blockRepository ??= new PdoBlockRepository($database);
+		$inboundBlocks ??= new PdoInboundBlockRepository($database);
 		$muteRepository ??= new PdoMuteRepository($database);
 		$accountListRepository ??= new PdoAccountListRepository($database);
 		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
@@ -933,6 +940,7 @@ final readonly class Application
 			atprotoDpop: $atprotoDpop,
 			pds: $pds,
 			accountDataRepository: new PdoAccountDataRepository($database),
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 
@@ -1029,6 +1037,7 @@ final readonly class Application
 		?MediaCollectionService $mediaCollectionService = null,
 		?NativePdsService $pds = null,
 		?AccountDataRepository $accountDataRepository = null,
+		?InboundBlockRepository $inboundBlocks = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1040,6 +1049,7 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
+		$inboundBlocks ??= new InMemoryInboundBlockRepository();
 		$pinRepository ??= new InMemoryPostPinRepository();
 		$mediaCollectionRepository ??= new InMemoryMediaCollectionRepository();
 		$pinService ??= new PinService($posts, $pinRepository, $clock);
@@ -1125,6 +1135,7 @@ final readonly class Application
 			$notificationService,
 			$muteRepository,
 			$remotePosts,
+			$inboundBlocks ?? new InMemoryInboundBlockRepository(),
 		);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
@@ -1214,6 +1225,7 @@ final readonly class Application
 			$queue,
 			$actorInboxResolver,
 			$clock,
+			$inboundBlocks,
 		);
 		$quoteService = new QuoteService(
 			$posts,
@@ -1224,6 +1236,7 @@ final readonly class Application
 			$clock,
 			$actorInboxResolver,
 			$blockService,
+			$inboundBlocks,
 		);
 		$federationDelivery = ($httpClient !== null && $signingKey !== null)
 			? new FederationDeliveryHandler($httpClient, $signingKey, $clock, $targetGuard)
@@ -1236,6 +1249,7 @@ final readonly class Application
 			$federationDelivery,
 			$queue,
 			$transactions,
+			$inboundBlocks,
 		);
 		$remoteActors ??= $httpClient instanceof BoundedHttpClient
 			? new HttpActorResolver($httpClient, $targetGuard)
@@ -1291,6 +1305,7 @@ final readonly class Application
 			searchIndexer: $searchIndexer,
 			pins: $pinRepository,
 			mentions: $mentionResolver,
+			inboundBlocks: $inboundBlocks,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,
@@ -1493,6 +1508,8 @@ final readonly class Application
 				$moderationPolicy,
 				$accountMoveService,
 				storyService: $storyService,
+				inboundBlocks: $inboundBlocks ?? new InMemoryInboundBlockRepository(),
+				localActors: $localActors,
 			)
 			: null;
 

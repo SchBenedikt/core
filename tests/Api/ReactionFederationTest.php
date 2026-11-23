@@ -364,6 +364,24 @@ final class ReactionFederationTest extends TestCase
 		self::assertSame(0, $this->likeCount($post));
 	}
 
+	public function testAnActorThatBlockedTheAuthorCannotReact(): void
+	{
+		$post = $this->post();
+		$block = [
+			'id' => 'https://remote.example/activities/block-1',
+			'type' => 'Block',
+			'actor' => self::ACTOR,
+			'object' => 'https://localhost:8080/@alice',
+		];
+		self::assertSame(202, $this->deliver($block)->status);
+
+		$response = $this->deliver($this->like($post, 'https://remote.example/activities/like-after-block'));
+
+		self::assertSame(403, $response->status);
+		self::assertSame('blocked_actor', $response->decodedBody()['error']['code']);
+		self::assertSame(0, $this->likeCount($post));
+	}
+
 	public function testAMutedActorStillCountsButDoesNotNotify(): void
 	{
 		$post = $this->post();

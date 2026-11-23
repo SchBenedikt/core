@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
@@ -52,6 +53,7 @@ final class FollowingService
 		private readonly ?FederationDeliveryHandler $delivery,
 		private readonly ?JobQueue $queue = null,
 		private readonly ?TransactionRunner $transactions = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -81,6 +83,10 @@ final class FollowingService
 
 		if ($errors !== []) {
 			throw new ValidationException($errors);
+		}
+
+		if ($this->inboundBlocks?->isBlocked($localUserId, $actorId) === true) {
+			throw new FollowingBlockedException($actorId);
 		}
 
 		$existing = $this->following->find($localUserId, $actorId);

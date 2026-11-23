@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Service;
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
@@ -55,6 +56,8 @@ final class RemotePollServiceTest extends TestCase
 
 	private RemotePollVoteRepository $votes;
 
+	private InMemoryInboundBlockRepository $inboundBlocks;
+
 	private RemotePollService $service;
 
 	protected function setUp(): void
@@ -65,6 +68,7 @@ final class RemotePollServiceTest extends TestCase
 		$this->localVotes = new InMemoryPollVoteRepository($this->posts);
 		$this->polls = new InMemoryRemotePollRepository();
 		$this->votes = new InMemoryRemotePollVoteRepository();
+		$this->inboundBlocks = new InMemoryInboundBlockRepository();
 
 		$this->service = new RemotePollService(
 			$this->polls,
@@ -80,6 +84,7 @@ final class RemotePollServiceTest extends TestCase
 				}
 			},
 			$this->clock,
+			$this->inboundBlocks,
 		);
 	}
 
@@ -151,6 +156,24 @@ final class RemotePollServiceTest extends TestCase
 		self::assertSame('Pizza', $voteJob->payload['activity']['object']['name']);
 		self::assertSame('https://remote.example/questions/1', $voteJob->payload['activity']['object']['inReplyTo']);
 		self::assertSame('https://remote.example/users/bob/inbox', $voteJob->payload['inbox']);
+	}
+
+	public function testAReceivedBlockPreventsAnOutgoingRemotePollVote(): void
+	{
+		$this->import($this->question());
+		$this->inboundBlocks->block('alice', self::ACTOR, 'https://remote.example/activities/block-alice');
+		$pending = $this->queue->pendingCount();
+
+		try {
+			$this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+			self::fail('A remote poll vote to an actor that blocked the account must be refused.');
+		} catch (RemotePollException $exception) {
+			self::assertSame(403, $exception->status);
+			self::assertSame('blocked_actor', $exception->reason);
+		}
+
+		self::assertNull($this->votes->find('https://remote.example/questions/1', 'alice'));
+		self::assertSame($pending, $this->queue->pendingCount());
 	}
 
 	public function testASingleChoiceVoteRefusesTwoOptions(): void

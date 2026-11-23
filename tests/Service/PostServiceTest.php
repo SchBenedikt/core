@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -305,10 +306,39 @@ final class PostServiceTest extends TestCase
 		self::assertSame('public', $post->visibility->value);
 	}
 
+	public function testARemoteActorThatBlockedTheAuthorIsNotMentionDelivered(): void
+	{
+		$mentions = new class implements MentionResolver {
+			public function resolve(string $handle): ?MentionTarget
+			{
+				return $handle === 'benedikt@remote.example'
+					? new MentionTarget(
+						handle: $handle,
+						actorId: 'https://remote.example/@benedikt',
+						inboxUrl: 'https://remote.example/inbox',
+					)
+					: null;
+			}
+		};
+		$inboundBlocks = new InMemoryInboundBlockRepository();
+		$inboundBlocks->block('alice', 'https://remote.example/@benedikt', 'https://remote.example/activities/block-1');
+
+		$this->service(mentions: $mentions, inboundBlocks: $inboundBlocks)->create(
+			new CreatePost('alice', 'Hi @benedikt@remote.example'),
+		);
+
+		$deliveries = array_values(array_filter(
+			$this->queue->pending(),
+			static fn ($job): bool => $job->type === JobType::FEDERATION_DELIVER,
+		));
+		self::assertSame([], $deliveries);
+	}
+
 	private function service(
 		?InboxResolver $inboxes = null,
 		?ArrayConfig $config = null,
 		?MentionResolver $mentions = null,
+		?InMemoryInboundBlockRepository $inboundBlocks = null,
 	): PostService {
 		return new PostService(
 			$this->repository,
@@ -319,6 +349,7 @@ final class PostServiceTest extends TestCase
 			$this->clock,
 			$this->ids,
 			mentions: $mentions,
+			inboundBlocks: $inboundBlocks,
 		);
 	}
 }

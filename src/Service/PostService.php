@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
@@ -86,6 +87,7 @@ final class PostService
 		private readonly ?SearchIndexer $searchIndexer = null,
 		private readonly ?PostPinRepository $pins = null,
 		private readonly ?MentionResolver $mentions = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -871,6 +873,12 @@ final class PostService
 		// leak a message the audience did not ask for.
 		if ($post->visibility === Visibility::Direct) {
 			return;
+		}
+		if ($this->inboundBlocks !== null) {
+			$mentionTargets = array_values(array_filter(
+				$mentionTargets,
+				fn (MentionTarget $target): bool => !$this->inboundBlocks->isBlocked($post->authorId, $target->actorId),
+			));
 		}
 
 		$mentionInboxes = [];

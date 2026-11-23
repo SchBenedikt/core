@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Federation\RemotePollOption;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
@@ -68,6 +69,7 @@ final class RemotePollService
 		private readonly ?JobQueue $queue,
 		private readonly ?ActorInboxResolver $inboxes,
 		private readonly Clock $clock,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -262,6 +264,9 @@ final class RemotePollService
 	public function vote(string $userId, string $objectId, array $positions, DateTimeImmutable $now): array
 	{
 		$poll = $this->find($objectId);
+		if ($this->inboundBlocks?->isBlocked($userId, $poll->actorId) === true) {
+			throw RemotePollException::blockedActor();
+		}
 		if ($poll->isClosed($now)) {
 			throw RemotePollException::ended();
 		}

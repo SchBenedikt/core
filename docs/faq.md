@@ -46,7 +46,7 @@ The mechanism differs per host: Nextcloud has its own schema API, the standalone
 server will use its own migration runner. The core shares the *schema*
 (`PostSchema`, `PollSchema`, `FavouriteSchema`, `BookmarkSchema`, `MuteSchema`,
 `BoostSchema`, `NotificationSchema`, `AttachmentSchema`, `FollowerSchema`,
-`FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`,
+`FollowingSchema`, `RemotePostSchema`, `RemoteThreadSchema`, `BlockSchema`, `InboundBlockSchema`,
 `AccountListSchema`, `AtprotoPublicationSchema`, `AtprotoInboundSchema`,
 `JobSchema`, `ActivityLogSchema`), not the runner.
 

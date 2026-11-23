@@ -18,6 +18,7 @@ use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Service\Federation\DeliveryFailedException;
 use AlohaSocial\Core\Service\FollowingNotConfiguredException;
+use AlohaSocial\Core\Service\FollowingBlockedException;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\ValidationException;
 
@@ -61,6 +62,8 @@ final class FollowRemoteActorHandler implements Handler
 
 		try {
 			$result = $this->following->follow($userId, $actor, $inbox);
+		} catch (FollowingBlockedException) {
+			throw new HttpException(403, 'blocked_actor', 'This remote actor has blocked your account.');
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());
 		} catch (FollowingNotConfiguredException $exception) {
