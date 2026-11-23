@@ -168,13 +168,16 @@ video's alt text is optional in the lexicon and is omitted when absent.
 aspect ratio are the caller's data: the core does not guess either from the
 bytes.
 
-`AtprotoPublishService::publish($userId, $postId, $media)` takes the media
-list. The automatic hook still refuses a post with local `attachmentIds`,
-because it has no bytes to read; a caller that wants those attachments on AT
-Protocol passes them explicitly. Every refusal above ends the whole post: no
-record and no partial embed is written. A blob uploaded before a later upload
-failed stays on the PDS without a record — the core does not delete it, because
-it never deletes a blob the account might use elsewhere.
+`AtprotoPublishService::publish($userId, $postId, $media)` accepts an explicit
+media list. When it is empty, the service resolves the post's stored
+attachments through `MediaService`, verifies owner, family, count, alt text
+and recorded byte sizes, then reads the bounded image/video set. This lets the
+automatic post hook and a manual publish use the same stored attachments; a
+host without media storage can still publish text posts and skips attachment
+posts. Every refusal ends the whole post: no record and no partial embed is
+written. A blob uploaded before a later upload failed stays on the PDS without
+a record — the core does not delete it, because it never deletes a blob the
+account might use elsewhere.
 
 ## Reposts and likes
 

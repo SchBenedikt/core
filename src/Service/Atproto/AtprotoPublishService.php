@@ -15,6 +15,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\MediaKind;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
@@ -36,7 +38,9 @@ use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyBuilder;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoReplyRef;
 use AlohaSocial\Core\Protocol\Atproto\Tid;
+use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Support\Time;
+
 
 /**
  * Schedules and performs AT Protocol publication for local posts.
@@ -64,6 +68,7 @@ final class AtprotoPublishService
 		private readonly ?AtprotoFacets $facets = null,
 		private readonly ?AtprotoReplyBuilder $replies = null,
 		private readonly ?AtprotoEmbed $embeds = null,
+		private readonly ?MediaService $mediaService = null,
 	) {
 	}
 
@@ -208,14 +213,18 @@ final class AtprotoPublishService
 			throw new PostNotFoundException($postId);
 		}
 
+		$existing = $this->publications->findForPost($localUserId, $postId);
+		if ($existing !== null) {
+			return $existing;
+		}
+
 		$rejection = $this->rejectionReason($post, $media);
 		if ($rejection !== null) {
 			throw new AtprotoPostRejectedException($rejection);
 		}
 
-		$existing = $this->publications->findForPost($localUserId, $postId);
-		if ($existing !== null) {
-			return $existing;
+		if ($media === [] && $post->attachmentIds !== []) {
+			$media = $this->storedMedia($post);
 		}
 
 		$account = $this->accounts?->resolve($localUserId);
@@ -341,11 +350,20 @@ final class AtprotoPublishService
 			return AtprotoPostRejectedException::NOT_PUBLIC;
 		}
 
-		// Local attachments are not read here: a caller that wants them on
-		// AT Protocol passes the bytes explicitly. Without media the local
-		// attachment list still refuses the post, as before.
-		if ($post->attachmentIds !== [] && $media === []) {
+		// Scheduling checks only attachment metadata. The worker reads the
+		// bounded bytes immediately before upload.
+		if ($post->attachmentIds !== [] && $media === [] && $this->mediaService === null) {
 			return AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED;
+		}
+		if ($post->attachmentIds !== [] && $media === [] && $this->embeds === null) {
+			return AtprotoPostRejectedException::MEDIA_UNSUPPORTED;
+		}
+		if ($post->attachmentIds !== [] && $media === []) {
+			try {
+				$this->storedAttachments($post);
+			} catch (AtprotoPostRejectedException $exception) {
+				return $exception->reason;
+			}
 		}
 
 		if ($media !== [] && $this->embeds === null) {
@@ -369,5 +387,89 @@ final class AtprotoPublishService
 		}
 
 		return null;
+	}
+
+	/**
+	 * Reads only the bounded image/video set the Bluesky record can represent.
+	 * Check all metadata before reading any bytes so oversized or mixed posts do
+	 * not cause an avoidable storage read or partial PDS upload.
+	 *
+	 * @return list<AtprotoMedia>
+	 *
+	 * @throws AtprotoPostRejectedException
+	 */
+	private function storedMedia(Post $post): array
+	{
+		$mediaService = $this->mediaService;
+		if ($mediaService === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED);
+		}
+
+		$attachments = $this->storedAttachments($post);
+
+		return array_map(
+			static fn (Attachment $attachment): AtprotoMedia => new AtprotoMedia(
+				$attachment->mimeType,
+				$mediaService->read($attachment),
+				$attachment->altText,
+				$attachment->width > 0 ? $attachment->width : null,
+				$attachment->height > 0 ? $attachment->height : null,
+			),
+			$attachments,
+		);
+	}
+
+	/**
+	 * @return list<Attachment>
+	 *
+	 * @throws AtprotoPostRejectedException
+	 */
+	private function storedAttachments(Post $post): array
+	{
+		$mediaService = $this->mediaService;
+		if ($mediaService === null) {
+			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED);
+		}
+
+		$attachments = [];
+		$imageCount = 0;
+		$videoCount = 0;
+		foreach ($post->attachmentIds as $id) {
+			$attachment = $mediaService->find($id);
+			if ($attachment === null || $attachment->ownerId !== $post->authorId) {
+				throw new AtprotoPostRejectedException(AtprotoPostRejectedException::ATTACHMENTS_UNSUPPORTED);
+			}
+
+			if ($attachment->kind === MediaKind::Image) {
+				$imageCount++;
+				if ($attachment->byteSize > AtprotoEmbed::MAX_IMAGE_BYTES) {
+					throw new AtprotoPostRejectedException(AtprotoBlobException::TOO_LARGE);
+				}
+				if ($attachment->altText === null) {
+					throw new AtprotoPostRejectedException(AtprotoEmbedException::ALT_MISSING);
+				}
+			} elseif ($attachment->kind === MediaKind::Video) {
+				$videoCount++;
+				if ($attachment->byteSize > AtprotoEmbed::MAX_VIDEO_BYTES) {
+					throw new AtprotoPostRejectedException(AtprotoBlobException::TOO_LARGE);
+				}
+			} else {
+				throw new AtprotoPostRejectedException(AtprotoPostRejectedException::MEDIA_UNSUPPORTED);
+			}
+
+			$attachments[] = $attachment;
+		}
+
+		if ($imageCount > AtprotoEmbed::MAX_IMAGES) {
+			throw new AtprotoPostRejectedException(AtprotoEmbedException::TOO_MANY_IMAGES);
+		}
+		if ($videoCount > AtprotoEmbed::MAX_VIDEOS) {
+			throw new AtprotoPostRejectedException(AtprotoEmbedException::TOO_MANY_VIDEOS);
+		}
+		if ($imageCount > 0 && $videoCount > 0) {
+			throw new AtprotoPostRejectedException(AtprotoEmbedException::MIXED_MEDIA);
+		}
+
+		return $attachments;
 	}
 }

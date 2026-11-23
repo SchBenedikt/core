@@ -14,11 +14,16 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Media\Attachment;
+use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Media\MediaKind;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
+use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
+use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
@@ -69,6 +74,66 @@ final class AtprotoPublishTest extends TestCase
 		$publication = $this->publications->findForPost(self::ALICE, $post);
 		self::assertNotNull($publication);
 		self::assertSame(self::URI, $publication->uri);
+	}
+
+	public function testCreatingAnImagePostUploadsItsStoredAttachmentBeforePublishing(): void
+	{
+		$attachmentId = 'attachment-image-1';
+		$attachment = new Attachment(
+			id: $attachmentId,
+			ownerId: self::ALICE,
+			storageKey: 'media/' . $attachmentId . '/original.png',
+			thumbnailKey: 'media/' . $attachmentId . '/thumbnail.png',
+			mimeType: 'image/png',
+			width: 800,
+			height: 600,
+			byteSize: 3,
+			altText: 'A small test image',
+			createdAt: $this->clock->now(),
+			kind: MediaKind::Image,
+		);
+		$attachments = new InMemoryAttachmentRepository();
+		$attachments->insert($attachment);
+		$blobs = new InMemoryBlobStore();
+		$blobs->put($attachment->storageKey, 'png');
+		$app = Application::inMemory(
+			clock: $this->clock,
+			config: new ArrayConfig([
+				InstanceInfo::CONFIG_APP => ['atproto.publish' => 'true'],
+			]),
+			httpClient: $this->http,
+			attachmentRepository: $attachments,
+			blobStore: $blobs,
+			atprotoAccounts: new InMemoryAtprotoAccountResolver([self::ALICE => $this->account()]),
+			atprotoPublications: $this->publications,
+		);
+		$post = $app->posts->create(new CreatePost(
+			self::ALICE,
+			'Image post',
+			attachmentIds: [$attachmentId],
+		));
+
+		self::assertCount(1, $app->queue->pending(), 'The valid image post should be queued for mirroring.');
+		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
+			'blob' => [
+				'$type' => 'blob',
+				'ref' => ['$link' => 'bafy-image'],
+				'mimeType' => 'image/png',
+				'size' => 3,
+			],
+		], JSON_THROW_ON_ERROR)));
+		$this->http->queueResponse($this->success());
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertCount(2, $this->http->requests);
+		self::assertStringContainsString('com.atproto.repo.uploadBlob', $this->http->requests[0]['url']);
+		self::assertSame('png', $this->http->requests[0]['body']);
+
+		$recordRequest = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.embed.images', $recordRequest['record']['embed']['$type']);
+		self::assertSame('A small test image', $recordRequest['record']['embed']['images'][0]['alt']);
+		self::assertSame(['$link' => 'bafy-image'], $recordRequest['record']['embed']['images'][0]['image']['ref']);
+		self::assertNotNull($this->publications->findForPost(self::ALICE, $post->id));
 	}
 
 	public function testARetryAfterAPdsFailureUsesTheSameRecordKey(): void

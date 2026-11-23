@@ -1168,6 +1168,7 @@ final readonly class Application
 			$httpClient === null ? null : new AtprotoFacets(new XrpcAtprotoIdentityResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoReplyBuilder(new XrpcAtprotoRecordResolver($httpClient)),
 			$httpClient === null ? null : new AtprotoEmbed(new XrpcAtprotoBlobUploader($httpClient, $atprotoDpop)),
+			$mediaService,
 		);
 		// Likes and reposts mirror only posts this instance published; the
 		// subject CID is read from the PDS, so they share the record resolver.
