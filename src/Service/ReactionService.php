@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service;
 
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
+use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\FollowState;
@@ -82,6 +83,7 @@ final class ReactionService
 		private readonly ?NotificationService $notifications = null,
 		private readonly ?MuteRepository $mutes = null,
 		private readonly ?RemotePostRepository $remotePosts = null,
+		private readonly ?InboundBlockRepository $inboundBlocks = null,
 	) {
 	}
 
@@ -570,6 +572,9 @@ final class ReactionService
 	{
 		if ($this->blocks->findByActor($post->authorId, $actor->actorId) !== null) {
 			throw new InboxRejectedException('blocked_actor', 'The author blocks this actor.');
+		}
+		if ($this->inboundBlocks?->isBlocked($post->authorId, $actor->actorId) === true) {
+			throw new InboxRejectedException('blocked_actor', 'This actor blocks the author.');
 		}
 
 		$allowed = match ($post->visibility) {

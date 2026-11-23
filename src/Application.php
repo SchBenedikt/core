@@ -1046,6 +1046,7 @@ final readonly class Application
 		}
 
 		$logger ??= new NullLogger();
+		$inboundBlocks ??= new InMemoryInboundBlockRepository();
 		$pinRepository ??= new InMemoryPostPinRepository();
 		$mediaCollectionRepository ??= new InMemoryMediaCollectionRepository();
 		$pinService ??= new PinService($posts, $pinRepository, $clock);
@@ -1131,6 +1132,7 @@ final readonly class Application
 			$notificationService,
 			$muteRepository,
 			$remotePosts,
+			$inboundBlocks ?? new InMemoryInboundBlockRepository(),
 		);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
