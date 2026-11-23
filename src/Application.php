@@ -14,6 +14,7 @@ use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
+use AlohaSocial\Core\Api\ConversationMuteStatusHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
@@ -1677,6 +1678,7 @@ final readonly class Application
 			->with(NotificationPolicyHandler::class, static fn (): NotificationPolicyHandler => new NotificationPolicyHandler($notificationService))
 			->with(NotificationRequestsHandler::class, static fn (): NotificationRequestsHandler => new NotificationRequestsHandler($notificationService))
 			->with(NotificationRequestActionHandler::class, static fn (): NotificationRequestActionHandler => new NotificationRequestActionHandler($notificationService))
+			->with(ConversationMuteStatusHandler::class, static fn (): ConversationMuteStatusHandler => new ConversationMuteStatusHandler($notificationService))
 			->with(MuteConversationHandler::class, static fn (): MuteConversationHandler => new MuteConversationHandler($notificationService))
 			->with(UnmuteConversationHandler::class, static fn (): UnmuteConversationHandler => new UnmuteConversationHandler($notificationService))
 			->with(InboxHandler::class, static fn (): InboxHandler => new InboxHandler($inboxService))

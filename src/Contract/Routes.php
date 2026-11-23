@@ -13,6 +13,7 @@ use AlohaSocial\Core\Api\ActorHandler;
 use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
+use AlohaSocial\Core\Api\ConversationMuteStatusHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\ActorCollectionsHandler;
 use AlohaSocial\Core\Api\ActorFeaturedHandler;
@@ -1089,6 +1090,15 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '30/900',
 				summary: 'Change sender-category actions or the new-account threshold; existing events keep their status.',
+			),
+			new Route(
+				name: 'conversations.mute.status',
+				method: 'GET',
+				path: $base . '/conversations/{id}/mute',
+				handler: ConversationMuteStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'Read whether a thread is muted by the signed-in account.',
 			),
 			new Route(
 				name: 'conversations.mute',
