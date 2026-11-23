@@ -302,7 +302,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		));
 	}
 
-	public function timelineForAuthors(array $authorIds, int $limit, ?DateTimeImmutable $before = null): array
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
 	{
 		$authors = array_fill_keys(array_values($authorIds), true);
 		if ($authors === []) {
@@ -315,7 +315,10 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				&& !$post->isArchived()
 				&& $post->visibility !== Visibility::Direct
 				&& isset($authors[$post->authorId])
-				&& ($before === null || $post->publishedAt < $before),
+				&& ($before === null || ($before instanceof TimelineCursor
+					? ($post->publishedAt < $before->publishedAt
+						|| ($post->publishedAt == $before->publishedAt && strcmp($post->id, $before->id) < 0))
+					: $post->publishedAt < $before)),
 		));
 
 		usort($posts, static function (Post $a, Post $b): int {
