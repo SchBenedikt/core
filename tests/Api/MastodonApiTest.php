@@ -16,9 +16,13 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePoll;
@@ -1879,6 +1883,48 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(2, $app->queue->pendingCount());
 	}
 
+	public function testHostRemoteReactionsWorkWhenMastodonApiIsDisabled(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$objectId = 'https://remote.example/notes/host-like';
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-alice-bob',
+			localUserId: 'alice',
+			actorId: $actorId,
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Accepted,
+		));
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/host-like',
+			objectId: $objectId,
+			actorId: $actorId,
+			kind: RemotePostKind::Post,
+			content: 'Remote status',
+			contentWarning: null,
+			publishedAt: $this->clock->now(),
+			objectAuthorId: $actorId,
+		));
+		$app = $this->app(
+			enabled: false,
+			actors: ['alice'],
+			followingRepository: $following,
+			remotePostRepository: $remotePosts,
+		);
+		$reactions = $app->reactions;
+		self::assertNotNull($reactions);
+		$post = $reactions->remotePostFor('alice', $objectId);
+		self::assertFalse($reactions->remoteInteractionsFor('alice', $post)['viewer']['favourited']);
+		self::assertTrue($reactions->likeRemote('alice', $objectId)['viewer']['favourited']);
+		self::assertSame(1, $app->queue->pendingCount());
+		self::assertTrue($reactions->likeRemote('alice', $objectId)['viewer']['favourited']);
+		self::assertSame(1, $app->queue->pendingCount(), 'A retry does not enqueue a duplicate Like.');
+		self::assertFalse($reactions->unlikeRemote('alice', $objectId)['viewer']['favourited']);
+		self::assertSame(2, $app->queue->pendingCount());
+	}
+
 	public function testRemoteRelationshipReportsInboundBlocks(): void
 	{
 		$actorId = 'https://remote.example/users/bob';
@@ -2913,6 +2959,7 @@ final class MastodonApiTest extends TestCase
 		?RsaKeyPair $signingKey = null,
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
 		?InMemoryRemotePollRepository $remotePollRepository = null,
+		?RemotePostRepository $remotePostRepository = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -2939,6 +2986,7 @@ final class MastodonApiTest extends TestCase
 			remoteActors: $remoteActors,
 			inboundBlocks: $inboundBlocks,
 			remotePollRepository: $remotePollRepository,
+			remotePostRepository: $remotePostRepository,
 		);
 	}
 
