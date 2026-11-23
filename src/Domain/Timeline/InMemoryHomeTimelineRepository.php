@@ -45,6 +45,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		string $localUserId,
 		int $limit,
 		DateTimeImmutable|TimelineCursor|null $before = null,
+		bool $hideReplies = false,
 	): array {
 		$entries = [];
 		$muted = array_fill_keys(
@@ -53,6 +54,9 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		);
 
 		foreach ($this->posts->ownTimeline($localUserId, self::UNBOUNDED, $before) as $post) {
+			if ($hideReplies && $post->inReplyToId !== null) {
+				continue;
+			}
 			if (isset($muted[$post->authorId])) {
 				continue;
 			}
@@ -67,6 +71,9 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 			self::UNBOUNDED,
 			$before,
 		) as $post) {
+			if ($hideReplies && $post->inReplyToId !== null) {
+				continue;
+			}
 			if (isset($blocked[$post->actorId]) || isset($muted[$post->actorId])) {
 				continue;
 			}
@@ -102,6 +109,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 			contentWarning: $post->contentWarning,
 			publishedAt: $post->publishedAt,
 			boostedBy: $post->kind === RemotePostKind::Boost ? $post->actorId : null,
+			inReplyToId: $post->inReplyToId,
 		);
 	}
 }

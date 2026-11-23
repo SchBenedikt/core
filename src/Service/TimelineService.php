@@ -51,10 +51,11 @@ final class TimelineService
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array
 	{
 		return array_values(array_filter(
-			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before, $beforeId)),
+			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before, $beforeId), $hideReplies),
 			fn (TimelineEntry $entry): bool => $this->moderation?->allowsActor($entry->authorId) !== false
 				&& ($entry->objectAuthorId === null || $this->moderation?->allowsActor($entry->objectAuthorId) !== false),
 		));
@@ -69,6 +70,7 @@ final class TimelineService
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array
 	{
 		$cursor = $this->cursor($before, $beforeId);
@@ -77,6 +79,7 @@ final class TimelineService
 			$this->clamp($limit),
 			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
 			$cursor instanceof TimelineCursor ? $cursor->id : null,
+			hideReplies: $hideReplies,
 		));
 	}
 
@@ -93,6 +96,7 @@ final class TimelineService
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array
 	{
 		$normalized = Hashtags::normalize($tag);
@@ -107,6 +111,7 @@ final class TimelineService
 			$this->clamp($limit),
 			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
 			$cursor instanceof TimelineCursor ? $cursor->id : null,
+			$hideReplies,
 		));
 	}
 
@@ -127,6 +132,7 @@ final class TimelineService
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array {
 		$cursor = $this->cursor($before, $beforeId);
 
@@ -135,6 +141,7 @@ final class TimelineService
 			$this->clamp($limit),
 			$cursor instanceof TimelineCursor ? $cursor->publishedAt : $cursor,
 			$cursor instanceof TimelineCursor ? $cursor->id : null,
+			$hideReplies,
 		));
 	}
 

@@ -56,6 +56,7 @@ final class HomeTimelineHandler implements Handler
 				$fetch,
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
+				hideReplies: true,
 			);
 		} catch (InvalidCursorException $exception) {
 			throw HttpException::badRequest('invalid_cursor', $exception->getMessage());

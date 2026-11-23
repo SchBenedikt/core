@@ -35,6 +35,7 @@ final readonly class TimelineEntry
 		public DateTimeImmutable $publishedAt,
 		public ?Visibility $visibility = null,
 		public ?string $boostedBy = null,
+		public ?string $inReplyToId = null,
 	) {
 		if ($id === '' || $authorId === '' || $objectId === '') {
 			throw new InvalidArgumentException('A timeline entry needs an id, an author and an object.');
@@ -52,6 +53,7 @@ final readonly class TimelineEntry
 			contentWarning: $post->contentWarning,
 			publishedAt: $post->publishedAt,
 			visibility: $post->visibility,
+			inReplyToId: $post->inReplyToId,
 		);
 	}
 
@@ -76,6 +78,7 @@ final readonly class TimelineEntry
 			'published_at' => Time::format($this->publishedAt),
 			'kind' => $this->isBoost() ? 'boost' : 'post',
 			'boosted_by' => $this->boostedBy,
+			'in_reply_to_id' => $this->inReplyToId,
 		];
 	}
 }

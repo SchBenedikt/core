@@ -92,6 +92,7 @@ interface PostRepository
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $hideReplies = false,
 	): array;
 
 	/**
@@ -109,6 +110,7 @@ interface PostRepository
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array;
 
 	/**
@@ -127,6 +129,7 @@ interface PostRepository
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array;
 
 	/**
@@ -196,7 +199,7 @@ interface PostRepository
 	 *
 	 * @return list<Post>
 	 */
-	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null, bool $hideReplies = false): array;
 
 	/**
 	 * Live direct replies to one post, newest first.

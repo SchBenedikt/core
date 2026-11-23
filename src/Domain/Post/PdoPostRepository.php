@@ -303,6 +303,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		?string $beforeId = null,
 		?DateTimeImmutable $after = null,
 		?string $afterId = null,
+		bool $hideReplies = false,
 	): array {
 		// Unlisted posts are readable by link but never enumerated; only
 		// public rows belong in the public timeline.
@@ -311,6 +312,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$parameters = [
 			'public' => Visibility::Public->value,
 		];
+		if ($hideReplies) {
+			$sql .= ' AND in_reply_to_id IS NULL';
+		}
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -342,6 +346,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array {
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE . ' p'
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
@@ -351,6 +356,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'public' => Visibility::Public->value,
 			'hashtag' => $hashtag,
 		];
+		if ($hideReplies) {
+			$sql .= ' AND p.in_reply_to_id IS NULL';
+		}
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -372,6 +380,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		int $limit,
 		?DateTimeImmutable $before = null,
 		?string $beforeId = null,
+		bool $hideReplies = false,
 	): array {
 		if ($hashtags === []) {
 			return [];
@@ -391,6 +400,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			. ' INNER JOIN ' . PostSchema::HASHTAG_TABLE . ' h ON h.post_id = p.id'
 			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag IN (' . implode(', ', $placeholders) . ')';
+		if ($hideReplies) {
+			$sql .= ' AND p.in_reply_to_id IS NULL';
+		}
 
 		if ($before !== null) {
 			if ($beforeId === null) {
@@ -504,7 +516,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		);
 	}
 
-	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
+	public function timelineForAuthors(array $authorIds, int $limit, DateTimeImmutable|TimelineCursor|null $before = null, bool $hideReplies = false): array
 	{
 		if ($authorIds === []) {
 			return [];
@@ -521,6 +533,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
 			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')'
 			. ' AND visibility IN (:public, :unlisted, :followers)';
+		if ($hideReplies) {
+			$sql .= ' AND in_reply_to_id IS NULL';
+		}
 		$parameters['public'] = Visibility::Public->value;
 		$parameters['unlisted'] = Visibility::Unlisted->value;
 		$parameters['followers'] = Visibility::Followers->value;

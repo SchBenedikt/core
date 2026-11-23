@@ -96,6 +96,7 @@ final class RemotePostFactory
 			objectType: $objectType ?? RemoteObjectType::Note,
 			metadata: $metadata,
 			quotedObjectId: $this->quotedObjectId($object),
+			inReplyToId: $this->referenceId($object['inReplyTo'] ?? null),
 		);
 	}
 
@@ -130,6 +131,7 @@ final class RemotePostFactory
 			objectType: $objectType,
 			metadata: $metadata,
 			quotedObjectId: $this->quotedObjectId($embedded) ?? $target?->quotedObjectId,
+			inReplyToId: $this->referenceId($embedded['inReplyTo'] ?? null) ?? $target?->inReplyToId,
 		);
 	}
 
@@ -190,6 +192,7 @@ final class RemotePostFactory
 			objectType: $target->objectType,
 			metadata: $target->metadata,
 			quotedObjectId: $target->quotedObjectId,
+			inReplyToId: $target->inReplyToId,
 		);
 	}
 
@@ -367,6 +370,26 @@ final class RemotePostFactory
 		$scheme = parse_url($id, PHP_URL_SCHEME);
 		if ($scheme !== 'http' && $scheme !== 'https') {
 			throw new InboxRejectedException('invalid_activity', 'The quoted object must be an http(s) URL.');
+		}
+
+		return $id;
+	}
+
+	private function referenceId(mixed $value): ?string
+	{
+		if ($value === null || $value === '') {
+			return null;
+		}
+
+		$id = is_array($value) ? ($value['id'] ?? $value['@id'] ?? null) : $value;
+		if (!is_string($id) || trim($id) === '' || mb_strlen(trim($id)) > RemotePost::MAX_ID_LENGTH) {
+			throw new InboxRejectedException('invalid_activity', 'The reply target must have a valid id.');
+		}
+
+		$id = trim($id);
+		$scheme = parse_url($id, PHP_URL_SCHEME);
+		if ($scheme !== 'http' && $scheme !== 'https') {
+			throw new InboxRejectedException('invalid_activity', 'The reply target must be an http(s) URL.');
 		}
 
 		return $id;

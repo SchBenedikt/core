@@ -73,6 +73,22 @@ final class PublicDiscoveryTest extends TestCase
 		self::assertSame([$this->public], array_column($response->decodedBody()['posts'], 'id'));
 	}
 
+	public function testSignedInPublicFeedsHideRepliesAndAnonymousReadersCanStillSeeThem(): void
+	{
+		$root = $this->post('root #devops', 'public');
+		$replyResponse = $this->createPost('reply #devops', 'public', $root);
+		self::assertSame(201, $replyResponse->status);
+		$reply = $replyResponse->decodedBody()['post']['id'];
+
+		$anonymous = $this->app->handle(new Request('GET', '/api/v1/timelines/public'));
+		$signedIn = $this->app->handle(new Request('GET', '/api/v1/timelines/public', userId: 'bob'));
+		$tag = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops', userId: 'bob'));
+
+		self::assertContains($reply, array_column($anonymous->decodedBody()['posts'], 'id'));
+		self::assertNotContains($reply, array_column($signedIn->decodedBody()['posts'], 'id'));
+		self::assertNotContains($reply, array_column($tag->decodedBody()['posts'], 'id'));
+	}
+
 	public function testTheHashtagTimelineListsOnlyPublicPosts(): void
 	{
 		$response = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops'));
@@ -160,13 +176,18 @@ final class PublicDiscoveryTest extends TestCase
 		return $response->decodedBody()['post']['id'];
 	}
 
-	private function createPost(string $content, string $visibility): Response
+	private function createPost(string $content, string $visibility, ?string $inReplyToId = null): Response
 	{
+		$body = ['content' => $content, 'visibility' => $visibility];
+		if ($inReplyToId !== null) {
+			$body['in_reply_to_id'] = $inReplyToId;
+		}
+
 		return $this->app->handle(new Request(
 			method: 'POST',
 			path: '/api/v1/posts',
 			headers: ['Content-Type' => 'application/json'],
-			body: json_encode(['content' => $content, 'visibility' => $visibility], JSON_THROW_ON_ERROR),
+			body: json_encode($body, JSON_THROW_ON_ERROR),
 			userId: 'alice',
 		));
 	}

@@ -54,8 +54,9 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		string $localUserId,
 		int $limit,
 		DateTimeImmutable|TimelineCursor|null $before = null,
+		bool $hideReplies = false,
 	): array {
-		$entries = $this->base->forUser($localUserId, $limit, $before);
+		$entries = $this->base->forUser($localUserId, $limit, $before, $hideReplies);
 		$muted = array_fill_keys(
 			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
 			true,
@@ -67,7 +68,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		));
 
 		if ($authors !== []) {
-			foreach ($this->posts->timelineForAuthors($authors, $limit, $before) as $post) {
+			foreach ($this->posts->timelineForAuthors($authors, $limit, $before, $hideReplies) as $post) {
 				if (isset($muted[$post->authorId])) {
 					continue;
 				}
@@ -89,6 +90,9 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
 				continue;
 			}
+			if ($hideReplies && $post->inReplyToId !== null) {
+				continue;
+			}
 
 			if (isset($muted[$boost->userId]) || isset($muted[$post->authorId])) {
 				continue;
@@ -108,6 +112,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 				publishedAt: $boost->createdAt,
 				visibility: $post->visibility,
 				boostedBy: $boost->userId,
+				inReplyToId: $post->inReplyToId,
 			);
 		}
 
