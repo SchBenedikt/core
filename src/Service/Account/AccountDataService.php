@@ -190,13 +190,16 @@ final class AccountDataService implements AccountDeletionSweeper
 				}
 			}
 
-			return $this->reportFor($this->repository->finishDeletion(
+			$finished = $this->repository->finishDeletion(
 				$userId,
 				$erasure->counts,
 				$deleted,
 				$failures,
 				$this->clock->now(),
-			));
+			);
+			$this->scheduleBlobRetry($userId, $finished);
+
+			return $this->reportFor($finished);
 		} catch (Throwable $exception) {
 			// A retry must not wait for the lease when this process can release
 			// its claim immediately.
@@ -305,6 +308,21 @@ final class AccountDataService implements AccountDeletionSweeper
 		}
 
 		return $deletion;
+	}
+
+	private function scheduleBlobRetry(string $userId, AccountDeletion $deletion): void
+	{
+		if ($deletion->blobFailures === [] || $this->queue === null) {
+			return;
+		}
+
+		// This job deliberately has no account subject: it must run after the
+		// tombstone blocks ordinary account work so the worker can retry storage.
+		$this->queue->push(
+			JobType::ACCOUNT_ERASURE_BLOB_RETRY,
+			['user_id' => $userId],
+			$this->clock->now()->modify('+1 minute'),
+		);
 	}
 
 	private function reportFor(AccountDeletion $deletion): AccountErasureReport

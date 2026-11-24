@@ -57,6 +57,7 @@ use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Account\AccountDataService;
+use AlohaSocial\Core\Service\Account\AccountErasureBlobRetryHandler;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use PDO;
@@ -288,6 +289,17 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['media/att-a/original.jpg'], $first->blobFailures);
 		self::assertGreaterThanOrEqual(2, $first->blobsDeleted);
 		self::assertSame('erased', $first->state);
+		$jobs = $this->queue->reserve(100, $this->clock->now()->modify('+2 minutes'));
+		$retryJob = null;
+		foreach ($jobs as $job) {
+			if ($job->type === JobType::ACCOUNT_ERASURE_BLOB_RETRY) {
+				$retryJob = $job;
+				break;
+			}
+		}
+		self::assertNotNull($retryJob, 'A durable retry should be queued after failed object deletion.');
+		(new AccountErasureBlobRetryHandler($service))->handle($retryJob);
+		$this->queue->complete($retryJob);
 
 		$retried = $service->erase('alice');
 		self::assertTrue($retried->complete());

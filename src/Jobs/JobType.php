@@ -45,6 +45,9 @@ final class JobType
 	 */
 	public const ACCOUNT_MOVE = 'account.move';
 
+	/** Retries object deletion after a completed account erasure. */
+	public const ACCOUNT_ERASURE_BLOB_RETRY = 'account.erasure.blob_retry';
+
 	/**
 	 * Publishes one due scheduled post. The payload carries the schedule id,
 	 * not a copy of the content, so a reschedule is honoured.

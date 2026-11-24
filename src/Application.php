@@ -405,6 +405,7 @@ use AlohaSocial\Core\Protocol\Atproto\AtprotoTimelineReader;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoTimelineReader;
 use AlohaSocial\Core\Service\Account\AccountDataService;
+use AlohaSocial\Core\Service\Account\AccountErasureBlobRetryHandler;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
@@ -1800,6 +1801,12 @@ final readonly class Application
 			$jobHandlers = $jobHandlers->with(
 				JobType::ATPROTO_SYNC,
 				new AtprotoSyncHandler($atprotoSync, $logger),
+			);
+		}
+		if ($accountData !== null) {
+			$jobHandlers = $jobHandlers->with(
+				JobType::ACCOUNT_ERASURE_BLOB_RETRY,
+				new AccountErasureBlobRetryHandler($accountData),
 			);
 		}
 		$jobHandlers = $jobHandlers
