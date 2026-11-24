@@ -144,7 +144,24 @@ final class XrpcAtprotoBlobUploaderTest extends TestCase
 			self::fail('The uploader should have failed.');
 		} catch (AtprotoBlobException $exception) {
 			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+			self::assertFalse($exception->retryable);
+			self::assertSame(413, $exception->status);
 			self::assertStringNotContainsString('secret', $exception->getMessage());
+		}
+	}
+
+	public function testAServiceUnavailableUploadIsMarkedRetryable(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(503, [], '{"error":"ServiceUnavailable"}'));
+
+		try {
+			(new XrpcAtprotoBlobUploader($http))->upload($this->account(), new AtprotoMedia('image/png', 'x'));
+			self::fail('A temporary PDS outage should fail this attempt.');
+		} catch (AtprotoBlobException $exception) {
+			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+			self::assertTrue($exception->retryable);
+			self::assertSame(503, $exception->status);
 		}
 	}
 
@@ -159,6 +176,8 @@ final class XrpcAtprotoBlobUploaderTest extends TestCase
 			(new XrpcAtprotoBlobUploader($http))->upload($this->account(), new AtprotoMedia('image/png', 'x'));
 		} catch (AtprotoBlobException $exception) {
 			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+			self::assertTrue($exception->retryable);
+			self::assertSame(0, $exception->status);
 
 			throw $exception;
 		}

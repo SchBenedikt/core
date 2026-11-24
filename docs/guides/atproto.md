@@ -210,6 +210,10 @@ written. A blob uploaded before a later upload failed stays on the PDS without
 a record — the core does not delete it, because it never deletes a blob the
 account might use elsewhere.
 
+Transport failures, rate limits and temporary PDS errors remain retryable for
+queued publication. Permanent upload refusals, such as an unsupported blob or
+size limit, are reported as post refusals and do not retry indefinitely.
+
 When a post contains exactly one valid HTTP(S) URL and has no image or video,
 the record gets a minimal `app.bsky.embed.external` card. Its hostname is the
 title and its description is empty; the URL stays in the post text. The
