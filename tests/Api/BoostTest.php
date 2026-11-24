@@ -53,6 +53,22 @@ final class BoostTest extends TestCase
 		self::assertSame(204, $this->unboost($app, $post['id'], 'bob')->status);
 	}
 
+	public function testAStoredBoostAppearsInTheBoostersHomeTimeline(): void
+	{
+		$app = $this->app();
+		$post = $this->createPost($app, 'boost me');
+		$boost = $this->boost($app, $post['id'], 'bob')->decodedBody()['boost'];
+
+		$home = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'bob'));
+		$items = $home->decodedBody()['posts'];
+
+		self::assertSame($boost['id'], $items[0]['id']);
+		self::assertSame('boost', $items[0]['kind']);
+		self::assertSame('bob', $items[0]['boosted_by']);
+		self::assertSame($post['id'], $items[0]['object_id']);
+		self::assertSame('boost me', $items[0]['content']);
+	}
+
 	public function testBoostRequiresAuthVisibilityAndAPost(): void
 	{
 		$app = $this->app();

@@ -668,6 +668,7 @@ final readonly class Application
 			$blockRepository,
 			$muteRepository,
 			$clock,
+			$boostRepository,
 		);
 
 		if ($inboxResolver === null) {

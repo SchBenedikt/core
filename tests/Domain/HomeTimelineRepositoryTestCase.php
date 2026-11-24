@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Post\TimelineCursor;
@@ -35,6 +36,8 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 	abstract protected function repository(): HomeTimelineRepository;
 
 	abstract protected function addPost(Post $post): void;
+
+	abstract protected function addBoost(Boost $boost): void;
 
 	abstract protected function addRemote(RemotePost $remote): void;
 
@@ -73,6 +76,75 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 
 		self::assertSame(Visibility::Public, $entries[2]->visibility);
 		self::assertSame(Visibility::Followers, $entries[3]->visibility);
+	}
+
+	public function testLocalBoostsAppearInTheBoostersHomeTimelineWithTheOriginalPost(): void
+	{
+		$this->seed();
+		$this->addBoost(new Boost(
+			'local-boost',
+			'alice',
+			'other-local',
+			Time::parse('2026-11-11T10:05:30Z'),
+		));
+
+		$entries = $this->repository()->forUser('alice', 10);
+		$ids = $this->ids($entries);
+		self::assertSame('local-boost', $ids[0]);
+
+		$boost = $entries[0];
+		self::assertTrue($boost->isBoost());
+		self::assertSame('alice', $boost->boostedBy);
+		self::assertSame('other-local', $boost->objectId);
+		self::assertSame('bob', $boost->objectAuthorId);
+		self::assertSame('local bob content', $boost->content);
+		self::assertNotContains('local-boost', $this->ids($this->repository()->forUser('carol', 10)));
+	}
+
+	public function testBlocksHideTheOriginalAuthorBehindALocalBoost(): void
+	{
+		$this->seed();
+		$this->addBoost(new Boost(
+			'local-boost',
+			'alice',
+			'other-local',
+			Time::parse('2026-11-11T10:05:30Z'),
+		));
+
+		$this->block('alice', 'bob');
+		self::assertNotContains('local-boost', $this->ids($this->repository()->forUser('alice', 10)));
+	}
+
+	public function testMutesHideTheOriginalAuthorBehindALocalBoost(): void
+	{
+		$this->seed();
+		$this->addBoost(new Boost(
+			'local-boost',
+			'alice',
+			'other-local',
+			Time::parse('2026-11-11T10:05:30Z'),
+		));
+
+		$this->mute('alice', 'bob');
+		self::assertNotContains('local-boost', $this->ids($this->repository()->forUser('alice', 10)));
+	}
+
+	public function testLocalBoostsUseTheirOwnTimestampAndIdForCursorPaging(): void
+	{
+		$this->seed();
+		$publishedAt = Time::parse('2026-11-11T10:05:30Z');
+		$this->addBoost(new Boost('local-boost-z', 'alice', 'other-local', $publishedAt));
+		$this->addBoost(new Boost('local-boost-a', 'alice', 'own-public', $publishedAt));
+
+		$firstPage = $this->repository()->forUser('alice', 1);
+		self::assertSame(['local-boost-z'], $this->ids($firstPage));
+
+		$nextPage = $this->repository()->forUser(
+			'alice',
+			1,
+			new TimelineCursor($firstPage[0]->publishedAt, $firstPage[0]->id),
+		);
+		self::assertSame(['local-boost-a'], $this->ids($nextPage));
 	}
 
 	public function testAnArchivedOwnPostIsAbsentFromTheHomeTimeline(): void
