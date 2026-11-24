@@ -173,6 +173,7 @@ use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoFollowRepository;
@@ -857,6 +858,7 @@ final readonly class Application
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
+		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -949,6 +951,7 @@ final readonly class Application
 			atprotoFollowRepository: $atprotoFollowRepository ?? new PdoAtprotoFollowRepository($database),
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient, $atprotoDpop),
+			atprotoRemoteTargetPolicy: $atprotoRemoteTargetPolicy,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -1064,6 +1067,7 @@ final readonly class Application
 		?AccountDataRepository $accountDataRepository = null,
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
+		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1221,6 +1225,7 @@ final readonly class Application
 			$blockRepository,
 			$activities,
 			$atprotoInteractionRepository,
+			$atprotoRemoteTargetPolicy,
 		);
 		// The profile write shares the blob uploader with post media; the
 		// timeline read is a port so a host can cache or map it as it likes.
