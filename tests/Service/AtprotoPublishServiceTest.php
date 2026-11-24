@@ -517,7 +517,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	{
 		$post = $this->post(content: 'watch');
 		$this->posts->insert($post);
-		$this->http->queueResponse($this->blobResponse('bafy-video', 'video/mp4', 4));
+		$this->http->queueResponse($this->blobResponse('bafy-video', 'video/mp4', 3));
 		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', $post->id, [

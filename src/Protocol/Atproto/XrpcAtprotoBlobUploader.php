@@ -79,6 +79,12 @@ final class XrpcAtprotoBlobUploader implements AtprotoBlobUploader
 				'The AT Protocol PDS returned no blob reference.',
 			);
 		}
+		if ($blob->mimeType !== $media->mimeType || $blob->size !== $media->size()) {
+			throw new AtprotoBlobException(
+				AtprotoBlobException::UPLOAD_FAILED,
+				'The AT Protocol PDS returned blob metadata that does not match the uploaded media.',
+			);
+		}
 
 		return $blob;
 	}
