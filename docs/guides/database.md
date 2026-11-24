@@ -280,8 +280,8 @@ work; old rows remain unread and are therefore not removed by the cleanup job.
 `social_atproto_publication` stores the idempotency mapping from a local post
 to the AT Protocol record written for one account. Its primary key is
 `(local_user_id, post_id)` and `(local_user_id, rkey)` is unique; `rkey` is
-the deterministic TID, `uri` is the PDS-returned `at://` URI and
-`published_at` is the canonical timestamp. The row is written only after the
+the deterministic TID, `uri` is the PDS-returned `at://` URI, and `cid` stores
+the content revision (nullable for older rows). `published_at` is the canonical timestamp. The row is written only after the
 PDS accepted the record, so a failed publish leaves no partial row. A local
 post deletion queues `atproto.delete`, calls `com.atproto.repo.deleteRecord`
 and removes this row only after the PDS accepted it; a failed delete leaves

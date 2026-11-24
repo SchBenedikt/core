@@ -241,7 +241,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	{
 		$post = $this->post(content: 'edited public text');
 		$this->posts->insert($post);
-		$publication = new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z'));
+		$publication = new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z'), cid: 'bafy-old');
 		$this->publications->insert($publication);
 		$this->http->queueResponseFactory($this->published());
 
@@ -250,8 +250,9 @@ final class AtprotoPublishServiceTest extends TestCase
 		$write = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('post1', $write['rkey']);
 		self::assertSame('edited public text', $write['record']['text']);
-		self::assertSame($publication, $result);
-		self::assertSame($publication, $this->publications->findForPost('alice', $post->id));
+		self::assertNotSame($publication, $result);
+		self::assertSame('bafy-record', $result->cid);
+		self::assertSame($result, $this->publications->findForPost('alice', $post->id));
 	}
 
 	public function testUpdateJobDoesNotCreateANewPublicationWhenTheOriginalRowIsGone(): void
@@ -682,7 +683,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
 			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
 
-			return new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR));
+			return new HttpResponse(200, [], json_encode(['uri' => $uri, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR));
 		};
 	}
 

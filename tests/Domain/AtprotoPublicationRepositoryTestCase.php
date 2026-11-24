@@ -34,6 +34,7 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 		self::assertSame('234567abcdefg', $stored->rkey);
 		self::assertSame('at://did:plc:alice/app.bsky.feed.post/234567abcdefg', $stored->uri);
 		self::assertSame('https://pds.example.test', $stored->pdsUrl);
+		self::assertSame('bafy-publication', $stored->cid);
 		self::assertNull($repository->findForPost('alice', 'other'));
 		self::assertNull($repository->findForPost('bob', 'post-1'));
 	}
@@ -58,6 +59,24 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 		$repository->insert($this->publication('alice', 'post-2', '234567abcdefg'));
 	}
 
+	public function testUpdateRefreshesPdsRevision(): void
+	{
+		$repository = $this->repository();
+		$original = $this->publication('alice', 'post-1', '234567abcdefg');
+		$repository->insert($original);
+		$repository->update(new AtprotoPublication(
+			$original->localUserId,
+			$original->postId,
+			$original->rkey,
+			$original->uri,
+			Time::parse('2026-11-11T11:00:00Z'),
+			$original->pdsUrl,
+			'bafy-updated',
+		));
+
+		self::assertSame('bafy-updated', $repository->findForPost('alice', 'post-1')?->cid);
+	}
+
 	public function testRemoveIsScopedAndIdempotent(): void
 	{
 		$repository = $this->repository();
@@ -78,6 +97,7 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 			'at://did:plc:' . $user . '/app.bsky.feed.post/' . $rkey,
 			Time::parse('2026-11-11T10:00:00Z'),
 			'https://pds.example.test',
+			'bafy-publication',
 		);
 	}
 }

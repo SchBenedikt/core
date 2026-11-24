@@ -19,7 +19,7 @@ use Throwable;
  */
 final class PdoAtprotoPublicationRepository implements AtprotoPublicationRepository
 {
-	private const COLUMNS = 'local_user_id, post_id, rkey, uri, published_at, pds_url';
+	private const COLUMNS = 'local_user_id, post_id, rkey, uri, published_at, pds_url, cid';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -42,8 +42,8 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . AtprotoPublicationSchema::TABLE
-				. ' (local_user_id, post_id, rkey, uri, published_at, pds_url)'
-				. ' VALUES (:local_user_id, :post_id, :rkey, :uri, :published_at, :pds_url)',
+				. ' (local_user_id, post_id, rkey, uri, published_at, pds_url, cid)'
+				. ' VALUES (:local_user_id, :post_id, :rkey, :uri, :published_at, :pds_url, :cid)',
 				[
 					'local_user_id' => $publication->localUserId,
 					'post_id' => $publication->postId,
@@ -51,6 +51,7 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 					'uri' => $publication->uri,
 					'published_at' => Time::format($publication->publishedAt),
 					'pds_url' => $publication->pdsUrl,
+					'cid' => $publication->cid,
 				],
 			);
 		} catch (Throwable $exception) {
@@ -60,6 +61,24 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 
 			throw new DatabaseException('The AT Protocol publication could not be stored.', 0, $exception);
 		}
+	}
+
+	public function update(AtprotoPublication $publication): void
+	{
+		$this->db->execute(
+			'UPDATE ' . AtprotoPublicationSchema::TABLE
+			. ' SET uri = :uri, cid = :cid, published_at = :published_at, pds_url = :pds_url'
+			. ' WHERE local_user_id = :local_user_id AND post_id = :post_id AND rkey = :rkey',
+			[
+				'uri' => $publication->uri,
+				'cid' => $publication->cid,
+				'published_at' => Time::format($publication->publishedAt),
+				'pds_url' => $publication->pdsUrl,
+				'local_user_id' => $publication->localUserId,
+				'post_id' => $publication->postId,
+				'rkey' => $publication->rkey,
+			],
+		);
 	}
 
 	public function removeForPost(string $localUserId, string $postId): bool
@@ -83,6 +102,7 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 			uri: (string) $row['uri'],
 			publishedAt: Time::parse((string) $row['published_at']),
 			pdsUrl: $row['pds_url'] === null ? null : (string) $row['pds_url'],
+			cid: ($row['cid'] ?? null) === null ? null : (string) $row['cid'],
 		);
 	}
 }

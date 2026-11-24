@@ -1025,7 +1025,7 @@ final class ApplicationHostTest extends TestCase
 			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
 			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
 
-			return new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR));
+			return new HttpResponse(200, [], json_encode(['uri' => $uri, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR));
 		});
 		$post = $app->handle(new Request(
 			method: 'POST',
@@ -1038,6 +1038,9 @@ final class ApplicationHostTest extends TestCase
 		self::assertSame(1, $app->worker->runOnce());
 		self::assertSame(1, (int) $database->fetchValue(
 			'SELECT COUNT(*) FROM ' . AtprotoPublicationSchema::TABLE,
+		));
+		self::assertSame('bafy-record', $database->fetchValue(
+			'SELECT cid FROM ' . AtprotoPublicationSchema::TABLE,
 		));
 
 		$http->queueResponse(new HttpResponse(200, [], '{}'));

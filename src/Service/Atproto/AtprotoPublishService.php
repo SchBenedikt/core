@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Atproto\AtprotoRecordPublisher;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\MediaKind;
@@ -281,11 +282,13 @@ final class AtprotoPublishService
 
 			$rkey = $existing->rkey;
 		}
-		$uri = $this->publisher?->publish(
-			$account,
-			$rkey,
-			$this->record($post, $account, $media),
-		);
+		$publisher = $this->publisher;
+		$record = $this->record($post, $account, $media);
+		$publishedRecord = $publisher instanceof AtprotoRecordPublisher
+			? $publisher->publishRecord($account, $rkey, $record)
+			: null;
+		$uri = $publishedRecord?->uri ?? $publisher?->publish($account, $rkey, $record);
+		$cid = $publishedRecord?->cid ?? $existing?->cid;
 
 		if ($uri === null) {
 			throw new AtprotoNotConfiguredException();
@@ -295,7 +298,18 @@ final class AtprotoPublishService
 				throw new AtprotoPublishFailedException(502, 'The PDS changed the URI of an existing publication.');
 			}
 
-			return $existing;
+			$updated = new AtprotoPublication(
+				localUserId: $existing->localUserId,
+				postId: $existing->postId,
+				rkey: $existing->rkey,
+				uri: $existing->uri,
+				publishedAt: Time::toSecondPrecision($this->clock->now()),
+				pdsUrl: $account->pdsUrl,
+				cid: $cid,
+			);
+			$this->publications->update($updated);
+
+			return $updated;
 		}
 
 		$publication = new AtprotoPublication(
@@ -305,6 +319,7 @@ final class AtprotoPublishService
 			uri: $uri,
 			publishedAt: Time::toSecondPrecision($this->clock->now()),
 			pdsUrl: $account->pdsUrl,
+			cid: $cid,
 		);
 
 		try {
