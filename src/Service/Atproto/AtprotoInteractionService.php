@@ -13,6 +13,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRecord as AtprotoInteractionState;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -20,6 +22,7 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoInteractionRecord;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoRecordResolver;
@@ -63,6 +66,7 @@ final class AtprotoInteractionService
 		private readonly ?AtprotoDeleter $deleter = null,
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?ActivityFactory $activities = null,
+		private readonly ?AtprotoInteractionRepository $interactionRecords = null,
 	) {
 	}
 
@@ -124,34 +128,96 @@ final class AtprotoInteractionService
 		$account = $this->account($localUserId);
 		$post = $this->post($postId, true);
 		$this->assertNotBlocked($localUserId, $post->authorId);
+		$existing = $this->interactionRecords?->find($localUserId, $account->did, $post->id, $kind);
+		if ($existing !== null) {
+			return $existing->uri;
+		}
 		$subject = $this->subject($post, $account);
-
-		return $this->publisher->publish(
+		$rkey = $this->rkey($kind, $localUserId, $post, $account);
+		$uri = $this->publisher->publish(
 			$account,
-			$this->rkey($kind, $localUserId, $post, $account),
+			$rkey,
 			$this->record($kind, $subject),
 			$collection,
 		);
+		$publishedRkey = substr($uri, (int) strrpos($uri, '/') + 1);
+		if ($publishedRkey === '' || strlen($publishedRkey) > 512) {
+			throw new \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException(502, 'The AT Protocol PDS returned an invalid interaction URI.');
+		}
+		if ($this->interactionRecords !== null) {
+			try {
+				$this->interactionRecords->insert(new AtprotoInteractionState(
+					localUserId: $localUserId,
+					accountDid: $account->did,
+					postId: $post->id,
+					kind: $kind,
+					rkey: $publishedRkey,
+					uri: $uri,
+					createdAt: $this->clock->now(),
+				));
+			} catch (DatabaseException $exception) {
+				// Another request may have persisted the same PDS write first.
+				$stored = $this->interactionRecords->find($localUserId, $account->did, $post->id, $kind);
+				if ($stored === null) {
+					throw $exception;
+				}
+				return $stored->uri;
+			}
+		}
+
+		return $uri;
 	}
 
 	private function remove(string $kind, string $collection, string $localUserId, string $postId): void
 	{
-		$this->assertEnabled();
-
 		if ($this->deleter === null) {
 			throw new AtprotoNotConfiguredException();
 		}
 
 		$account = $this->account($localUserId);
-		// A soft-deleted post still has a record key, so an undo after the
-		// post was removed locally can clean up the remote interaction.
-		$post = $this->post($postId, false);
+		$stored = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
+		if ($stored !== null) {
+			$rkey = $stored->rkey;
+		} else {
+			// Legacy rows have no ledger entry; a soft-deleted post still has
+			// its deterministic record key for cleanup.
+			$post = $this->post($postId, false);
+			$rkey = $this->rkey($kind, $localUserId, $post, $account);
+		}
 
 		$this->deleter->delete(
 			$account,
-			$this->rkey($kind, $localUserId, $post, $account),
+			$rkey,
 			$collection,
 		);
+		$this->interactionRecords?->remove($localUserId, $account->did, $postId, $kind);
+	}
+
+	/** Remove all recorded public interactions of one kind for opt-out cleanup. */
+	public function removeAllForUser(string $localUserId, ?string $kind = null): int
+	{
+		if ($this->interactionRecords === null) {
+			return 0;
+		}
+		if ($this->deleter === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+		$account = $this->account($localUserId);
+		$removed = 0;
+		foreach ($this->interactionRecords->forUser($localUserId) as $record) {
+			if ($record->accountDid !== $account->did || ($kind !== null && $record->kind !== $kind)) {
+				continue;
+			}
+			$collection = $record->kind === self::KIND_LIKE
+				? AtprotoInteractionRecord::LIKE
+				: AtprotoInteractionRecord::REPOST;
+			$this->deleter->delete($account, $record->rkey, $collection);
+			if ($this->interactionRecords->remove($localUserId, $account->did, $record->postId, $record->kind)) {
+				++$removed;
+			}
+		}
+
+		return $removed;
 	}
 
 	private function assertEnabled(): void
