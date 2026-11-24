@@ -32,6 +32,15 @@ final class MastodonScope
 				return true;
 			}
 
+			// Mastodon deprecated `follow` in favour of granular scopes, but
+			// existing clients still request it. Keep its relationship-only
+			// permissions without making it an alias for all `write:*` routes.
+			if ($scope === 'follow' && in_array($required, [
+				'read:follows', 'write:follows', 'read:mutes', 'write:mutes',
+			], true)) {
+				return true;
+			}
+
 			$separator = strpos($required, ':');
 			if ($separator !== false && substr($required, 0, $separator) === $scope) {
 				return true;

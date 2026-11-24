@@ -39,6 +39,11 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertFalse(MastodonScope::allows(['write'], 'read:accounts'));
 		self::assertTrue(MastodonScope::allowsAll(['write'], ['write:statuses']));
 		self::assertFalse(MastodonScope::allowsAll(['write'], ['write:statuses', 'read:accounts']));
+		self::assertTrue(MastodonScope::allowsAll(
+			['follow'],
+			['read:follows', 'write:follows', 'read:mutes', 'write:mutes'],
+		));
+		self::assertFalse(MastodonScope::allows(['follow'], 'write:statuses'));
 	}
 
 	#[DataProvider('unsupportedPrefixes')]
