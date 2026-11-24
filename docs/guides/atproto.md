@@ -202,6 +202,15 @@ written. A blob uploaded before a later upload failed stays on the PDS without
 a record — the core does not delete it, because it never deletes a blob the
 account might use elsewhere.
 
+When a post contains exactly one valid HTTP(S) URL and has no image or video,
+the record gets a minimal `app.bsky.embed.external` card. Its hostname is the
+title and its description is empty; the URL stays in the post text. The
+publisher does not fetch the target page or call a link-preview service, so
+publishing cannot disclose a draft to a URL or trigger server-side requests.
+Posts with several URLs keep all links in text and facets without a card. A
+post with media keeps its media embed and its URL in text. Rich remote titles,
+descriptions and thumbnails remain unsupported.
+
 An accepted quote of a local post that already has a publication for a linked
 AT Protocol account becomes `app.bsky.embed.record`, using the quoted record's
 verified URI and CID from that account's PDS. When the quoting post also has

@@ -528,6 +528,46 @@ final class AtprotoPublishServiceTest extends TestCase
 		self::assertArrayNotHasKey('embed', $this->publishedRecord());
 	}
 
+	public function testAUniqueExternalLinkGetsAFallbackCardWithoutRemoteLookup(): void
+	{
+		$post = $this->post(content: 'Read https://example.com/story.');
+		$this->posts->insert($post);
+		$this->http->queueResponseFactory($this->published());
+
+		$this->serviceWith()->publish('alice', $post->id);
+
+		self::assertSame([
+			'$type' => 'app.bsky.embed.external',
+			'external' => [
+				'uri' => 'https://example.com/story',
+				'title' => 'example.com',
+				'description' => '',
+			],
+		], $this->publishedRecord()['embed']);
+		self::assertCount(1, $this->http->requests, 'Publishing must not fetch link metadata.');
+	}
+
+	public function testSeveralLinksRemainTextWithoutChoosingAnArbitraryCard(): void
+	{
+		$multiple = $this->post(id: 'multiple-links', content: 'https://one.example https://two.example');
+		$this->posts->insert($multiple);
+		$this->http->queueResponseFactory($this->published());
+		$this->serviceWith()->publish('alice', $multiple->id);
+		self::assertArrayNotHasKey('embed', $this->publishedRecord());
+	}
+
+	public function testMediaEmbedTakesPriorityOverAnExternalLink(): void
+	{
+		$image = $this->post(id: 'image-link', content: 'https://example.com/image');
+		$this->posts->insert($image);
+		$this->http->queueResponse($this->blobResponse('bafy-img', 'image/png', 3));
+		$this->http->queueResponseFactory($this->published());
+		$this->serviceWith()->publish('alice', $image->id, [
+			new AtprotoMedia('image/png', 'png', 'a cat'),
+		]);
+		self::assertSame('app.bsky.embed.images', $this->publishedRecord()['embed']['$type']);
+	}
+
 	public function testAReplyToAnUnpublishedParentIsSkippedAndRefused(): void
 	{
 		$post = $this->post(id: 'reply', inReplyToId: 'parent');
