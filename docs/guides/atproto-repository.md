@@ -222,6 +222,11 @@ PDO directly. `--dsn=…` can be used instead of `PDS_DATABASE_DSN`; the legacy
 `--database` option and `PDS_DATABASE` environment variable continue to mean a
 SQLite path.
 
+The firehose accepts at most 256 connected or handshaking clients by default.
+Set `PDS_FIREHOSE_MAX_CLIENTS` or pass `--max-clients=N` to change the limit
+(1–4096). Connections over the limit receive HTTP `503 Service Unavailable`
+before the WebSocket upgrade.
+
 It serves `/xrpc/com.atproto.sync.subscribeRepos` on the socket. A subscriber
 without `cursor` starts at the current sequence; `cursor=N` replays every
 event with `seq > N` from the persisted log before following live commits.

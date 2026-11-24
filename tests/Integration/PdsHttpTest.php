@@ -630,6 +630,37 @@ final class PdsHttpTest extends TestCase
 		$this->closeFirehose($client);
 	}
 
+	public function testFirehoseRejectsConnectionsOverItsConfiguredLimit(): void
+	{
+		$this->startServer();
+		$created = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', [
+			'handle' => 'alice.pds.example',
+		], 'alice');
+		self::assertSame(200, $created['status'], $created['body']);
+
+		$this->startFirehose(true, false, null, 1);
+		$first = $this->openFirehose();
+
+		$second = @stream_socket_client('tcp://127.0.0.1:' . $this->firehosePort, $errorCode, $errorMessage, 5.0);
+		self::assertIsResource($second, 'Could not open a second firehose connection: ' . $errorMessage);
+		fwrite($second, "GET /xrpc/com.atproto.sync.subscribeRepos HTTP/1.1\r\n"
+			. "Host: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+			. "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+		$response = '';
+		while (!str_contains($response, "\r\n\r\n")) {
+			$chunk = fread($second, 4096);
+			if (!is_string($chunk) || $chunk === '') {
+				break;
+			}
+			$response .= $chunk;
+		}
+		fclose($second);
+		$this->closeFirehose($first);
+
+		self::assertStringStartsWith('HTTP/1.1 503 Service Unavailable', $response, $response);
+		self::assertStringContainsString('The firehose is at capacity.', $response);
+	}
+
 	public function testFirehoseReadsTheHostsDatabaseDsnFromEnvironment(): void
 	{
 		$this->startFirehose(false, true);
@@ -882,6 +913,7 @@ final class PdsHttpTest extends TestCase
 		bool $useDsn = false,
 		bool $useDsnEnvironment = false,
 		?string $scriptPath = null,
+		int $maxClients = 256,
 	): void
 	{
 		if (is_resource($this->firehoseProcess)) {
@@ -905,6 +937,7 @@ final class PdsHttpTest extends TestCase
 			'--host=127.0.0.1',
 			'--port=' . $this->firehosePort,
 			'--poll-ms=20',
+			'--max-clients=' . $maxClients,
 		];
 		if (!$useDsnEnvironment) {
 			$command[] = $useDsn
@@ -943,6 +976,7 @@ final class PdsHttpTest extends TestCase
 			$probe = @stream_socket_client('tcp://127.0.0.1:' . $this->firehosePort, $errorCode, $errorMessage, 0.2);
 			if (is_resource($probe)) {
 				fclose($probe);
+				usleep(25_000);
 
 				return;
 			}
