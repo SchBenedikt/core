@@ -101,6 +101,33 @@ abstract class HomeTimelineRepositoryTestCase extends TestCase
 		self::assertNotContains('local-boost', $this->ids($this->repository()->forUser('carol', 10)));
 	}
 
+	public function testPageShowsAnObjectOnlyOnceAcrossOriginalsAndBoosts(): void
+	{
+		$this->seed();
+		$this->follow('alice', self::DAVE);
+		$this->follow('alice', 'https://remote.example/users/eve');
+		$this->addRemote($this->remote(
+			'repeat-original-boost', 'note-1', self::DAVE, 'repeated original',
+			'2026-11-11T10:07:00Z', RemotePostKind::Boost, self::BOB,
+		));
+		$this->addRemote($this->remote(
+			'repeat-boost-a', 'note-4', self::DAVE, 'repeated boost',
+			'2026-11-11T10:08:00Z', RemotePostKind::Boost, self::DAVE,
+		));
+		$this->addRemote($this->remote(
+			'repeat-boost-b', 'note-4', 'https://remote.example/users/eve', 'repeated boost',
+			'2026-11-11T10:07:30Z', RemotePostKind::Boost, self::DAVE,
+		));
+
+		$entries = $this->repository()->forUser('alice', 20);
+		$ids = $this->ids($entries);
+
+		self::assertNotContains('repeat-original-boost', $ids);
+		self::assertContains('remote-post', $ids);
+		self::assertContains('repeat-boost-a', $ids);
+		self::assertNotContains('repeat-boost-b', $ids);
+	}
+
 	public function testBlocksHideTheOriginalAuthorBehindALocalBoost(): void
 	{
 		$this->seed();

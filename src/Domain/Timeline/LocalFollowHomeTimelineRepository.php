@@ -137,6 +137,6 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			return $byTime !== 0 ? $byTime : strcmp($b->id, $a->id);
 		});
 
-		return array_slice($entries, 0, max(1, $limit));
+		return TimelineEntryDeduplicator::deduplicateBoosts(array_slice($entries, 0, max(1, $limit)));
 	}
 }
