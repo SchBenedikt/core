@@ -77,4 +77,19 @@ interface AccountDataRepository extends AccountWriteGuard
 		array $blobFailures,
 		DateTimeImmutable $now,
 	): AccountDeletion;
+
+	/**
+	 * Updates only the failed blob cleanup portion of a completed deletion.
+	 * The expected failure list acts as a compare-and-swap guard for concurrent retries.
+	 *
+	 * @param list<string> $expectedFailures
+	 * @param list<string> $remainingFailures
+	 */
+	public function updateDeletionBlobFailures(
+		string $userId,
+		array $expectedFailures,
+		array $remainingFailures,
+		int $blobsDeleted,
+		DateTimeImmutable $now,
+	): ?AccountDeletion;
 }

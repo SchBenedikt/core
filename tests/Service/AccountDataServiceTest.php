@@ -53,9 +53,11 @@ use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Platform\Storage\BlobStore;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Account\AccountDataService;
+use AlohaSocial\Core\Service\Account\AccountErasureBlobRetryHandler;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use PDO;
@@ -268,6 +270,74 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame('erased', $again->state);
 		self::assertSame([PostSchema::TABLE => 3], $again->counts);
 		self::assertSame(2, $again->blobsDeleted);
+	}
+
+	public function testRepeatedEraseRetriesOnlyPreviouslyFailedBlobDeletes(): void
+	{
+		$store = new FailOnceBlobStore($this->blobs, 'media/att-a/original.jpg');
+		$service = new AccountDataService(
+			$this->repository,
+			$store,
+			new ActivityFactory(new ArrayConfig([
+				'social' => ['instance.url' => 'https://social.example'],
+			])),
+			$this->queue,
+			$this->clock,
+		);
+
+		$first = $service->erase('alice');
+		self::assertSame(['media/att-a/original.jpg'], $first->blobFailures);
+		self::assertGreaterThanOrEqual(2, $first->blobsDeleted);
+		self::assertSame('erased', $first->state);
+		$jobs = $this->queue->reserve(100, $this->clock->now()->modify('+2 minutes'));
+		$retryJob = null;
+		foreach ($jobs as $job) {
+			if ($job->type === JobType::ACCOUNT_ERASURE_BLOB_RETRY) {
+				$retryJob = $job;
+				break;
+			}
+		}
+		self::assertNotNull($retryJob, 'A durable retry should be queued after failed object deletion.');
+		(new AccountErasureBlobRetryHandler($service))->handle($retryJob);
+		$this->queue->complete($retryJob);
+
+		$retried = $service->erase('alice');
+		self::assertTrue($retried->complete());
+		self::assertSame([], $retried->blobFailures);
+		self::assertSame($first->blobsDeleted + 1, $retried->blobsDeleted);
+		self::assertFalse($this->blobs->exists('media/att-a/original.jpg'));
+		self::assertFalse($this->blobs->exists('media/att-a/thumbnail.jpg'));
+		self::assertSame($retried->toArray(), $service->erase('alice')->toArray());
+	}
+
+	public function testStaleBlobCleanupRetryCannotOverwriteNewerResult(): void
+	{
+		$path = 'media/att-a/original.jpg';
+		$this->repository->beginDeletion('alice', $this->clock->now());
+		self::assertTrue($this->repository->claimDeletion('alice', $this->clock->now()));
+		$this->repository->finishDeletion('alice', [], 1, [$path], $this->clock->now());
+
+		$updated = $this->repository->updateDeletionBlobFailures(
+			'alice',
+			[$path],
+			[],
+			1,
+			$this->clock->now(),
+		);
+		self::assertNotNull($updated);
+		self::assertSame([], $updated->blobFailures);
+		self::assertSame(2, $updated->blobsDeleted);
+
+		$stale = $this->repository->updateDeletionBlobFailures(
+			'alice',
+			[$path],
+			[$path],
+			0,
+			$this->clock->now(),
+		);
+		self::assertNull($stale);
+		self::assertSame([], $this->repository->deletion('alice')?->blobFailures);
+		self::assertSame(2, $this->repository->deletion('alice')?->blobsDeleted);
 	}
 
 	public function testAccountErasureKeepsASequencedPdsDeletionEvent(): void
@@ -1053,5 +1123,51 @@ final class AccountDataServiceTest extends TestCase
 			'INSERT INTO ' . $table . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')',
 			$row,
 		);
+	}
+}
+
+final class FailOnceBlobStore implements BlobStore
+{
+	private bool $failed = false;
+
+	public function __construct(
+		private readonly InMemoryBlobStore $inner,
+		private readonly string $pathToFail,
+	) {
+	}
+
+	public function put(string $path, string $contents): void
+	{
+		$this->inner->put($path, $contents);
+	}
+
+	public function read(string $path): string
+	{
+		return $this->inner->read($path);
+	}
+
+	public function exists(string $path): bool
+	{
+		return $this->inner->exists($path);
+	}
+
+	public function delete(string $path): void
+	{
+		if (!$this->failed && $path === $this->pathToFail) {
+			$this->failed = true;
+			throw new \RuntimeException('Simulated temporary object-store failure.');
+		}
+
+		$this->inner->delete($path);
+	}
+
+	public function size(string $path): int
+	{
+		return $this->inner->size($path);
+	}
+
+	public function list(string $prefix = ''): array
+	{
+		return $this->inner->list($prefix);
 	}
 }
