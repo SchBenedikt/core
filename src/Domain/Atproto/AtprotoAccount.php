@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Atproto;
 
+use AlohaSocial\Core\Protocol\Atproto\DpopResourceProofProvider;
 use InvalidArgumentException;
 
 /**
@@ -27,6 +28,7 @@ final readonly class AtprotoAccount
 		public string $handle,
 		public string $pdsUrl,
 		public string $accessToken,
+		public ?DpopResourceProofProvider $dpop = null,
 	) {
 		if (preg_match('/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/', $did) !== 1) {
 			throw new InvalidArgumentException('An AT Protocol account needs a valid DID.');

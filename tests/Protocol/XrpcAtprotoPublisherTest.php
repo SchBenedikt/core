@@ -222,6 +222,31 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		self::assertArrayNotHasKey('nonce', $proof);
 	}
 
+	public function testAccountBoundDpopKeyOverridesTheHostDefault(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+		$accountKey = $this->dpop();
+		$hostKey = $this->dpop();
+		$account = new AtprotoAccount(
+			'did:plc:alice',
+			'alice.test',
+			'https://pds.example',
+			'secret-token',
+			$accountKey,
+		);
+
+		(new XrpcAtprotoPublisher($http, $hostKey))->publish(
+			$account,
+			'234567abcdefg',
+			AtprotoPostRecord::fromPost($this->post()),
+		);
+
+		$proof = $http->requests[0]['headers']['DPoP'];
+		self::assertSame($this->proofHeader($accountKey->proof('POST', 'https://pds.example/proof'))['jwk'], $this->proofHeader($proof)['jwk']);
+		self::assertNotSame($this->proofHeader($hostKey->proof('POST', 'https://pds.example/proof'))['jwk'], $this->proofHeader($proof)['jwk']);
+	}
+
 	public function testADpopNonceChallengeIsRetriedOnce(): void
 	{
 		$http = new FakeHttpClient();
@@ -316,6 +341,22 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		return json_decode(
 			base64_decode(
 				strtr($parts[1], '-_', '+/') . str_repeat('=', (4 - strlen($parts[1]) % 4) % 4),
+				true,
+			),
+			true,
+			64,
+			JSON_THROW_ON_ERROR,
+		);
+	}
+
+	/** @return array<string, mixed> */
+	private function proofHeader(string $proof): array
+	{
+		$parts = explode('.', $proof);
+
+		return json_decode(
+			base64_decode(
+				strtr($parts[0], '-_', '+/') . str_repeat('=', (4 - strlen($parts[0]) % 4) % 4),
 				true,
 			),
 			true,
