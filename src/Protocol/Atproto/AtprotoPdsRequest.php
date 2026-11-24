@@ -53,17 +53,18 @@ final class AtprotoPdsRequest
 		string $body = '',
 		array $headers = [],
 	): HttpResponse {
+		$dpop = $account->dpop ?? $this->dpop;
 		$nonce = null;
 		for ($attempt = 0; $attempt < 2; $attempt++) {
 			$response = $this->http->request(
 				$method,
 				$url,
-				$this->headers($method, $url, $account, $headers, $nonce),
+				$this->headers($method, $url, $account, $dpop, $headers, $nonce),
 				$body,
 				self::TIMEOUT_SECONDS,
 			);
 
-			if ($this->dpop === null || $attempt === 1) {
+			if ($dpop === null || $attempt === 1) {
 				return $response;
 			}
 
@@ -90,10 +91,11 @@ final class AtprotoPdsRequest
 		string $method,
 		string $url,
 		AtprotoAccount $account,
+		?DpopResourceProofProvider $dpop,
 		array $headers,
 		?string $nonce,
 	): array {
-		if ($this->dpop === null) {
+		if ($dpop === null) {
 			return [
 				'Authorization' => 'Bearer ' . $account->accessToken,
 				...$headers,
@@ -102,7 +104,7 @@ final class AtprotoPdsRequest
 
 		return [
 			'Authorization' => 'DPoP ' . $account->accessToken,
-			'DPoP' => $this->dpop->proofForResource($method, $url, $account->accessToken, $nonce),
+			'DPoP' => $dpop->proofForResource($method, $url, $account->accessToken, $nonce),
 			...$headers,
 		];
 	}
