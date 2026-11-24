@@ -24,8 +24,8 @@ use function trim;
  * `GET {mastodon.prefix}/search`
  *
  * The endpoint follows Mastodon v2: `accounts`, `statuses` and `hashtags` in
- * one object. It only searches local data; `resolve` and `exclude_unreviewed`
- * are accepted for client compatibility and have no local effect.
+ * one object. Status and hashtag search use local data. With `resolve=true`,
+ * an exact remote account handle is fetched through the guarded WebFinger port.
  */
 final class MastodonSearchHandler extends MastodonHandler
 {
@@ -72,6 +72,7 @@ final class MastodonSearchHandler extends MastodonHandler
 			$limit,
 			$offset,
 			$this->queryBool($request, 'following'),
+			$this->queryBool($request, 'resolve'),
 		));
 	}
 

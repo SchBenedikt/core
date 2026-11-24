@@ -36,6 +36,10 @@ use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBookmarkRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
+use AlohaSocial\Core\Domain\Search\RemoteActorProfile;
+use AlohaSocial\Core\Domain\Search\RemoteActorSearch;
+use AlohaSocial\Core\Domain\Search\RemoteHandle;
+use AlohaSocial\Core\Domain\Search\RemoteSearchException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -2550,6 +2554,99 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('search_not_configured', $following->decodedBody()['error']['code']);
 	}
 
+	public function testSearchResolveFetchesOnlyAnExactRemoteAccountHandle(): void
+	{
+		$remote = new FakeMastodonRemoteActorSearch(new RemoteActorProfile(
+			actorId: 'https://remote.example/users/bob',
+			handle: 'bob@remote.example',
+			displayName: 'Bob Remote',
+			summary: '<hello> & welcome',
+			avatarUrl: 'https://remote.example/avatar.png',
+			headerUrl: null,
+			aliases: ['@bob@remote.example'],
+			fetchedAt: $this->clock->now(),
+			createdAt: Time::parse('2020-01-02T03:04:05Z'),
+			locked: true,
+		));
+		$app = $this->app(remoteActorSearch: $remote);
+
+		$resolved = $this->search($app, [
+			'q' => '@bob@remote.example',
+			'type' => 'accounts',
+			'resolve' => 'true',
+		]);
+		self::assertSame(200, $resolved->status, $resolved->body);
+		self::assertSame(1, count($remote->lookups));
+		self::assertSame('bob@remote.example', $remote->lookups[0]);
+		$account = $resolved->decodedBody()['accounts'][0];
+		self::assertSame('https://remote.example/users/bob', $account['id']);
+		self::assertSame('bob', $account['username']);
+		self::assertSame('bob@remote.example', $account['acct']);
+		self::assertTrue($account['locked']);
+		self::assertFalse($account['bot']);
+		self::assertSame('2020-01-02T03:04:05.000Z', $account['created_at']);
+		self::assertSame('<p>&lt;hello&gt; &amp; welcome</p>', $account['note']);
+
+		$this->search($app, ['q' => '@alice@remote.example', 'type' => 'accounts']);
+		$this->search($app, ['q' => 'https://127.0.0.1/admin', 'resolve' => 'true']);
+		$this->search($app, ['q' => '@carol@remote.example', 'type' => 'statuses', 'resolve' => 'true']);
+		$this->search($app, ['q' => '@dave@remote.example', 'resolve' => 'true', 'offset' => '1']);
+		self::assertCount(1, $remote->lookups, 'Only first-page explicit exact account resolution may use the remote lookup.');
+	}
+
+	public function testResolvedRemoteAccountSearchHonorsFollowFilterAndReportsLookupFailure(): void
+	{
+		$profile = new RemoteActorProfile(
+			actorId: 'https://remote.example/users/bob',
+			handle: 'bob@remote.example',
+			displayName: 'Bob Remote',
+			summary: '',
+			avatarUrl: null,
+			headerUrl: null,
+			aliases: [],
+			fetchedAt: $this->clock->now(),
+		);
+		$remote = new FakeMastodonRemoteActorSearch($profile);
+		$app = $this->app(remoteActorSearch: $remote);
+		$followingOnly = $this->search($app, [
+			'q' => 'bob@remote.example',
+			'type' => 'accounts',
+			'following' => 'true',
+			'resolve' => 'true',
+		]);
+		self::assertSame(200, $followingOnly->status, $followingOnly->body);
+		self::assertSame([], $followingOnly->decodedBody()['accounts']);
+
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-alice-bob',
+			localUserId: 'alice',
+			actorId: 'https://remote.example/users/bob',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Accepted,
+		));
+		$followedApp = $this->app(
+			followingRepository: $following,
+			remoteActorSearch: new FakeMastodonRemoteActorSearch($profile),
+		);
+		$followed = $this->search($followedApp, [
+			'q' => 'bob@remote.example',
+			'type' => 'accounts',
+			'following' => 'true',
+			'resolve' => 'true',
+		]);
+		self::assertSame('https://remote.example/users/bob', $followed->decodedBody()['accounts'][0]['id']);
+
+		$failed = new FakeMastodonRemoteActorSearch(null, 'webfinger_timeout');
+		$error = $this->search($this->app(remoteActorSearch: $failed), [
+			'q' => 'bob@remote.example',
+			'resolve' => 'true',
+		]);
+		self::assertSame(503, $error->status);
+		self::assertSame('remote_search_failed', $error->decodedBody()['error']['code']);
+	}
+
 	public function testDirectVisibilityWithoutARecipientAndMissingInputAreRejected(): void
 	{
 		$app = $this->app();
@@ -3062,6 +3159,7 @@ final class MastodonApiTest extends TestCase
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
 		?InMemoryRemotePollRepository $remotePollRepository = null,
 		?RemotePostRepository $remotePostRepository = null,
+		?RemoteActorSearch $remoteActorSearch = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -3089,6 +3187,7 @@ final class MastodonApiTest extends TestCase
 			inboundBlocks: $inboundBlocks,
 			remotePollRepository: $remotePollRepository,
 			remotePostRepository: $remotePostRepository,
+			remoteActorSearch: $remoteActorSearch,
 		);
 	}
 
@@ -3490,5 +3589,28 @@ final class MastodonApiTest extends TestCase
 			userId: $userId,
 			scopes: $scopes,
 		));
+	}
+}
+
+/** @internal Exact-lookup fake for Mastodon search route tests. */
+final class FakeMastodonRemoteActorSearch implements RemoteActorSearch
+{
+	/** @var list<string> */
+	public array $lookups = [];
+
+	public function __construct(
+		private readonly ?RemoteActorProfile $profile,
+		private readonly ?string $failure = null,
+	) {
+	}
+
+	public function lookup(RemoteHandle $handle): ?RemoteActorProfile
+	{
+		$this->lookups[] = $handle->normalized();
+		if ($this->failure !== null) {
+			throw new RemoteSearchException($this->failure, 'Remote lookup fixture failed.');
+		}
+
+		return $this->profile;
 	}
 }

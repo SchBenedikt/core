@@ -27,6 +27,7 @@ use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostPinRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Search\RemoteActorProfile;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Clock\Clock;
@@ -84,6 +85,39 @@ final class MastodonPresenter
 			$this->relationships?->followingCount($userId) ?? 0,
 			$profile,
 		);
+	}
+
+	/** @return array<string, mixed> */
+	public function remoteAccount(RemoteActorProfile $profile): array
+	{
+		$separator = strrpos($profile->handle, '@');
+		$username = $separator === false ? $profile->handle : substr($profile->handle, 0, $separator);
+		$createdAt = $profile->createdAt?->format('Y-m-d\\TH:i:s.000\\Z') ?? '1970-01-01T00:00:00.000Z';
+
+		return [
+			'id' => $profile->actorId,
+			'username' => $username,
+			'acct' => $profile->handle,
+			'display_name' => $profile->displayName,
+			'locked' => $profile->locked,
+			'bot' => $profile->bot,
+			'discoverable' => $profile->discoverable,
+			'group' => $profile->group,
+			'created_at' => $createdAt,
+			'note' => $this->html($profile->summary),
+			'url' => $profile->actorId,
+			'avatar' => $profile->avatarUrl ?? '',
+			'avatar_static' => $profile->avatarUrl ?? '',
+			'header' => $profile->headerUrl ?? '',
+			'header_static' => $profile->headerUrl ?? '',
+			'followers_count' => 0,
+			'following_count' => 0,
+			'statuses_count' => 0,
+			'last_status_at' => null,
+			'noindex' => false,
+			'emojis' => [],
+			'fields' => [],
+		];
 	}
 
 	/**

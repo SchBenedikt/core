@@ -53,6 +53,9 @@ final class WebFingerRemoteActorSearchTest extends TestCase
 		self::assertSame('Hello from Bob', $profile->summary);
 		self::assertSame('https://remote.example/avatar.png', $profile->avatarUrl);
 		self::assertSame('2026-11-14T10:00:00Z', Time::format($profile->fetchedAt));
+		self::assertSame('2020-01-02T03:04:05Z', Time::format($profile->createdAt));
+		self::assertTrue($profile->locked);
+		self::assertTrue($profile->discoverable);
 		self::assertContains('@bob@remote.example', $profile->aliases);
 		self::assertContains('https://remote.example/users/robert', $profile->aliases);
 
@@ -167,6 +170,9 @@ final class WebFingerRemoteActorSearchTest extends TestCase
 			'preferredUsername' => 'bob',
 			'name' => 'Bob',
 			'summary' => 'Hello from Bob',
+			'published' => '2020-01-02T03:04:05+00:00',
+			'manuallyApprovesFollowers' => true,
+			'discoverable' => true,
 			'icon' => ['type' => 'Image', 'url' => 'https://remote.example/avatar.png'],
 			'image' => ['type' => 'Image', 'url' => 'https://remote.example/header.png'],
 			'alsoKnownAs' => ['https://remote.example/users/robert'],
