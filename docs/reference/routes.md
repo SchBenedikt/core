@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 234 routes in total; 55 use the
+defaults to `/api/mastodon/v1`). There are 236 routes in total; 56 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -189,6 +189,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.statuses.unbookmark` | `POST` | `/api/mastodon/v1/statuses/{id}/unbookmark` | yes, `write:bookmarks` | 30 / 900 s |
 | `mastodon.bookmarks` | `GET` | `/api/mastodon/v1/bookmarks` | yes, `read:bookmarks` | 60 / 60 s |
 | `mastodon.accounts.relationships` | `GET` | `/api/mastodon/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
+| `mastodon.accounts.lookup` | `GET` | `/api/mastodon/v1/accounts/lookup` | yes, `read:accounts` | 60 / 60 s |
 | `mastodon.accounts.follow` | `POST` | `/api/mastodon/v1/accounts/{id}/follow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.unfollow` | `POST` | `/api/mastodon/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.accounts.mute` | `POST` | `/api/mastodon/v1/accounts/{id}/mute` | yes, `write:mutes` | 30 / 900 s |
@@ -245,6 +246,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `compat.mastodon.polls.show` | `GET` | `/api/v1/polls/{id}` | no | 120 / 60 s |
 | `compat.mastodon.polls.vote` | `POST` | `/api/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `compat.mastodon.accounts.relationships` | `GET` | `/api/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |
+| `compat.mastodon.accounts.lookup` | `GET` | `/api/v1/accounts/lookup` | yes, `read:accounts` | 60 / 60 s |
 | `compat.mastodon.accounts.unfollow` | `POST` | `/api/v1/accounts/{id}/unfollow` | yes, `write:follows` | 30 / 900 s |
 | `compat.mastodon.accounts.mute` | `POST` | `/api/v1/accounts/{id}/mute` | yes, `write:mutes` | 30 / 900 s |
 | `compat.mastodon.accounts.unmute` | `POST` | `/api/v1/accounts/{id}/unmute` | yes, `write:mutes` | 30 / 900 s |

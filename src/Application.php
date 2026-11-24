@@ -86,6 +86,7 @@ use AlohaSocial\Core\Api\OutboxHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountLookupHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAddListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
@@ -1783,6 +1784,7 @@ final readonly class Application
 			->with(MastodonBookmarksHandler::class, static fn (): MastodonBookmarksHandler => new MastodonBookmarksHandler($mastodonService))
 			->with(MastodonAccountStatusesHandler::class, static fn (): MastodonAccountStatusesHandler => new MastodonAccountStatusesHandler($mastodonService))
 			->with(MastodonAccountHandler::class, static fn (): MastodonAccountHandler => new MastodonAccountHandler($mastodonService))
+			->with(MastodonAccountLookupHandler::class, static fn (): MastodonAccountLookupHandler => new MastodonAccountLookupHandler($mastodonService))
 			->with(MastodonAccountFollowersHandler::class, static fn (): MastodonAccountFollowersHandler => new MastodonAccountFollowersHandler($mastodonService))
 			->with(MastodonAccountFollowingHandler::class, static fn (): MastodonAccountFollowingHandler => new MastodonAccountFollowingHandler($mastodonService))
 			->with(MastodonVerifyCredentialsHandler::class, static fn (): MastodonVerifyCredentialsHandler => new MastodonVerifyCredentialsHandler($mastodonService));

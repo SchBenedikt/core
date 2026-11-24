@@ -392,6 +392,70 @@ final class MastodonService
 	}
 
 	/**
+	 * Look up a local account or resolve one exact remote Mastodon handle.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function lookupAccount(string $userId, string $acct): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+
+		$acct = trim($acct);
+		if (str_starts_with($acct, '@')) {
+			$acct = substr($acct, 1);
+		}
+
+		$localAccountId = $this->localAccountIdForAcct($acct);
+		if ($localAccountId !== null) {
+			return $this->presenter->account($localAccountId);
+		}
+
+		$handle = RemoteHandle::tryFrom($acct);
+		if ($handle === null) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+		if ($this->remoteAccountSearch === null) {
+			throw new MastodonRequestException(
+				503,
+				'search_not_configured',
+				'Remote account lookup is not configured.',
+			);
+		}
+
+		try {
+			$profile = $this->remoteAccountSearch->lookup($handle);
+		} catch (RemoteSearchException) {
+			throw new MastodonRequestException(503, 'remote_search_failed', 'Remote account lookup failed.');
+		}
+
+		if ($profile === null
+			|| $this->blocks?->findByActor($userId, $profile->actorId) !== null
+			|| $this->inboundBlocks?->isBlocked($userId, $profile->actorId) === true
+		) {
+			throw new MastodonRequestException(404, 'not_found', 'Account not found.');
+		}
+
+		return $this->presenter->remoteAccount($profile);
+	}
+
+	private function localAccountIdForAcct(string $acct): ?string
+	{
+		if (str_contains($acct, '@')) {
+			$separator = strrpos($acct, '@');
+			$username = substr($acct, 0, $separator);
+			$domain = strtolower(substr($acct, $separator + 1));
+			$instanceHost = strtolower((string) parse_url($this->presenter->baseUrl(), PHP_URL_HOST));
+			if ($domain !== $instanceHost) {
+				return null;
+			}
+			$acct = $username;
+		}
+
+		return $acct !== '' && $this->localActors?->has($acct) === true ? $acct : null;
+	}
+
+	/**
 	 * @return list<array<string, mixed>>
 	 */
 	public function accountFollowers(

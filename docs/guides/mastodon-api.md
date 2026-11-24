@@ -30,6 +30,7 @@ Locally implemented (core):
 - `POST /statuses/{id}/reblog`
 - `POST /statuses/{id}/unreblog`
 - `GET /accounts/relationships`
+- `GET /accounts/lookup`
 - `POST /accounts/{id}/follow`
 - `POST /accounts/{id}/unfollow`
 - `POST /accounts/{id}/mute`
@@ -139,8 +140,9 @@ listed as Later in the [roadmap](../roadmap.md).
 | Favourite/unfavourite cached remote post | Supported | Requires accepted follow and no block; emits Like/Undo; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Reblog/unreblog cached remote post | Supported | Requires the same cached, visible remote target and federation policy; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Read/vote on cached remote poll | Supported | Requires accepted follow; vote uses signed ActivityPub delivery. `MastodonApiTest::testImportedRemotePollsCanBeReadAndVotedThroughMastodonApi` |
-| Exact remote account resolution | Supported | Requires `resolve=true` and a valid handle; uses bounded WebFinger/ActivityPub fetching, filters blocked actors and respects `following=true`. `MastodonApiTest::testSearchResolveFetchesOnlyAnExactRemoteAccountHandle` |
-| Remote profile detail, general remote search, public timeline, notifications and streaming | Unsupported | These routes do not fetch arbitrary remote data or open streaming connections; unsupported writes are not reported as successful. |
+| Exact remote account resolution | Supported | Search with `resolve=true` and direct `GET /accounts/lookup?acct=...` accept an exact valid handle; uses bounded WebFinger/ActivityPub fetching and filters blocked actors. `MastodonApiTest::testSearchResolveFetchesOnlyAnExactRemoteAccountHandle`, `MastodonApiTest::testAccountLookupResolvesLocalAndExactRemoteHandles` |
+| Remote profile detail by handle | Supported | `GET /accounts/lookup` resolves exact local or remote handles; blocked actors are hidden. Arbitrary remote profile fetching by URL or ID remains unsupported. |
+| General remote search, public timeline, notifications and streaming | Unsupported | These routes do not fetch arbitrary remote data or open streaming connections; unsupported writes are not reported as successful. |
 
 This matrix describes Core's current handlers and their host ports. It does not
 claim compatibility with every Mastodon client; OAuth/token issuance remains

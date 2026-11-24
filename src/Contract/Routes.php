@@ -124,6 +124,7 @@ use AlohaSocial\Core\Api\UnfollowRemoteActorHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowersHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountFollowingHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAccountLookupHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAccountStatusesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonAddListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonBookmarkStatusHandler;
@@ -1644,6 +1645,16 @@ final class Routes
 				rateLimit: '60/60',
 				requiredScopes: ['read:mutes'],
 				summary: 'List the signed-in account\'s active mutes, newest first.',
+			),
+			new Route(
+				name: 'mastodon.accounts.lookup',
+				method: 'GET',
+				path: $mastodon . '/accounts/lookup',
+				handler: MastodonAccountLookupHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:accounts'],
+				summary: 'Look up one local or exact remote account by acct handle.',
 			),
 			new Route(
 				name: 'mastodon.accounts.statuses',
