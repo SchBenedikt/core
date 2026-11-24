@@ -240,6 +240,23 @@ final class AtprotoPublishServiceTest extends TestCase
 		self::assertCount(0, $this->queue->pending());
 	}
 
+	public function testSchedulePinsTheAccountIdentityForTheQueuedPublication(): void
+	{
+		$post = $this->post();
+		$this->posts->insert($post);
+
+		$this->service->schedule($post);
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('atproto.publish', $jobs[0]->type);
+		self::assertSame([
+			'user_id' => 'alice',
+			'post_id' => $post->id,
+			'account_did' => 'did:plc:alice',
+		], $jobs[0]->payload);
+	}
+
 	public function testManualPublicationUsesTheSelectedIdentityAndKeepsMappingsSeparate(): void
 	{
 		$post = $this->post();
