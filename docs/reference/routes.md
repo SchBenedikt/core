@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 231 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 232 routes in total; 53 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -67,6 +67,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `timelines.tag` | `GET` | `/api/v1/timelines/tag/{tag}` | no | — |
 | `timelines.followed_tags` | `GET` | `/api/v1/timelines/followed_tags` | yes | — |
 | `timelines.home` | `GET` | `/api/v1/timelines/home` | yes | — |
+| `timelines.direct` | `GET` | `/api/v1/timelines/direct` | yes | — |
 | `followed_tags.list` | `GET` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.follow` | `POST` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.unfollow` | `DELETE` | `/api/v1/followed_tags/{tag}` | yes | — |
@@ -589,10 +590,11 @@ request: they are logged with a stable `thread_*` reason and omitted. See
 ```http
 GET /api/v1/timelines/public?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
 GET /api/v1/timelines/home
+GET /api/v1/timelines/direct?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
 ```
 
 ```json
-{"posts": [ … ]}
+{"posts": [ … ], "has_more": false, "next_before": null, "next_before_id": null}
 ```
 
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. Pass

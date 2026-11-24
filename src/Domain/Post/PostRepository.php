@@ -189,6 +189,14 @@ interface PostRepository
 	public function ownTimeline(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
 
 	/**
+	 * Direct posts sent by or addressed to one local account, newest first.
+	 * Only live, non-archived direct posts are returned.
+	 *
+	 * @return list<Post>
+	 */
+	public function directTimelineForUser(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array;
+
+	/**
 	 * Live posts of several local authors, newest first.
 	 *
 	 * Used by the home timeline for local accounts the reader follows. Public,

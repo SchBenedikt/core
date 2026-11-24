@@ -232,6 +232,34 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame([], $repository->ownTimeline('nobody', 10));
 	}
 
+	public function testDirectTimelineIsAccountScopedPrivateAndCursorAware(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('own-public', 'alice', Visibility::Public, '2026-11-11T10:05:00Z'));
+		$repository->insert($this->post('own-dm', 'alice', Visibility::Direct, '2026-11-11T10:04:00Z'));
+		$repository->insert($this->post('incoming-a', 'bob', Visibility::Direct, '2026-11-11T10:03:00Z', recipientIds: ['alice']));
+		$repository->insert($this->post('incoming-b', 'carol', Visibility::Direct, '2026-11-11T10:03:00Z', recipientIds: ['alice']));
+		$repository->insert($this->post('other-dm', 'bob', Visibility::Direct, '2026-11-11T10:06:00Z', recipientIds: ['carol']));
+		$repository->insert($this->post('gone-dm', 'bob', Visibility::Direct, '2026-11-11T10:07:00Z', recipientIds: ['alice']));
+		$repository->softDelete('gone-dm', Time::parse('2026-11-11T10:08:00Z'));
+		$repository->insert($this->post('archived-dm', 'alice', Visibility::Direct, '2026-11-11T10:09:00Z'));
+		$repository->archive('archived-dm', Time::parse('2026-11-11T10:10:00Z'));
+
+		self::assertSame(
+			['own-dm', 'incoming-b', 'incoming-a'],
+			array_map(static fn (Post $post): string => $post->id, $repository->directTimelineForUser('alice', 10)),
+		);
+		self::assertSame(
+			['incoming-a'],
+			array_map(static fn (Post $post): string => $post->id, $repository->directTimelineForUser(
+				'alice',
+				10,
+				new TimelineCursor(Time::parse('2026-11-11T10:03:00Z'), 'incoming-b'),
+			)),
+		);
+		self::assertSame([], $repository->directTimelineForUser('nobody', 10));
+	}
+
 	public function testDirectRecipientsAndReplyTargetRoundTrip(): void
 	{
 		$repository = $this->repository();
