@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
 use AlohaSocial\Core\Domain\Account\PdoAccountDataRepository;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
@@ -124,6 +125,10 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['move-a'], array_column($archive['data']['social_account_move'], 'event_id'));
 		self::assertSame(['coll-alice'], array_column($archive['data']['social_media_collection'], 'id'));
 		self::assertSame(['pub-a'], array_column($archive['data']['social_atproto_publication'], 'post_id'));
+		self::assertSame(
+			['did:plc:followed-by-alice'],
+			array_column($archive['data']['social_atproto_follow'], 'subject_did'),
+		);
 
 		self::assertSame(['alice'], array_column($archive['data']['social_attachment'], 'owner_id'));
 		self::assertSame(['did:plc:alice'], array_column($archive['data']['social_pds_identity'], 'did'));
@@ -195,6 +200,10 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['coll-bob'], array_column($this->rows(MediaCollectionSchema::TABLE), 'id'));
 		self::assertSame(['coll-bob'], array_column($this->rows(MediaCollectionSchema::ITEM_TABLE), 'collection_id'));
 		self::assertSame(['pub-b'], array_column($this->rows(AtprotoPublicationSchema::TABLE), 'post_id'));
+		self::assertSame(
+			['did:plc:followed-by-bob'],
+			array_column($this->rows(AtprotoFollowSchema::TABLE), 'subject_did'),
+		);
 		self::assertSame(['search-bob'], array_column($this->rows(SearchIndexSchema::TABLE), 'id'));
 		self::assertSame(['sched-bob'], array_column($this->rows(ScheduledPostSchema::TABLE), 'id'));
 
@@ -331,6 +340,7 @@ final class AccountDataServiceTest extends TestCase
 		AccountListSchema::create($this->database);
 		FollowedHashtagSchema::create($this->database);
 		AtprotoPublicationSchema::create($this->database);
+		AtprotoFollowSchema::create($this->database);
 		ReportSchema::create($this->database);
 		HeldPostSchema::create($this->database);
 		PdsSchema::create($this->database);
@@ -736,6 +746,16 @@ final class AccountDataServiceTest extends TestCase
 				'rkey' => 'rkey-' . $user,
 				'uri' => 'at://did:plc:' . $user . '/app.bsky.feed.post/rkey-' . $user,
 				'published_at' => '2026-11-16T10:51:00Z',
+			]);
+			$this->insert(AtprotoFollowSchema::TABLE, [
+				'local_user_id' => $user,
+				'account_did' => 'did:plc:' . $user,
+				'subject_did' => 'did:plc:followed-by-' . $user,
+				'rkey' => 'follow-' . $user,
+				'uri' => 'at://did:plc:' . $user . '/app.bsky.graph.follow/follow-' . $user,
+				'cid' => 'bafy' . $user,
+				'state' => 'active',
+				'followed_at' => '2026-11-16T10:52:00Z',
 			]);
 		}
 
