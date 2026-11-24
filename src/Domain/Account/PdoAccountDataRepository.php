@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Domain\Account;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsEvent;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
@@ -786,20 +787,21 @@ final class PdoAccountDataRepository implements AccountDataRepository
 						['name' => 'firehose'],
 					);
 				}
+				$event = PdsEvent::accountDeleted($seq, $did, $deletedAt);
 				$this->database->execute(
 					'INSERT INTO ' . PdsSchema::EVENT_TABLE
 					. ' (seq, did, commit_cid, rev, since_rev, ops_json, blocks_car, blobs_json, created_at)'
 					. ' VALUES (:seq, :did, :commit, :rev, :status, :ops, :blocks, :blobs, :created)',
 					[
-						'seq' => $seq,
-						'did' => $did,
-						'commit' => '',
-						'rev' => '',
-						'status' => 'deleted',
-						'ops' => '[]',
-						'blocks' => '',
-						'blobs' => '[]',
-						'created' => $deletedAt,
+						'seq' => $event->seq,
+						'did' => $event->did,
+						'commit' => $event->commitCid,
+						'rev' => $event->rev,
+						'status' => $event->sinceRev,
+						'ops' => json_encode($event->ops, JSON_THROW_ON_ERROR),
+						'blocks' => base64_encode($event->blocks),
+						'blobs' => json_encode($event->blobs, JSON_THROW_ON_ERROR),
+						'created' => $event->createdAt,
 					],
 				);
 			}
