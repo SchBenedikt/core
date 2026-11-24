@@ -194,6 +194,9 @@ final class AtprotoSyncService
 			$beforePublishedAt,
 			$beforeUri,
 		);
+		if (!$this->moderation->allowsAuthor($did)) {
+			return new AtprotoFeedPage([], null, $status, $checkpoint?->lastEventAt);
+		}
 
 		$hasMore = count($rows) > $limit;
 		$rows = array_slice($rows, 0, $limit);
@@ -376,21 +379,6 @@ final class AtprotoSyncService
 	 */
 	private function applyRecord(AtprotoEvent $event, ?DateTimeImmutable $notBefore): array
 	{
-		$account = $this->store->account($event->source, $event->did);
-		if ($account !== null && !$account->active) {
-			return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
-		}
-
-		if (!$this->moderation->allowsAuthor($event->did)) {
-			return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
-		}
-
-		foreach ($event->labels as $label) {
-			if (!$this->allowsLabel($label)) {
-				return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
-			}
-		}
-
 		$uri = $event->uri();
 		if ($uri === null) {
 			return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
@@ -408,6 +396,37 @@ final class AtprotoSyncService
 
 		if ($ordering === 'duplicate') {
 			return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
+		}
+
+		$account = $this->store->account($event->source, $event->did);
+		if ($account !== null && !$account->active) {
+			return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
+		}
+
+		foreach ($event->labels as $label) {
+			if (!$this->allowsLabel($label)) {
+				if ($existing !== null && !$existing->deleted) {
+					$this->store->saveRecord(new AtprotoRemoteRecord(
+						$event->source,
+						$event->did,
+						(string) $event->collection,
+						(string) $event->rkey,
+						$uri,
+						$event->cid ?? $existing->cid,
+						$event->rev,
+						$event->sequence,
+						[],
+						true,
+						null,
+						Time::toSecondPrecision($event->receivedAt),
+						Time::toSecondPrecision($this->clock->now()),
+					));
+
+					return ['applied' => 1, 'skipped' => 0, 'conflicted' => 0, 'deleted' => 1];
+				}
+
+				return ['applied' => 0, 'skipped' => 1, 'conflicted' => 0, 'deleted' => 0];
+			}
 		}
 
 		if ($event->operation === AtprotoRecordOperation::Delete) {
@@ -490,7 +509,7 @@ final class AtprotoSyncService
 
 	private function allowsLabel(AtprotoLabel $label): bool
 	{
-		return $label->negated || $this->moderation->allowsLabel($label);
+		return $this->moderation->allowsLabel($label);
 	}
 
 	/**
