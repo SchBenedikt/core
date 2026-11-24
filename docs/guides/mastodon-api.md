@@ -227,7 +227,10 @@ A parent scope grants its children (`read` grants `read:accounts`,
 `read:notifications` and `read:search`, `write` grants `write:favourites`,
 `write:bookmarks`, `write:mutes`, `write:lists`, `write:follows`,
 `write:media` and `write:notifications`); a granular scope does
-not grant its parent.
+not grant its parent. The deprecated Mastodon `follow` scope grants only
+relationship and mute permissions (`read:follows`, `write:follows`,
+`read:mutes` and `write:mutes`); it does not grant unrelated writes. New
+clients should request granular scopes.
 `*` grants everything. A token with too few scopes gets `403
 insufficient_scope`. The host still owns bearer parsing, token
 expiry/revocation and the actual rate limiter; the route manifest only declares

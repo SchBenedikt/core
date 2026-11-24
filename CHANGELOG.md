@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The deprecated Mastodon `follow` OAuth scope now grants its relationship and
+  mute scopes without granting unrelated writes.
 - `AtprotoInteractionService` can now like, unlike, repost and undo reposts for
   trusted remote post projections. Remote writes require a host policy that
   checks visibility and blocks, use URI/CID strong references and reuse the
