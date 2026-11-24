@@ -314,8 +314,11 @@ equal key with a different CID is a conflict that is counted but not applied.
   active again. A handle cannot be rebound to another DID.
 - A `delete` event stores a tombstone. A later create/update of the same URI
   can restore it; a second delete is a no-op.
-- A sequence gap marks the checkpoint `reconcile_required`; the next bounded
-  backfill clears it only when it reaches the end of the source page.
+- A source-reported cursor discontinuity marks the checkpoint
+  `reconcile_required`; gaps between visible event sequences are not treated
+  as missing data because adapters may filter events before they reach Core.
+  The next bounded backfill clears it only when it reaches the end of the
+  source page.
 - A failed source poll marks the checkpoint `stale` but leaves cached posts
   readable. `feed()` uses only stored rows and reports that staleness; it never
   makes a network request.

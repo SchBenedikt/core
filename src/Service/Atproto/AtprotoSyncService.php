@@ -51,8 +51,9 @@ use function strtr;
  *
  * The transport is a host port. One page is pulled outside the transaction,
  * then all records and the checkpoint are committed together, so a crash
- * repeats a page instead of losing it. Sequence gaps mark the checkpoint for
- * bounded reconciliation; reads use only cached records and label their
+ * repeats a page instead of losing it. The source marks cursor discontinuity
+ * for bounded reconciliation; event sequence gaps alone are not meaningful
+ * when a source filters events. Reads use cached records and label their
  * freshness from the last sync outcome.
  */
 final class AtprotoSyncService
@@ -279,15 +280,15 @@ final class AtprotoSyncService
 				);
 			}
 
-			if ($event->sequence !== null && $lastSequence !== null) {
-				if ($event->sequence < $lastSequence) {
-					++$skipped;
-					continue;
-				}
-
-				if ($event->sequence > $lastSequence + 1) {
-					$gap = true;
-				}
+			if ($event->sequence !== null
+				&& $lastSequence !== null
+				&& $event->sequence < $lastSequence
+				&& $event->kind === AtprotoEventKind::Account
+			) {
+				// Account events have no per-record revision to protect them from
+				// an older identity/status update arriving after the current one.
+				++$skipped;
+				continue;
 			}
 
 			$outcome = $this->applyEvent($event, $notBefore);

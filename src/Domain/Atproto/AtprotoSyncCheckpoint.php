@@ -20,7 +20,8 @@ use function trim;
  * The durable position and last outcome of one AT Protocol source.
  *
  * The cursor belongs to the source adapter and is opaque to the core. The
- * sequence is used for gap detection when the source provides one. `stale`
+ * sequence tracks the highest applied source event for ordering and status;
+ * the adapter reports continuity gaps explicitly. `stale`
  * is persisted so a read after a failed poll can label cached content instead
  * of pretending it is fresh; it is not derived from the clock.
  */
