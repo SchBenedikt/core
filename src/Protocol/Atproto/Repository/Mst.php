@@ -82,6 +82,55 @@ final class Mst
 	}
 
 	/**
+	 * Return the encoded MST blocks needed to prove the value at a key.
+	 *
+	 * @return array<string, string> blocks keyed by CID string
+	 */
+	public function proofPath(string $key): array
+	{
+		MstKey::assertValid($key);
+		$cid = $this->root;
+		$proof = [];
+		$visited = [];
+
+		for ($depth = 0; $depth <= 256; ++$depth) {
+			$id = $cid->toString();
+			if (isset($visited[$id])) {
+				throw new UnexpectedValueException('The MST contains a cycle.');
+			}
+			$visited[$id] = true;
+			$bytes = $this->blocks[$id] ?? null;
+			if ($bytes === null) {
+				throw new UnexpectedValueException('The MST block ' . $id . ' is missing.');
+			}
+			$proof[$id] = $bytes;
+			$node = $this->node($cid);
+
+			if ($node->entries === []) {
+				if ($node->left === null) {
+					return [];
+				}
+				$cid = $node->left;
+				continue;
+			}
+
+			$index = $this->firstAtOrAfter($node->entries, $key);
+			if ($index !== null && $node->entries[$index]->key === $key) {
+				return $proof;
+			}
+			$next = $index === null
+				? $node->entries[count($node->entries) - 1]->right ?? null
+				: ($index === 0 ? $node->left : $node->entries[$index - 1]->right);
+			if ($next === null) {
+				return [];
+			}
+			$cid = $next;
+		}
+
+		throw new UnexpectedValueException('The MST is deeper than the supported limit.');
+	}
+
+	/**
 	 * @return array<string, Cid>
 	 */
 	public function all(): array
