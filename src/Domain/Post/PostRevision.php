@@ -32,6 +32,7 @@ final readonly class PostRevision
 		/** @var list<string> */
 		public array $attachmentIds,
 		public DateTimeImmutable $editedAt,
+		public ?string $language = null,
 	) {
 		if ($postId === '') {
 			throw new InvalidArgumentException('A revision needs a post id.');
@@ -54,6 +55,7 @@ final readonly class PostRevision
 			'revision' => $this->revision,
 			'content' => $this->content,
 			'content_warning' => $this->contentWarning,
+			'language' => $this->language,
 			'visibility' => $this->visibility->value,
 			'attachment_ids' => $this->attachmentIds,
 			'edited_at' => Time::format($this->editedAt),

@@ -47,6 +47,7 @@ final class AtprotoPostRecord
 			$reply,
 			$facets,
 			$embed,
+			$post->language,
 		);
 	}
 
@@ -68,6 +69,7 @@ final class AtprotoPostRecord
 		?AtprotoReplyRef $reply = null,
 		array $facets = [],
 		?array $embed = null,
+		?string $language = null,
 	): array {
 		$record = [
 			'$type' => self::COLLECTION,
@@ -82,6 +84,10 @@ final class AtprotoPostRecord
 					['val' => 'content-warning'],
 				],
 			];
+		}
+
+		if ($language !== null) {
+			$record['langs'] = [$language];
 		}
 
 		if ($reply !== null) {

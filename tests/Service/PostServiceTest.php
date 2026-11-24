@@ -71,6 +71,15 @@ final class PostServiceTest extends TestCase
 		self::assertSame('post-1', $this->repository->find('post-1')?->id);
 	}
 
+	public function testStoresAndNormalizesThePostLanguage(): void
+	{
+		$post = $this->service()->create(new CreatePost('alice', 'hello', language: ' de-DE '));
+
+		self::assertSame('de-DE', $post->language);
+		self::assertSame('de-DE', $post->toArray()['language']);
+		self::assertSame('de-DE', $this->repository->find($post->id)?->language);
+	}
+
 	public function testTrimsTheContentWarningAndTreatsBlankAsNone(): void
 	{
 		$service = $this->service();

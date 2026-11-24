@@ -29,7 +29,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id,'
 		. ' published_at, edited_at, revision, deleted_at, quoted_object_id, quote_state,'
-		. ' quote_authorization_id, quote_request_id, archived_at';
+		. ' quote_authorization_id, quote_request_id, archived_at, language';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -43,9 +43,9 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
 					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at,'
-					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id, archived_at)'
+					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id, archived_at, language)'
 					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at,'
-					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id, :archived_at)',
+					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id, :archived_at, :language)',
 					[
 						'id' => $post->id,
 						'author_id' => $post->authorId,
@@ -62,6 +62,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'quote_authorization_id' => $post->quoteAuthorizationId,
 						'quote_request_id' => $post->quoteRequestId,
 						'archived_at' => $post->archivedAt === null ? null : Time::format($post->archivedAt),
+						'language' => $post->language,
 					],
 				);
 
@@ -151,7 +152,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 
 				$this->db->execute(
 					'UPDATE ' . PostSchema::TABLE
-					. ' SET content = :content, content_warning = :content_warning, visibility = :visibility,'
+					. ' SET content = :content, content_warning = :content_warning, visibility = :visibility, language = :language,'
 					. ' revision = :revision, edited_at = :edited_at'
 					. ' WHERE id = :id',
 					[
@@ -159,6 +160,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'content' => $post->content,
 						'content_warning' => $post->contentWarning,
 						'visibility' => $post->visibility->value,
+						'language' => $post->language,
 						'revision' => $post->revision,
 						'edited_at' => $post->editedAt === null ? null : Time::format($post->editedAt),
 					],
@@ -895,6 +897,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			quoteAuthorizationId: ($row['quote_authorization_id'] ?? null) === null ? null : (string) $row['quote_authorization_id'],
 			quoteRequestId: ($row['quote_request_id'] ?? null) === null ? null : (string) $row['quote_request_id'],
 			archivedAt: ($row['archived_at'] ?? null) === null ? null : Time::parse((string) $row['archived_at']),
+			language: ($row['language'] ?? null) === null ? null : (string) $row['language'],
 		);
 	}
 }

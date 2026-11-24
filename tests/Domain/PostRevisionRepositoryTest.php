@@ -55,6 +55,7 @@ final class PostRevisionRepositoryTest extends TestCase
 				visibility: Visibility::Unlisted,
 				attachmentIds: ['a1', 'a2'],
 				editedAt: Time::parse('2026-11-11T10:05:00Z'),
+				language: 'de',
 			));
 
 			$stored = $repository->forPost('post-2')[0];
@@ -64,6 +65,7 @@ final class PostRevisionRepositoryTest extends TestCase
 			self::assertSame(Visibility::Unlisted, $stored->visibility, $name);
 			self::assertSame(['a1', 'a2'], $stored->attachmentIds, $name);
 			self::assertSame('2026-11-11T10:05:00Z', Time::format($stored->editedAt), $name);
+			self::assertSame('de', $stored->language, $name);
 		}
 	}
 

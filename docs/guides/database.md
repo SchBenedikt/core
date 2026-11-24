@@ -126,7 +126,9 @@ and is read as visible, so the migration needs no backfill; existing rows stay
 in the list and unread count. The three new policy tables are additive and
 contain no data that has to be derived from old notifications.
 
-`social_post` has nullable `in_reply_to_id` and an index on
+`social_post` stores an optional BCP 47 `language`; edit history retains the
+language from each prior revision. Older rows keep a null language. `social_post`
+also has nullable `in_reply_to_id` and an index on
 `(in_reply_to_id, published_at)`. A direct post's local audience is stored in
 `social_post_recipient` as ordered `(post_id, recipient_id, position)` rows;
 both PDO reads (hydrating a post and the reader's own/direct home timeline)

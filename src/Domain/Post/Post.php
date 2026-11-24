@@ -47,6 +47,7 @@ final readonly class Post
 		public ?string $quoteRequestId = null,
 		/** Set when the author archived the post locally; it stays addressable. */
 		public ?DateTimeImmutable $archivedAt = null,
+		public ?string $language = null,
 	) {
 		if ($revision < 1) {
 			throw new InvalidArgumentException('A post revision starts at one.');
@@ -58,6 +59,12 @@ final readonly class Post
 
 		if ($archivedAt !== null && $archivedAt < $publishedAt) {
 			throw new InvalidArgumentException('A post cannot have been archived before it was published.');
+		}
+
+		if ($language !== null && (strlen($language) > 35
+			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1
+		)) {
+			throw new InvalidArgumentException('A post language must be a valid BCP 47 language tag.');
 		}
 
 		if ($id === '') {
@@ -172,6 +179,7 @@ final readonly class Post
 			quoteAuthorizationId: $this->quoteAuthorizationId,
 			quoteRequestId: $this->quoteRequestId,
 			archivedAt: $archivedAt,
+			language: $this->language,
 		);
 	}
 
@@ -187,6 +195,7 @@ final readonly class Post
 			'author_id' => $this->authorId,
 			'content' => $this->content,
 			'content_warning' => $this->contentWarning,
+			'language' => $this->language,
 			'visibility' => $this->visibility->value,
 			'published_at' => Time::format($this->publishedAt),
 			'edited_at' => $this->editedAt === null ? null : Time::format($this->editedAt),

@@ -117,6 +117,12 @@ final class UpdatePostHandler implements Handler
 			$expectedRevision = $body['revision'];
 		}
 
+		$languageProvided = array_key_exists('language', $body);
+		$language = $body['language'] ?? null;
+		if ($languageProvided && $language !== null && !is_string($language)) {
+			throw HttpException::validationFailed(['language' => 'language must be a string or null.']);
+		}
+
 		try {
 			$post = $this->posts->edit($userId, (string) $request->attribute('id', ''), new UpdatePost(
 				content: $content,
@@ -125,6 +131,8 @@ final class UpdatePostHandler implements Handler
 				attachmentIds: $attachmentIds,
 				visibility: $visibility,
 				expectedRevision: $expectedRevision,
+				language: $language,
+				languageProvided: $languageProvided,
 			));
 		} catch (PostNotFoundException) {
 			throw HttpException::notFound('Post not found.');

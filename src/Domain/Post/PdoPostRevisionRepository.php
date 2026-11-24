@@ -42,14 +42,15 @@ final class PdoPostRevisionRepository implements PostRevisionRepository
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . PostSchema::REVISION_TABLE
-				. ' (post_id, revision, content, content_warning, visibility, attachment_ids, edited_at)'
-				. ' VALUES (:post_id, :revision, :content, :content_warning, :visibility, :attachment_ids, :edited_at)',
+				. ' (post_id, revision, content, content_warning, visibility, language, attachment_ids, edited_at)'
+				. ' VALUES (:post_id, :revision, :content, :content_warning, :visibility, :language, :attachment_ids, :edited_at)',
 				[
 					'post_id' => $revision->postId,
 					'revision' => $revision->revision,
 					'content' => $revision->content,
 					'content_warning' => $revision->contentWarning,
 					'visibility' => $revision->visibility->value,
+					'language' => $revision->language,
 					'attachment_ids' => json_encode($revision->attachmentIds, JSON_THROW_ON_ERROR),
 					'edited_at' => Time::format($revision->editedAt),
 				],
@@ -66,7 +67,7 @@ final class PdoPostRevisionRepository implements PostRevisionRepository
 	public function forPost(string $postId): array
 	{
 		$rows = $this->db->fetchAll(
-			'SELECT post_id, revision, content, content_warning, visibility, attachment_ids, edited_at'
+			'SELECT post_id, revision, content, content_warning, visibility, language, attachment_ids, edited_at'
 			. ' FROM ' . PostSchema::REVISION_TABLE
 			. ' WHERE post_id = :post_id ORDER BY revision ASC',
 			['post_id' => $postId],
@@ -96,6 +97,7 @@ final class PdoPostRevisionRepository implements PostRevisionRepository
 			visibility: Visibility::from((string) $row['visibility']),
 			attachmentIds: $this->attachmentIds((string) $row['attachment_ids']),
 			editedAt: Time::parse((string) $row['edited_at']),
+			language: ($row['language'] ?? null) === null ? null : (string) $row['language'],
 		);
 	}
 

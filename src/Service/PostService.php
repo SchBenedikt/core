@@ -106,6 +106,10 @@ final class PostService
 		if ($warning === '') {
 			$warning = null;
 		}
+		$language = $command->language === null ? null : trim($command->language);
+		if ($language === '') {
+			$language = null;
+		}
 
 		$inReplyToId = $command->inReplyToId === null ? null : trim($command->inReplyToId);
 		if ($inReplyToId === '') {
@@ -153,6 +157,7 @@ final class PostService
 			quoteState: $quote?->state,
 			quoteAuthorizationId: $quote?->authorizationId,
 			quoteRequestId: $quote?->requestId,
+			language: $language,
 		);
 
 		// The post row, its attachments/hashtags/poll, the scheduled AT
@@ -211,6 +216,7 @@ final class PostService
 				'recipient_ids' => $command->recipientIds,
 				'in_reply_to_id' => $inReplyToId,
 				'quoted_post_id' => $command->quotedPostId,
+				'language' => $command->language,
 			],
 			reason: trim($reason),
 			status: HeldPostStatus::Pending,
@@ -338,13 +344,16 @@ final class PostService
 
 		$visibility = $command->visibility ?? $post->visibility;
 		$attachmentIds = $command->attachmentIds ?? $post->attachmentIds;
+		$language = $command->languageProvided
+			? ($command->language === null || trim($command->language) === '' ? null : trim($command->language))
+			: $post->language;
 
 		$this->validateAudienceChange($post, $visibility);
 
 		// The reply target cannot change on an edit, but the parent still
 		// decides whether the new visibility is allowed at all.
 		$parent = $post->inReplyToId === null ? null : $this->posts->find($post->inReplyToId);
-		$this->validateEdit($post, $content, $warning, $attachmentIds, $visibility, $parent);
+		$this->validateEdit($post, $content, $warning, $attachmentIds, $visibility, $parent, $language);
 
 		$editedAt = Time::toSecondPrecision($this->clock->now());
 		$edited = new Post(
@@ -365,6 +374,7 @@ final class PostService
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
 			archivedAt: $post->archivedAt,
+			language: $language,
 		);
 
 		$snapshot = new PostRevision(
@@ -375,6 +385,7 @@ final class PostService
 			visibility: $post->visibility,
 			attachmentIds: $post->attachmentIds,
 			editedAt: $post->editedAt ?? $post->publishedAt,
+			language: $post->language,
 		);
 
 		// An Update is only valid while the object keeps its audience. An
@@ -582,6 +593,13 @@ final class PostService
 		if (trim($command->authorId) === '') {
 			$errors['author'] = 'A post needs an author.';
 		}
+		$language = $command->language === null ? '' : trim($command->language);
+		if ($language !== ''
+			&& (strlen($language) > 35
+				|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
+		) {
+			$errors['language'] = 'language must be a valid BCP 47 language tag.';
+		}
 
 		$errors += $this->contentErrors(
 			$content,
@@ -612,6 +630,7 @@ final class PostService
 		array $attachmentIds,
 		Visibility $visibility,
 		?Post $parent,
+		?string $language,
 	): void {
 		$errors = $this->contentErrors(
 			$content,
@@ -620,6 +639,11 @@ final class PostService
 		)
 			+ $this->attachmentErrors($attachmentIds, $post->authorId)
 			+ $this->parentErrors($parent, $visibility);
+		if ($language !== null && (strlen($language) > 35
+			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
+		) {
+			$errors['language'] = 'language must be a valid BCP 47 language tag.';
+		}
 
 		if ($errors !== []) {
 			throw new ValidationException($errors);

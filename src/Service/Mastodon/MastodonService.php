@@ -573,6 +573,7 @@ final class MastodonService
 		?string $inReplyToId = null,
 		array $recipientIds = [],
 		?string $quotedStatusId = null,
+		?string $language = null,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -594,6 +595,7 @@ final class MastodonService
 				inReplyToId: $inReplyToId,
 				recipientIds: $recipientIds,
 				quotedPostId: $quotedStatusId,
+				language: $language,
 			));
 		} catch (PostHeldException $exception) {
 			throw new MastodonRequestException(
@@ -653,6 +655,8 @@ final class MastodonService
 		bool $spoilerProvided,
 		?string $spoilerText,
 		?array $mediaIds,
+		?string $language = null,
+		bool $languageProvided = false,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -663,6 +667,8 @@ final class MastodonService
 				contentWarning: $spoilerText,
 				contentWarningProvided: $spoilerProvided,
 				attachmentIds: $mediaIds,
+				language: $language,
+				languageProvided: $languageProvided,
 			));
 		} catch (PostNotFoundException|PostAccessDeniedException) {
 			throw new MastodonRequestException(404, 'not_found', 'Status not found.');

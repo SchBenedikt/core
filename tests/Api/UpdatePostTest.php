@@ -82,6 +82,20 @@ final class UpdatePostTest extends TestCase
 		self::assertNull($response->decodedBody()['post']['content_warning']);
 	}
 
+	public function testLanguageCanBeEditedAndPreviousRevisionKeepsTheOldLanguage(): void
+	{
+		$post = $this->createPost('alice', 'text', ['language' => 'en']);
+
+		$response = $this->patch($post['id'], ['language' => 'de']);
+
+		self::assertSame(200, $response->status);
+		self::assertSame('de', $response->decodedBody()['post']['language']);
+		self::assertSame('en', $this->revisions->forPost($post['id'])[0]->language);
+
+		$cleared = $this->patch($post['id'], ['language' => null]);
+		self::assertNull($cleared->decodedBody()['post']['language']);
+	}
+
 	public function testTheReplacedVersionIsRecorded(): void
 	{
 		$post = $this->createPost('alice', 'first');

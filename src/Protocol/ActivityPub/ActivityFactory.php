@@ -421,6 +421,10 @@ final class ActivityFactory
 			$note['summary'] = $post->contentWarning;
 		}
 
+		if ($post->language !== null) {
+			$note['contentMap'] = [$post->language => $post->content];
+		}
+
 		if ($post->inReplyToId !== null) {
 			$note['inReplyTo'] = $this->baseUrl()
 				. '/api/v1/posts/' . rawurlencode($post->inReplyToId);

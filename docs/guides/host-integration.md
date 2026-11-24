@@ -321,7 +321,7 @@ The core owns the schema classes, not the migration mechanism:
 - `FollowingSchema` → `social_following` (includes `inbox_url`, `state` and `follow_activity_id`; accepted rows feed the public collection)
 - `RemotePostSchema` → `social_remote_post` (remote posts and boosts) and `social_remote_post_attachment` (ordered remote-media links)
 - `RemoteThreadSchema` → `social_remote_thread_post` (on-demand thread ancestors and direct replies, keyed by object id)
-- `PostSchema` → `social_post`, `social_post_attachment`, `social_post_recipient`, `social_post_hashtag`
+- `PostSchema` → `social_post` (including optional post language), `social_post_attachment`, `social_post_recipient`, `social_post_hashtag` and language-aware `social_post_revision` rows
 - `BlockSchema` → `social_block` (per-user blocks)
 - `InboundBlockSchema` → `social_inbound_block` (remote actor blocks per local account, including the owning Block activity URI)
 - `JobSchema` → `social_job` (optional `subject_type`/`subject_id` columns let an account deletion cancel its jobs)

@@ -13,7 +13,8 @@ what a host must provide.
 ## What is implemented
 
 - `Protocol\Atproto\AtprotoPostRecord` builds an `app.bsky.feed.post` record
-  with `$type`, `text` and `createdAt`. A local content warning becomes the
+  with `$type`, `text`, `createdAt` and the optional post language in `langs`.
+  A local content warning becomes the
   `com.atproto.label.defs#selfLabels` label `content-warning`.
 - `Protocol\Atproto\Tid` creates a valid 13-character `base32-sortable` record
   key. It is deterministic for one local post and account, so a retry updates

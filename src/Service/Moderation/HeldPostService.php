@@ -167,6 +167,7 @@ final class HeldPostService
 		$recipientIds = $draft['recipient_ids'] ?? [];
 		$inReplyToId = $draft['in_reply_to_id'] ?? null;
 		$quotedPostId = $draft['quoted_post_id'] ?? null;
+		$language = $draft['language'] ?? null;
 
 		if (!is_string($content) || !is_string($visibility)) {
 			throw new ValidationException(['content' => 'The held post has no usable content.']);
@@ -187,6 +188,7 @@ final class HeldPostService
 			recipientIds: is_array($recipientIds) ? array_values(array_map('strval', $recipientIds)) : [],
 			inReplyToId: is_string($inReplyToId) && $inReplyToId !== '' ? $inReplyToId : null,
 			quotedPostId: is_string($quotedPostId) && $quotedPostId !== '' ? $quotedPostId : null,
+			language: is_string($language) && $language !== '' ? $language : null,
 		);
 	}
 

@@ -62,6 +62,11 @@ final class CreateScheduledPostHandler implements Handler
 			throw HttpException::validationFailed(['content_warning' => 'content_warning must be a string or null.']);
 		}
 
+		$language = $body['language'] ?? null;
+		if ($language !== null && !is_string($language)) {
+			throw HttpException::validationFailed(['language' => 'language must be a string or null.']);
+		}
+
 		$attachmentIds = $this->stringList($body['attachment_ids'] ?? [], 'attachment_ids');
 		$recipientIds = $this->stringList($body['recipient_ids'] ?? [], 'recipient_ids');
 
@@ -98,6 +103,7 @@ final class CreateScheduledPostHandler implements Handler
 					attachmentIds: $attachmentIds,
 					recipientIds: $recipientIds,
 					inReplyToId: $inReplyToId,
+					language: $language,
 				),
 				$scheduledAt,
 			);

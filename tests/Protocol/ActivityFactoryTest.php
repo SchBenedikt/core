@@ -130,6 +130,13 @@ final class ActivityFactoryTest extends TestCase
 		self::assertSame('spoilers', $activity['object']['summary']);
 	}
 
+	public function testTheNoteCarriesItsLanguageMap(): void
+	{
+		$activity = $this->factory->createNote($this->post('p1', Visibility::Public, language: 'de'));
+
+		self::assertSame(['de' => 'hello'], $activity['object']['contentMap']);
+	}
+
 	public function testBuildsADeleteWithATombstone(): void
 	{
 		$post = $this->post('p1', Visibility::Public);
@@ -218,6 +225,7 @@ final class ActivityFactoryTest extends TestCase
 		?string $contentWarning = null,
 		array $recipientIds = [],
 		?string $inReplyToId = null,
+		?string $language = null,
 	): Post {
 		return new Post(
 			$id,
@@ -231,6 +239,7 @@ final class ActivityFactoryTest extends TestCase
 			null,
 			$recipientIds,
 			$inReplyToId,
+			language: $language,
 		);
 	}
 }

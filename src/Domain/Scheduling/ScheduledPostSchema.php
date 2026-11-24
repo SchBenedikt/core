@@ -35,6 +35,7 @@ final class ScheduledPostSchema
 			. ' post_id VARCHAR(64) NOT NULL,'
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
+			. ' language VARCHAR(35) NULL,'
 			. ' visibility VARCHAR(16) NOT NULL,'
 			. ' attachment_ids TEXT NOT NULL,'
 			. ' recipient_ids TEXT NOT NULL,'

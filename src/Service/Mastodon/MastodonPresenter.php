@@ -143,7 +143,7 @@ final class MastodonPresenter
 			'sensitive' => $post->contentWarning !== null,
 			'spoiler_text' => $post->contentWarning ?? '',
 			'visibility' => $this->visibility($post->visibility),
-			'language' => null,
+			'language' => $post->language,
 			'uri' => $url,
 			'url' => $url,
 			'replies_count' => $repliesCount ?? ($this->posts?->replyCount($post->id) ?? 0),
