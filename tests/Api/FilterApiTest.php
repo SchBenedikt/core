@@ -138,6 +138,47 @@ final class FilterApiTest extends TestCase
 		self::assertSame(200, $this->request('GET', '/api/v1/posts/' . $hidden, [], 'bob')->status);
 	}
 
+	public function testHomeTimelineFillsPastHiddenPostsBeforeReturningAFeedPage(): void
+	{
+		$visible = $this->createPost('ordinary post');
+		$this->clock->advance(60);
+		$this->createPost('secret middle');
+		$this->clock->advance(60);
+		$this->createPost('secret newest');
+		$this->createFilter('hide', ['home'], 'secret');
+
+		$posts = $this->request('GET', '/api/v1/timelines/home', [], 'alice', [], ['limit' => '1'])
+			->decodedBody()['posts'];
+
+		self::assertSame([$visible], array_column($posts, 'id'));
+	}
+
+	public function testHomeTimelineReturnsAContinuationCursorForLongHiddenRuns(): void
+	{
+		$visible = $this->createPost('ordinary post');
+		for ($index = 0; $index < 205; ++$index) {
+			$this->clock->advance(1);
+			$this->createPost('secret item ' . $index);
+		}
+		$this->createFilter('hide', ['home'], 'secret');
+
+		$first = $this->request('GET', '/api/v1/timelines/home', [], 'alice', [], ['limit' => '1'])
+			->decodedBody();
+		self::assertSame([], $first['posts']);
+		self::assertTrue($first['has_more']);
+		self::assertIsString($first['next_before']);
+		self::assertIsString($first['next_before_id']);
+
+		$second = $this->request('GET', '/api/v1/timelines/home', [], 'alice', [], [
+			'limit' => '1',
+			'before' => $first['next_before'],
+			'before_id' => $first['next_before_id'],
+		])->decodedBody();
+
+		self::assertSame([$visible], array_column($second['posts'], 'id'));
+		self::assertFalse($second['has_more']);
+	}
+
 	public function testAWarnedPostIsRedactedUntilIncludeFiltered(): void
 	{
 		$hidden = $this->createPost('Here is a spoiler', 'A warning');

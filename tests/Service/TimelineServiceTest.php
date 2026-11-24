@@ -12,6 +12,10 @@ namespace AlohaSocial\Core\Tests\Service;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
@@ -28,17 +32,20 @@ final class TimelineServiceTest extends TestCase
 
 	private InMemoryFollowingRepository $following;
 
+	private InMemoryRemotePostRepository $remotePosts;
+
 	private TimelineService $timelines;
 
 	protected function setUp(): void
 	{
 		$this->repository = new InMemoryPostRepository();
 		$this->following = new InMemoryFollowingRepository();
+		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->timelines = new TimelineService(
 			$this->repository,
 			new InMemoryHomeTimelineRepository(
 				$this->repository,
-				new InMemoryRemotePostRepository(),
+				$this->remotePosts,
 				$this->following,
 				new InMemoryBlockRepository(),
 			),
@@ -131,6 +138,43 @@ final class TimelineServiceTest extends TestCase
 		$ids = array_map(static fn (object $entry): string => $entry->id, $this->timelines->home('alice'));
 
 		self::assertSame(['own-private'], $ids);
+	}
+
+	public function testHomeTimelineFillsPastRepeatedBoostsBeforeReturningAPage(): void
+	{
+		$actor = 'https://remote.example/users/booster';
+		$this->following->insert(new FollowedActor(
+			'follow-booster', 'alice', $actor, 'https://remote.example/inbox',
+			Time::parse('2026-11-11T09:00:00Z'), FollowState::Accepted,
+		));
+		for ($index = 0; $index < 30; ++$index) {
+			$minute = 30 - $index;
+			$this->remotePosts->insert(new RemotePost(
+				'boost-' . str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+				'https://remote.example/objects/shared',
+				$actor,
+				RemotePostKind::Boost,
+				'shared content',
+				null,
+				Time::parse(sprintf('2026-11-11T10:%02d:00Z', $minute)),
+				'https://remote.example/users/original-author',
+			));
+		}
+		for ($index = 0; $index < 10; ++$index) {
+			$this->repository->insert($this->post(
+				'own-' . $index,
+				sprintf('2026-11-11T09:%02d:00Z', 50 - $index),
+			));
+		}
+
+		$entries = $this->timelines->home('alice', 5);
+
+		self::assertCount(5, $entries);
+		self::assertSame('boost-00', $entries[0]->id);
+		self::assertSame(['own-0', 'own-1', 'own-2', 'own-3'], array_map(
+			static fn ($entry): string => $entry->id,
+			array_slice($entries, 1),
+		));
 	}
 
 	private function post(
