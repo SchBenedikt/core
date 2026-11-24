@@ -414,7 +414,8 @@ GET {mastodon.prefix}/mutes
       └─ MuteRepository::forUser        active rows, newest-first (created_at, actor_id)
 
 GET {mastodon.prefix}/timelines/home
-  └─ HomeTimelineRepository::forUser    NOT EXISTS social_mute for actor/object author
+  └─ MastodonHomeTimelineHandler        authenticated Mastodon projection and id cursor
+      └─ MastodonService::homeTimeline  shared local and accepted-remote timeline
 
 GET {mastodon.prefix}/notifications
   └─ NotificationRepository::listFor    actor NOT IN active notification mutes

@@ -141,6 +141,72 @@ final class MastodonApiTest extends TestCase
 		self::assertNull($response->decodedBody()['contact_account']);
 	}
 
+	public function testAuthenticatedHomeTimelineReturnsLocalAndAcceptedRemoteStatusesWithCursor(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-alice-bob',
+			localUserId: 'alice',
+			actorId: $actorId,
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Accepted,
+		));
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remoteId = 'https://remote.example/activities/home-1';
+		$remoteObjectId = 'https://remote.example/notes/home-1';
+		$remotePosts->insert(new RemotePost(
+			activityId: $remoteId,
+			objectId: $remoteObjectId,
+			actorId: $actorId,
+			kind: RemotePostKind::Post,
+			content: 'Followed remote update',
+			contentWarning: null,
+			publishedAt: $this->clock->now()->modify('+1 second'),
+			objectAuthorId: $actorId,
+		));
+		$app = $this->app(
+			actors: ['alice'],
+			followingRepository: $following,
+			remotePostRepository: $remotePosts,
+		);
+		$local = $this->createStatus($app, ['status' => 'My local update'])->decodedBody();
+
+		$first = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',
+			query: ['limit' => '1'],
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame($remoteObjectId, $first->decodedBody()[0]['id']);
+		self::assertSame($actorId, $first->decodedBody()[0]['account']['id']);
+		self::assertStringContainsString(rawurlencode($remoteObjectId), $first->headers['Link']);
+
+		$next = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',
+			query: ['limit' => '1', 'max_id' => $remoteObjectId],
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(200, $next->status);
+		self::assertSame($local['id'], $next->decodedBody()[0]['id']);
+
+		self::assertSame(401, $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',
+		))->status);
+		self::assertSame(403, $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		))->status);
+	}
+
 	public function testTheSurfaceIsDisabledByDefaultAndWithTheFlagOff(): void
 	{
 		$app = $this->app(enabled: false);

@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 232 routes in total; 53 use the
+defaults to `/api/mastodon/v1`). There are 233 routes in total; 54 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -162,13 +162,14 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.media.upload` | `POST` | `/api/mastodon/v1/media` | yes, `write:media` | 20 / 900 s |
 | `mastodon.media.update` | `PUT` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.media.delete` | `DELETE` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
-| `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
 | `mastodon.statuses.context` | `GET` | `/api/mastodon/v1/statuses/{id}/context` | no | 60 / 60 s |
 | `mastodon.polls.show` | `GET` | `/api/mastodon/v1/polls/{id}` | no | 120 / 60 s |
 | `mastodon.polls.vote` | `POST` | `/api/mastodon/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.update` | `PUT` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
+| `mastodon.timelines.home` | `GET` | `/api/mastodon/v1/timelines/home` | yes, `read:statuses` | 60 / 60 s |
+| `mastodon.timelines.public` | `GET` | `/api/mastodon/v1/timelines/public` | no | 60 / 60 s |
 | `mastodon.statuses.delete` | `DELETE` | `/api/mastodon/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.scheduled_statuses.list` | `GET` | `/api/mastodon/v1/scheduled_statuses` | yes, `read:statuses` | 60 / 60 s |
 | `mastodon.scheduled_statuses.show` | `GET` | `/api/mastodon/v1/scheduled_statuses/{id}` | yes, `read:statuses` | 120 / 60 s |

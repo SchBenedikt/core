@@ -74,6 +74,11 @@ revision history are the same; the answer is the updated status with a non-null
 not_found`, invalid input is `422 validation_failed`, and the route needs
 `write:statuses`.
 
+The authenticated home timeline at `GET /api/mastodon/v1/timelines/home`
+combines the caller's local and accepted-follow remote posts and boosts. It
+requires `read:statuses`, supports `limit`, `max_id` and `since_id`, and returns
+a `Link` next-page cursor; `min_id` is not supported on this route.
+
 The local subset covers public/unlisted/followers-only text posts, local poll
 creation on an own status, local favourite/unfavourite, private bookmark and
 mute bookkeeping, private list bookkeeping with list timelines and the
@@ -1288,7 +1293,7 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   belong to the host or a dedicated identity service. The core only checks the
   scopes the host resolved; it does not own tokens, sessions or roles. See
   [ADR 0006](../adr/0006-host-owned-accounts.md).
-- Remote statuses, public/remote timelines, favourite federation (outbound
+- Public remote timelines, favourite federation (outbound
   `Like`/`Undo` and remote counts), remote boost federation, remote
   notifications, streaming and remote search need remote data the core does
   not fetch for this surface. Local boosts/reblogs, private bookmarks, local

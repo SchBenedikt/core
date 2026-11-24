@@ -120,6 +120,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonHomeTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
@@ -1469,6 +1470,8 @@ final readonly class Application
 			$inboundBlocks,
 			$remotePollService,
 			$reactionService,
+			$timelines,
+			$remotePosts,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -1724,6 +1727,7 @@ final readonly class Application
 			->with(MastodonInstanceHandler::class, static fn (): MastodonInstanceHandler => new MastodonInstanceHandler($mastodonService))
 			->with(MastodonMediaUploadHandler::class, static fn (): MastodonMediaUploadHandler => new MastodonMediaUploadHandler($mastodonService))
 			->with(MastodonPublicTimelineHandler::class, static fn (): MastodonPublicTimelineHandler => new MastodonPublicTimelineHandler($mastodonService))
+			->with(MastodonHomeTimelineHandler::class, static fn (): MastodonHomeTimelineHandler => new MastodonHomeTimelineHandler($mastodonService))
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
 			->with(MastodonStatusContextHandler::class, static fn (): MastodonStatusContextHandler => new MastodonStatusContextHandler($mastodonService))
 			->with(MastodonReblogStatusHandler::class, static fn (): MastodonReblogStatusHandler => new MastodonReblogStatusHandler($mastodonService))
