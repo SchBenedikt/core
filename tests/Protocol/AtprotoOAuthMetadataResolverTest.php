@@ -13,7 +13,9 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoOAuthException;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoOAuthMetadataResolver;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use PHPUnit\Framework\TestCase;
 
 final class AtprotoOAuthMetadataResolverTest extends TestCase
@@ -31,7 +33,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		], JSON_THROW_ON_ERROR)));
 		$http->queueResponse(new HttpResponse(200, [], json_encode($this->metadata(), JSON_THROW_ON_ERROR)));
 
-		$server = (new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS . '/');
+		$server = $this->resolver($http)->resolve(self::PDS . '/');
 
 		self::assertSame(self::ISSUER, $server->issuer);
 		self::assertSame(self::ISSUER . '/oauth/authorize', $server->authorizationEndpoint);
@@ -45,6 +47,21 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		self::assertSame('GET', $http->requests[1]['method']);
 		self::assertSame(self::ISSUER . '/.well-known/oauth-authorization-server', $http->requests[1]['url']);
 		self::assertSame('application/json', $http->requests[0]['headers']['Accept']);
+		self::assertSame(['93.184.216.34'], $http->requests[0]['resolved_ips']);
+		self::assertSame(['93.184.216.34'], $http->requests[1]['resolved_ips']);
+	}
+
+	public function testItRejectsPrivateMetadataDestinationsBeforeMakingARequest(): void
+	{
+		$http = new FakeHttpClient();
+
+		try {
+			$this->resolver($http)->resolve('http://127.0.0.1');
+			self::fail('Private metadata destinations must be rejected.');
+		} catch (AtprotoOAuthException $exception) {
+			self::assertSame('invalid_response', $exception->errorCode);
+			self::assertCount(0, $http->requests);
+		}
 	}
 
 	public function testItRejectsMoreThanOneAuthorizationServer(): void
@@ -55,7 +72,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$this->expectException(AtprotoOAuthException::class);
 		$this->expectExceptionMessage('exactly one');
 
-		(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+		$this->resolver($http)->resolve(self::PDS);
 	}
 
 	public function testItRejectsAnIssuerThatDoesNotMatchTheDiscoveredOrigin(): void
@@ -69,7 +86,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$this->expectException(AtprotoOAuthException::class);
 		$this->expectExceptionMessage('issuer');
 
-		(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+		$this->resolver($http)->resolve(self::PDS);
 	}
 
 	public function testItRequiresPushedAuthorizationAndS256(): void
@@ -83,7 +100,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$this->expectException(AtprotoOAuthException::class);
 		$this->expectExceptionMessage('require_pushed_authorization_requests');
 
-		(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+		$this->resolver($http)->resolve(self::PDS);
 	}
 
 	public function testItRequiresTheAtprotoScope(): void
@@ -97,7 +114,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$this->expectException(AtprotoOAuthException::class);
 		$this->expectExceptionMessage('atproto');
 
-		(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+		$this->resolver($http)->resolve(self::PDS);
 	}
 
 	public function testATransportFailureIsRetryableAndDoesNotLeakTheUrl(): void
@@ -106,7 +123,7 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$http->queueTransportFailure(new HttpClientException('connection refused'));
 
 		try {
-			(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+			$this->resolver($http)->resolve(self::PDS);
 			self::fail('The resolver should have failed.');
 		} catch (AtprotoOAuthException $exception) {
 			self::assertSame('transport_error', $exception->errorCode);
@@ -123,7 +140,18 @@ final class AtprotoOAuthMetadataResolverTest extends TestCase
 		$this->expectException(AtprotoOAuthException::class);
 		$this->expectExceptionMessage('not a JSON object');
 
-		(new AtprotoOAuthMetadataResolver($http))->resolve(self::PDS);
+		$this->resolver($http)->resolve(self::PDS);
+	}
+
+	private function resolver(FakeHttpClient $http): AtprotoOAuthMetadataResolver
+	{
+		return new AtprotoOAuthMetadataResolver(
+			$http,
+			new FederationTargetGuard(new TestHostResolver([
+				'pds.example' => ['93.184.216.34'],
+				'auth.example' => ['93.184.216.34'],
+			])),
+		);
 	}
 
 	/**

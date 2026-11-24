@@ -11,8 +11,10 @@ namespace AlohaSocial\Core\Protocol\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoOAuthException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoOAuthServer;
-use AlohaSocial\Core\Platform\Http\HttpClient;
+use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
+use AlohaSocial\Core\Service\Federation\RemoteFetchException;
 use InvalidArgumentException;
 use JsonException;
 
@@ -45,7 +47,8 @@ final class AtprotoOAuthMetadataResolver
 	private const MAX_DOCUMENT_BYTES = 131_072;
 
 	public function __construct(
-		private readonly HttpClient $http,
+		private readonly BoundedHttpClient $http,
+		private readonly FederationTargetGuard $targetGuard,
 		private readonly int $timeoutSeconds = 10,
 	) {
 		if ($timeoutSeconds < 1 || $timeoutSeconds > 60) {
@@ -127,12 +130,23 @@ final class AtprotoOAuthMetadataResolver
 	private function fetchDocument(string $url, string $label): array
 	{
 		try {
-			$response = $this->http->request(
+			$addresses = $this->targetGuard->addressesFor($url);
+		} catch (RemoteFetchException) {
+			throw AtprotoOAuthException::invalidResponse('the ' . $label . ' destination is not allowed.');
+		}
+		if ($addresses === []) {
+			throw AtprotoOAuthException::invalidResponse('the ' . $label . ' destination could not be pinned safely.');
+		}
+
+		try {
+			$response = $this->http->requestBounded(
 				'GET',
 				$url,
 				['Accept' => 'application/json'],
 				'',
 				$this->timeoutSeconds,
+				self::MAX_DOCUMENT_BYTES,
+				$addresses,
 			);
 		} catch (HttpClientException) {
 			throw AtprotoOAuthException::transportFailure();
