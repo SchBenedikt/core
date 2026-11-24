@@ -69,6 +69,11 @@ dropping pending jobs, and is safe to repeat. Legacy rows keep `NULL` subject
 columns and are therefore not cancelled by an account deletion; they remain
 unattributable. Tests may keep `InMemoryJobQueue`.
 
+The account's ActivityPub actor `Delete` and outgoing `Undo(Follow)` deliveries
+are queued after its ordinary jobs are cancelled. They intentionally have no
+account subject: the write gate must not prevent those final notices from
+being delivered. Their activity ids are stable across retries.
+
 ## Worker
 
 `JobWorker::runOnce($limit)` reserves a batch, runs each job through

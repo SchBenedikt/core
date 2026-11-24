@@ -10,10 +10,13 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Account;
 
 use AlohaSocial\Core\Domain\Account\AccountDataRepository;
+use AlohaSocial\Core\Domain\Account\AccountFederationCleanup;
 use AlohaSocial\Core\Domain\Account\AccountDeletion;
 use AlohaSocial\Core\Domain\Account\AccountDeletionSweeper;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
@@ -167,6 +170,7 @@ final class AccountDataService implements AccountDeletionSweeper
 			// Removing queued work closes the other way an old request could
 			// still publish after the account was deleted.
 			$this->queue?->cancelBySubject(JobSubject::account($userId));
+			$this->scheduleFederationCleanup($userId, $this->repository->federationCleanup($userId));
 
 			$actorId = $this->activities->actorId($userId);
 			$erasure = $this->repository->erase($userId, $actorId);
@@ -199,6 +203,36 @@ final class AccountDataService implements AccountDeletionSweeper
 			$this->repository->releaseDeletion($userId, $this->clock->now());
 
 			throw $exception;
+		}
+	}
+
+	private function scheduleFederationCleanup(string $userId, AccountFederationCleanup $cleanup): void
+	{
+		if ($this->queue === null) {
+			return;
+		}
+
+		$keyId = $this->activities->keyId($userId);
+		$delete = $this->activities->deleteActor($userId);
+		foreach ($cleanup->followerInboxes as $inbox) {
+			$this->queue->push(JobType::FEDERATION_DELIVER, [
+				'inbox' => $inbox,
+				'activity' => $delete,
+				'key_id' => $keyId,
+			]);
+		}
+
+		foreach ($cleanup->following as $followed) {
+			if ($followed->state === FollowState::Rejected) {
+				continue;
+			}
+
+			$undo = $this->activities->undoFollow($userId, $followed);
+			$this->queue->push(JobType::FEDERATION_DELIVER, [
+				'inbox' => $followed->inboxUrl,
+				'activity' => $undo,
+				'key_id' => $keyId,
+			]);
 		}
 	}
 

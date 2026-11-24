@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Account\AccountDeletionSchema;
 use AlohaSocial\Core\Domain\Account\PdoAccountDataRepository;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
+use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionSchema;
@@ -114,6 +115,7 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame('https://social.example/@alice', $archive['actor']);
 
 		self::assertSame(['post-a'], array_column($archive['data']['social_post'], 'id'));
+		self::assertSame(['alice', 'bob'], array_column($archive['data'][FollowerSchema::TABLE], 'local_user_id'));
 		self::assertSame(['att-a'], array_column($archive['data']['social_post_attachment'], 'attachment_id'));
 		self::assertSame(['post-b'], array_column($archive['data']['social_post_recipient'], 'post_id'));
 		self::assertSame(['post-b'], array_column($archive['data']['social_favourite'], 'post_id'));
@@ -269,10 +271,121 @@ final class AccountDataServiceTest extends TestCase
 		$report = $this->service->erase('alice');
 
 		self::assertTrue($report->complete());
-		self::assertSame(2, $this->queue->pendingCount());
+		self::assertSame(3, $this->queue->pendingCount());
 		self::assertSame(410, $this->repository->accountWriteStatus('alice'));
 		self::assertNull($this->repository->accountWriteStatus('bob'));
 		self::assertSame('erased', $this->service->deletionStatus('alice')->state);
+	}
+
+	public function testDeletionQueuesActorDeleteAndFollowUndosBeforeErasingTheGraph(): void
+	{
+		// Isolate the remote graph fixtures while keeping the local outgoing
+		// edge to Bob, which must be removed with Alice's actor identity.
+		$this->database->execute('DELETE FROM ' . FollowerSchema::TABLE . ' WHERE local_user_id = :user', ['user' => 'alice']);
+		$this->database->execute('DELETE FROM ' . FollowingSchema::TABLE . ' WHERE local_user_id = :user', ['user' => 'alice']);
+		$this->insert(FollowerSchema::TABLE, [
+			'id' => 'follower-a',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://peer.example/@a',
+			'inbox_url' => 'https://peer.example/inbox/a',
+			'shared_inbox_url' => 'https://peer.example/inbox/shared',
+			'followed_at' => '2026-11-16T10:00:00Z',
+			'is_local' => 0,
+			'state' => 'accepted',
+			'follow_activity' => null,
+		]);
+		$this->insert(FollowerSchema::TABLE, [
+			'id' => 'follower-b',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://peer.example/@second',
+			'inbox_url' => 'https://peer.example/inbox/b',
+			'shared_inbox_url' => 'https://peer.example/inbox/shared',
+			'followed_at' => '2026-11-16T10:01:00Z',
+			'is_local' => 0,
+			'state' => 'accepted',
+			'follow_activity' => null,
+		]);
+		$this->insert(FollowerSchema::TABLE, [
+			'id' => 'follower-pending',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://pending.example/@a',
+			'inbox_url' => 'https://pending.example/inbox',
+			'shared_inbox_url' => null,
+			'followed_at' => '2026-11-16T10:02:00Z',
+			'is_local' => 0,
+			'state' => 'pending',
+			'follow_activity' => null,
+		]);
+		$this->insert(FollowerSchema::TABLE, [
+			'id' => 'follower-local',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://social.example/@charlie',
+			'inbox_url' => 'https://social.example/inbox/shared',
+			'shared_inbox_url' => null,
+			'followed_at' => '2026-11-16T10:03:00Z',
+			'is_local' => 1,
+			'state' => 'accepted',
+			'follow_activity' => null,
+		]);
+		$this->insert(FollowingSchema::TABLE, [
+			'id' => 'follow-accepted',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://remote.example/@followed',
+			'inbox_url' => 'https://remote.example/inbox',
+			'followed_at' => '2026-11-16T10:04:00Z',
+			'state' => 'accepted',
+			'follow_activity_id' => 'https://social.example/api/v1/following/follow-accepted/follow',
+		]);
+		$this->insert(FollowingSchema::TABLE, [
+			'id' => 'follow-pending',
+			'local_user_id' => 'alice',
+			'actor_id' => 'https://other.example/@pending',
+			'inbox_url' => 'https://other.example/inbox',
+			'followed_at' => '2026-11-16T10:05:00Z',
+			'state' => 'pending',
+			'follow_activity_id' => null,
+		]);
+
+		$this->queue->push('publish', [], null, JobSubject::account('alice'));
+		$this->queue->push('publish', [], null, JobSubject::account('bob'));
+		$report = $this->service->erase('alice');
+		$jobs = $this->queue->reserve(10, $this->clock->now());
+		$deliveries = array_values(array_filter(
+			$jobs,
+			static fn ($job): bool => $job->type === JobType::FEDERATION_DELIVER,
+		));
+
+		self::assertTrue($report->complete());
+		self::assertCount(3, $deliveries, 'One deduplicated Delete and two outgoing Follow undos are queued.');
+		foreach ($deliveries as $job) {
+			self::assertNull($job->subject, 'Deletion notifications must remain runnable after account jobs are blocked.');
+		}
+
+		$delete = array_values(array_filter(
+			$deliveries,
+			static fn ($job): bool => ($job->payload['activity']['type'] ?? null) === 'Delete',
+		));
+		self::assertCount(1, $delete);
+		self::assertContains('https://peer.example/inbox/shared', array_column(
+			array_map(static fn ($job): array => $job->payload, $delete),
+			'inbox',
+		));
+		self::assertSame('https://social.example/@alice#delete', $delete[0]->payload['activity']['id']);
+		self::assertSame('https://social.example/@alice', $delete[0]->payload['activity']['object']);
+
+		$undos = array_values(array_filter(
+			$deliveries,
+			static fn ($job): bool => ($job->payload['activity']['type'] ?? null) === 'Undo',
+		));
+		self::assertCount(2, $undos);
+		self::assertSame(
+			['https://remote.example/inbox', 'https://other.example/inbox'],
+			array_column(array_map(static fn ($job): array => $job->payload, $undos), 'inbox'),
+		);
+		self::assertSame(1, count(array_filter($jobs, static fn ($job): bool => $job->subject?->id === 'bob')));
+		self::assertSame(0, (int) $this->database->fetchValue(
+			"SELECT COUNT(*) FROM " . FollowerSchema::TABLE . " WHERE actor_id = 'https://social.example/@alice'",
+		));
 	}
 
 	public function testASweepRemovesALateWriteThatCommittedAfterTheFreeze(): void
@@ -585,8 +698,8 @@ final class AccountDataServiceTest extends TestCase
 			$this->insert(FollowingSchema::TABLE, [
 				'id' => 'follow-' . $user,
 				'local_user_id' => $user,
-				'actor_id' => 'https://social.example/@' . $other,
-				'inbox_url' => 'https://social.example/@' . $other . '/inbox',
+				'actor_id' => 'https://peer.example/@' . $other,
+				'inbox_url' => 'https://peer.example/@' . $other . '/inbox',
 				'followed_at' => '2026-11-16T10:31:00Z',
 			]);
 			$this->insert(FollowerSchema::TABLE, [
@@ -595,6 +708,7 @@ final class AccountDataServiceTest extends TestCase
 				'actor_id' => 'https://social.example/@' . $other,
 				'inbox_url' => 'https://social.example/@' . $other . '/inbox',
 				'followed_at' => '2026-11-16T10:32:00Z',
+				'is_local' => 1,
 			]);
 			$this->insert(BlockSchema::TABLE, [
 				'id' => 'block-' . $user,
