@@ -243,7 +243,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		$this->posts->insert($post);
 		$publication = new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z'));
 		$this->publications->insert($publication);
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$result = $this->serviceWith()->publish('alice', $post->id, update: true);
 
@@ -304,7 +304,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			}
 		};
 		$this->http->queueResponse($this->blobResponse('bafkimagecid', 'image/jpeg', 5));
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith(quoteRecords: $records)->publish('alice', $quotePost->id, [
 			new AtprotoMedia('image/jpeg', 'bytes', 'a sample image'),
@@ -367,7 +367,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	{
 		$post = $this->post(content: 'hello #tag and https://example.com/x');
 		$this->posts->insert($post);
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', $post->id);
 
@@ -384,7 +384,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	{
 		$post = $this->post(content: 'hi @alice.test');
 		$this->posts->insert($post);
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith(identities: $this->identities(['alice.test' => 'did:plc:alice']))
 			->publish('alice', $post->id);
@@ -423,7 +423,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			Time::parse('2026-11-11T10:00:00Z'),
 		));
 		$this->http->queueResponse($this->record($parentUri, 'bafy-parent', ['text' => 'parent']));
-		$this->http->queueResponse($this->published('at://did:plc:alice/app.bsky.feed.post/reply'));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', 'reply');
 
@@ -440,7 +440,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		$post = $this->post(content: 'look');
 		$this->posts->insert($post);
 		$this->http->queueResponse($this->blobResponse('bafy-img', 'image/png', 3));
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', $post->id, [
 			new AtprotoMedia('image/png', 'png', 'a cat', 800, 600),
@@ -465,7 +465,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		$post = $this->post(content: 'watch');
 		$this->posts->insert($post);
 		$this->http->queueResponse($this->blobResponse('bafy-video', 'video/mp4', 4));
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', $post->id, [
 			new AtprotoMedia('video/mp4', 'mp4', 'a clip'),
@@ -519,7 +519,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	{
 		$post = $this->post(content: 'hello');
 		$this->posts->insert($post);
-		$this->http->queueResponse($this->published(self::URI));
+		$this->http->queueResponseFactory($this->published());
 
 		$this->serviceWith()->publish('alice', $post->id);
 
@@ -636,9 +636,14 @@ final class AtprotoPublishServiceTest extends TestCase
 		], JSON_THROW_ON_ERROR));
 	}
 
-	private function published(string $uri): HttpResponse
+	private function published(): \Closure
 	{
-		return new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR));
+		return static function (string $method, string $url, array $headers, string $body): HttpResponse {
+			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
+			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
+
+			return new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR));
+		};
 	}
 
 	/**

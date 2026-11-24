@@ -66,15 +66,15 @@ final class AtprotoInteractionServiceTest extends TestCase
 	{
 		$this->publishedPost();
 		$this->http->queueResponse($this->subjectRecord());
-		$this->http->queueResponse($this->publishedRecord('app.bsky.feed.like'));
+		$this->http->queueResponseFactory($this->publishedRecord());
 
 		$uri = $this->service->like('alice', 'post-1');
 
-		self::assertSame('at://did:plc:alice/app.bsky.feed.like/rkey1', $uri);
 		self::assertCount(2, $this->http->requests);
 		self::assertStringContainsString('com.atproto.repo.getRecord', $this->http->requests[0]['url']);
 
 		$body = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('at://' . $body['repo'] . '/' . $body['collection'] . '/' . $body['rkey'], $uri);
 		self::assertSame('did:plc:alice', $body['repo']);
 		self::assertSame('app.bsky.feed.like', $body['collection']);
 		self::assertSame('app.bsky.feed.like', $body['record']['$type']);
@@ -87,7 +87,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 		$stored = $this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'like');
 		self::assertNotNull($stored);
 		self::assertSame($uri, $stored->uri);
-		self::assertSame('rkey1', $stored->rkey);
+		self::assertSame($body['rkey'], $stored->rkey);
 
 		self::assertSame($uri, $this->service->like('alice', 'post-1'));
 		self::assertCount(2, $this->http->requests, 'A retry must return the stored record without a second PDS write.');
@@ -134,10 +134,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 			'cid' => 'bafy-bob-subject',
 			'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'bobs public post'],
 		], JSON_THROW_ON_ERROR)));
-		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
-			'uri' => 'at://did:plc:alice/app.bsky.feed.like/rkey1',
-			'cid' => 'bafy-like',
-		], JSON_THROW_ON_ERROR)));
+		$this->http->queueResponseFactory($this->publishedRecord());
 
 		$service->like('alice', $post->id);
 
@@ -151,7 +148,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 	{
 		$this->publishedPost();
 		$this->http->queueResponse($this->subjectRecord());
-		$this->http->queueResponse($this->publishedRecord('app.bsky.feed.like'));
+		$this->http->queueResponseFactory($this->publishedRecord());
 		$this->service->like('alice', 'post-1');
 		$like = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
 
@@ -163,7 +160,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 		$delete = json_decode($this->http->requests[2]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('did:plc:alice', $delete['repo']);
 		self::assertSame('app.bsky.feed.like', $delete['collection']);
-		self::assertSame('rkey1', $delete['rkey']);
+		self::assertSame($like['rkey'], $delete['rkey']);
 		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'like'));
 	}
 
@@ -171,7 +168,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 	{
 		$this->publishedPost();
 		$this->http->queueResponse($this->subjectRecord());
-		$this->http->queueResponse($this->publishedRecord('app.bsky.feed.repost'));
+		$this->http->queueResponseFactory($this->publishedRecord());
 		$this->service->repost('alice', 'post-1');
 
 		$body = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
@@ -183,7 +180,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 		$delete = json_decode($this->http->requests[2]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('app.bsky.feed.repost', $delete['collection']);
-		self::assertSame('rkey1', $delete['rkey']);
+		self::assertSame($body['rkey'], $delete['rkey']);
 		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'repost'));
 	}
 
@@ -425,11 +422,16 @@ final class AtprotoInteractionServiceTest extends TestCase
 		], JSON_THROW_ON_ERROR));
 	}
 
-	private function publishedRecord(string $collection): HttpResponse
+	private function publishedRecord(): \Closure
 	{
-		return new HttpResponse(200, [], json_encode([
-			'uri' => 'at://did:plc:alice/' . $collection . '/rkey1',
-			'cid' => 'bafy-interaction',
-		], JSON_THROW_ON_ERROR));
+		return static function (string $method, string $url, array $headers, string $body): HttpResponse {
+			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
+			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
+
+			return new HttpResponse(200, [], json_encode([
+				'uri' => $uri,
+				'cid' => 'bafy-interaction',
+			], JSON_THROW_ON_ERROR));
+		};
 	}
 }

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Protocol\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoIdentifiers;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
@@ -83,8 +84,9 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		}
 
 		$uri = is_array($decoded) ? ($decoded['uri'] ?? null) : null;
-		if (!is_string($uri) || !str_starts_with($uri, 'at://') || strlen($uri) > 512) {
-			throw new AtprotoPublishFailedException(502, 'The AT Protocol PDS returned no record URI.');
+		$expectedUri = AtprotoIdentifiers::uri($account->did, $collection, $rkey);
+		if (!is_string($uri) || $uri !== $expectedUri || strlen($uri) > 512) {
+			throw new AtprotoPublishFailedException(502, 'The AT Protocol PDS returned an unexpected record URI.');
 		}
 
 		return $uri;

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Support;
 
+use Closure;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
@@ -28,13 +29,24 @@ final class FakeHttpClient implements BoundedHttpClient
 	public array $requests = [];
 
 	/**
-	 * @var list<HttpResponse|HttpClientException>
+	 * @var list<HttpResponse|HttpClientException|Closure(string, string, array<string, string>, string): HttpResponse>
 	 */
 	private array $answers = [];
 
 	public function queueResponse(HttpResponse $response): void
 	{
 		$this->answers[] = $response;
+	}
+
+	/**
+	 * Queue a response derived from the request body, for protocol fixtures
+	 * whose reply must echo an identifier supplied by the caller.
+	 *
+	 * @param callable(string, string, array<string, string>, string): HttpResponse $factory
+	 */
+	public function queueResponseFactory(callable $factory): void
+	{
+		$this->answers[] = Closure::fromCallable($factory);
 	}
 
 	public function queueTransportFailure(HttpClientException $exception): void
@@ -88,6 +100,9 @@ final class FakeHttpClient implements BoundedHttpClient
 		$answer = array_shift($this->answers);
 		if ($answer instanceof HttpClientException) {
 			throw $answer;
+		}
+		if ($answer instanceof Closure) {
+			$answer = $answer($method, $url, $headers, $body);
 		}
 
 		$answer ??= new HttpResponse(202);
