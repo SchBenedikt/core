@@ -16,6 +16,8 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
@@ -49,7 +51,10 @@ use JsonException;
 use RuntimeException;
 use Throwable;
 
+use function array_filter;
 use function array_keys;
+use function array_map;
+use function array_values;
 use function hash;
 use function is_array;
 use function is_string;
@@ -186,8 +191,11 @@ final class PdoAccountDataRepository implements AccountDataRepository
 			'order' => 'local_user_id, actor_id',
 		],
 		FollowerSchema::TABLE => [
-			'export' => 'local_user_id = :user',
-			'delete' => 'local_user_id = :user',
+			'export' => 'local_user_id = :user OR (actor_id = :actor AND is_local = 1)',
+			// Also remove local-to-local follows created by this actor. Those
+			// rows live under the followed account, not under the account being
+			// erased, and would otherwise leave stale local relationships.
+			'delete' => 'local_user_id = :user OR (actor_id = :actor AND is_local = 1)',
 			'order' => 'local_user_id, actor_id',
 		],
 		BlockSchema::TABLE => [
@@ -403,6 +411,47 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		}
 
 		return new AccountDataSnapshot($tables, $this->blobPaths($userId));
+	}
+
+	public function federationCleanup(string $userId): AccountFederationCleanup
+	{
+		$followerInboxes = [];
+		if ($this->tableExists(FollowerSchema::TABLE)) {
+			$rows = $this->database->fetchAll(
+				'SELECT DISTINCT COALESCE(shared_inbox_url, inbox_url) AS inbox_url FROM '
+				. FollowerSchema::TABLE
+				. ' WHERE local_user_id = :user AND is_local = 0 AND state = :state ORDER BY inbox_url',
+				['user' => $userId, 'state' => FollowState::Accepted->value],
+			);
+			$followerInboxes = array_values(array_filter(array_map(
+				static fn (array $row): string => (string) ($row['inbox_url'] ?? ''),
+				$rows,
+			), static fn (string $inbox): bool => $inbox !== ''));
+		}
+
+		$following = [];
+		if ($this->tableExists(FollowingSchema::TABLE)) {
+			$rows = $this->database->fetchAll(
+				'SELECT id, local_user_id, actor_id, inbox_url, followed_at, state, follow_activity_id FROM '
+				. FollowingSchema::TABLE . ' WHERE local_user_id = :user ORDER BY id',
+				['user' => $userId],
+			);
+			foreach ($rows as $row) {
+				$following[] = new FollowedActor(
+					id: (string) $row['id'],
+					localUserId: (string) $row['local_user_id'],
+					actorId: (string) $row['actor_id'],
+					inboxUrl: (string) $row['inbox_url'],
+					followedAt: Time::parse((string) $row['followed_at']),
+					state: FollowState::fromStored(isset($row['state']) ? (string) $row['state'] : null),
+					followActivityId: isset($row['follow_activity_id'])
+						? (string) $row['follow_activity_id']
+						: null,
+				);
+			}
+		}
+
+		return new AccountFederationCleanup($followerInboxes, $following);
 	}
 
 	public function accountWriteStatus(string $userId): ?int

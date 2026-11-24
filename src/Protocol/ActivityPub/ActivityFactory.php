@@ -79,6 +79,25 @@ final class ActivityFactory
 	}
 
 	/**
+	 * A stable actor deletion activity, compatible with the legacy Nextcloud id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function deleteActor(string $userId): array
+	{
+		$actorId = $this->actorId($userId);
+
+		return [
+			'@context' => self::CONTEXT,
+			'id' => $actorId . '#delete',
+			'type' => 'Delete',
+			'actor' => $actorId,
+			'to' => [self::PUBLIC_COLLECTION],
+			'object' => $actorId,
+		];
+	}
+
+	/**
 	 * The server-wide inbox advertised by every local actor.
 	 *
 	 * One endpoint accepts content for all local accounts; the individual

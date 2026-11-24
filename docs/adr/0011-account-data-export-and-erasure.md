@@ -46,11 +46,12 @@ The core exposes three authenticated routes:
 - `DELETE /api/v1/account/data` runs a durable lifecycle. It first writes a
   `frozen` row to `social_account_deletion`, which is the write gate read by
   the HTTP middleware and the job worker; it then cancels queued and reserved
-  jobs whose subject envelope names the account, removes the rows child-first
-  in one transaction, removes the blobs, and stores `erased` with the report
-  and timestamps. A missing row or blob is not an error. Repeating the call
-  returns the stored result; a concurrent call receives the current
-  `202` state instead of a second deletion result.
+  jobs whose subject envelope names the account, queues a stable ActivityPub
+  `Delete` for remote followers and `Undo(Follow)` for outgoing relationships,
+  removes the rows child-first in one transaction, removes the blobs, and stores
+  `erased` with the report and timestamps. A missing row or blob is not an
+  error. Repeating the call returns the stored result; a concurrent call
+  receives the current `202` state instead of a second deletion result.
 - `GET /api/v1/account/deletion` returns the durable status and report. An
   account that never requested deletion is `active`.
 

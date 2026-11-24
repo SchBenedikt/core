@@ -23,6 +23,13 @@ use DateTimeImmutable;
 interface AccountDataRepository extends AccountWriteGuard
 {
 	/**
+	 * The remote routes needed to announce this account's removal. The read
+	 * happens after the durable deletion freeze but before its graph rows are
+	 * erased.
+	 */
+	public function federationCleanup(string $userId): AccountFederationCleanup;
+
+	/**
 	 * Every row and blob path attributable to one local account.
 	 *
 	 * The actor id is the public ActivityPub identity derived from the local
