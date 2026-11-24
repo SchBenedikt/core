@@ -85,6 +85,7 @@ final class MastodonCompatibilityTest extends TestCase
 		$delete = $manifest->find('mastodon.statuses.delete');
 		$verify = $manifest->find('mastodon.accounts.verify_credentials');
 		$public = $manifest->find('mastodon.timelines.public');
+		$tagTimeline = $manifest->find('mastodon.timelines.tag');
 		$media = $manifest->find('mastodon.media.upload');
 		$mediaUpdate = $manifest->find('mastodon.media.update');
 		$mediaDelete = $manifest->find('mastodon.media.delete');
@@ -148,6 +149,10 @@ final class MastodonCompatibilityTest extends TestCase
 		self::assertSame(['read:accounts'], $verify->requiredScopes);
 		self::assertFalse($public->requiresAuth);
 		self::assertSame('/api/mastodon/v1/timelines/public', $public->path);
+		self::assertNotNull($tagTimeline);
+		self::assertFalse($tagTimeline->requiresAuth);
+		self::assertSame('60/60', $tagTimeline->rateLimit);
+		self::assertSame('/api/mastodon/v1/timelines/tag/{tag}', $tagTimeline->path);
 		self::assertTrue($media->requiresAuth);
 		self::assertSame(['write:media'], $media->requiredScopes);
 		self::assertSame('20/900', $media->rateLimit);
