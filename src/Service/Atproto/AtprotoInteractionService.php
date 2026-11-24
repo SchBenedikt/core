@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoIdentifiers;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRecord as AtprotoInteractionState;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
@@ -185,6 +186,7 @@ final class AtprotoInteractionService
 		$subject = new AtprotoStrongRef($target->uri, $target->cid);
 		$rkey = $this->remoteRkey($kind, $localUserId, $target, $account);
 		$uri = $this->publisher->publish($account, $rkey, $this->record($kind, $subject), $collection);
+		$this->assertPublishedInteractionUri($uri, $account, $collection, $rkey);
 		$this->storeRemoteInteraction($localUserId, $account, $postId, $kind, $uri, $rkey);
 
 		return $uri;
@@ -334,10 +336,7 @@ final class AtprotoInteractionService
 			$this->record($kind, $subject),
 			$collection,
 		);
-		$publishedRkey = substr($uri, (int) strrpos($uri, '/') + 1);
-		if ($publishedRkey === '' || strlen($publishedRkey) > 512) {
-			throw new \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException(502, 'The AT Protocol PDS returned an invalid interaction URI.');
-		}
+		$publishedRkey = $this->assertPublishedInteractionUri($uri, $account, $collection, $rkey);
 		if ($this->interactionRecords !== null) {
 			try {
 				$this->interactionRecords->insert(new AtprotoInteractionState(
@@ -360,6 +359,20 @@ final class AtprotoInteractionService
 		}
 
 		return $uri;
+	}
+
+	private function assertPublishedInteractionUri(string $uri, AtprotoAccount $account, string $collection, string $rkey): string
+	{
+		if (!AtprotoIdentifiers::isAtUri($uri)
+			|| $uri !== AtprotoIdentifiers::uri($account->did, $collection, $rkey)
+		) {
+			throw new AtprotoPublishFailedException(
+				502,
+				'The AT Protocol PDS returned an unexpected interaction URI.',
+			);
+		}
+
+		return $rkey;
 	}
 
 	private function remove(string $kind, string $collection, string $localUserId, string $postId, ?string $accountDid): void

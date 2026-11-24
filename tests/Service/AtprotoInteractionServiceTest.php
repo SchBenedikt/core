@@ -14,6 +14,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRecord as AtprotoInteractionState;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
@@ -506,6 +508,41 @@ final class AtprotoInteractionServiceTest extends TestCase
 		$this->expectException(PostNotFoundException::class);
 
 		$this->service->like('alice', 'missing');
+	}
+
+	public function testLikeRejectsPdsUriThatDoesNotMatchTheAuthorizedRecordKey(): void
+	{
+		$this->publishedPost();
+		$this->http->queueResponse($this->subjectRecord());
+		$publisher = new class implements AtprotoPublisher {
+			public function publish(AtprotoAccount $account, string $rkey, array $record, string $collection = 'app.bsky.feed.post'): string
+			{
+				return 'at://did:plc:attacker/app.bsky.feed.like/other-record';
+			}
+		};
+		$service = new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			$publisher,
+			new XrpcAtprotoRecordResolver($this->http),
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			null,
+			$this->blocks,
+			$this->activities(),
+			$this->interactionRecords,
+		);
+
+		try {
+			$service->like('alice', 'post-1');
+			self::fail('A PDS response for another repository or record must not enter the interaction ledger.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(502, $exception->status);
+		}
+		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'like'));
 	}
 
 	private function service(bool $enabled): AtprotoInteractionService
