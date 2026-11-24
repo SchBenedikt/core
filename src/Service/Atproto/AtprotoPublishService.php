@@ -32,6 +32,7 @@ use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoBlobException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbed;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoEmbedException;
+use AlohaSocial\Core\Protocol\Atproto\AtprotoExternalLink;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacetException;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoFacets;
 use AlohaSocial\Core\Protocol\Atproto\AtprotoMedia;
@@ -367,6 +368,12 @@ final class AtprotoPublishService
 			} catch (AtprotoBlobException | AtprotoEmbedException $exception) {
 				throw new AtprotoPostRejectedException($exception->reason);
 			}
+		}
+		// A single external URL gets a metadata-free link card when there is no
+		// richer media embed. Multiple links and media-plus-link posts keep their
+		// links in the record text and facets instead of picking an arbitrary URL.
+		if ($embed === null) {
+			$embed = AtprotoExternalLink::fromText($post->content);
 		}
 		if ($quote !== null) {
 			$embed = $embed === null

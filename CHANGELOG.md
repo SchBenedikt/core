@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Single HTTP(S) URLs in outbound AT Protocol posts now receive a minimal
+  external-link card with the hostname as title. The publisher never fetches
+  link metadata, leaves multiple links unembedded, and preserves image/video
+  embeds when a post also contains a URL.
 - **Profile timelines:** `GET /api/v1/accounts/{id}/statuses` returns one local
   account's posts with the same audience rules as the single-post route. A
   profile no longer has to scan the public timeline and lose older posts once
