@@ -16,6 +16,7 @@ use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\TimelineCursor;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
 use AlohaSocial\Core\Domain\Timeline\TimelineEntry;
+use AlohaSocial\Core\Domain\Timeline\TimelineEntryDeduplicator;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -54,11 +55,35 @@ final class TimelineService
 		bool $hideReplies = false,
 	): array
 	{
-		return array_values(array_filter(
-			$this->homeTimeline->forUser($userId, $this->clamp($limit), $this->cursor($before, $beforeId), $hideReplies),
-			fn (TimelineEntry $entry): bool => $this->moderation?->allowsActor($entry->authorId) !== false
-				&& ($entry->objectAuthorId === null || $this->moderation?->allowsActor($entry->objectAuthorId) !== false),
-		));
+		$target = $this->clamp($limit);
+		$cursor = $this->cursor($before, $beforeId);
+		$entries = [];
+
+		// A repository limits its raw union before collapsing duplicate boosts.
+		// Keep reading older chunks until the caller has a full page of unique,
+		// moderation-allowed entries or the timeline is exhausted.
+		while (count($entries) < $target) {
+			$batch = $this->homeTimeline->forUser($userId, $target, $cursor, $hideReplies);
+			if ($batch === []) {
+				break;
+			}
+
+			$last = $batch[array_key_last($batch)];
+			$next = new TimelineCursor($last->publishedAt, $last->id);
+			if (!$this->cursorAdvances($cursor, $next)) {
+				break;
+			}
+			$cursor = $next;
+
+			$allowed = array_values(array_filter(
+				$batch,
+				fn (TimelineEntry $entry): bool => $this->moderation?->allowsActor($entry->authorId) !== false
+					&& ($entry->objectAuthorId === null || $this->moderation?->allowsActor($entry->objectAuthorId) !== false),
+			));
+			$entries = TimelineEntryDeduplicator::deduplicateBoosts(array_merge($entries, $allowed));
+		}
+
+		return array_slice($entries, 0, $target);
 	}
 
 	/**
@@ -190,5 +215,21 @@ final class TimelineService
 		} catch (InvalidArgumentException) {
 			throw new InvalidCursorException($before);
 		}
+	}
+
+	private function cursorAdvances(DateTimeImmutable|TimelineCursor|null $current, TimelineCursor $next): bool
+	{
+		if ($current === null) {
+			return true;
+		}
+
+		$time = $current instanceof TimelineCursor ? $current->publishedAt : $current;
+		if ($next->publishedAt < $time) {
+			return true;
+		}
+
+		return $current instanceof TimelineCursor
+			&& $next->publishedAt == $time
+			&& strcmp($next->id, $current->id) < 0;
 	}
 }
