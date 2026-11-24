@@ -17,11 +17,13 @@ use InvalidArgumentException;
  * The record one local post became on a remote PDS.
  *
  * The row is written only after the PDS accepted the record. Its uniqueness
- * by (local user, post) is what lets a retried job return the same result
- * instead of publishing a second record.
+ * by (local user, DID, post) lets retries converge without conflating two
+ * linked identities that published the same local post.
  */
 final readonly class AtprotoPublication
 {
+	public string $accountDid;
+
 	public function __construct(
 		public string $localUserId,
 		public string $postId,
@@ -30,8 +32,11 @@ final readonly class AtprotoPublication
 		public DateTimeImmutable $publishedAt,
 		public ?string $pdsUrl = null,
 		public ?string $cid = null,
+		?string $accountDid = null,
 	) {
-		if ($localUserId === '' || $postId === '' || $rkey === '') {
+		$accountDid ??= preg_match('~^at://([^/]+)/~', $uri, $matches) === 1 ? $matches[1] : '';
+		$this->accountDid = $accountDid;
+		if ($localUserId === '' || $postId === '' || $rkey === '' || preg_match('/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/', $accountDid) !== 1) {
 			throw new InvalidArgumentException('An AT Protocol publication needs an account, a post and a record key.');
 		}
 
@@ -66,6 +71,7 @@ final readonly class AtprotoPublication
 	{
 		return [
 			'post_id' => $this->postId,
+			'account_did' => $this->accountDid,
 			'rkey' => $this->rkey,
 			'uri' => $this->uri,
 			'pds_url' => $this->pdsUrl ?? '',

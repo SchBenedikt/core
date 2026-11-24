@@ -357,7 +357,7 @@ final class MigrationInventory
 				'atproto_publications',
 				'published AT Protocol records',
 				self::OWNER_CORE,
-				'social_atproto_publication rows, keyed by local user and post with a deterministic record key',
+				'social_atproto_publication rows, keyed by local user, linked DID and post with a deterministic record key',
 				self::STATUS_SUPPORTED,
 				'inventory-only',
 			),

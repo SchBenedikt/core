@@ -17,7 +17,10 @@ namespace AlohaSocial\Core\Domain\Atproto;
  */
 interface AtprotoPublicationRepository
 {
-	public function findForPost(string $localUserId, string $postId): ?AtprotoPublication;
+	public function findForPost(string $localUserId, string $postId, ?string $accountDid = null): ?AtprotoPublication;
+
+	/** @return list<AtprotoPublication> */
+	public function findAllForPost(string $localUserId, string $postId): array;
 
 	/**
 	 * @throws \AlohaSocial\Core\Platform\Db\DatabaseException when the pair is already stored
@@ -34,5 +37,5 @@ interface AtprotoPublicationRepository
 	 *
 	 * @return bool whether a row was removed
 	 */
-	public function removeForPost(string $localUserId, string $postId): bool;
+	public function removeForPost(string $localUserId, string $postId, ?string $accountDid = null): bool;
 }

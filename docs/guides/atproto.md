@@ -536,9 +536,9 @@ retryable; OAuth refusals expose a safe `errorCode` and are retryable only for
    same key.
 6. `PostService::delete()` soft-deletes the post, then calls
    `AtprotoPublishService::scheduleDelete()`. If a publication row exists, a
-   durable `atproto.delete` job is queued with `{user_id, post_id}`. The worker
-   resolves the account, calls `deleteRecord` with the stored rkey, and removes
-   the local publication row only after the PDS accepts the delete. A PDS or
+   durable `atproto.delete` job is queued for each mapped DID. The worker
+   resolves that account, calls `deleteRecord` with the stored rkey, and removes
+   that publication row only after the PDS accepts the delete. A PDS or
    transport failure leaves the row and is retried with the normal backoff; a
    404 is treated as already deleted, so a lost success does not stay stuck.
    A post deleted before its publish job ran has no publication row and queues
@@ -550,13 +550,21 @@ retry button or a host that wants to opt in per post:
 ```http
 POST /api/v1/posts/{id}/atproto
 Authorization: Bearer …
+Content-Type: application/json
+
+{"account_did":"did:plc:alice"}
 ```
+
+`account_did` is optional for accounts with one identity; when present, it must
+match one of the caller's linked identities. Publishing is always explicit per
+identity and never fans out implicitly.
 
 `200`:
 
 ```json
 {"publication": {
   "post_id": "…",
+  "account_did": "did:plc:alice",
   "rkey": "3mabcdefghijk",
   "uri": "at://did:plc:alice/app.bsky.feed.post/3mabcdefghijk",
   "published_at": "2026-11-11T10:00:00Z"
@@ -602,15 +610,19 @@ ActivityPub object and the PDS record relate.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `local_user_id` | `VARCHAR(255)` | part of the primary key |
-| `post_id` | `VARCHAR(64)` | part of the primary key |
-| `rkey` | `VARCHAR(13)` | deterministic TID; unique per account |
+| `account_did` | `VARCHAR(512)` | linked identity; part of the primary key |
+| `post_id` | `VARCHAR(64)` | local post; part of the primary key |
+| `rkey` | `VARCHAR(13)` | deterministic TID; unique per DID |
 | `cid` | `VARCHAR(256) NULL` | PDS content revision; null only for older rows |
 | `uri` | `VARCHAR(512)` | canonical AT URI returned by the PDS |
 | `published_at` | `VARCHAR(20)` | canonical UTC timestamp |
 
-The primary key is `(local_user_id, post_id)` and `(local_user_id, rkey)` is
-unique. A local post deletion queues the matching remote delete and removes the
-row only after the PDS accepted it. If the feature is disabled, the account is
+The primary key is `(local_user_id, account_did, post_id)` and
+`(account_did, rkey)` is unique. A post may have one mapping per linked DID.
+The host upgrade derives the DID from existing AT URIs while rebuilding the
+legacy key; malformed legacy URIs stop the migration without dropping rows.
+A local post deletion queues a remote delete for each mapping and removes each
+row only after its PDS accepted it. If the feature is disabled, the account is
 missing or the host supplied no `AtprotoDeleter`, the row is retained and the
 job is logged as skipped, so recovery is explicit rather than a silent local
 removal. `AtprotoPublicationRepository::removeForPost()` remains available for

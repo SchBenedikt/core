@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
@@ -121,14 +122,14 @@ final class AtprotoPublishService
 			return;
 		}
 
-		if ($this->publications->findForPost($post->authorId, $post->id) === null) {
+		$publications = $this->publications->findAllForPost($post->authorId, $post->id);
+		if ($publications === []) {
 			return;
 		}
 
-		$this->queue->push(JobType::ATPROTO_DELETE, [
-			'user_id' => $post->authorId,
-			'post_id' => $post->id,
-		], subject: JobSubject::account($post->authorId));
+		foreach ($publications as $publication) {
+			$this->queueDelete($post, $publication->accountDid);
+		}
 	}
 
 	/**
@@ -145,12 +146,8 @@ final class AtprotoPublishService
 			return;
 		}
 
-		if ($this->publications->findForPost($post->authorId, $post->id) === null) {
-			return;
-		}
-
-		if ($this->rejectionReason($post) !== null) {
-			$this->scheduleDelete($post);
+		$publications = $this->publications->findAllForPost($post->authorId, $post->id);
+		if ($publications === []) {
 			return;
 		}
 
@@ -158,10 +155,26 @@ final class AtprotoPublishService
 			return;
 		}
 
-		$this->queue->push(JobType::ATPROTO_PUBLISH, [
+		foreach ($publications as $publication) {
+			if ($this->rejectionReason($post, accountDid: $publication->accountDid) !== null) {
+				$this->queueDelete($post, $publication->accountDid);
+				continue;
+			}
+			$this->queue->push(JobType::ATPROTO_PUBLISH, [
+				'user_id' => $post->authorId,
+				'post_id' => $post->id,
+				'account_did' => $publication->accountDid,
+				'update' => true,
+			], subject: JobSubject::account($post->authorId));
+		}
+	}
+
+	private function queueDelete(Post $post, string $accountDid): void
+	{
+		$this->queue->push(JobType::ATPROTO_DELETE, [
 			'user_id' => $post->authorId,
 			'post_id' => $post->id,
-			'update' => true,
+			'account_did' => $accountDid,
 		], subject: JobSubject::account($post->authorId));
 	}
 
@@ -174,7 +187,7 @@ final class AtprotoPublishService
 	 * @throws PostNotFoundException when a still-present post belongs to another user
 	 * @throws \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException
 	 */
-	public function deleteRemote(string $localUserId, string $postId): void
+	public function deleteRemote(string $localUserId, string $postId, ?string $accountDid = null): void
 	{
 		if (!$this->isDeleteConfigured()) {
 			throw new AtprotoNotConfiguredException();
@@ -185,12 +198,13 @@ final class AtprotoPublishService
 			throw new PostNotFoundException($postId);
 		}
 
-		$publication = $this->publications->findForPost($localUserId, $postId);
+		$account = $this->account($localUserId, $accountDid);
+		$publication = $account === null ? $this->publications->findForPost($localUserId, $postId)
+			: $this->publications->findForPost($localUserId, $postId, $account->did);
 		if ($publication === null) {
 			return;
 		}
 
-		$account = $this->accounts?->resolve($localUserId);
 		if ($account === null) {
 			throw new AtprotoAccountNotConnectedException();
 		}
@@ -201,7 +215,7 @@ final class AtprotoPublishService
 		}
 
 		$deleter->delete($account, $publication->rkey);
-		$this->publications->removeForPost($localUserId, $postId);
+		$this->publications->removeForPost($localUserId, $postId, $publication->accountDid);
 	}
 
 	/**
@@ -213,14 +227,14 @@ final class AtprotoPublishService
 	 *
 	 * @throws PostNotFoundException when the post is missing, deleted or owned by another account
 	 */
-	public function publicationFor(string $localUserId, string $postId): ?AtprotoPublication
+	public function publicationFor(string $localUserId, string $postId, ?string $accountDid = null): ?AtprotoPublication
 	{
 		$post = $this->posts->find($postId);
 		if ($post === null || $post->isDeleted() || $post->authorId !== $localUserId) {
 			throw new PostNotFoundException($postId);
 		}
 
-		return $this->publications->findForPost($localUserId, $postId);
+		return $this->publications->findForPost($localUserId, $postId, $accountDid);
 	}
 
 	/**
@@ -236,7 +250,7 @@ final class AtprotoPublishService
 	/**
 	 * @param list<AtprotoMedia> $media images or one video to upload and embed
 	 */
-	public function publish(string $localUserId, string $postId, array $media = [], bool $update = false): AtprotoPublication
+	public function publish(string $localUserId, string $postId, array $media = [], bool $update = false, ?string $accountDid = null): AtprotoPublication
 	{
 		if (!$this->isEnabled()) {
 			throw new AtprotoPublishDisabledException();
@@ -251,7 +265,12 @@ final class AtprotoPublishService
 			throw new PostNotFoundException($postId);
 		}
 
-		$existing = $this->publications->findForPost($localUserId, $postId);
+		$account = $this->account($localUserId, $accountDid);
+		if ($account === null) {
+			throw new AtprotoAccountNotConnectedException();
+		}
+
+		$existing = $this->publications->findForPost($localUserId, $postId, $account->did);
 		if ($existing !== null && !$update) {
 			return $existing;
 		}
@@ -259,18 +278,13 @@ final class AtprotoPublishService
 			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::PUBLICATION_MISSING);
 		}
 
-		$rejection = $this->rejectionReason($post, $media);
+		$rejection = $this->rejectionReason($post, $media, $account->did);
 		if ($rejection !== null) {
 			throw new AtprotoPostRejectedException($rejection);
 		}
 
 		if ($media === [] && $post->attachmentIds !== []) {
 			$media = $this->storedMedia($post);
-		}
-
-		$account = $this->accounts?->resolve($localUserId);
-		if ($account === null) {
-			throw new AtprotoAccountNotConnectedException();
 		}
 
 		$rkey = Tid::forRecord($post->publishedAt, $post->id . '|' . $account->did);
@@ -306,6 +320,7 @@ final class AtprotoPublishService
 				publishedAt: Time::toSecondPrecision($this->clock->now()),
 				pdsUrl: $account->pdsUrl,
 				cid: $cid,
+				accountDid: $account->did,
 			);
 			$this->publications->update($updated);
 
@@ -320,6 +335,7 @@ final class AtprotoPublishService
 			publishedAt: Time::toSecondPrecision($this->clock->now()),
 			pdsUrl: $account->pdsUrl,
 			cid: $cid,
+			accountDid: $account->did,
 		);
 
 		try {
@@ -328,7 +344,7 @@ final class AtprotoPublishService
 			// A concurrent retry may have stored the same idempotency key
 			// after the successful write. Return that record instead of
 			// turning a successful publication into an error.
-			$stored = $this->publications->findForPost($localUserId, $postId);
+			$stored = $this->publications->findForPost($localUserId, $postId, $account->did);
 			if ($stored !== null) {
 				return $stored;
 			}
@@ -349,6 +365,23 @@ final class AtprotoPublishService
 		return $this->accounts !== null && $this->deleter !== null;
 	}
 
+	private function account(string $localUserId, ?string $accountDid): ?AtprotoAccount
+	{
+		if ($accountDid === null) {
+			return $this->accounts?->resolve($localUserId);
+		}
+
+		if ($this->accounts instanceof AtprotoAccountCollectionResolver) {
+			foreach ($this->accounts->resolveAll($localUserId) as $account) {
+				if ($account->did === $accountDid) { return $account; }
+			}
+			return null;
+		}
+
+		$account = $this->accounts?->resolve($localUserId);
+		return $account?->did === $accountDid ? $account : null;
+	}
+
 	/**
 	 * Builds the record for one post: its reply reference and the facets that
 	 * the text produces. Both need the PDS, so a post that cannot be resolved
@@ -363,7 +396,7 @@ final class AtprotoPublishService
 		$reply = $this->replyReference($post, $account);
 		$facets = [];
 		$embed = null;
-		$quote = $this->quoteEmbed($post);
+		$quote = $this->quoteEmbed($post, $account->did);
 
 		if ($this->facets !== null) {
 			try {
@@ -413,7 +446,7 @@ final class AtprotoPublishService
 	 *
 	 * @throws AtprotoPostRejectedException
 	 */
-	private function quoteEmbed(Post $post): ?array
+	private function quoteEmbed(Post $post, ?string $accountDid = null): ?array
 	{
 		if ($post->quotedObjectId === null || $post->quoteState !== QuoteState::Accepted) {
 			return null;
@@ -429,8 +462,12 @@ final class AtprotoPublishService
 			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_UNSUPPORTED);
 		}
 
-		$publication = $this->publications->findForPost($quotedPost->authorId, $quotedPost->id);
-		$account = $this->accounts?->resolve($quotedPost->authorId);
+		$publication = $this->publications->findForPost(
+			$quotedPost->authorId,
+			$quotedPost->id,
+			$quotedPost->authorId === $post->authorId ? $accountDid : null,
+		);
+		$account = $publication === null ? null : $this->account($quotedPost->authorId, $publication->accountDid);
 		if ($publication === null || $account === null) {
 			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED);
 		}
@@ -456,7 +493,7 @@ final class AtprotoPublishService
 			return null;
 		}
 
-		$parent = $this->publications->findForPost($post->authorId, $post->inReplyToId);
+		$parent = $this->publications->findForPost($post->authorId, $post->inReplyToId, $account->did);
 		if ($parent === null) {
 			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED);
 		}
@@ -475,7 +512,7 @@ final class AtprotoPublishService
 	/**
 	 * @param list<AtprotoMedia> $media
 	 */
-	private function rejectionReason(Post $post, array $media = []): ?string
+	private function rejectionReason(Post $post, array $media = [], ?string $accountDid = null): ?string
 	{
 		if ($post->visibility !== Visibility::Public) {
 			return AtprotoPostRejectedException::NOT_PUBLIC;
@@ -512,7 +549,7 @@ final class AtprotoPublishService
 
 			// Only a parent that was itself published to AT Protocol has a
 			// record to reply to; a local-only parent has no AT URI.
-			if ($this->publications->findForPost($post->authorId, $post->inReplyToId) === null) {
+			if ($this->publications->findForPost($post->authorId, $post->inReplyToId, $accountDid) === null) {
 				return AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED;
 			}
 		}
@@ -528,8 +565,12 @@ final class AtprotoPublishService
 				return AtprotoPostRejectedException::QUOTE_UNSUPPORTED;
 			}
 
-			$publication = $this->publications->findForPost($quotedPost->authorId, $quotedPost->id);
-			$quoteAccount = $this->accounts?->resolve($quotedPost->authorId);
+			$publication = $this->publications->findForPost(
+				$quotedPost->authorId,
+				$quotedPost->id,
+				$quotedPost->authorId === $post->authorId ? $accountDid : null,
+			);
+			$quoteAccount = $publication === null ? null : $this->account($quotedPost->authorId, $publication->accountDid);
 			if ($publication === null || $quoteAccount === null) {
 				return AtprotoPostRejectedException::QUOTE_TARGET_NOT_PUBLISHED;
 			}

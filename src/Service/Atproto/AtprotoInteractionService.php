@@ -528,7 +528,16 @@ final class AtprotoInteractionService
 			throw new AtprotoNotConfiguredException();
 		}
 
-		$pdsUrl = $publication->pdsUrl ?? $this->accounts?->resolve($post->authorId)?->pdsUrl;
+		$subjectAccount = null;
+		if ($this->accounts instanceof AtprotoAccountCollectionResolver) {
+			foreach ($this->accounts->resolveAll($post->authorId) as $candidate) {
+				if ($candidate->did === $publication->accountDid) { $subjectAccount = $candidate; break; }
+			}
+		} else {
+			$candidate = $this->accounts?->resolve($post->authorId);
+			if ($candidate?->did === $publication->accountDid) { $subjectAccount = $candidate; }
+		}
+		$pdsUrl = $publication->pdsUrl ?? $subjectAccount?->pdsUrl;
 		if ($pdsUrl === null) {
 			throw new AtprotoInteractionRejectedException(
 				AtprotoInteractionRejectedException::SUBJECT_UNRESOLVABLE,

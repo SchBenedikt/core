@@ -280,16 +280,15 @@ hosts must add the nullable column and unread index before the read routes
 work; old rows remain unread and are therefore not removed by the cleanup job.
 
 `social_atproto_publication` stores the idempotency mapping from a local post
-to the AT Protocol record written for one account. Its primary key is
-`(local_user_id, post_id)` and `(local_user_id, rkey)` is unique; `rkey` is
+to an AT Protocol record for one linked identity. Its primary key is
+`(local_user_id, account_did, post_id)` and `(account_did, rkey)` is unique; `rkey` is
 the deterministic TID, `uri` is the PDS-returned `at://` URI, and `cid` stores
 the content revision (nullable for older rows). `published_at` is the canonical timestamp. The row is written only after the
 PDS accepted the record, so a failed publish leaves no partial row. A local
-post deletion queues `atproto.delete`, calls `com.atproto.repo.deleteRecord`
-and removes this row only after the PDS accepted it; a failed delete leaves
+post deletion queues `atproto.delete` for each mapped DID, calls
+`com.atproto.repo.deleteRecord`, and removes each row only after that PDS accepted it; a failed delete leaves
 the row for the normal retry. `removeForPost()` remains the cleanup hook for a
-host that deliberately drops a mapping. No new table or migration is added for
-remote delete. OAuth sessions are not stored here either: the access and
+host that deliberately drops a mapping. OAuth sessions are not stored here either: the access and
 refresh tokens are host credentials, and `AtprotoSessionStore` keeps them in
 the host's secret store. The core's only session adapter is the in-memory fake
 for tests. See [AT Protocol publishing](atproto.md).

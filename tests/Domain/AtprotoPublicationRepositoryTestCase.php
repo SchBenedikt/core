@@ -48,6 +48,25 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 		$repository->insert($this->publication('alice', 'post-1', '234567abcdefh'));
 	}
 
+	public function testOnePostCanBeStoredForTwoLinkedIdentities(): void
+	{
+		$repository = $this->repository();
+		$alice = $this->publication('alice', 'post-1', '234567abcdefg');
+		$otherIdentity = new AtprotoPublication(
+			'alice', 'post-1', '234567abcdefh',
+			'at://did:plc:alice2/app.bsky.feed.post/234567abcdefh',
+			Time::parse('2026-11-11T10:00:00Z'),
+			'https://pds.example.test', 'bafy-publication',
+		);
+		$repository->insert($alice);
+		$repository->insert($otherIdentity);
+
+		self::assertSame('did:plc:alice', $repository->findForPost('alice', 'post-1', 'did:plc:alice')?->accountDid);
+		self::assertSame('did:plc:alice2', $repository->findForPost('alice', 'post-1', 'did:plc:alice2')?->accountDid);
+		self::assertTrue($repository->removeForPost('alice', 'post-1', 'did:plc:alice2'));
+		self::assertSame('did:plc:alice', $repository->findForPost('alice', 'post-1', 'did:plc:alice')?->accountDid);
+	}
+
 	public function testTheRecordKeyIsUniquePerAccount(): void
 	{
 		$repository = $this->repository();

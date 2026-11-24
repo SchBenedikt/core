@@ -367,7 +367,7 @@ final class Routes
 				handler: PublishAtprotoHandler::class,
 				requiresAuth: true,
 				rateLimit: '10/900',
-				summary: 'Publish one public post to the signed-in account\'s AT Protocol PDS.',
+				summary: 'Publish one public post to a selected linked AT Protocol identity.',
 			),
 			new Route(
 				name: 'atproto.publication',

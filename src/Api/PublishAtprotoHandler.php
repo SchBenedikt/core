@@ -43,9 +43,11 @@ final class PublishAtprotoHandler implements Handler
 		}
 
 		$postId = (string) $request->attribute('id', '');
+		$body = $request->json();
+		$accountDid = is_string($body['account_did'] ?? null) ? $body['account_did'] : null;
 
 		try {
-			$publication = $this->service->publish($userId, $postId);
+			$publication = $this->service->publish($userId, $postId, accountDid: $accountDid);
 		} catch (PostNotFoundException) {
 			throw HttpException::notFound('Post not found.');
 		} catch (AtprotoPublishDisabledException $exception) {

@@ -41,11 +41,26 @@ final class PdoAtprotoPublicationRepositoryTest extends AtprotoPublicationReposi
 			. ' rkey VARCHAR(13) NOT NULL, uri VARCHAR(512) NOT NULL,'
 			. ' pds_url VARCHAR(512) NULL, published_at VARCHAR(20) NOT NULL,'
 			. ' PRIMARY KEY (local_user_id, post_id))');
+		$connection->execute(
+			'INSERT INTO ' . AtprotoPublicationSchema::TABLE
+			. ' (local_user_id, post_id, rkey, uri, pds_url, published_at)'
+			. ' VALUES (:user, :post, :rkey, :uri, :pds, :at)',
+			[
+				'user' => 'alice', 'post' => 'post-1', 'rkey' => '234567abcdefg',
+				'uri' => 'at://did:plc:alice/app.bsky.feed.post/234567abcdefg',
+				'pds' => 'https://pds.example', 'at' => '2026-11-11T10:00:00Z',
+			],
+		);
 
 		AtprotoPublicationSchema::upgrade($connection);
 
 		$columns = $connection->fetchAll('PRAGMA table_info(' . AtprotoPublicationSchema::TABLE . ')');
 		self::assertContains('cid', array_column($columns, 'name'));
+		self::assertContains('account_did', array_column($columns, 'name'));
+		self::assertSame('did:plc:alice', (string) $connection->fetchValue(
+			'SELECT account_did FROM ' . AtprotoPublicationSchema::TABLE . ' WHERE post_id = :post',
+			['post' => 'post-1'],
+		));
 		AtprotoPublicationSchema::upgrade($connection);
 		self::assertSame(1, count(array_filter($connection->fetchAll(
 			'PRAGMA table_info(' . AtprotoPublicationSchema::TABLE . ')',

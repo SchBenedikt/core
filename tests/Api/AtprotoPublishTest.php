@@ -252,12 +252,13 @@ final class AtprotoPublishTest extends TestCase
 		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'hello route');
 
-		$first = $this->publish($app, $post);
-		$second = $this->publish($app, $post);
+		$first = $this->publish($app, $post, 'did:plc:alice');
+		$second = $this->publish($app, $post, 'did:plc:alice');
 
 		self::assertSame(200, $first->status);
 		self::assertSame(200, $second->status);
 		self::assertSame($first->decodedBody()['publication'], $second->decodedBody()['publication']);
+		self::assertSame('did:plc:alice', $first->decodedBody()['publication']['account_did']);
 		self::assertCount(1, $this->http->requests, 'A repeat must return the stored publication.');
 		self::assertSame(1, $this->publications->findForPost(self::ALICE, $post) === null ? 0 : 1);
 	}
@@ -486,13 +487,13 @@ final class AtprotoPublishTest extends TestCase
 		return $response->decodedBody()['post']['id'];
 	}
 
-	private function publish(Application $app, string $postId): Response
+	private function publish(Application $app, string $postId, ?string $accountDid = null): Response
 	{
 		return $app->handle(new Request(
 			method: 'POST',
 			path: '/api/v1/posts/' . rawurlencode($postId) . '/atproto',
 			headers: ['Content-Type' => 'application/json'],
-			body: '{}',
+			body: json_encode($accountDid === null ? [] : ['account_did' => $accountDid], JSON_THROW_ON_ERROR),
 			userId: self::ALICE,
 		));
 	}

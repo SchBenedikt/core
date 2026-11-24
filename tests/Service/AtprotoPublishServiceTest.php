@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
@@ -238,6 +240,34 @@ final class AtprotoPublishServiceTest extends TestCase
 		self::assertCount(0, $this->queue->pending());
 	}
 
+	public function testManualPublicationUsesTheSelectedIdentityAndKeepsMappingsSeparate(): void
+	{
+		$post = $this->post();
+		$this->posts->insert($post);
+		$accounts = new class implements AtprotoAccountCollectionResolver {
+			public function resolve(string $localUserId): ?AtprotoAccount { return $this->resolveAll($localUserId)[0] ?? null; }
+			public function resolveAll(string $localUserId): array
+			{
+				return [
+					new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds-a.example', 'token-a'),
+					new AtprotoAccount('did:plc:alice2', 'alice2.test', 'https://pds-b.example', 'token-b'),
+				];
+			}
+		};
+		$this->http->queueResponseFactory($this->published());
+		$this->http->queueResponseFactory($this->published());
+		$service = $this->serviceWith(accounts: $accounts);
+
+		$second = $service->publish('alice', $post->id, accountDid: 'did:plc:alice2');
+		$first = $service->publish('alice', $post->id);
+
+		self::assertSame('did:plc:alice2', $second->accountDid);
+		self::assertSame('did:plc:alice', $first->accountDid);
+		self::assertSame($second, $this->publications->findForPost('alice', $post->id, 'did:plc:alice2'));
+		self::assertSame($first, $this->publications->findForPost('alice', $post->id, 'did:plc:alice'));
+		self::assertCount(2, $this->http->requests);
+	}
+
 	public function testEditedPublishedPostCanUpsertItsExistingPdsRecord(): void
 	{
 		$post = $this->post(content: 'edited public text');
@@ -370,7 +400,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		$jobs = $this->queue->pending();
 		self::assertCount(1, $jobs);
 		self::assertSame('atproto.publish', $jobs[0]->type);
-		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1', 'update' => true], $jobs[0]->payload);
+		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1', 'account_did' => 'did:plc:alice', 'update' => true], $jobs[0]->payload);
 	}
 
 	public function testUnrepresentableEditSchedulesDeletionOfExistingPublicMirror(): void
@@ -383,7 +413,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		$jobs = $this->queue->pending();
 		self::assertCount(1, $jobs);
 		self::assertSame('atproto.delete', $jobs[0]->type);
-		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1'], $jobs[0]->payload);
+		self::assertSame(['user_id' => 'alice', 'post_id' => 'post-1', 'account_did' => 'did:plc:alice'], $jobs[0]->payload);
 	}
 
 	public function testFacetsArePartOfThePublishedRecord(): void
@@ -645,6 +675,7 @@ final class AtprotoPublishServiceTest extends TestCase
 	private function serviceWith(
 		?AtprotoIdentityResolver $identities = null,
 		?AtprotoRecordResolver $quoteRecords = null,
+		?AtprotoAccountResolver $accounts = null,
 	): AtprotoPublishService {
 		$config = new ArrayConfig([InstanceInfo::CONFIG_APP => [
 			'atproto.publish' => 'true',
@@ -655,7 +686,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			$config,
 			$this->posts,
 			$this->publications,
-			new InMemoryAtprotoAccountResolver([
+			$accounts ?? new InMemoryAtprotoAccountResolver([
 				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
 			]),
 			new XrpcAtprotoPublisher($this->http),
