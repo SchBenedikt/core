@@ -589,6 +589,30 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		);
 	}
 
+	public function updateDeletionBlobFailures(
+		string $userId,
+		array $expectedFailures,
+		array $remainingFailures,
+		int $blobsDeleted,
+		DateTimeImmutable $now,
+	): ?AccountDeletion {
+		$updated = $this->database->execute(
+			'UPDATE ' . AccountDeletionSchema::TABLE
+			. ' SET updated_at = :now, blobs_deleted = blobs_deleted + :deleted, blob_failures = :remaining'
+			. ' WHERE user_id = :user AND state = :erased AND blob_failures = :expected',
+			[
+				'now' => Time::format($now),
+				'deleted' => $blobsDeleted,
+				'remaining' => json_encode(array_values($remainingFailures), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+				'user' => $userId,
+				'erased' => AccountDeletion::ERASED,
+				'expected' => json_encode(array_values($expectedFailures), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+			],
+		);
+
+		return $updated === 1 ? $this->deletion($userId) : null;
+	}
+
 	public function erase(string $userId, string $actorId, ?DateTimeImmutable $deletedAt = null): AccountDataErasure
 	{
 		return $this->database->transaction(function () use ($userId, $actorId, $deletedAt): AccountDataErasure {

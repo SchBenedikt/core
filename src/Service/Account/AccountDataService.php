@@ -156,9 +156,9 @@ final class AccountDataService implements AccountDeletionSweeper
 		$now = $this->clock->now();
 		$deletion = $this->repository->beginDeletion($userId, $now);
 		if ($deletion->erased()) {
-			// The tombstone is the source of truth. A repeat returns exactly
-			// the stored outcome instead of a second, smaller deletion.
-			return $this->reportFor($deletion);
+			// Rows are already gone, but object-store failures can be retried
+			// without reopening the account or repeating federation cleanup.
+			return $this->reportFor($this->retryFailedBlobs($userId, $deletion));
 		}
 
 		if (!$this->repository->claimDeletion($userId, $now)) {
@@ -238,8 +238,8 @@ final class AccountDataService implements AccountDeletionSweeper
 
 	/**
 	 * Removes rows again after an in-flight handler committed past the freeze.
-	 * The stored lifecycle/report is deliberately not rewritten: the account is
-	 * still erased, and this only closes the write window.
+	 * For an already erased account, this also retries its persisted failed blob
+	 * deletions without repeating federation cleanup.
 	 */
 	public function sweep(string $userId): void
 	{
@@ -249,6 +249,11 @@ final class AccountDataService implements AccountDeletionSweeper
 		}
 
 		$this->queue?->cancelBySubject(JobSubject::account($userId));
+		$deletion = $this->repository->deletion($userId);
+		if ($deletion?->erased()) {
+			$this->retryFailedBlobs($userId, $deletion);
+			return;
+		}
 
 		$actorId = $this->activities->actorId($userId);
 		$erasure = $this->repository->erase($userId, $actorId, $this->clock->now());
@@ -262,6 +267,44 @@ final class AccountDataService implements AccountDeletionSweeper
 				// pass; a second failure must not hide the write cleanup.
 			}
 		}
+	}
+
+	private function retryFailedBlobs(string $userId, AccountDeletion $deletion): AccountDeletion
+	{
+		// A competing repeat may update the list while these deletes run.
+		// Re-read once after a lost compare-and-swap; deletes are idempotent.
+		for ($attempt = 0; $attempt < 2 && $deletion->blobFailures !== []; ++$attempt) {
+			$remaining = [];
+			$deleted = 0;
+			foreach ($deletion->blobFailures as $path) {
+				try {
+					if ($this->blobs->exists($path)) {
+						$this->blobs->delete($path);
+						++$deleted;
+					}
+				} catch (Throwable) {
+					$remaining[] = $path;
+				}
+			}
+			if ($remaining === $deletion->blobFailures) {
+				return $deletion;
+			}
+
+			$updated = $this->repository->updateDeletionBlobFailures(
+				$userId,
+				$deletion->blobFailures,
+				$remaining,
+				$deleted,
+				$this->clock->now(),
+			);
+			if ($updated !== null) {
+				return $updated;
+			}
+
+			$deletion = $this->repository->deletion($userId) ?? $deletion;
+		}
+
+		return $deletion;
 	}
 
 	private function reportFor(AccountDeletion $deletion): AccountErasureReport
