@@ -18,6 +18,9 @@ use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
@@ -484,7 +487,7 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(401, $this->createStatus($app, $fields, userId: null)->status);
 
 		$wrongScope = $this->createStatus($app, $fields, scopes: ['read:statuses']);
-		self::assertSame(403, $wrongScope->status);
+		self::assertSame(403, $wrongScope->status, $wrongScope->body);
 		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
 
 		$disabled = $this->app(enabled: false);
@@ -681,7 +684,7 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('authentication_required', $anonymous->decodedBody()['error']['code']);
 
 		$wrongScope = $this->upload($app, $this->png(), scopes: ['write:statuses']);
-		self::assertSame(403, $wrongScope->status);
+		self::assertSame(403, $wrongScope->status, $wrongScope->body);
 		self::assertSame('insufficient_scope', $wrongScope->decodedBody()['error']['code']);
 		self::assertSame(0, $attachments->count());
 		self::assertSame([], $blobs->list('media'));
@@ -2647,6 +2650,64 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('remote_search_failed', $error->decodedBody()['error']['code']);
 	}
 
+	public function testAccountLookupResolvesLocalAndExactRemoteHandles(): void
+	{
+		$remote = new FakeMastodonRemoteActorSearch(new RemoteActorProfile(
+			actorId: 'https://remote.example/users/bob',
+			handle: 'bob@remote.example',
+			displayName: 'Bob Remote',
+			summary: 'Remote profile',
+			avatarUrl: null,
+			headerUrl: null,
+			aliases: [],
+			fetchedAt: $this->clock->now(),
+		));
+		$app = $this->app(remoteActorSearch: $remote);
+		$local = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/accounts/lookup', query: ['acct' => 'alice'], userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(200, $local->status, $local->body);
+		self::assertSame('alice', $local->decodedBody()['username']);
+		self::assertCount(0, $remote->lookups);
+
+		$remoteResponse = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/accounts/lookup', query: ['acct' => '@bob@remote.example'], userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(200, $remoteResponse->status, $remoteResponse->body);
+		self::assertSame('https://remote.example/users/bob', $remoteResponse->decodedBody()['id']);
+		self::assertSame(['bob@remote.example'], $remote->lookups);
+	}
+
+	public function testAccountLookupRequiresScopeAndDoesNotLeakBlockedRemoteAccounts(): void
+	{
+		$profile = new RemoteActorProfile(
+			actorId: 'https://remote.example/users/bob', handle: 'bob@remote.example', displayName: 'Bob',
+			summary: '', avatarUrl: null, headerUrl: null, aliases: [], fetchedAt: $this->clock->now(),
+		);
+		$blocks = new InMemoryBlockRepository();
+		$blocks->insert(new Block('alice-bob', 'alice', $profile->actorId, $this->clock->now()));
+		$app = $this->app(remoteActorSearch: new FakeMastodonRemoteActorSearch($profile), blockRepository: $blocks);
+
+		$wrongScope = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/accounts/lookup', query: ['acct' => 'bob@remote.example'], userId: 'alice', scopes: ['read:statuses']));
+		self::assertSame(403, $wrongScope->status);
+		$blocked = $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/accounts/lookup', query: ['acct' => 'bob@remote.example'], userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(404, $blocked->status);
+	}
+
+	public function testAccountLookupValidatesInputAndReportsRemoteResolverFailure(): void
+	{
+		$app = $this->app(remoteActorSearch: new FakeMastodonRemoteActorSearch(null, 'webfinger_timeout'));
+		$path = MastodonApiConfig::DEFAULT_PREFIX . '/accounts/lookup';
+		$anonymous = $app->handle(new Request('GET', $path, query: ['acct' => 'bob@remote.example']));
+		self::assertSame(401, $anonymous->status);
+
+		$missing = $app->handle(new Request('GET', $path, userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(422, $missing->status);
+
+		$failed = $app->handle(new Request('GET', $path, query: ['acct' => 'bob@remote.example'], userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(503, $failed->status);
+		self::assertSame('remote_search_failed', $failed->decodedBody()['error']['code']);
+
+		$invalid = $app->handle(new Request('GET', $path, query: ['acct' => 'https://127.0.0.1/admin'], userId: 'alice', scopes: ['read:accounts']));
+		self::assertSame(404, $invalid->status);
+	}
+
 	public function testDirectVisibilityWithoutARecipientAndMissingInputAreRejected(): void
 	{
 		$app = $this->app();
@@ -3160,6 +3221,7 @@ final class MastodonApiTest extends TestCase
 		?InMemoryRemotePollRepository $remotePollRepository = null,
 		?RemotePostRepository $remotePostRepository = null,
 		?RemoteActorSearch $remoteActorSearch = null,
+		?BlockRepository $blockRepository = null,
 	): Application {
 		$config = array_merge([
 			'instance.name' => 'Aloha Social',
@@ -3188,6 +3250,7 @@ final class MastodonApiTest extends TestCase
 			remotePollRepository: $remotePollRepository,
 			remotePostRepository: $remotePostRepository,
 			remoteActorSearch: $remoteActorSearch,
+			blockRepository: $blockRepository,
 		);
 	}
 
