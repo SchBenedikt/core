@@ -14,7 +14,9 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
 
-require dirname(__DIR__) . '/vendor/autoload.php';
+$localAutoloader = dirname(__DIR__) . '/vendor/autoload.php';
+$hostAutoloader = dirname(__DIR__, 3) . '/autoload.php';
+require is_file($localAutoloader) ? $localAutoloader : $hostAutoloader;
 
 /**
  * A minimal, dependency-free WebSocket firehose process.
@@ -114,17 +116,29 @@ function firehose_parse_frames(array &$client, array &$frames): void
 	$client['buffer'] = $buffer;
 }
 
-$options = getopt('', ['database:', 'host::', 'port::', 'poll-ms::']);
+$options = getopt('', ['database:', 'dsn:', 'host::', 'port::', 'poll-ms::']);
 $databasePath = (string) ($options['database'] ?? getenv('PDS_DATABASE') ?: '');
+$dsn = (string) ($options['dsn'] ?? getenv('PDS_DATABASE_DSN') ?: '');
 $host = (string) ($options['host'] ?? getenv('PDS_FIREHOSE_HOST') ?: '127.0.0.1');
 $port = (int) ($options['port'] ?? getenv('PDS_FIREHOSE_PORT') ?: 2584);
 $pollMilliseconds = max(10, min(2_000, (int) ($options['poll-ms'] ?? 50)));
-if ($databasePath === '' || $port < 0 || $port > 65_535) {
-	fwrite(STDERR, "usage: pds-firehose --database=/path/to.sqlite [--host=127.0.0.1] [--port=2584]\n");
+
+if ($dsn === '' && $databasePath !== '') {
+	$dsn = str_starts_with($databasePath, 'sqlite:') ? $databasePath : 'sqlite:' . $databasePath;
+}
+
+if ($dsn === '' || $port < 0 || $port > 65_535) {
+	fwrite(STDERR, "usage: pds-firehose (--dsn='pdo-dsn' | --database=/path/to.sqlite) [--host=127.0.0.1] [--port=2584]\n");
 	exit(2);
 }
 
-$pdo = new PDO('sqlite:' . $databasePath);
+$databaseUser = getenv('PDS_DATABASE_USER');
+$databasePassword = getenv('PDS_DATABASE_PASSWORD');
+$pdo = new PDO(
+	$dsn,
+	$databaseUser === false ? null : $databaseUser,
+	$databasePassword === false ? null : $databasePassword,
+);
 $database = new PdoConnection($pdo);
 PdsSchema::upgrade($database);
 $firehose = new PdsFirehose(new PdoPdsRepository($database));

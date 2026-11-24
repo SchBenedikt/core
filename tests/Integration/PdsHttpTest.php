@@ -475,7 +475,7 @@ final class PdsHttpTest extends TestCase
 		self::assertSame(200, $created['status'], $created['body']);
 		$did = $created['json']['did'] ?? '';
 
-		$this->startFirehose();
+		$this->startFirehose(true);
 		$live = $this->openFirehose();
 
 		$first = $this->createRecord($did, 'one', 'alice');
@@ -554,6 +554,40 @@ final class PdsHttpTest extends TestCase
 		$liveAgain = $this->readFirehoseEvent($current);
 		$this->closeFirehose($current);
 		self::assertSame(7, $liveAgain['seq'] ?? null);
+	}
+
+	public function testFirehoseStillAcceptsTheLegacySqliteDatabaseOption(): void
+	{
+		$this->startFirehose();
+		$client = $this->openFirehose();
+		$this->closeFirehose($client);
+	}
+
+	public function testFirehoseReadsTheHostsDatabaseDsnFromEnvironment(): void
+	{
+		$this->startFirehose(false, true);
+		$client = $this->openFirehose();
+		$this->closeFirehose($client);
+	}
+
+	public function testFirehoseLoadsTheHostComposerAutoloaderWhenInstalledAsPackage(): void
+	{
+		$hostVendor = $this->directory . '/vendor';
+		$packageBin = $hostVendor . '/alohasocial/core/bin';
+		if (!mkdir($packageBin, 0o770, true) && !is_dir($packageBin)) {
+			throw new RuntimeException('Could not create the simulated Composer package directory.');
+		}
+
+		$packageScript = $packageBin . '/pds-firehose';
+		if (!copy(dirname(__DIR__, 2) . '/bin/pds-firehose', $packageScript)
+			|| !symlink(dirname(__DIR__, 2) . '/vendor/autoload.php', $hostVendor . '/autoload.php')
+		) {
+			throw new RuntimeException('Could not prepare the simulated Composer package.');
+		}
+
+		$this->startFirehose(false, false, $packageScript);
+		$client = $this->openFirehose();
+		$this->closeFirehose($client);
 	}
 
 	public function testCarExportImportsIntoAFreshRepositoryAndBlocksAreServed(): void
@@ -777,7 +811,11 @@ final class PdsHttpTest extends TestCase
 		return ['status' => $status, 'body' => $responseBody, 'contentType' => $contentType];
 	}
 
-	private function startFirehose(): void
+	private function startFirehose(
+		bool $useDsn = false,
+		bool $useDsnEnvironment = false,
+		?string $scriptPath = null,
+	): void
 	{
 		if (is_resource($this->firehoseProcess)) {
 			return;
@@ -796,18 +834,29 @@ final class PdsHttpTest extends TestCase
 
 		$command = [
 			PHP_BINARY,
-			dirname(__DIR__, 2) . '/bin/pds-firehose',
-			'--database=' . $this->databasePath,
+			$scriptPath ?? dirname(__DIR__, 2) . '/bin/pds-firehose',
 			'--host=127.0.0.1',
 			'--port=' . $this->firehosePort,
 			'--poll-ms=20',
 		];
+		if (!$useDsnEnvironment) {
+			$command[] = $useDsn
+				? '--dsn=sqlite:' . $this->databasePath
+				: '--database=' . $this->databasePath;
+		}
 		$descriptors = [
 			0 => ['pipe', 'r'],
 			1 => ['file', $this->firehoseLog, 'a'],
 			2 => ['file', $this->firehoseLog, 'a'],
 		];
+		$previousDsn = getenv('PDS_DATABASE_DSN');
+		if ($useDsnEnvironment) {
+			putenv('PDS_DATABASE_DSN=sqlite:' . $this->databasePath);
+		}
 		$process = proc_open($command, $descriptors, $pipes, $this->directory);
+		if ($useDsnEnvironment) {
+			putenv($previousDsn === false ? 'PDS_DATABASE_DSN' : 'PDS_DATABASE_DSN=' . $previousDsn);
+		}
 		if (!is_resource($process)) {
 			throw new RuntimeException('Could not start the PDS firehose server.');
 		}
