@@ -329,7 +329,7 @@ final class MastodonPresenter
 			'url' => $post->objectId,
 			'replies_count' => 0,
 			'reblogs_count' => $reblogged ? 1 : 0,
-			'favourites_count' => 0,
+			'favourites_count' => $favourited ? 1 : 0,
 			'edited_at' => $post->updatedAt?->format('Y-m-d\\TH:i:s.000\\Z'),
 			'content' => $this->html($post->content),
 			'reblog' => null,
@@ -347,6 +347,38 @@ final class MastodonPresenter
 			'bookmarked' => false,
 			'muted' => false,
 		];
+	}
+
+	/**
+	 * Projects a remote Announce as the outer status in a home timeline.
+	 *
+	 * @param array<string, mixed> $original
+	 * @return array<string, mixed>
+	 */
+	public function remoteBoostStatus(RemotePost $boost, array $original): array
+	{
+		return array_merge($original, [
+			'id' => $boost->activityId,
+			'created_at' => $boost->publishedAt->format('Y-m-d\\TH:i:s.000\\Z'),
+			'in_reply_to_id' => null,
+			'in_reply_to_account_id' => null,
+			'uri' => $boost->activityId,
+			'url' => $original['url'],
+			'replies_count' => 0,
+			'reblogs_count' => 0,
+			'favourites_count' => 0,
+			'content' => '',
+			'reblog' => $original,
+			'account' => $this->actorAccount($boost->actorId),
+			'media_attachments' => [],
+			'mentions' => [],
+			'tags' => [],
+			'emojis' => [],
+			'poll' => null,
+			'favourited' => false,
+			'reblogged' => false,
+			'bookmarked' => false,
+		]);
 	}
 
 	/**

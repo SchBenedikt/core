@@ -158,6 +158,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonHomeTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
@@ -1246,6 +1247,16 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '60/60',
 				summary: 'Public local statuses in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.timelines.home',
+				method: 'GET',
+				path: $mastodon . '/timelines/home',
+				handler: MastodonHomeTimelineHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:statuses'],
+				summary: 'The signed-in account home timeline with followed remote posts.',
 			),
 			new Route(
 				name: 'mastodon.statuses.show',

@@ -20,6 +20,7 @@ use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Notification\Notification;
@@ -69,6 +70,7 @@ use AlohaSocial\Core\Service\MuteService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ReactionException;
 use AlohaSocial\Core\Service\ReactionService;
+use AlohaSocial\Core\Service\TimelineService;
 use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -136,6 +138,8 @@ final class MastodonService
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?RemotePollService $remotePolls = null,
 		private readonly ?ReactionService $reactions = null,
+		private readonly ?TimelineService $homeTimelines = null,
+		private readonly ?RemotePostRepository $remotePosts = null,
 	) {
 	}
 
@@ -172,6 +176,133 @@ final class MastodonService
 		);
 
 		return $this->presenter->statuses($posts);
+	}
+
+	/**
+	 * The authenticated account's combined local and followed-remote timeline.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function homeTimeline(string $userId, int $limit, ?string $maxId, ?string $sinceId): array
+	{
+		$this->requireEnabled();
+		if ($this->homeTimelines === null || $this->remotePosts === null) {
+			throw new MastodonRequestException(503, 'timeline_not_configured', 'Home timeline storage is not configured.');
+		}
+
+		if ($maxId !== null && $maxId !== '' && $sinceId !== null && $sinceId !== '') {
+			throw new MastodonRequestException(422, 'validation_failed', 'max_id and since_id cannot be combined.');
+		}
+
+		$cursorId = null;
+		$cursorTime = null;
+		if ($maxId !== null && $maxId !== '') {
+			[$cursorTime, $cursorId] = $this->homeCursor($userId, $maxId);
+		}
+
+		$after = null;
+		$afterId = null;
+		if ($sinceId !== null && $sinceId !== '') {
+			[$after, $afterId] = $this->homeCursor($userId, $sinceId);
+		}
+
+		$entries = $this->homeTimelines->home(
+			$userId,
+			$this->clamp($limit),
+			$cursorTime?->format('Y-m-d\\TH:i:s\\Z'),
+			$cursorId,
+		);
+
+		if ($after !== null && $afterId !== null) {
+			$entries = array_values(array_filter($entries, static fn (TimelineEntry $entry): bool =>
+				$entry->publishedAt > $after
+				|| ($entry->publishedAt == $after && strcmp($entry->id, $afterId) > 0)
+			));
+		}
+
+		$statuses = [];
+		foreach ($entries as $entry) {
+			if ($entry->isBoost()) {
+				$boost = $this->boosts?->find($entry->id);
+				if ($boost !== null) {
+					$post = $this->posts->find($entry->objectId);
+					if ($post !== null && !$post->isDeleted()) {
+						$statuses[] = $this->presenter->boostStatus($boost, $post, $userId);
+					}
+					continue;
+				}
+			}
+
+			$localPost = $this->posts->find($entry->id);
+			if ($localPost !== null && !$localPost->isDeleted()) {
+				$statuses[] = $this->presenter->status($localPost, $userId);
+				continue;
+			}
+
+			$remote = $this->remotePosts->findByActivityId($entry->id);
+			if ($remote === null || $remote->deletedAt !== null) {
+				continue;
+			}
+
+			if ($remote->isBoost()) {
+				$object = $this->remotePosts->findPostByObjectId($remote->objectId);
+				if ($object === null || $object->deletedAt !== null) {
+					continue;
+				}
+
+				$interaction = $this->reactions?->remoteInteractionsFor($userId, $object) ?? [];
+				$original = $this->presenter->remoteStatus(
+					$object,
+					$interaction['viewer']['favourited'] ?? false,
+					$interaction['viewer']['reblogged'] ?? false,
+				);
+				$statuses[] = $this->presenter->remoteBoostStatus($remote, $original);
+				continue;
+			}
+
+			$interaction = $this->reactions?->remoteInteractionsFor($userId, $remote) ?? [];
+			$statuses[] = $this->presenter->remoteStatus(
+				$remote,
+				$interaction['viewer']['favourited'] ?? false,
+				$interaction['viewer']['reblogged'] ?? false,
+			);
+		}
+
+		return $statuses;
+	}
+
+	/**
+	 * Resolve a Mastodon status id to a cursor that is present in this user's
+	 * home timeline. Foreign and pending-follow rows cannot be used as cursors.
+	 *
+	 * @return array{0: DateTimeImmutable, 1: string}
+	 */
+	private function homeCursor(string $userId, string $id): array
+	{
+		$localFollowing = array_fill_keys($this->relationships?->localFollowingUserIds($userId) ?? [], true);
+		$post = $this->posts->find($id);
+		if ($post !== null && !$post->isDeleted()
+			&& ($post->authorId === $userId || isset($localFollowing[$post->authorId]))
+		) {
+			return [$post->publishedAt, $post->id];
+		}
+
+		$boost = $this->boosts?->find($id);
+		if ($boost !== null
+			&& ($boost->userId === $userId || isset($localFollowing[$boost->userId]))
+		) {
+			return [$boost->createdAt, $boost->id];
+		}
+
+		$remote = $this->remotePosts?->findByActivityId($id)
+			?? $this->remotePosts?->findPostByObjectId($id);
+		if ($remote !== null && $remote->deletedAt === null
+			&& $this->followingRepository?->find($userId, $remote->actorId)?->state === FollowState::Accepted
+		) {
+			return [$remote->publishedAt, $remote->activityId];
+		}
+
+		throw new MastodonRequestException(404, 'not_found', 'Home timeline cursor not found.');
 	}
 
 	/**

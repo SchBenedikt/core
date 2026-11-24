@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Authenticated Mastodon home timeline:** `GET /api/mastodon/v1/timelines/home`
+  combines local and accepted-follow remote posts and boosts, checks
+  `read:statuses`, and paginates with `max_id`/`since_id` and a `Link` header.
 - The deprecated Mastodon `follow` OAuth scope now grants its relationship and
   mute scopes without granting unrelated writes.
 - `AtprotoInteractionService` can now like, unlike, repost and undo reposts for
