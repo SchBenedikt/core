@@ -1358,8 +1358,9 @@ The export returns one deterministic JSON document for the signed-in local
 account. `format` is `alohasocial-account-archive` and `version` is `1`.
 `data` is keyed by the existing table names; every row is the row stored by
 the repositories, including post revisions, poll rows, interactions, stories,
-follows, lists, notifications, moderation rows, media metadata, recommendations
-and the AT Protocol publication and PDS tables. `blobs` maps every attachment
+follows (including AT Protocol graph follows), lists, notifications,
+moderation rows, media metadata, recommendations, and the AT Protocol
+publication and PDS tables. `blobs` maps every attachment
 and PDS object path to its base64 bytes; `missing_blobs` names metadata whose
 object was already absent. There is no generated timestamp or random id, so
 the same rows and bytes produce the same JSON. Sealed PDS private keys are
