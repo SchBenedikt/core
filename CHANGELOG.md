@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `AtprotoInteractionService` can now like, unlike, repost and undo reposts for
+  trusted remote post projections. Remote writes require a host policy that
+  checks visibility and blocks, use URI/CID strong references and reuse the
+  durable per-user interaction ledger for retries. Host wiring and inbound
+  interaction synchronization remain separate.
 - Single HTTP(S) URLs in outbound AT Protocol posts now receive a minimal
   external-link card with the hostname as title. The publisher never fetches
   link metadata, leaves multiple links unembedded, and preserves image/video

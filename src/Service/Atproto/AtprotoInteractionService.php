@@ -11,10 +11,13 @@ namespace AlohaSocial\Core\Service\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoIdentifiers;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRecord as AtprotoInteractionState;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Post\Post;
@@ -67,6 +70,7 @@ final class AtprotoInteractionService
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?ActivityFactory $activities = null,
 		private readonly ?AtprotoInteractionRepository $interactionRecords = null,
+		private readonly ?AtprotoInteractionTargetPolicy $remoteTargetPolicy = null,
 	) {
 	}
 
@@ -115,6 +119,152 @@ final class AtprotoInteractionService
 	public function undoRepost(string $localUserId, string $postId): void
 	{
 		$this->remove(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postId);
+	}
+
+	/**
+	 * Like a validated public post received from an AT Protocol feed.
+	 *
+	 * The host must supply a projection from its trusted sync/AppView path and
+	 * a target policy that rechecks account visibility and local blocks. This
+	 * method has no side effects on the host's local reaction counters.
+	 */
+	public function likeRemote(string $localUserId, AtprotoPostProjection $target): string
+	{
+		return $this->writeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target);
+	}
+
+	public function repostRemote(string $localUserId, AtprotoPostProjection $target): string
+	{
+		return $this->writeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target);
+	}
+
+	/** Removing an interaction stays available after the target is blocked or deleted. */
+	public function unlikeRemote(string $localUserId, AtprotoPostProjection $target): void
+	{
+		$this->removeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target);
+	}
+
+	public function undoRemoteRepost(string $localUserId, AtprotoPostProjection $target): void
+	{
+		$this->removeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target);
+	}
+
+	private function writeRemote(
+		string $kind,
+		string $collection,
+		string $localUserId,
+		AtprotoPostProjection $target,
+	): string {
+		$this->assertEnabled();
+		$this->assertRemoteTarget($localUserId, $target);
+		if ($this->publisher === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+
+		$account = $this->account($localUserId);
+		$postId = self::remotePostKey($target);
+		$existing = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
+		if ($existing !== null) {
+			return $existing->uri;
+		}
+
+		$subject = new AtprotoStrongRef($target->uri, $target->cid);
+		$rkey = $this->remoteRkey($kind, $localUserId, $target, $account);
+		$uri = $this->publisher->publish($account, $rkey, $this->record($kind, $subject), $collection);
+		$this->storeRemoteInteraction($localUserId, $account, $postId, $kind, $uri, $rkey);
+
+		return $uri;
+	}
+
+	private function removeRemote(
+		string $kind,
+		string $collection,
+		string $localUserId,
+		AtprotoPostProjection $target,
+	): void {
+		if ($this->deleter === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+		$this->assertRemoteRecord($target);
+
+		$account = $this->account($localUserId);
+		$postId = self::remotePostKey($target);
+		$existing = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
+		$rkey = $existing?->rkey ?? $this->remoteRkey($kind, $localUserId, $target, $account);
+		$this->deleter->delete($account, $rkey, $collection);
+		$this->interactionRecords?->remove($localUserId, $account->did, $postId, $kind);
+	}
+
+	private function assertRemoteTarget(string $localUserId, AtprotoPostProjection $target): void
+	{
+		$this->assertRemoteRecord($target);
+		if ($this->remoteTargetPolicy === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+		if (!$this->remoteTargetPolicy->allows($localUserId, $target)) {
+			throw new AtprotoInteractionRejectedException(AtprotoInteractionRejectedException::BLOCKED_ACTOR);
+		}
+	}
+
+	private function assertRemoteRecord(AtprotoPostProjection $target): void
+	{
+		$parts = explode('/', $target->uri);
+		if (!AtprotoIdentifiers::isDid($target->did)
+			|| !AtprotoIdentifiers::isAtUri($target->uri)
+			|| ($parts[2] ?? null) !== $target->did
+			|| ($parts[3] ?? null) !== AtprotoPostProjection::COLLECTION
+			|| AtprotoIdentifiers::uri($target->did, AtprotoPostProjection::COLLECTION, (string) ($parts[4] ?? '')) !== $target->uri
+			|| $target->cid === ''
+		) {
+			throw new AtprotoInteractionRejectedException(AtprotoInteractionRejectedException::SUBJECT_UNRESOLVABLE);
+		}
+	}
+
+	private static function remotePostKey(AtprotoPostProjection $target): string
+	{
+		return hash('sha256', $target->uri);
+	}
+
+	private function remoteRkey(
+		string $kind,
+		string $localUserId,
+		AtprotoPostProjection $target,
+		AtprotoAccount $account,
+	): string {
+		return Tid::forRecord(
+			$target->createdAt,
+			$kind . '|' . $localUserId . '|' . $target->uri . '|' . $account->did,
+		);
+	}
+
+	private function storeRemoteInteraction(
+		string $localUserId,
+		AtprotoAccount $account,
+		string $postId,
+		string $kind,
+		string $uri,
+		string $rkey,
+	): void {
+		if ($this->interactionRecords === null) {
+			return;
+		}
+
+		try {
+			$this->interactionRecords->insert(new AtprotoInteractionState(
+				localUserId: $localUserId,
+				accountDid: $account->did,
+				postId: $postId,
+				kind: $kind,
+				rkey: $rkey,
+				uri: $uri,
+				createdAt: $this->clock->now(),
+			));
+		} catch (DatabaseException $exception) {
+			$stored = $this->interactionRecords->find($localUserId, $account->did, $postId, $kind);
+			if ($stored === null) {
+				throw $exception;
+			}
+		}
 	}
 
 	private function write(string $kind, string $collection, string $localUserId, string $postId): string

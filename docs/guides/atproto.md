@@ -224,8 +224,9 @@ resolution remain unsupported.
 ## Reposts and likes
 
 `AtprotoInteractionService` writes `app.bsky.feed.like` and
-`app.bsky.feed.repost` records for a post this instance already published:
-`like()`/`unlike()` and `repost()`/`undoRepost()`.
+`app.bsky.feed.repost` records for local and validated remote posts:
+`like()`/`unlike()`, `repost()`/`undoRepost()`, and
+`likeRemote()`/`unlikeRemote()` and `repostRemote()`/`undoRemoteRepost()`.
 
 - The subject is a `com.atproto.repo.strongRef`: record URI plus CID. The URI
   comes from the publication row, the CID is read with `getRecord` — it cannot
@@ -239,14 +240,21 @@ resolution remain unsupported.
 - A write is refused with `blocked_actor` if either local account has blocked
   the other in the instance's per-user ActivityPub block list. Unlike and
   unrepost remain available so a user can remove an existing PDS interaction.
+- For remote posts, the host passes a trusted `AtprotoPostProjection` and must
+  inject `AtprotoInteractionTargetPolicy`. The policy must recheck that the
+  viewer can interact with the post and has not blocked its author. Missing
+  policy configuration refuses writes. The projection's URI and CID form the
+  strong reference directly; retries are deduplicated in the interaction
+  ledger, keyed by local user, linked DID, post URI and interaction kind.
 - `AtprotoPublisher::publish()` and `AtprotoDeleter::delete()` take the
   collection as their last argument (default `app.bsky.feed.post`), so one
   adapter writes and removes all three record types. A non-NSID value is
   rejected before any request.
 - The service is host-called, like session refresh: it is not wired into the
   internal favourite or boost path, so a host decides when a local interaction
-  becomes an AT Protocol record. Liking a Bluesky post from the network needs
-  the AppView reads that are still open.
+  becomes an AT Protocol record. Remote writes do not update local reaction
+  counters or perform inbound interaction synchronization; hosts must connect
+  these calls to their interaction flows and policies.
 
 ## Profile
 
