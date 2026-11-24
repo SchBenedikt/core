@@ -431,7 +431,7 @@ final class ReactionFederationTest extends TestCase
 		self::assertTrue($mastodon->decodedBody()['favourited']);
 	}
 
-	public function testMastodonCanLikeAndUnlikeAFollowedRemoteStatus(): void
+	public function testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus(): void
 	{
 		$objectId = 'https://remote.example/objects/post-1';
 		$this->remotePosts->insert(new RemotePost(
@@ -497,6 +497,38 @@ final class ReactionFederationTest extends TestCase
 			'alice',
 			$objectId,
 			ReactionKind::Like,
+			null,
+		));
+
+		$reblog = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $encodedId . '/reblog',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $reblog->status, (string) json_encode($reblog->decodedBody()));
+		self::assertTrue($reblog->decodedBody()['reblogged']);
+		self::assertNotNull($this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			$objectId,
+			ReactionKind::Boost,
+			null,
+		));
+
+		$unreblog = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses/' . $encodedId . '/unreblog',
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+		self::assertSame(200, $unreblog->status, (string) json_encode($unreblog->decodedBody()));
+		self::assertFalse($unreblog->decodedBody()['reblogged']);
+		self::assertNull($this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			$objectId,
+			ReactionKind::Boost,
 			null,
 		));
 	}

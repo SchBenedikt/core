@@ -86,29 +86,31 @@ combines the caller's local and accepted-follow remote posts and boosts. It
 requires `read:statuses`, supports `limit`, `max_id` and `since_id`, and returns
 a `Link` next-page cursor; `min_id` is not supported on this route.
 
-The local subset covers public/unlisted/followers-only text posts, local poll
-creation on an own status, local favourite/unfavourite, private bookmark and
-mute bookkeeping, private list bookkeeping with list timelines and the
-exclusive home filter, boost/reblog bookkeeping, reply context, local
-follow/unfollow and remote Follow/Undo lifecycle, relationship bookkeeping,
-local notifications with dismiss/unread state, media upload, metadata
-update/delete and local media attachments. In addition to the authenticated
-home timeline described above, it deliberately does **not** implement the
-public remote timeline, remote favourite counts, remote boost federation,
-remote notifications, streaming, fetching remote polls, followed-tag preferences, OAuth
-authorization/token endpoints, remote search, remote profile fetching, admin
-APIs or the full account management surface. Keyword filters are supported
-locally (see below). Scheduled statuses are
-supported locally (see below). Lists are limited to known local account ids; remote list membership
-is external.
+The local routes cover public/unlisted/followers-only text posts, local poll
+creation, private bookmarks and mutes, private list bookkeeping and timelines,
+reply context, notifications, media, and local follow actions. Selected
+actions also work with cached remote objects as described below. OAuth
+authorization/token endpoints, streaming, public remote timelines, remote
+notifications, remote profile fetching, remote search, admin APIs and the
+full account-management surface remain outside this compatibility surface.
+Keyword filters and scheduled statuses are supported locally (see below).
+Lists are limited to known local account ids; remote list membership is
+external.
 
-The favourite/unfavourite routes also accept the object URL of a cached remote
-post, but only when the signed-in account follows its author and neither side
-has blocked the other. They send ActivityPub `Like`/`Undo(Like)` through the
-shared reaction service; repeat actions are idempotent. `GET /statuses/{id}`
-can read the same cached remote status for that follower. The remote projection
-does not claim remote favourite counts, imported media, or remote boosts;
-remote timeline delivery remains outside this API slice.
+The favourite/unfavourite and reblog/unreblog routes also accept the object
+URL of a cached remote post, but only when the signed-in account follows its
+author and neither side has blocked the other. They send ActivityPub
+`Like`/`Undo(Like)` and `Announce`/`Undo(Announce)` through the shared
+reaction service; repeat actions are idempotent. `GET /statuses/{id}` can read
+the same cached remote status for that follower. The remote projection does
+not claim remote favourite/reblog counts or imported media; public remote
+timelines remain outside this API slice.
+
+Remote poll reads and votes are supported for cached Questions when the local
+account follows the author and the poll has not expired. They use the shared
+ActivityPub poll lifecycle and signed delivery. A host without remote actor
+lookup or delivery configured returns `503` rather than reporting a vote as
+successful. Poll creation still does not federate ActivityPub Questions.
 
 The follow/unfollow routes also accept a remote actor URL. The host must
 provide the guarded remote actor fetcher and signed federation delivery; a new
@@ -117,10 +119,25 @@ follow is pending until a verified `Accept`, and the relationship reports
 activity. Remote profile lookup and account search remain unsupported.
 
 Local search over local accounts and statuses is implemented below; remote
-search and hashtag search are external. The locally implementable remainder —
-hashtags and hashtag search, followed tags, follow requests/locked accounts
-and the wider account-management surface — is a product follow-up listed as Later in the [roadmap](../roadmap.md); everything
-else needs a host or remote data. See the section at the end.
+search and hashtag search are external. Followed tags, follow requests/locked
+accounts and the wider account-management surface are product follow-ups
+listed as Later in the [roadmap](../roadmap.md).
+
+### Remote compatibility matrix (Mastodon API v1, core 0.8)
+
+| Capability | Status | Boundary and evidence |
+| --- | --- | --- |
+| Home timeline | Supported | Local posts plus accepted-follow cached remote posts; cursor paging. `MastodonApiTest::testAuthenticatedHomeTimelineReturnsLocalAndAcceptedRemoteStatusesWithCursor` |
+| Follow/unfollow and relationship state | Supported | Remote actors require guarded lookup; outgoing signed Follow/Undo is pending until Accept. `MastodonApiTest::testRemoteFollowUnfollowAndRelationshipsUseFederationLifecycle` |
+| Favourite/unfavourite cached remote post | Supported | Requires accepted follow and no block; emits Like/Undo; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
+| Reblog/unreblog cached remote post | Supported | Requires the same cached, visible remote target and federation policy; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
+| Read/vote on cached remote poll | Supported | Requires accepted follow; vote uses signed ActivityPub delivery. `MastodonApiTest::testImportedRemotePollsCanBeReadAndVotedThroughMastodonApi` |
+| Remote profiles, search, public timeline, notifications and streaming | Unsupported | These routes do not fetch remote data or open streaming connections; unsupported writes are not reported as successful. |
+
+This matrix describes Core's current handlers and their host ports. It does not
+claim compatibility with every Mastodon client; OAuth/token issuance remains
+host-owned, and representative client integration is still required before
+claiming full client parity.
 
 ## Keyword filters
 
@@ -1301,25 +1318,23 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   belong to the host or a dedicated identity service. The core only checks the
   scopes the host resolved; it does not own tokens, sessions or roles. See
   [ADR 0006](../adr/0006-host-owned-accounts.md).
-- Public remote timelines, favourite federation (outbound
-  `Like`/`Undo` and remote counts), remote boost federation, remote
-  notifications, streaming and remote search need remote data the core does
-  not fetch for this surface. Local boosts/reblogs, private bookmarks, local
-  mutes, private lists, notification listing and local status/actor search are
-  done above.
+- Public remote timelines, remote interaction counts, remote notifications,
+  streaming and remote search need remote data the core does not fetch for
+  this surface. Local boosts/reblogs, outbound remote `Like`/`Undo` and
+  `Announce`/`Undo` for cached posts, private bookmarks, local mutes, private
+  lists, notification listing and local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
-  Remote profile fetching, remote relationship APIs, remote poll fetching,
-  domain blocks that would need a remote
-  moderation feed, and remote search remain external; the local
+  Remote profile fetching, remote relationship APIs, domain blocks that would
+  need a remote moderation feed, and remote search remain external; remote
+  poll reads/votes for cached followed Questions are supported. The local
   follow/unfollow, relationship, profile, follower/following list,
   bookmark, mute, list, notification, search, poll-creation/voting and
   instance views above are done.
-- Following a remote actor through the compatibility prefix is not part of
-  this slice. The public profile lists project remote follow edges that are
-  already stored locally, but they never fetch a remote collection; moderation
-  and admin APIs are also external. The core `/api/v1/following` path remains
-  the federation route.
+- Following a remote actor through the compatibility prefix uses the shared
+  federation lifecycle and needs a guarded remote actor fetcher plus signed
+  delivery. Public profile lists project stored remote follow edges; they do
+  not fetch remote collections. Moderation and admin APIs are external.
 - The host must map bearer tokens to `userId`/`scopes`, enforce the declared
   rate limits and decide whether to expose the custom prefix publicly.
 
