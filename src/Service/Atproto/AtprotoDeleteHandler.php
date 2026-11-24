@@ -36,15 +36,17 @@ final class AtprotoDeleteHandler implements JobHandler
 	{
 		$userId = $job->payload['user_id'] ?? null;
 		$postId = $job->payload['post_id'] ?? null;
+		$accountDid = $job->payload['account_did'] ?? null;
 
-		if (!is_string($userId) || $userId === '' || !is_string($postId) || $postId === '') {
+		if (!is_string($userId) || $userId === '' || !is_string($postId) || $postId === ''
+			|| ($accountDid !== null && (!is_string($accountDid) || preg_match('/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/', $accountDid) !== 1))) {
 			throw new InvalidAtprotoJobPayloadException(
 				'An AT Protocol delete job needs "user_id" and "post_id".',
 			);
 		}
 
 		try {
-			$this->service->deleteRemote($userId, $postId);
+			$this->service->deleteRemote($userId, $postId, $accountDid);
 		} catch (AtprotoNotConfiguredException
 			| AtprotoAccountNotConnectedException $exception
 		) {

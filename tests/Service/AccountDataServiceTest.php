@@ -860,6 +860,7 @@ final class AccountDataServiceTest extends TestCase
 			]);
 			$this->insert(AtprotoPublicationSchema::TABLE, [
 				'local_user_id' => $user,
+				'account_did' => 'did:plc:' . $user,
 				'post_id' => 'pub-' . $user[0],
 				'rkey' => 'rkey-' . $user,
 				'uri' => 'at://did:plc:' . $user . '/app.bsky.feed.post/rkey-' . $user,

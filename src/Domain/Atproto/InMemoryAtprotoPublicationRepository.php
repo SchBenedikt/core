@@ -21,20 +21,29 @@ final class InMemoryAtprotoPublicationRepository implements AtprotoPublicationRe
 	 */
 	private array $publications = [];
 
-	public function findForPost(string $localUserId, string $postId): ?AtprotoPublication
+	public function findForPost(string $localUserId, string $postId, ?string $accountDid = null): ?AtprotoPublication
 	{
-		return $this->publications[$this->key($localUserId, $postId)] ?? null;
+		if ($accountDid !== null) { return $this->publications[$this->key($localUserId, $postId, $accountDid)] ?? null; }
+		return $this->findAllForPost($localUserId, $postId)[0] ?? null;
+	}
+
+	public function findAllForPost(string $localUserId, string $postId): array
+	{
+		$matches = array_filter($this->publications, static fn (AtprotoPublication $publication): bool =>
+			$publication->localUserId === $localUserId && $publication->postId === $postId);
+		usort($matches, static fn (AtprotoPublication $a, AtprotoPublication $b): int => $a->accountDid <=> $b->accountDid);
+		return array_values($matches);
 	}
 
 	public function insert(AtprotoPublication $publication): void
 	{
-		$key = $this->key($publication->localUserId, $publication->postId);
+		$key = $this->key($publication->localUserId, $publication->postId, $publication->accountDid);
 		if (isset($this->publications[$key])) {
 			throw new DatabaseException('The AT Protocol publication already exists.');
 		}
 
 		foreach ($this->publications as $stored) {
-			if ($stored->localUserId === $publication->localUserId && $stored->rkey === $publication->rkey) {
+			if ($stored->accountDid === $publication->accountDid && $stored->rkey === $publication->rkey) {
 				throw new DatabaseException('The AT Protocol record key is already used by this account.');
 			}
 		}
@@ -44,7 +53,7 @@ final class InMemoryAtprotoPublicationRepository implements AtprotoPublicationRe
 
 	public function update(AtprotoPublication $publication): void
 	{
-		$key = $this->key($publication->localUserId, $publication->postId);
+		$key = $this->key($publication->localUserId, $publication->postId, $publication->accountDid);
 		if (!isset($this->publications[$key])) {
 			throw new DatabaseException('The AT Protocol publication does not exist.');
 		}
@@ -52,9 +61,11 @@ final class InMemoryAtprotoPublicationRepository implements AtprotoPublicationRe
 		$this->publications[$key] = $publication;
 	}
 
-	public function removeForPost(string $localUserId, string $postId): bool
+	public function removeForPost(string $localUserId, string $postId, ?string $accountDid = null): bool
 	{
-		$key = $this->key($localUserId, $postId);
+		if ($accountDid === null) { $accountDid = $this->findForPost($localUserId, $postId)?->accountDid; }
+		if ($accountDid === null) { return false; }
+		$key = $this->key($localUserId, $postId, $accountDid);
 		if (!isset($this->publications[$key])) {
 			return false;
 		}
@@ -64,8 +75,8 @@ final class InMemoryAtprotoPublicationRepository implements AtprotoPublicationRe
 		return true;
 	}
 
-	private function key(string $localUserId, string $postId): string
+	private function key(string $localUserId, string $postId, string $accountDid): string
 	{
-		return $localUserId . "\0" . $postId;
+		return implode("\0", [$localUserId, $accountDid, $postId]);
 	}
 }

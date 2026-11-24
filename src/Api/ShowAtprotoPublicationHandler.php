@@ -40,7 +40,8 @@ final class ShowAtprotoPublicationHandler implements Handler
 		$postId = (string) $request->attribute('id', '');
 
 		try {
-			$publication = $this->service->publicationFor($userId, $postId);
+		$accountDid = $request->query['account_did'] ?? null;
+		$publication = $this->service->publicationFor($userId, $postId, is_string($accountDid) ? $accountDid : null);
 		} catch (PostNotFoundException) {
 			throw HttpException::notFound('Post not found.');
 		}

@@ -36,15 +36,17 @@ final class AtprotoPublishHandler implements JobHandler
 		$userId = $job->payload['user_id'] ?? null;
 		$postId = $job->payload['post_id'] ?? null;
 		$update = $job->payload['update'] ?? false;
+		$accountDid = $job->payload['account_did'] ?? null;
 
-		if (!is_string($userId) || $userId === '' || !is_string($postId) || $postId === '' || !is_bool($update)) {
+		if (!is_string($userId) || $userId === '' || !is_string($postId) || $postId === '' || !is_bool($update)
+			|| ($accountDid !== null && (!is_string($accountDid) || preg_match('/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/', $accountDid) !== 1))) {
 			throw new InvalidAtprotoJobPayloadException(
 				'An AT Protocol publication job needs "user_id" and "post_id".',
 			);
 		}
 
 		try {
-			$this->service->publish($userId, $postId, update: $update);
+			$this->service->publish($userId, $postId, update: $update, accountDid: $accountDid);
 		} catch (AtprotoPublishDisabledException
 			| AtprotoNotConfiguredException
 			| AtprotoAccountNotConnectedException

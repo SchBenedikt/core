@@ -88,6 +88,14 @@ final class SchemaUpgrade
 		}
 	}
 
+	public static function columnExists(Connection $connection, string $table, string $column): bool
+	{
+		$table = self::identifier($table);
+		$column = self::identifier($column);
+
+		return in_array($column, self::columns($connection, $table), true);
+	}
+
 	public static function createIndexIfMissing(
 		Connection $connection,
 		string $table,

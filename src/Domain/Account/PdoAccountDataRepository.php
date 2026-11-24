@@ -306,7 +306,7 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		AtprotoPublicationSchema::TABLE => [
 			'export' => 'local_user_id = :user',
 			'delete' => 'local_user_id = :user',
-			'order' => 'local_user_id, post_id',
+			'order' => 'local_user_id, account_did, post_id',
 		],
 		AtprotoFollowSchema::TABLE => [
 			'export' => 'local_user_id = :user',
