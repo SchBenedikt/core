@@ -396,12 +396,41 @@ final class AtprotoInteractionService
 		if ($this->deleter === null) {
 			throw new AtprotoNotConfiguredException();
 		}
-		$account = $this->account($localUserId, $accountDid);
-		$removed = 0;
-		foreach ($this->interactionRecords->forUser($localUserId) as $record) {
-			if ($record->accountDid !== $account->did || ($kind !== null && $record->kind !== $kind)) {
-				continue;
+		$records = array_values(array_filter(
+			$this->interactionRecords->forUser($localUserId),
+			static fn (AtprotoInteractionState $record): bool => ($kind === null || $record->kind === $kind)
+				&& ($accountDid === null || $record->accountDid === $accountDid),
+		));
+		if ($records === []) {
+			return 0;
+		}
+
+		$accounts = [];
+		if ($accountDid !== null) {
+			$account = $this->account($localUserId, $accountDid);
+			$accounts[$account->did] = $account;
+		} elseif ($this->accounts instanceof AtprotoAccountCollectionResolver) {
+			foreach ($this->accounts->resolveAll($localUserId) as $account) {
+				$accounts[$account->did] = $account;
 			}
+		} else {
+			$account = $this->accounts?->resolve($localUserId);
+			if ($account !== null) {
+				$accounts[$account->did] = $account;
+			}
+		}
+
+		// Do not report a complete opt-out while any recorded identity is
+		// disconnected. The host can retain the ledger and show cleanup pending.
+		foreach ($records as $record) {
+			if (!isset($accounts[$record->accountDid])) {
+				throw new AtprotoAccountNotConnectedException();
+			}
+		}
+
+		$removed = 0;
+		foreach ($records as $record) {
+			$account = $accounts[$record->accountDid];
 			$collection = $record->kind === self::KIND_LIKE
 				? AtprotoInteractionRecord::LIKE
 				: AtprotoInteractionRecord::REPOST;

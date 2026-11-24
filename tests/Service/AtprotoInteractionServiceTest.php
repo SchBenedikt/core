@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRecord as AtprotoInteractionState;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
@@ -188,6 +189,42 @@ final class AtprotoInteractionServiceTest extends TestCase
 		$delete = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('app.bsky.feed.repost', $delete['collection']);
 		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', hash('sha256', $target->uri), 'repost'));
+	}
+
+	public function testOptOutRemovesInteractionsFromEveryConnectedIdentity(): void
+	{
+		$first = new AtprotoAccount('did:plc:alice', 'alice.test', 'https://first-pds.example', 'first-token');
+		$second = new AtprotoAccount('did:plc:alice2', 'alice-two.test', 'https://second-pds.example', 'second-token');
+		$service = $this->serviceForAccounts([$first, $second]);
+		foreach ([$first, $second] as $account) {
+			$this->interactionRecords->insert($this->interaction($account->did, 'like', $account->did . '-like'));
+			$this->interactionRecords->insert($this->interaction($account->did, 'repost', $account->did . '-repost'));
+			$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+			$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+		}
+
+		self::assertSame(4, $service->removeAllForUser('alice'));
+		self::assertCount(4, $this->http->requests);
+		self::assertStringContainsString('first-pds.example', $this->http->requests[0]['url']);
+		self::assertStringContainsString('second-pds.example', $this->http->requests[2]['url']);
+		self::assertSame([], $this->interactionRecords->forUser('alice'));
+	}
+
+	public function testOptOutReportsDisconnectedIdentityWithoutPartiallyClearingLedger(): void
+	{
+		$first = new AtprotoAccount('did:plc:alice', 'alice.test', 'https://first-pds.example', 'first-token');
+		$second = new AtprotoAccount('did:plc:alice2', 'alice-two.test', 'https://second-pds.example', 'second-token');
+		$service = $this->serviceForAccounts([$first]);
+		$this->interactionRecords->insert($this->interaction($first->did, 'like', 'alice-like'));
+		$this->interactionRecords->insert($this->interaction($second->did, 'like', 'alice2-like'));
+
+		try {
+			$service->removeAllForUser('alice', AtprotoInteractionState::LIKE);
+			self::fail('Opt-out must report a disconnected identity with outstanding records.');
+		} catch (AtprotoAccountNotConnectedException) {
+			self::assertCount(0, $this->http->requests);
+			self::assertCount(2, $this->interactionRecords->forUser('alice'));
+		}
 	}
 
 	public function testRemoteInteractionRequiresHostTargetPolicy(): void
@@ -513,6 +550,45 @@ final class AtprotoInteractionServiceTest extends TestCase
 				public function __construct(private readonly bool $allow) {}
 				public function allows(string $localUserId, AtprotoPostProjection $target): bool { return $this->allow; }
 			},
+		);
+	}
+
+	/** @param list<AtprotoAccount> $accounts */
+	private function serviceForAccounts(array $accounts): AtprotoInteractionService
+	{
+		$resolver = new class($accounts) implements AtprotoAccountCollectionResolver {
+			/** @param list<AtprotoAccount> $accounts */
+			public function __construct(private readonly array $accounts) {}
+			public function resolve(string $localUserId): ?AtprotoAccount { return $this->accounts[0] ?? null; }
+			public function resolveAll(string $localUserId): array { return $this->accounts; }
+		};
+		$publisher = new XrpcAtprotoPublisher($this->http);
+
+		return new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			$resolver,
+			$publisher,
+			null,
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			$publisher,
+			null,
+			null,
+			$this->interactionRecords,
+		);
+	}
+
+	private function interaction(string $accountDid, string $kind, string $rkey): AtprotoInteractionState
+	{
+		return new AtprotoInteractionState(
+			'alice',
+			$accountDid,
+			hash('sha256', self::POST_URI),
+			$kind,
+			$rkey,
+			'at://' . $accountDid . '/app.bsky.feed.' . ($kind === 'like' ? 'like' : 'repost') . '/' . $rkey,
+			Time::parse('2026-11-11T10:00:00Z'),
 		);
 	}
 
