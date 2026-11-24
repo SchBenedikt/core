@@ -232,6 +232,8 @@ and fails when `docs/reference/configuration.md` does not name it.
 
 ### Fixed
 
+- Attachment cleanup now removes metadata only when no local or remote post
+  references it, preserving shared blobs during failed-import cleanup.
 - Media-only posts are now accepted on the local and Mastodon write routes.
   An empty body is still refused when the post has neither an attachment nor a
   poll, and an edit cannot remove the last attachment while leaving the text
