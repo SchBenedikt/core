@@ -1052,6 +1052,10 @@ final class NativePdsService
 		if (!$replace && $existing !== null) {
 			throw PdsError::recordExists();
 		}
+		$swapRecord = $input['swapRecord'] ?? null;
+		if ($swapRecord !== null && (!is_string($swapRecord) || $existing === null || $existing->cid->toString() !== $swapRecord)) {
+			throw PdsError::invalidSwap();
+		}
 
 		if ($existing === null && count($this->repository->records($identity->did)) >= self::MAX_RECORDS) {
 			throw PdsError::invalid('The repository has reached the local record limit.');

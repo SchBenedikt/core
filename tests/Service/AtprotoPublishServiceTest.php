@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -249,10 +250,31 @@ final class AtprotoPublishServiceTest extends TestCase
 
 		$write = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('post1', $write['rkey']);
+		self::assertSame('bafy-old', $write['swapRecord'] ?? null);
 		self::assertSame('edited public text', $write['record']['text']);
 		self::assertNotSame($publication, $result);
 		self::assertSame('bafy-record', $result->cid);
 		self::assertSame($result, $this->publications->findForPost('alice', $post->id));
+	}
+
+	public function testStalePublishedCidRefusesEditAndKeepsThePreviousMapping(): void
+	{
+		$post = $this->post(content: 'edited public text');
+		$this->posts->insert($post);
+		$publication = new AtprotoPublication('alice', $post->id, 'post1', self::URI, Time::parse('2026-11-11T09:00:00Z'), cid: 'bafy-old');
+		$this->publications->insert($publication);
+		$this->http->queueResponse(new HttpResponse(400, [], '{"error":"InvalidSwap"}'));
+
+		try {
+			$this->serviceWith()->publish('alice', $post->id, update: true);
+			self::fail('A stale remote revision must not be overwritten.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(400, $exception->status);
+		}
+
+		$write = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('bafy-old', $write['swapRecord'] ?? null);
+		self::assertSame($publication, $this->publications->findForPost('alice', $post->id));
 	}
 
 	public function testUpdateJobDoesNotCreateANewPublicationWhenTheOriginalRowIsGone(): void

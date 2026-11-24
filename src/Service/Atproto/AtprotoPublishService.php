@@ -285,7 +285,7 @@ final class AtprotoPublishService
 		$publisher = $this->publisher;
 		$record = $this->record($post, $account, $media);
 		$publishedRecord = $publisher instanceof AtprotoRecordPublisher
-			? $publisher->publishRecord($account, $rkey, $record)
+			? $publisher->publishRecord($account, $rkey, $record, swapRecord: $existing?->cid)
 			: null;
 		$uri = $publishedRecord?->uri ?? $publisher?->publish($account, $rkey, $record);
 		$cid = $publishedRecord?->cid ?? $existing?->cid;

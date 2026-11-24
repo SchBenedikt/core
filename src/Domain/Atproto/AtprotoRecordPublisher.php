@@ -21,5 +21,6 @@ interface AtprotoRecordPublisher extends AtprotoPublisher
 		string $rkey,
 		array $record,
 		string $collection = AtprotoPostRecord::COLLECTION,
+		?string $swapRecord = null,
 	): AtprotoPublishedRecord;
 }

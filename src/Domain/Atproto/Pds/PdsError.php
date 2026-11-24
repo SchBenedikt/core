@@ -52,6 +52,11 @@ final class PdsError extends RuntimeException
 		return new self(400, 'RecordAlreadyExists', 'A record with that collection and rkey already exists.');
 	}
 
+	public static function invalidSwap(): self
+	{
+		return new self(400, 'InvalidSwap', 'The record has changed since it was read.');
+	}
+
 	public static function forbidden(string $message = 'The authenticated account does not own this repository.'): self
 	{
 		return new self(403, 'Forbidden', $message);

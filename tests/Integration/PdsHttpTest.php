@@ -356,11 +356,26 @@ final class PdsHttpTest extends TestCase
 		], 'alice');
 		self::assertSame(200, $first['status'], $first['body']);
 		$firstCid = $first['json']['cid'] ?? null;
+		$stale = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+			'swapRecord' => 'bafyreistale',
+			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'must not overwrite'],
+		], 'alice');
+		self::assertSame(400, $stale['status']);
+		self::assertSame('InvalidSwap', $stale['json']['error'] ?? null);
+		self::assertSame($firstCid, $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		]))['json']['cid'] ?? null);
 
 		$replaced = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.putRecord', [
 			'repo' => $did,
 			'collection' => 'app.bsky.feed.post',
 			'rkey' => 'fixed',
+			'swapRecord' => $firstCid,
 			'record' => ['$type' => 'app.bsky.feed.post', 'text' => 'replaced'],
 		], 'alice');
 		self::assertSame(200, $replaced['status'], $replaced['body']);
