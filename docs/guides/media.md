@@ -391,9 +391,10 @@ private fetch endpoint is exposed.
 
 ## Open point
 
-The local filesystem path is complete. An object-storage adapter (for example
-S3) is a host/deployment choice and is not implemented or claimed here; any
-such adapter has to pass the existing `BlobStoreTestCase`. A host that wraps
-its own HTTP client must also implement `BoundedHttpClient` (a body cap and
-validated-address pinning) before remote media is enabled; otherwise the safe
-fallback is to leave `media.remote_fetch` disabled.
+The local filesystem path is complete. Core also provides an optional
+S3-compatible `BlobStore`; the host supplies its network client, credentials,
+endpoint and bucket configuration. The standalone host supports this adapter
+and keeps local storage as its default. A host that wraps its own HTTP client
+must also implement `BoundedHttpClient` (a body cap and validated-address
+pinning) before remote media is enabled; otherwise the safe fallback is to
+leave `media.remote_fetch` disabled.

@@ -34,15 +34,17 @@ return the same keys.
 | --- | --- |
 | `LocalBlobStore` | a directory root; creates parents, writes atomically via a temp file and rename |
 | `InMemoryBlobStore` | tests, the demo and tools; same rules, no disk |
+| `S3BlobStore` | host-injected S3-compatible client; validates prefixed keys, bounds transfers and paginates listings |
 
-Both pass `BlobStoreTestCase`. A bucket-backed store is planned; it must pass
-the same case and keep the same key rules.
+All three pass the shared `BlobStoreTestCase`; the S3 adapter also has tests for
+prefix isolation, streaming, transfer bounds, encryption arguments and paginated
+listing. Hosts must test their concrete S3 client against the service they deploy.
 
 ## What the core does not do
 
 - no quota accounting: the host owns its limits;
-- no object-storage adapter: the local and in-memory stores are complete, an
-  S3-compatible adapter is a future host choice and must pass the same case;
+- no S3 network client or credentials: the host configures and injects an
+  `S3CompatibleClient`; Core never reads endpoint, region or secrets itself;
 - no automatic media sweeper. Image validation, thumbnails and the public
   media route live in `MediaService`, not in the store; see
   [media](media.md) for its layout and orphan cleanup.

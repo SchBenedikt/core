@@ -774,7 +774,7 @@ the job; the core does not start a timer. See
 | --- | --- | --- | --- |
 | `Clock` | `now()` | `FrozenClock` | `SystemClock` |
 | `Config` | get/set/delete/has/all, typed getters | `ArrayConfig` | YAML + env + DB |
-| `BlobStore` | put/read/exists/delete/size/list | `InMemoryBlobStore` | `LocalBlobStore`, S3 later |
+| `BlobStore` | put/read/exists/delete/size/list | `InMemoryBlobStore` | `LocalBlobStore`, `S3BlobStore` over a host-injected client |
 | `ImageProcessor` | `thumbnail()` | `GdImageProcessor` (local) | host replacement such as ImageMagick |
 | `Db\Connection` | execute/fetch/transaction/driver | — | `PdoConnection` |
 | `Http\HttpClient` | `request()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
@@ -935,7 +935,7 @@ and acceptance checks are in the
 | Host route parity test | each host compares its registered routes with `bin/export-routes`; required before a cutover (M3) |
 | Nextcloud adapter | in `AlohaSocial/social`, implementing `src/Platform`; the concrete mapping is in [the Nextcloud guide](guides/nextcloud-host.md) |
 | Nextcloud data import | the `social` host, following the [migration guide](guides/migration-from-nextcloud.md) |
-| object-storage adapter | host choice behind `BlobStore`; the core ships the in-memory and local adapters, an S3 adapter is Later (M7) |
+| object-storage adapter | host choice behind `BlobStore`; Core ships `S3BlobStore`, while each host supplies and configures its S3 client |
 
 ## Testing strategy
 
