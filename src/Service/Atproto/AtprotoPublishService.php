@@ -99,13 +99,15 @@ final class AtprotoPublishService
 			return;
 		}
 
-		if ($this->accounts?->resolve($post->authorId) === null) {
+		$account = $this->accounts?->resolve($post->authorId);
+		if ($account === null) {
 			return;
 		}
 
 		$this->queue->push(JobType::ATPROTO_PUBLISH, [
 			'user_id' => $post->authorId,
 			'post_id' => $post->id,
+			'account_did' => $account->did,
 		], subject: JobSubject::account($post->authorId));
 	}
 
