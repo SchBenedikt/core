@@ -41,8 +41,9 @@ use function trim;
  *
  * The bytes are validated and decoded before either blob is written. The
  * original is stored untouched; the thumbnail is a separate object. A failure
- * at any later step removes both blobs and leaves no metadata row, so a
- * client never gets a half-created attachment.
+ * at any later step removes both blobs (with durable retries for transient
+ * storage errors) and leaves no metadata row, so a client never gets a
+ * half-created attachment.
  */
 final class MediaService implements AttachmentPresenter
 {
@@ -70,6 +71,7 @@ final class MediaService implements AttachmentPresenter
 		private readonly ?MediaProbe $probe = null,
 		private readonly ?MediaTranscoder $transcoder = null,
 		private readonly ?MediaMetadataStripper $stripper = null,
+		private readonly ?MediaBlobDeletion $blobDeletion = null,
 	) {
 	}
 
@@ -628,6 +630,10 @@ final class MediaService implements AttachmentPresenter
 	private function cleanup(string $key): void
 	{
 		if ($key === '') {
+			return;
+		}
+		if ($this->blobDeletion !== null) {
+			$this->blobDeletion->delete($key);
 			return;
 		}
 

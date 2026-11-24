@@ -406,6 +406,8 @@ use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoRecordResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoTimelineReader;
 use AlohaSocial\Core\Service\Account\AccountDataService;
 use AlohaSocial\Core\Service\Account\AccountErasureBlobRetryHandler;
+use AlohaSocial\Core\Service\MediaBlobDeleteHandler;
+use AlohaSocial\Core\Service\MediaBlobDeletion;
 use AlohaSocial\Core\Service\AccountListService;
 use AlohaSocial\Core\Service\Atproto\AtprotoDeleteHandler;
 use AlohaSocial\Core\Service\Atproto\AtprotoInteractionService;
@@ -1106,6 +1108,7 @@ final readonly class Application
 		$moderationPolicy = new StoredModerationPolicy($moderationActions);
 		// Built before the activity factory: a note serializes its media, so
 		// delivery and the outbox use the very same attachment urls.
+		$mediaBlobDeletion = $blobStore === null ? null : new MediaBlobDeletion($blobStore, $queue, $logger);
 		$mediaService = $blobStore === null
 			? null
 			: new MediaService(
@@ -1119,6 +1122,7 @@ final readonly class Application
 				remotePosts: $remotePosts,
 				probe: $mediaProbe,
 				transcoder: $mediaTranscoder,
+				blobDeletion: $mediaBlobDeletion,
 			);
 		$activities = new ActivityFactory($config, $mediaService);
 		$accountData = $accountDataRepository === null || $blobStore === null
@@ -1131,6 +1135,7 @@ final readonly class Application
 			$blobStore,
 			$clock,
 			$logger,
+			$mediaBlobDeletion,
 		);
 		$notificationRelationships ??= new RepositoryNotificationRelationships(
 			$followers,
@@ -1807,6 +1812,12 @@ final readonly class Application
 			$jobHandlers = $jobHandlers->with(
 				JobType::ACCOUNT_ERASURE_BLOB_RETRY,
 				new AccountErasureBlobRetryHandler($accountData),
+			);
+		}
+		if ($blobStore !== null) {
+			$jobHandlers = $jobHandlers->with(
+				JobType::MEDIA_BLOB_DELETE,
+				new MediaBlobDeleteHandler($blobStore),
 			);
 		}
 		$jobHandlers = $jobHandlers

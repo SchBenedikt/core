@@ -39,6 +39,9 @@ final class JobType
 
 	public const CLEANUP = 'cleanup';
 
+	/** Retries deletion of an unreferenced media object after a storage error. */
+	public const MEDIA_BLOB_DELETE = 'media.blob.delete';
+
 	/**
 	 * Continues one bounded batch of an accepted account move. The payload
 	 * carries only the durable event id; progress lives on the move row.

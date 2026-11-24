@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Storage\BlobStore;
+use AlohaSocial\Core\Service\MediaBlobDeletion;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Psr\Log\LoggerInterface;
@@ -38,6 +39,7 @@ final class CleanupService
 		private readonly ?BlobStore $blobs,
 		private readonly Clock $clock,
 		private readonly LoggerInterface $logger = new NullLogger(),
+		private readonly ?MediaBlobDeletion $blobDeletion = null,
 	) {
 	}
 
@@ -164,12 +166,17 @@ final class CleanupService
 	private function deleteBlob(Attachment $attachment): void
 	{
 		foreach ([$attachment->storageKey, $attachment->thumbnailKey] as $path) {
+			if ($this->blobDeletion !== null) {
+				$this->blobDeletion->delete($path);
+				continue;
+			}
+
 			try {
 				$this->blobs?->delete($path);
 			} catch (Throwable $exception) {
 				// The metadata row is already gone. A missing object is not an
-				// error; a transport/backend failure leaves an orphan blob for
-				// the host's storage sweep, but must not retry a deleted row.
+				// error; a transport/backend failure is queued for retry when the
+				// host provides the shared media deletion service.
 				$this->logger->warning('Cleanup could not delete an attachment blob.', [
 					'attachment_id' => $attachment->id,
 					'path' => $path,
