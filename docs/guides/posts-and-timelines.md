@@ -133,6 +133,9 @@ the second. Unlisted posts stay in the author's own and home timelines.
 `GET /api/v1/timelines/public` returns local `public` posts, newest first, with
 the id as the tie-break. Unlisted posts are deliberately absent and remote
 posts are not copied into the public timeline.
+The response includes `has_more`, `next_before` and `next_before_id`; use both
+cursor values to continue. Reader filters can hide rows while scanning, so a
+short or empty page may still provide a continuation cursor.
 
 `GET /api/v1/timelines/tag/{tag}` returns the same `public` posts whose content
 carries that exact hashtag. Tags are extracted when a post is stored,
@@ -150,7 +153,8 @@ cursor, and an account may follow at most 100 tags. `GET
 /api/v1/timelines/followed_tags` then returns `public` posts carrying any
 followed tag, using the same `limit` and `before` cursor as the
 public tag timeline. A post with two followed tags is one entry, not two; the
-response repeats the followed tag list next to `posts`.
+response repeats the followed tag list next to `posts` and includes the same
+page metadata.
 
 `GET /api/v1/timelines/home` is the combined repository page: the caller's own
 local posts and boosts plus live remote posts/boosts from followed remote

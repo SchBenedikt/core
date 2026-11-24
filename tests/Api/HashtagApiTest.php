@@ -95,6 +95,35 @@ final class HashtagApiTest extends TestCase
 		self::assertSame('invalid_cursor', $invalidCursor->decodedBody()['error']['code']);
 	}
 
+	public function testPageResponseProvidesTheCursorForTheNextVisiblePost(): void
+	{
+		$oldest = $this->post('#devops oldest');
+		$middle = $this->post('#devops middle');
+		$newest = $this->post('#devops newest');
+
+		$first = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops', ['limit' => '1']))->decodedBody();
+		self::assertSame([$newest], array_column($first['posts'], 'id'));
+		self::assertTrue($first['has_more']);
+		self::assertSame($newest, $first['next_before_id']);
+
+		$second = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops', [
+			'limit' => '1',
+			'before' => $first['next_before'],
+			'before_id' => $first['next_before_id'],
+		]))->decodedBody();
+		self::assertSame([$middle], array_column($second['posts'], 'id'));
+		self::assertTrue($second['has_more']);
+
+		$third = $this->app->handle(new Request('GET', '/api/v1/timelines/tag/devops', [
+			'limit' => '1',
+			'before' => $second['next_before'],
+			'before_id' => $second['next_before_id'],
+		]))->decodedBody();
+		self::assertSame([$oldest], array_column($third['posts'], 'id'));
+		self::assertFalse($third['has_more']);
+		self::assertNull($third['next_before']);
+	}
+
 	private function post(
 		string $content,
 		string $visibility = 'public',

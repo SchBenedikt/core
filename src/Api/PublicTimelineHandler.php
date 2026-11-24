@@ -41,10 +41,11 @@ final class PublicTimelineHandler implements Handler
 	public function handle(Request $request): Response
 	{
 		$limit = $request->queryInt('limit', TimelineService::DEFAULT_LIMIT, 1, TimelineService::MAX_LIMIT);
+		$fetchLimit = min(TimelineService::MAX_LIMIT, $limit * 2);
 
 		try {
 			$posts = $this->timelines->public(
-				min(TimelineService::MAX_LIMIT, $limit * 2),
+				$fetchLimit,
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
 				hideReplies: $request->userId !== null,
@@ -58,20 +59,16 @@ final class PublicTimelineHandler implements Handler
 				? array_map(static fn ($post): array => $post->toArray(), $posts)
 				: $this->media->presentPosts($posts);
 
-			return Response::json(['posts' => array_slice($presented, 0, $limit)]);
+			return PostTimelinePage::response($posts, $presented, $limit, $fetchLimit);
 		}
 
-		return Response::json([
-			'posts' => array_slice(
-				$this->presenter->present(
-					$request->userId,
-					FilterContext::Public,
-					$posts,
-					FilterRequestParser::includeFiltered($request),
-				),
-				0,
-				$limit,
-			),
-		]);
+		$presented = $this->presenter->present(
+			$request->userId,
+			FilterContext::Public,
+			$posts,
+			FilterRequestParser::includeFiltered($request),
+		);
+
+		return PostTimelinePage::response($posts, $presented, $limit, $fetchLimit);
 	}
 }

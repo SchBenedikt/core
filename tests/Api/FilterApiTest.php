@@ -212,6 +212,30 @@ final class FilterApiTest extends TestCase
 		self::assertNotContains($hidden, $this->postIds($this->request('GET', '/api/v1/timelines/tag/tag')));
 	}
 
+	public function testPublicTimelineCursorContinuesAfterFilteredRows(): void
+	{
+		$visible = $this->createPost('ordinary public post');
+		$this->clock->advance(60);
+		$this->createPost('secret middle post');
+		$this->clock->advance(60);
+		$this->createPost('secret newest post');
+		$this->createFilter('hide', ['public'], 'secret');
+
+		$first = $this->request('GET', '/api/v1/timelines/public', [], 'alice', [], ['limit' => '1'])->decodedBody();
+		self::assertSame([], $first['posts']);
+		self::assertTrue($first['has_more']);
+		self::assertIsString($first['next_before']);
+		self::assertIsString($first['next_before_id']);
+
+		$second = $this->request('GET', '/api/v1/timelines/public', [], 'alice', [], [
+			'limit' => '1',
+			'before' => $first['next_before'],
+			'before_id' => $first['next_before_id'],
+		])->decodedBody();
+		self::assertSame([$visible], array_column($second['posts'], 'id'));
+		self::assertFalse($second['has_more']);
+	}
+
 	public function testTheMastodonV2ShapeAndLifecycle(): void
 	{
 		$created = $this->request('POST', '/api/mastodon/v1/filters', [

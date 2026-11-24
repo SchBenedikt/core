@@ -53,11 +53,12 @@ final class FollowedHashtagTimelineHandler implements Handler
 
 		$tags = $this->followedTags->tags($userId);
 		$limit = $request->queryInt('limit', TimelineService::DEFAULT_LIMIT, 1, TimelineService::MAX_LIMIT);
+		$fetchLimit = min(TimelineService::MAX_LIMIT, $limit * 2);
 
 		try {
 			$posts = $this->timelines->followedTags(
 				$tags,
-				min(TimelineService::MAX_LIMIT, $limit * 2),
+				$fetchLimit,
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
 				hideReplies: true,
@@ -77,9 +78,8 @@ final class FollowedHashtagTimelineHandler implements Handler
 				FilterRequestParser::includeFiltered($request),
 			);
 
-		return Response::json([
+		return PostTimelinePage::response($posts, $presented, $limit, $fetchLimit, [
 			'tags' => $tags,
-			'posts' => array_slice($presented, 0, $limit),
 		]);
 	}
 }

@@ -73,6 +73,29 @@ final class PublicDiscoveryTest extends TestCase
 		self::assertSame([$this->public], array_column($response->decodedBody()['posts'], 'id'));
 	}
 
+	public function testPublicTimelinePageIncludesAnExclusiveContinuationCursor(): void
+	{
+		$older = $this->post('public older', 'public');
+		$middle = $this->post('public middle', 'public');
+		$newest = $this->post('public newest', 'public');
+		$expected = [$this->public, $older, $middle, $newest];
+		sort($expected, SORT_STRING);
+		$expected = array_reverse($expected);
+
+		$first = $this->app->handle(new Request('GET', '/api/v1/timelines/public', ['limit' => '1']))->decodedBody();
+		self::assertSame([$expected[0]], array_column($first['posts'], 'id'));
+		self::assertTrue($first['has_more']);
+		self::assertSame($expected[0], $first['next_before_id']);
+
+		$second = $this->app->handle(new Request('GET', '/api/v1/timelines/public', [
+			'limit' => '1',
+			'before' => $first['next_before'],
+			'before_id' => $first['next_before_id'],
+		]))->decodedBody();
+		self::assertCount(1, $second['posts']);
+		self::assertSame([$expected[1]], array_column($second['posts'], 'id'));
+	}
+
 	public function testSignedInPublicFeedsHideRepliesAndAnonymousReadersCanStillSeeThem(): void
 	{
 		$root = $this->post('root #devops', 'public');
