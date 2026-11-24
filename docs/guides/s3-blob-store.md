@@ -33,6 +33,11 @@ must keep objects private and clean up multipart uploads when a write fails.
 Upload encryption is optional `AES256` or `aws:kms`; a KMS key id is accepted
 only with `aws:kms`.
 
+Attachment cleanup removes a metadata row only when neither a local nor a
+remote post still references it. Blob deletion happens after that conditional
+row removal succeeds, so a failed-import cleanup cannot break media already
+used by a post.
+
 `S3BlobStore` also implements `StreamingBlobStore`. Its stream methods avoid
 buffering the full object in Core and pass a maximum response size to the
 injected client. The host client must honor that bound while streaming. The

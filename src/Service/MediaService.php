@@ -263,7 +263,8 @@ final class MediaService implements AttachmentPresenter
 	 */
 	public function isAttachedToPost(Attachment $attachment): bool
 	{
-		return $this->posts->isAttachmentLinked($attachment->id);
+		return $this->posts->isAttachmentLinked($attachment->id)
+			|| ($this->remotePosts?->isAttachmentLinked($attachment->id) ?? false);
 	}
 
 	/**
@@ -313,12 +314,16 @@ final class MediaService implements AttachmentPresenter
 	}
 
 	/**
-	 * Removes an attachment row and both local blobs. Used when a remote post
-	 * cannot be linked after its media was imported.
+	 * Removes an unattached metadata row and its blobs. The conditional delete
+	 * checks local and remote post links atomically so a failed import cleanup
+	 * cannot remove bytes that another durable post has started using.
 	 */
 	public function discard(Attachment $attachment): void
 	{
-		$this->attachments->delete($attachment->id);
+		if (!$this->attachments->deleteIfUnattached($attachment->id)) {
+			return;
+		}
+
 		$this->cleanup($attachment->storageKey);
 		$this->cleanup($attachment->thumbnailKey);
 	}
