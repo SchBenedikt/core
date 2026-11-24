@@ -250,6 +250,15 @@ while (true) {
 				continue;
 			}
 
+			$enabled = filter_var(getenv('PDS_FIREHOSE_ENABLED') ?: 'true', FILTER_VALIDATE_BOOL);
+			if (!$enabled) {
+				firehose_reject($client, 503, 'The native PDS firehose is disabled.');
+				@fclose($stream);
+				unset($clients[$id]);
+
+				continue;
+			}
+
 			$key = $headers['sec-websocket-key'] ?? '';
 			if ($key === ''
 				|| strtolower($headers['upgrade'] ?? '') !== 'websocket'
