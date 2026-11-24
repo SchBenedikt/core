@@ -598,13 +598,19 @@ GET /api/v1/timelines/direct?limit=20&before=2026-11-11T10:00:00Z&before_id=post
 {"posts": [ … ], "has_more": false, "next_before": null, "next_before_id": null}
 ```
 
+Public, tag and followed-tag timeline responses return `posts`, `has_more`,
+`next_before` and `next_before_id`. Continue with both `next_before` values; a
+page can contain fewer than `limit` visible posts when reader filters hide
+entries and still have more results. The cursor advances past scanned hidden
+entries without skipping visible posts.
+
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. Pass
 `before_id` with it to break ties between posts published in the same second.
 A cursor that is not a canonical timestamp, or an ID without a timestamp, is
 `400 invalid_cursor`. `GET
 /api/v1/timelines/tag/{tag}` uses the same limit and cursor rules, normalizes
 the tag by stripping one leading `#` and lowercasing it, and returns
-`{"tag": "devops", "posts": […]}`. Tags are extracted from post content when
+the normalized tag alongside the same page metadata. Tags are extracted from post content when
 the post is stored; matching is exact, so `#devops` does not match `#devops_extra`.
 Only `public` posts appear; unlisted posts are readable by link but never
 listed. A tag that is empty or contains anything
@@ -645,8 +651,8 @@ defaults to 20 and is clamped to 1–40, `before` is the exclusive `created_at`
 and `before_tag` breaks an equal-timestamp tie. An account may follow at most
 100 tags; the next new follow is `400 followed_tag_limit`.
 
-`GET /api/v1/timelines/followed_tags` returns
-`{"tags": ["devops", …], "posts": […]}` for every `public` post
+`GET /api/v1/timelines/followed_tags` returns the tags and page metadata
+alongside every `public` post
 carrying any followed tag. It uses the same `limit` (1–40) and exclusive
 `before` timestamp cursor as the public tag timeline, and a post carrying two
 followed tags appears once. Followers-only, direct and deleted posts never

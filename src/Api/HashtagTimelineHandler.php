@@ -45,11 +45,12 @@ final class HashtagTimelineHandler implements Handler
 	{
 		$rawTag = (string) $request->attribute('tag', '');
 		$limit = $request->queryInt('limit', TimelineService::DEFAULT_LIMIT, 1, TimelineService::MAX_LIMIT);
+		$fetchLimit = min(TimelineService::MAX_LIMIT, $limit * 2);
 
 		try {
 			$posts = $this->timelines->tag(
 				$rawTag,
-				min(TimelineService::MAX_LIMIT, $limit * 2),
+				$fetchLimit,
 				$request->queryParam('before'),
 				$request->queryParam('before_id'),
 				hideReplies: $request->userId !== null,
@@ -73,9 +74,8 @@ final class HashtagTimelineHandler implements Handler
 			);
 		}
 
-		return Response::json([
+		return PostTimelinePage::response($posts, $presented, $limit, $fetchLimit, [
 			'tag' => Hashtags::normalize($rawTag) ?? '',
-			'posts' => array_slice($presented, 0, $limit),
 		]);
 	}
 }
