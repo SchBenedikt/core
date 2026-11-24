@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-24
+
 ### Added
 
 - **Authenticated Mastodon home timeline:** `GET /api/mastodon/v1/timelines/home`
