@@ -77,18 +77,17 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 
 /**
- * The local, disabled-by-default Mastodon compatibility surface.
+ * The disabled-by-default Mastodon compatibility surface.
  *
  * It reuses the existing post service for writes and the existing repositories
  * for reads. There is no second status table: a Mastodon status is a core
- * post with an API-shaped projection. Remote posts, remote boosts and
- * streaming are intentionally outside this local slice. Remote poll reads
- * and votes use the federation Question lifecycle and require an accepted
- * follow because stored Questions do not retain their original audience.
- * Favourites, local
- * boosts, local follow edges and notifications are local bookkeeping; outgoing
- * remote follows use the shared federation lifecycle. Notifications
- * are recorded from local favourites/follows/replies/boosts and verified
+ * post with an API-shaped projection. Streaming is intentionally outside this
+ * slice. Remote follows and reactions to cached remote posts use the shared
+ * federation lifecycle, and remote poll reads/votes require an accepted follow
+ * because stored Questions do not retain their original audience.
+ * Local favourites, boosts, follow edges and notifications use the shared
+ * repositories; outgoing remote follows use the shared federation lifecycle.
+ * Notifications are recorded from local favourites/follows/replies/boosts and verified
  * inbound Follows, and read from the notification repository without a second
  * account or post model.
  */
