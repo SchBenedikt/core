@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
@@ -93,6 +94,50 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 		self::assertSame($uri, $this->service->like('alice', 'post-1'));
 		self::assertCount(2, $this->http->requests, 'A retry must return the stored record without a second PDS write.');
+	}
+
+	public function testSelectedIdentityGetsItsOwnIdempotentInteractionRecord(): void
+	{
+		$this->publishedPost();
+		$first = new AtprotoAccount('did:plc:alice', 'alice.test', 'https://first-pds.example', 'first-token');
+		$second = new AtprotoAccount('did:plc:alice2', 'alice-two.test', 'https://second-pds.example', 'second-token');
+		$resolver = new class($first, $second) implements AtprotoAccountCollectionResolver {
+			/** @param list<AtprotoAccount> $accounts */
+			public function __construct(private readonly AtprotoAccount $first, private readonly AtprotoAccount $second) {}
+			public function resolve(string $localUserId): ?AtprotoAccount { return $this->first; }
+			public function resolveAll(string $localUserId): array { return [$this->first, $this->second]; }
+		};
+		$publisher = new XrpcAtprotoPublisher($this->http);
+		$service = new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			$resolver,
+			$publisher,
+			new XrpcAtprotoRecordResolver($this->http),
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			$publisher,
+			$this->blocks,
+			$this->activities(),
+			$this->interactionRecords,
+		);
+		$this->http->queueResponse($this->subjectRecord());
+		$this->http->queueResponseFactory($this->publishedRecord());
+		$firstUri = $service->like('alice', 'post-1', $first->did);
+		$this->http->queueResponse($this->subjectRecord());
+		$this->http->queueResponseFactory($this->publishedRecord());
+		$secondUri = $service->like('alice', 'post-1', $second->did);
+
+		self::assertNotSame($firstUri, $secondUri);
+		self::assertStringStartsWith('https://first-pds.example/', $this->http->requests[1]['url']);
+		self::assertStringStartsWith('https://second-pds.example/', $this->http->requests[3]['url']);
+		self::assertSame($firstUri, $this->interactionRecords->find('alice', $first->did, 'post-1', 'like')?->uri);
+		self::assertSame($secondUri, $this->interactionRecords->find('alice', $second->did, 'post-1', 'like')?->uri);
+		self::assertSame($firstUri, $service->like('alice', 'post-1', $first->did));
+		self::assertCount(4, $this->http->requests, 'Retrying a selected identity reuses its ledger record.');
+
+		$this->expectException(AtprotoAccountNotConnectedException::class);
+		$service->like('alice', 'post-1', 'did:plc:unlinked');
 	}
 
 	public function testRemoteLikeUsesProjectionStrongRefAndIsIdempotent(): void

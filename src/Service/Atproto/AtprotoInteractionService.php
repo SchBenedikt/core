@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Atproto;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoAccountCollectionResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoIdentifiers;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
@@ -87,17 +88,17 @@ final class AtprotoInteractionService
 	 * @throws PostNotFoundException
 	 * @throws \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException
 	 */
-	public function like(string $localUserId, string $postId): string
+	public function like(string $localUserId, string $postId, ?string $accountDid = null): string
 	{
-		return $this->write(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $postId);
+		return $this->write(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $postId, $accountDid);
 	}
 
 	/**
 	 * @throws PostNotFoundException
 	 */
-	public function unlike(string $localUserId, string $postId): void
+	public function unlike(string $localUserId, string $postId, ?string $accountDid = null): void
 	{
-		$this->remove(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $postId);
+		$this->remove(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $postId, $accountDid);
 	}
 
 	/**
@@ -108,17 +109,17 @@ final class AtprotoInteractionService
 	 * @throws PostNotFoundException
 	 * @throws \AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException
 	 */
-	public function repost(string $localUserId, string $postId): string
+	public function repost(string $localUserId, string $postId, ?string $accountDid = null): string
 	{
-		return $this->write(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postId);
+		return $this->write(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postId, $accountDid);
 	}
 
 	/**
 	 * @throws PostNotFoundException
 	 */
-	public function undoRepost(string $localUserId, string $postId): void
+	public function undoRepost(string $localUserId, string $postId, ?string $accountDid = null): void
 	{
-		$this->remove(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postId);
+		$this->remove(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postId, $accountDid);
 	}
 
 	/**
@@ -128,25 +129,25 @@ final class AtprotoInteractionService
 	 * a target policy that rechecks account visibility and local blocks. This
 	 * method has no side effects on the host's local reaction counters.
 	 */
-	public function likeRemote(string $localUserId, AtprotoPostProjection $target): string
+	public function likeRemote(string $localUserId, AtprotoPostProjection $target, ?string $accountDid = null): string
 	{
-		return $this->writeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target);
+		return $this->writeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target, $accountDid);
 	}
 
-	public function repostRemote(string $localUserId, AtprotoPostProjection $target): string
+	public function repostRemote(string $localUserId, AtprotoPostProjection $target, ?string $accountDid = null): string
 	{
-		return $this->writeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target);
+		return $this->writeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target, $accountDid);
 	}
 
 	/** Removing an interaction stays available after the target is blocked or deleted. */
-	public function unlikeRemote(string $localUserId, AtprotoPostProjection $target): void
+	public function unlikeRemote(string $localUserId, AtprotoPostProjection $target, ?string $accountDid = null): void
 	{
-		$this->removeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target);
+		$this->removeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target, $accountDid);
 	}
 
-	public function undoRemoteRepost(string $localUserId, AtprotoPostProjection $target): void
+	public function undoRemoteRepost(string $localUserId, AtprotoPostProjection $target, ?string $accountDid = null): void
 	{
-		$this->removeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target);
+		$this->removeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target, $accountDid);
 	}
 
 	private function writeRemote(
@@ -154,6 +155,7 @@ final class AtprotoInteractionService
 		string $collection,
 		string $localUserId,
 		AtprotoPostProjection $target,
+		?string $accountDid,
 	): string {
 		$this->assertEnabled();
 		$this->assertRemoteTarget($localUserId, $target);
@@ -161,7 +163,7 @@ final class AtprotoInteractionService
 			throw new AtprotoNotConfiguredException();
 		}
 
-		$account = $this->account($localUserId);
+		$account = $this->account($localUserId, $accountDid);
 		$postId = self::remotePostKey($target);
 		$existing = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
 		if ($existing !== null) {
@@ -181,13 +183,14 @@ final class AtprotoInteractionService
 		string $collection,
 		string $localUserId,
 		AtprotoPostProjection $target,
+		?string $accountDid,
 	): void {
 		if ($this->deleter === null) {
 			throw new AtprotoNotConfiguredException();
 		}
 		$this->assertRemoteRecord($target);
 
-		$account = $this->account($localUserId);
+		$account = $this->account($localUserId, $accountDid);
 		$postId = self::remotePostKey($target);
 		$existing = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
 		$rkey = $existing?->rkey ?? $this->remoteRkey($kind, $localUserId, $target, $account);
@@ -267,7 +270,7 @@ final class AtprotoInteractionService
 		}
 	}
 
-	private function write(string $kind, string $collection, string $localUserId, string $postId): string
+	private function write(string $kind, string $collection, string $localUserId, string $postId, ?string $accountDid): string
 	{
 		$this->assertEnabled();
 
@@ -275,7 +278,7 @@ final class AtprotoInteractionService
 			throw new AtprotoNotConfiguredException();
 		}
 
-		$account = $this->account($localUserId);
+		$account = $this->account($localUserId, $accountDid);
 		$post = $this->post($postId, true);
 		$this->assertNotBlocked($localUserId, $post->authorId);
 		$existing = $this->interactionRecords?->find($localUserId, $account->did, $post->id, $kind);
@@ -318,13 +321,13 @@ final class AtprotoInteractionService
 		return $uri;
 	}
 
-	private function remove(string $kind, string $collection, string $localUserId, string $postId): void
+	private function remove(string $kind, string $collection, string $localUserId, string $postId, ?string $accountDid): void
 	{
 		if ($this->deleter === null) {
 			throw new AtprotoNotConfiguredException();
 		}
 
-		$account = $this->account($localUserId);
+		$account = $this->account($localUserId, $accountDid);
 		$stored = $this->interactionRecords?->find($localUserId, $account->did, $postId, $kind);
 		if ($stored !== null) {
 			$rkey = $stored->rkey;
@@ -344,7 +347,7 @@ final class AtprotoInteractionService
 	}
 
 	/** Remove all recorded public interactions of one kind for opt-out cleanup. */
-	public function removeAllForUser(string $localUserId, ?string $kind = null): int
+	public function removeAllForUser(string $localUserId, ?string $kind = null, ?string $accountDid = null): int
 	{
 		if ($this->interactionRecords === null) {
 			return 0;
@@ -352,7 +355,7 @@ final class AtprotoInteractionService
 		if ($this->deleter === null) {
 			throw new AtprotoNotConfiguredException();
 		}
-		$account = $this->account($localUserId);
+		$account = $this->account($localUserId, $accountDid);
 		$removed = 0;
 		foreach ($this->interactionRecords->forUser($localUserId) as $record) {
 			if ($record->accountDid !== $account->did || ($kind !== null && $record->kind !== $kind)) {
@@ -396,9 +399,23 @@ final class AtprotoInteractionService
 		}
 	}
 
-	private function account(string $localUserId): AtprotoAccount
+	private function account(string $localUserId, ?string $accountDid = null): AtprotoAccount
 	{
-		$account = $this->accounts?->resolve($localUserId);
+		$accounts = $this->accounts;
+		if ($accountDid !== null) {
+			if (!$accounts instanceof AtprotoAccountCollectionResolver) {
+				throw new AtprotoAccountNotConnectedException();
+			}
+			$account = null;
+			foreach ($accounts->resolveAll($localUserId) as $candidate) {
+				if ($candidate->did === $accountDid) {
+					$account = $candidate;
+					break;
+				}
+			}
+		} else {
+			$account = $accounts?->resolve($localUserId);
+		}
 		if ($account === null) {
 			throw new AtprotoAccountNotConnectedException();
 		}
