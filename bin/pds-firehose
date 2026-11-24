@@ -14,7 +14,9 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
 
-require dirname(__DIR__) . '/vendor/autoload.php';
+$localAutoloader = dirname(__DIR__) . '/vendor/autoload.php';
+$hostAutoloader = dirname(__DIR__, 3) . '/autoload.php';
+require is_file($localAutoloader) ? $localAutoloader : $hostAutoloader;
 
 /**
  * A minimal, dependency-free WebSocket firehose process.

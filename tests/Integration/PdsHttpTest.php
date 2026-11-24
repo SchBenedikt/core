@@ -570,6 +570,26 @@ final class PdsHttpTest extends TestCase
 		$this->closeFirehose($client);
 	}
 
+	public function testFirehoseLoadsTheHostComposerAutoloaderWhenInstalledAsPackage(): void
+	{
+		$hostVendor = $this->directory . '/vendor';
+		$packageBin = $hostVendor . '/alohasocial/core/bin';
+		if (!mkdir($packageBin, 0o770, true) && !is_dir($packageBin)) {
+			throw new RuntimeException('Could not create the simulated Composer package directory.');
+		}
+
+		$packageScript = $packageBin . '/pds-firehose';
+		if (!copy(dirname(__DIR__, 2) . '/bin/pds-firehose', $packageScript)
+			|| !symlink(dirname(__DIR__, 2) . '/vendor/autoload.php', $hostVendor . '/autoload.php')
+		) {
+			throw new RuntimeException('Could not prepare the simulated Composer package.');
+		}
+
+		$this->startFirehose(false, false, $packageScript);
+		$client = $this->openFirehose();
+		$this->closeFirehose($client);
+	}
+
 	public function testCarExportImportsIntoAFreshRepositoryAndBlocksAreServed(): void
 	{
 		$this->startServer();
@@ -791,7 +811,11 @@ final class PdsHttpTest extends TestCase
 		return ['status' => $status, 'body' => $responseBody, 'contentType' => $contentType];
 	}
 
-	private function startFirehose(bool $useDsn = false, bool $useDsnEnvironment = false): void
+	private function startFirehose(
+		bool $useDsn = false,
+		bool $useDsnEnvironment = false,
+		?string $scriptPath = null,
+	): void
 	{
 		if (is_resource($this->firehoseProcess)) {
 			return;
@@ -810,7 +834,7 @@ final class PdsHttpTest extends TestCase
 
 		$command = [
 			PHP_BINARY,
-			dirname(__DIR__, 2) . '/bin/pds-firehose',
+			$scriptPath ?? dirname(__DIR__, 2) . '/bin/pds-firehose',
 			'--host=127.0.0.1',
 			'--port=' . $this->firehosePort,
 			'--poll-ms=20',
