@@ -389,13 +389,27 @@ final class PdsHttpTest extends TestCase
 
 		$second = $this->createRecord($did, 'delete me', 'alice');
 		$secondRkey = substr($second['uri'], strrpos($second['uri'], '/') + 1);
+		$staleCommit = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.applyWrites', [
+			'repo' => $did,
+			'swapCommit' => 'bafyreistale',
+			'writes' => [[
+				'action' => 'update',
+				'collection' => 'app.bsky.feed.post',
+				'rkey' => 'fixed',
+				'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'stale commit'],
+			]],
+		], 'alice');
+		self::assertSame(400, $staleCommit['status']);
+		self::assertSame('InvalidSwap', $staleCommit['json']['error'] ?? null);
 		$batch = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.applyWrites', [
 			'repo' => $did,
+			'swapCommit' => $second['commit']['cid'] ?? null,
 			'writes' => [
 				[
 					'action' => 'update',
 					'collection' => 'app.bsky.feed.post',
 					'rkey' => 'fixed',
+					'swapRecord' => $replaced['json']['cid'] ?? null,
 					'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'batched'],
 				],
 				[
@@ -412,6 +426,24 @@ final class PdsHttpTest extends TestCase
 			],
 		], 'alice');
 		self::assertSame(200, $batch['status'], $batch['body']);
+		$staleBatch = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.applyWrites', [
+			'repo' => $did,
+			'swapCommit' => $batch['json']['commit']['cid'] ?? null,
+			'writes' => [[
+				'action' => 'update',
+				'collection' => 'app.bsky.feed.post',
+				'rkey' => 'fixed',
+				'swapRecord' => $replaced['json']['cid'] ?? null,
+				'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'stale batch'],
+			]],
+		], 'alice');
+		self::assertSame(400, $staleBatch['status']);
+		self::assertSame('InvalidSwap', $staleBatch['json']['error'] ?? null);
+		self::assertSame('batched', $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+			'repo' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => 'fixed',
+		]))['json']['value']['text'] ?? null);
 		self::assertCount(3, $batch['json']['results'] ?? []);
 		self::assertSame('batched', $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
 			'repo' => $did,
