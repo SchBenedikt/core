@@ -18,6 +18,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdsFirehose;
+use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
@@ -226,7 +228,13 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['did:plc:bob'], array_column($this->rows(PdsSchema::IDENTITY_TABLE), 'did'));
 		self::assertSame(['key-b'], array_column($this->rows(PdsSchema::KEY_TABLE), 'id'));
 		self::assertSame(['record-b'], array_column($this->rows(PdsSchema::RECORD_TABLE), 'rkey'));
-		self::assertSame(['event-b'], array_column($this->rows(PdsSchema::EVENT_TABLE), 'commit_cid'));
+		self::assertSame(['event-b'], array_column(
+			array_values(array_filter(
+				$this->rows(PdsSchema::EVENT_TABLE),
+				static fn (array $row): bool => $row['commit_cid'] !== '',
+			)),
+			'commit_cid',
+		));
 
 		// A second call returns the stored result, not a second (smaller) pass.
 		$again = $this->service->erase('alice');
@@ -260,6 +268,35 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame('erased', $again->state);
 		self::assertSame([PostSchema::TABLE => 3], $again->counts);
 		self::assertSame(2, $again->blobsDeleted);
+	}
+
+	public function testAccountErasureKeepsASequencedPdsDeletionEvent(): void
+	{
+		$this->database->execute(
+			'DELETE FROM ' . PdsSchema::SEQUENCE_TABLE . ' WHERE name = :name',
+			['name' => 'firehose'],
+		);
+
+		$this->service->erase('alice');
+
+		$events = (new PdsFirehose(new PdoPdsRepository($this->database)))->after(2);
+		self::assertCount(1, $events);
+		self::assertSame([
+			'$type' => '#account',
+			'seq' => 3,
+			'did' => 'did:plc:alice',
+			'time' => '2026-11-16T12:00:00Z',
+			'active' => false,
+			'status' => 'deleted',
+		], $events[0]->toArray());
+		self::assertSame(['did:plc:bob'], array_column($this->rows(PdsSchema::IDENTITY_TABLE), 'did'));
+		self::assertSame(['event-b'], array_column(
+			array_values(array_filter(
+				$this->rows(PdsSchema::EVENT_TABLE),
+				static fn (array $row): bool => $row['commit_cid'] !== '',
+			)),
+			'commit_cid',
+		));
 	}
 
 	public function testDeletionFreezesTheAccountAndCancelsItsQueuedJobsBeforeErasing(): void

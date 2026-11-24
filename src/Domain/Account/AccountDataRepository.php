@@ -42,7 +42,7 @@ interface AccountDataRepository extends AccountWriteGuard
 	 * Removes every attributable row and returns the affected counts plus the
 	 * blob paths that belonged to the account.
 	 */
-	public function erase(string $userId, string $actorId): AccountDataErasure;
+	public function erase(string $userId, string $actorId, ?DateTimeImmutable $deletedAt = null): AccountDataErasure;
 
 	/**
 	 * The persisted deletion row, or null when the account never asked.

@@ -173,7 +173,7 @@ final class AccountDataService implements AccountDeletionSweeper
 			$this->scheduleFederationCleanup($userId, $this->repository->federationCleanup($userId));
 
 			$actorId = $this->activities->actorId($userId);
-			$erasure = $this->repository->erase($userId, $actorId);
+			$erasure = $this->repository->erase($userId, $actorId, $now);
 
 			$deleted = 0;
 			$failures = [];
@@ -251,7 +251,7 @@ final class AccountDataService implements AccountDeletionSweeper
 		$this->queue?->cancelBySubject(JobSubject::account($userId));
 
 		$actorId = $this->activities->actorId($userId);
-		$erasure = $this->repository->erase($userId, $actorId);
+		$erasure = $this->repository->erase($userId, $actorId, $this->clock->now());
 		foreach (array_values(array_unique($erasure->blobPaths)) as $path) {
 			try {
 				if ($this->blobs->exists($path)) {
