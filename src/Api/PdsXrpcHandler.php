@@ -52,6 +52,7 @@ final class PdsXrpcHandler implements Handler
 			'/xrpc/com.atproto.identity.createDid' => $this->createDid($request, $pds),
 			'/xrpc/com.atproto.identity.resolveDid' => $this->resolveDid($request, $pds),
 			'/xrpc/com.atproto.identity.resolveHandle' => $this->resolveHandle($request, $pds),
+			'/xrpc/com.atproto.identity.resolveIdentity' => Response::json($pds->resolveIdentity($this->requiredQuery($request, 'identifier'))),
 			'/xrpc/com.atproto.identity.rotateKeys' => $this->rotateKeys($request, $pds),
 			'/xrpc/com.atproto.identity.submitPlcOperation' => Response::json($pds->submitPlcOperation($this->userId($request))),
 			'/xrpc/com.atproto.repo.createRecord' => $this->createRecord($request, $pds),
@@ -68,6 +69,8 @@ final class PdsXrpcHandler implements Handler
 			'/xrpc/com.atproto.sync.getBlocks' => $this->getBlocks($request, $pds),
 			'/xrpc/com.atproto.sync.subscribeRepos' => throw new XrpcException(426, 'UpgradeRequired', 'Use the WebSocket firehose listener for subscribeRepos.'),
 			'/xrpc/com.atproto.sync.getLatestCommit' => $this->getLatestCommit($request, $pds),
+			'/xrpc/com.atproto.sync.getRepoStatus' => Response::json($pds->getRepoStatus($this->requiredQuery($request, 'did'))),
+			'/xrpc/com.atproto.sync.getRecord' => $this->getSyncRecord($request, $pds),
 			'/xrpc/com.atproto.sync.listRepos' => $this->listRepos($request, $pds),
 			'/xrpc/com.atproto.sync.getBlob' => $this->getBlob($request, $pds),
 			'/xrpc/com.atproto.sync.listBlobs' => $this->listBlobs($request, $pds),
@@ -243,6 +246,17 @@ final class PdsXrpcHandler implements Handler
 		}
 
 		return Response::json($pds->getLatestCommit($repo));
+	}
+
+	private function getSyncRecord(Request $request, NativePdsService $pds): Response
+	{
+		return new Response(200, [
+			'Content-Type' => 'application/vnd.ipld.car',
+		], $pds->getSyncRecord(
+			$this->requiredQuery($request, 'did'),
+			$this->requiredQuery($request, 'collection'),
+			$this->requiredQuery($request, 'rkey'),
+		));
 	}
 
 	private function listRepos(Request $request, NativePdsService $pds): Response

@@ -163,6 +163,35 @@ final class NativePdsService
 	}
 
 	/**
+	 * @return array{did: string, handle: string, didDoc: array<string, mixed>}
+	 */
+	public function resolveIdentity(string $identifier): array
+	{
+		$identifier = trim($identifier);
+		if ($identifier === '') {
+			throw PdsError::invalid('identifier is required.');
+		}
+		if (str_starts_with($identifier, 'did:')) {
+			$identity = $this->repository->identityByDid($identifier);
+			if ($identity === null) {
+				throw new PdsError(404, 'DidNotFound', 'The DID is not hosted by this PDS.');
+			}
+		} else {
+			try {
+				PdsHandle::assertValid($identifier);
+			} catch (InvalidArgumentException $e) {
+				throw PdsError::invalid('Not an atproto identifier.');
+			}
+			$identity = $this->repository->identityByHandle(strtolower($identifier));
+			if ($identity === null) {
+				throw new PdsError(404, 'HandleNotFound', 'The handle is not hosted by this PDS.');
+			}
+		}
+
+		return ['did' => $identity->did, 'handle' => $identity->handle, 'didDoc' => $this->didDocument($identity)];
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	public function rotateKeys(string $localUserId): array
@@ -447,6 +476,58 @@ final class NativePdsService
 			'cid' => $record->cid->toString(),
 			'value' => $value,
 		];
+	}
+
+	public function getSyncRecord(string $did, string $collection, string $rkey): string
+	{
+		$identity = $this->identityForRepo($did);
+		$record = $this->repository->record($identity->did, $collection, $rkey);
+		if ($record === null) {
+			throw PdsError::recordNotFound();
+		}
+		if ($identity->head === null) {
+			throw PdsError::repoNotFound('The repository has no commits.');
+		}
+
+		$blocks = $this->repository->blocks($identity->did);
+		$headCid = $identity->head->toString();
+		$commitBytes = $blocks[$headCid] ?? null;
+		if ($commitBytes === null) {
+			throw PdsError::internal('The repository head block is missing.');
+		}
+		try {
+			$commit = RepoCommit::decode($commitBytes);
+		} catch (InvalidArgumentException $e) {
+			throw PdsError::internal('The repository head commit is invalid.');
+		}
+		if ($commit->did !== $identity->did) {
+			throw PdsError::internal('The repository head commit belongs to another DID.');
+		}
+
+		$mst = new Mst($commit->data, $blocks);
+		$path = $mst->proofPath($collection . '/' . $rkey);
+		if ($path === [] || $mst->lookup($collection . '/' . $rkey)?->toString() !== $record->cid->toString()) {
+			throw PdsError::internal('The repository record is missing from its MST proof path.');
+		}
+		$proof = [$headCid => $commitBytes] + $path;
+		$proof[$record->cid->toString()] = $record->cbor;
+
+		return (new Car($identity->head, $proof))->encode();
+	}
+
+	/** @return array{did: string, active: true, rev?: string} */
+	public function getRepoStatus(string $did): array
+	{
+		$identity = $this->repository->identityByDid(trim($did));
+		if ($identity === null) {
+			throw new PdsError(404, 'RepoNotFound', 'Could not find repo.');
+		}
+		$status = ['did' => $identity->did, 'active' => true];
+		if ($identity->headRev !== null) {
+			$status['rev'] = $identity->headRev;
+		}
+
+		return $status;
 	}
 
 	/**

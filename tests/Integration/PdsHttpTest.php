@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsRev;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Bytes;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Car;
+use AlohaSocial\Core\Protocol\Atproto\Repository\Cid;
 use AlohaSocial\Core\Protocol\Atproto\Repository\DagCbor;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Ecdsa;
 use AlohaSocial\Core\Protocol\Atproto\Repository\Mst;
@@ -147,6 +148,10 @@ final class PdsHttpTest extends TestCase
 		]));
 		self::assertSame(200, $record['status'], $record['body']);
 		self::assertSame('second record', $record['json']['value']['text'] ?? null);
+		$resolvedIdentity = $this->jsonRequest('GET', '/xrpc/com.atproto.identity.resolveIdentity?' . http_build_query(['identifier' => 'alice.pds.example']));
+		self::assertSame(200, $resolvedIdentity['status'], $resolvedIdentity['body']);
+		self::assertSame($did, $resolvedIdentity['json']['did'] ?? null);
+		self::assertSame('alice.pds.example', $resolvedIdentity['json']['handle'] ?? null);
 
 		$pageOne = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.listRecords?' . http_build_query([
 			'repo' => $did,
@@ -183,6 +188,21 @@ final class PdsHttpTest extends TestCase
 
 		$mst = new Mst($commit->data, $car->blocks);
 		self::assertCount(2, $mst->all());
+		$status = $this->jsonRequest('GET', '/xrpc/com.atproto.sync.getRepoStatus?' . http_build_query(['did' => $did]));
+		self::assertSame(200, $status['status'], $status['body']);
+		self::assertTrue($status['json']['active'] ?? false);
+		self::assertSame($second['commit']['rev'], $status['json']['rev'] ?? null);
+		$syncRecord = $this->request('GET', '/xrpc/com.atproto.sync.getRecord?' . http_build_query([
+			'did' => $did,
+			'collection' => 'app.bsky.feed.post',
+			'rkey' => $rkey,
+		]));
+		self::assertSame(200, $syncRecord['status']);
+		self::assertSame('application/vnd.ipld.car', $syncRecord['contentType']);
+		$proofCar = Car::decode($syncRecord['body']);
+		self::assertSame($second['commit']['cid'], $proofCar->root->toString());
+		self::assertSame($record['json']['cid'], Cid::forData($proofCar->blocks[$record['json']['cid']] ?? '')->toString());
+		self::assertSame($record['json']['cid'], $mst->lookup('app.bsky.feed.post/' . $rkey)?->toString());
 
 		$commits = $repository->commits($did);
 		self::assertCount(3, $commits);
