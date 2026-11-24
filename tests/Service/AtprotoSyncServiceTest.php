@@ -240,6 +240,61 @@ final class AtprotoSyncServiceTest extends TestCase
 		self::assertNull($this->store->record('relay', $this->uri('a')));
 	}
 
+	public function testANegatedLabelFromABlockedLabelerDoesNotBypassPolicy(): void
+	{
+		$service = $this->service(new DenyingAtprotoModerationPolicy([], ['did:plc:bad-labeler']));
+		$event = $this->postEvent('negated', 1, $this->post('hidden', '2026-11-15T10:00:00Z'));
+		$event = new AtprotoEvent(
+			$event->source, $event->kind, $event->did, $event->receivedAt,
+			operation: $event->operation, collection: $event->collection, rkey: $event->rkey,
+			cid: $event->cid, rev: $event->rev, sequence: $event->sequence,
+			record: $event->record, labels: [new AtprotoLabel('spam', 'did:plc:bad-labeler', true)],
+		);
+		$this->source->append([new AtprotoEventPage([$event], null)]);
+
+		$result = $service->sync();
+
+		self::assertSame(1, $result->skipped);
+		self::assertNull($this->store->record('relay', $this->uri('negated')));
+	}
+
+	public function testBlockedLabelUpdateTombstonesPreviouslyCachedRecord(): void
+	{
+		$service = $this->service();
+		$this->source->append([new AtprotoEventPage([
+			$this->postEvent('a', 1, $this->post('visible', '2026-11-15T10:00:00Z')),
+		], null)]);
+		$service->sync();
+		self::assertCount(1, $service->feed(self::DID)->posts);
+
+		$update = $this->postEvent('a', 2, $this->post('blocked update', '2026-11-15T11:00:00Z'));
+		$update = new AtprotoEvent(
+			$update->source, $update->kind, $update->did, $this->at('2026-11-15T11:00:00Z'),
+			operation: AtprotoRecordOperation::Update, collection: $update->collection, rkey: $update->rkey,
+			cid: 'cid-a2', rev: '3ka2', sequence: 2, record: $update->record,
+			labels: [new AtprotoLabel('spam', 'did:plc:bad-labeler')],
+		);
+		$this->source->append([new AtprotoEventPage([$update], null)]);
+		$result = $this->service(new DenyingAtprotoModerationPolicy([], ['did:plc:bad-labeler']))->sync();
+
+		self::assertSame(1, $result->deleted);
+		self::assertTrue($this->store->record('relay', $this->uri('a'))?->deleted);
+		self::assertSame([], $service->feed(self::DID)->posts);
+	}
+
+	public function testFeedHidesCachedPostsFromCurrentlyBlockedAuthor(): void
+	{
+		$service = $this->service();
+		$this->source->append([new AtprotoEventPage([
+			$this->postEvent('a', 1, $this->post('cached', '2026-11-15T10:00:00Z')),
+		], null)]);
+		$service->sync();
+
+		$page = $this->service(new DenyingAtprotoModerationPolicy([self::DID]))->feed(self::DID);
+
+		self::assertSame([], $page->posts);
+	}
+
 	public function testAMaliciousExternalEmbedIsSkippedWithoutStoringTheRecord(): void
 	{
 		$service = $this->service();
