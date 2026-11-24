@@ -1449,6 +1449,12 @@ final readonly class Application
 			);
 		}
 		$timelines = new TimelineService($posts, $homeTimeline, $moderationPolicy);
+		// Remote actor lookup and media fetching require the bounded client and
+		// the host resolver. An unbounded HTTP client is never used for these.
+		$resolver = $hostResolver ?? new DnsHostResolver();
+		$remoteActorSearch ??= $httpClient instanceof BoundedHttpClient
+			? new WebFingerRemoteActorSearch(new RemoteFetcher($httpClient, $resolver), $clock)
+			: null;
 		$mastodonService = new MastodonService(
 			$config,
 			$posts,
@@ -1479,17 +1485,11 @@ final readonly class Application
 			$reactionService,
 			$timelines,
 			$remotePosts,
+			$remoteActorSearch,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
 
-		// Remote media is wired only when the host provided the bounded HTTP
-		// capability. A plain HttpClient is enough for delivery and actor
-		// resolution, but not for fetching untrusted image bytes.
-		$resolver = $hostResolver ?? new DnsHostResolver();
-		$remoteActorSearch ??= $httpClient instanceof BoundedHttpClient
-			? new WebFingerRemoteActorSearch(new RemoteFetcher($httpClient, $resolver), $clock)
-			: null;
 		$searchService = $search ?? new SearchService(
 			$searchIndex,
 			$clock,

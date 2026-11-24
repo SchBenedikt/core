@@ -41,6 +41,9 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Search\RemoteActorSearch;
+use AlohaSocial\Core\Domain\Search\RemoteHandle;
+use AlohaSocial\Core\Domain\Search\RemoteSearchException;
 use AlohaSocial\Core\Domain\Search\TrendRepository;
 use AlohaSocial\Core\Domain\Timeline\AccountList;
 use AlohaSocial\Core\Domain\Timeline\AccountListNotFoundException;
@@ -139,6 +142,7 @@ final class MastodonService
 		private readonly ?ReactionService $reactions = null,
 		private readonly ?TimelineService $homeTimelines = null,
 		private readonly ?RemotePostRepository $remotePosts = null,
+		private readonly ?RemoteActorSearch $remoteAccountSearch = null,
 	) {
 	}
 
@@ -1669,6 +1673,7 @@ final class MastodonService
 		int $limit,
 		int $offset,
 		bool $following,
+		bool $resolve = false,
 	): array {
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
@@ -1696,6 +1701,38 @@ final class MastodonService
 
 		$limit = $this->clamp($limit);
 		$offset = max(0, min(self::MAX_SEARCH_OFFSET, $offset));
+
+		$remoteHandle = $resolve && $offset === 0 && ($type === null || $type === 'accounts')
+			? RemoteHandle::tryFrom($query)
+			: null;
+		$resolvedRemoteAccount = null;
+		if ($remoteHandle !== null) {
+			if ($this->remoteAccountSearch === null) {
+				throw new MastodonRequestException(
+					503,
+					'search_not_configured',
+					'Remote account search is not configured.',
+				);
+			}
+
+			try {
+				$profile = $this->remoteAccountSearch->lookup($remoteHandle);
+			} catch (RemoteSearchException) {
+				throw new MastodonRequestException(
+					503,
+					'remote_search_failed',
+					'Remote account lookup failed.',
+				);
+			}
+
+			if ($profile !== null
+				&& (!$following || $this->followingRepository?->find($userId, $profile->actorId)?->state === FollowState::Accepted)
+				&& $this->blocks?->findByActor($userId, $profile->actorId) === null
+				&& $this->inboundBlocks?->isBlocked($userId, $profile->actorId) !== true
+			) {
+				$resolvedRemoteAccount = $this->presenter->remoteAccount($profile);
+			}
+		}
 
 		$allowedAuthors = null;
 		if ($following) {
@@ -1726,7 +1763,7 @@ final class MastodonService
 		}
 
 		if ($type === null || $type === 'accounts') {
-			if ($this->searchActors === null) {
+			if ($this->searchActors === null && $resolvedRemoteAccount === null) {
 				throw new MastodonRequestException(
 					503,
 					'search_not_configured',
@@ -1734,10 +1771,15 @@ final class MastodonService
 				);
 			}
 
-			$accounts = array_map(
-				fn (string $accountId): array => $this->presenter->account($accountId),
-				$this->searchActors->search($query, $limit, $offset, $allowedAuthors),
-			);
+			$localAccounts = $this->searchActors === null
+				? []
+				: array_map(
+					fn (string $accountId): array => $this->presenter->account($accountId),
+					$this->searchActors->search($query, $limit, $offset, $allowedAuthors),
+				);
+			$accounts = $resolvedRemoteAccount !== null && $offset === 0
+				? array_slice([$resolvedRemoteAccount, ...$localAccounts], 0, $limit)
+				: array_slice($localAccounts, 0, $limit);
 		}
 
 		if ($type === null || $type === 'statuses') {

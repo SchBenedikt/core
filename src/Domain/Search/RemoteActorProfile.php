@@ -42,6 +42,11 @@ final readonly class RemoteActorProfile
 		public ?string $headerUrl,
 		public array $aliases,
 		public DateTimeImmutable $fetchedAt,
+		public ?DateTimeImmutable $createdAt = null,
+		public bool $locked = false,
+		public bool $bot = false,
+		public bool $discoverable = false,
+		public bool $group = false,
 	) {
 		if ($actorId === '' || mb_strlen($actorId) > self::MAX_URL_LENGTH) {
 			throw new \InvalidArgumentException('A remote actor id is empty or too long.');
@@ -95,6 +100,11 @@ final readonly class RemoteActorProfile
 			'header' => $this->headerUrl,
 			'aliases' => $this->aliases,
 			'fetched_at' => Time::format($this->fetchedAt),
+			'created_at' => $this->createdAt === null ? null : Time::format($this->createdAt),
+			'locked' => $this->locked,
+			'bot' => $this->bot,
+			'discoverable' => $this->discoverable,
+			'group' => $this->group,
 		];
 	}
 }

@@ -91,8 +91,8 @@ creation, private bookmarks and mutes, private list bookkeeping and timelines,
 reply context, notifications, media, and local follow actions. Selected
 actions also work with cached remote objects as described below. OAuth
 authorization/token endpoints, streaming, public remote timelines, remote
-notifications, remote profile fetching, remote search, admin APIs and the
-full account-management surface remain outside this compatibility surface.
+notifications, remote profile detail, general remote search, admin APIs and
+the full account-management surface remain outside this compatibility surface.
 Keyword filters and scheduled statuses are supported locally (see below).
 Lists are limited to known local account ids; remote list membership is
 external.
@@ -116,10 +116,17 @@ The follow/unfollow routes also accept a remote actor URL. The host must
 provide the guarded remote actor fetcher and signed federation delivery; a new
 follow is pending until a verified `Accept`, and the relationship reports
 `requested: true` while pending. Repeating a follow does not queue a duplicate
-activity. Remote profile lookup and account search remain unsupported.
+activity. Exact remote account search is available when `/search` receives
+`resolve=true` and an `acct` handle such as `bob@example.org`; it uses the
+same bounded WebFinger and actor fetch as neutral search. It does not search
+remote posts or discover accounts by free-text query. A lookup failure returns
+`503` instead of presenting a partial response as a complete result. The
+account projection includes fetched public profile fields and privacy flags;
+remote relationship/status totals and custom fields are unavailable and are
+reported as empty values.
 
 Local search over local accounts and statuses is implemented below; remote
-search and hashtag search are external. Followed tags, follow requests/locked
+status search and hashtag search are external. Followed tags, follow requests/locked
 accounts and the wider account-management surface are product follow-ups
 listed as Later in the [roadmap](../roadmap.md).
 
@@ -132,7 +139,8 @@ listed as Later in the [roadmap](../roadmap.md).
 | Favourite/unfavourite cached remote post | Supported | Requires accepted follow and no block; emits Like/Undo; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Reblog/unreblog cached remote post | Supported | Requires the same cached, visible remote target and federation policy; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Read/vote on cached remote poll | Supported | Requires accepted follow; vote uses signed ActivityPub delivery. `MastodonApiTest::testImportedRemotePollsCanBeReadAndVotedThroughMastodonApi` |
-| Remote profiles, search, public timeline, notifications and streaming | Unsupported | These routes do not fetch remote data or open streaming connections; unsupported writes are not reported as successful. |
+| Exact remote account resolution | Supported | Requires `resolve=true` and a valid handle; uses bounded WebFinger/ActivityPub fetching, filters blocked actors and respects `following=true`. `MastodonApiTest::testSearchResolveFetchesOnlyAnExactRemoteAccountHandle` |
+| Remote profile detail, general remote search, public timeline, notifications and streaming | Unsupported | These routes do not fetch arbitrary remote data or open streaming connections; unsupported writes are not reported as successful. |
 
 This matrix describes Core's current handlers and their host ports. It does not
 claim compatibility with every Mastodon client; OAuth/token issuance remains

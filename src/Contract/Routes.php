@@ -1729,7 +1729,7 @@ final class Routes
 				requiresAuth: true,
 				rateLimit: '60/60',
 				requiredScopes: ['read:search'],
-				summary: 'Search local accounts and public/unlisted statuses in the Mastodon v2 shape.',
+				summary: 'Search local data and explicitly resolve exact remote account handles in the Mastodon v2 shape.',
 			),
 			new Route(
 				name: 'mastodon.accounts.verify_credentials',

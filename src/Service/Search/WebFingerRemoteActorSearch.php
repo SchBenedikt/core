@@ -20,6 +20,7 @@ use AlohaSocial\Core\Service\Federation\RemoteFetchException;
 use AlohaSocial\Core\Service\Federation\RemoteFetchResult;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
+use InvalidArgumentException;
 use JsonException;
 
 use function array_filter;
@@ -118,7 +119,27 @@ final class WebFingerRemoteActorSearch implements RemoteActorSearch
 			headerUrl: $this->imageUrl($actor['image'] ?? null),
 			aliases: array_values(array_unique(array_filter($aliases, static fn (string $alias): bool => $alias !== ''))),
 			fetchedAt: Time::toSecondPrecision($this->clock->now()),
+			createdAt: $this->publishedAt($actor),
+			locked: ($actor['manuallyApprovesFollowers'] ?? false) === true,
+			bot: in_array($actor['type'] ?? null, ['Bot', 'Service'], true),
+			discoverable: ($actor['discoverable'] ?? false) === true,
+			group: ($actor['type'] ?? null) === 'Group',
 		);
+	}
+
+	/** @param array<string, mixed> $actor */
+	private function publishedAt(array $actor): ?DateTimeImmutable
+	{
+		$published = $actor['published'] ?? null;
+		if (!is_string($published) || $published === '' || mb_strlen($published) > 64) {
+			return null;
+		}
+
+		try {
+			return Time::toSecondPrecision(Time::parseIso8601($published));
+		} catch (InvalidArgumentException) {
+			return null;
+		}
 	}
 
 	/**
