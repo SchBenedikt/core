@@ -24,6 +24,9 @@ use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
+use AlohaSocial\Core\Domain\Post\Boost;
+use AlohaSocial\Core\Domain\Post\BoostSchema;
+use AlohaSocial\Core\Domain\Post\PdoBoostRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PollSchema;
@@ -37,6 +40,8 @@ use PDO;
 final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 {
 	private PdoPostRepository $posts;
+
+	private PdoBoostRepository $boosts;
 
 	private PdoRemotePostRepository $remotePosts;
 
@@ -58,6 +63,7 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 	{
 		$connection = $this->connection = new PdoConnection(new PDO('sqlite::memory:'));
 		PostSchema::create($connection);
+		BoostSchema::create($connection);
 		PollSchema::create($connection);
 		FollowingSchema::create($connection);
 		AtprotoFollowSchema::create($connection);
@@ -66,6 +72,7 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 		MuteSchema::create($connection);
 
 		$this->posts = new PdoPostRepository($connection);
+		$this->boosts = new PdoBoostRepository($connection);
 		$this->remotePosts = new PdoRemotePostRepository($connection);
 		$this->following = new PdoFollowingRepository($connection);
 		$this->blocks = new PdoBlockRepository($connection);
@@ -105,6 +112,11 @@ final class PdoHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 	protected function addPost(Post $post): void
 	{
 		$this->posts->insert($post);
+	}
+
+	protected function addBoost(Boost $boost): void
+	{
+		$this->boosts->insert($boost);
 	}
 
 	protected function addRemote(RemotePost $remote): void

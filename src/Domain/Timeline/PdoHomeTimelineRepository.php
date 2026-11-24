@@ -9,15 +9,16 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Timeline;
 
+use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
-use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
+use AlohaSocial\Core\Domain\Post\BoostSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
-use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Post\TimelineCursor;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Db\Connection;
@@ -27,9 +28,9 @@ use DateTimeImmutable;
 /**
  * The combined home timeline in SQL.
  *
- * Both halves are ordered as one union before the limit is applied. Filtering
- * the local and remote pages separately and merging them in PHP would let a
- * page contain the wrong number of items at a cursor boundary.
+ * Local posts, local boosts and remote posts are ordered as one union before
+ * the limit is applied. Filtering sources separately and merging them in PHP
+ * would let a page contain the wrong number of items at a cursor boundary.
  *
  * The remote half scopes ActivityPub and AT Protocol follows to the reader,
  * so unfollowing immediately removes the actor's content without deleting
@@ -54,10 +55,14 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		$localCursor = $before === null ? '' : ($before instanceof TimelineCursor
 			? ' AND (p.published_at < :local_before OR (p.published_at = :local_before_equal AND p.id < :local_before_id))'
 			: ' AND p.published_at < :local_before');
+		$boostCursor = $before === null ? '' : ($before instanceof TimelineCursor
+			? ' AND (b.created_at < :boost_before OR (b.created_at = :boost_before_equal AND b.id < :boost_before_id))'
+			: ' AND b.created_at < :boost_before');
 		$remoteCursor = $before === null ? '' : ($before instanceof TimelineCursor
 			? ' AND (r.published_at < :remote_before OR (r.published_at = :remote_before_equal AND r.activity_id < :remote_before_id))'
 			: ' AND r.published_at < :remote_before');
 		$localReplies = $hideReplies ? ' AND p.in_reply_to_id IS NULL' : '';
+		$boostReplies = $hideReplies ? ' AND p.in_reply_to_id IS NULL' : '';
 		$remoteReplies = $hideReplies ? ' AND r.in_reply_to_id IS NULL' : '';
 
 		$sql = 'SELECT item_id, author_id, object_id, object_author_id, content,'
@@ -79,6 +84,22 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' WHERE pm.user_id = :local_mute_user AND pm.actor_id = p.author_id'
 			. ' AND (pm.expires_at IS NULL OR pm.expires_at > :local_mute_now)'
 			. ')' . $localCursor
+			. ' UNION ALL'
+			. ' SELECT b.id AS item_id, b.user_id AS author_id, p.id AS object_id, p.author_id AS object_author_id,'
+			. ' p.content AS content, p.content_warning AS content_warning, b.created_at AS published_at,'
+			. ' p.visibility AS visibility, b.user_id AS boosted_by, p.in_reply_to_id AS in_reply_to_id'
+			. ' FROM ' . BoostSchema::TABLE . ' b JOIN ' . PostSchema::TABLE . ' p ON p.id = b.post_id'
+			. ' WHERE b.user_id = :boost_user AND p.deleted_at IS NULL AND p.archived_at IS NULL'
+			. " AND p.visibility IN ('public', 'unlisted')"
+			. ' AND NOT EXISTS ('
+			. ' SELECT 1 FROM ' . BlockSchema::TABLE . ' bb'
+			. ' WHERE bb.local_user_id = :boost_block_user AND bb.actor_id = p.author_id'
+			. ')'
+			. ' AND NOT EXISTS ('
+			. ' SELECT 1 FROM ' . MuteSchema::TABLE . ' bm'
+			. ' WHERE bm.user_id = :boost_mute_user AND bm.actor_id = p.author_id'
+			. ' AND (bm.expires_at IS NULL OR bm.expires_at > :boost_mute_now)'
+			. ')' . $boostReplies . $boostCursor
 			. ' UNION ALL'
 			. ' SELECT r.activity_id AS item_id, r.actor_id AS author_id, r.object_id AS object_id,'
 			. ' r.object_author_id AS object_author_id, r.content AS content,'
@@ -122,16 +143,23 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			'boost_kind' => RemotePostKind::Boost->value,
 			'local_mute_now' => $muteNow,
 			'remote_mute_now' => $muteNow,
+			'boost_user' => $localUserId,
+			'boost_block_user' => $localUserId,
+			'boost_mute_user' => $localUserId,
+			'boost_mute_now' => $muteNow,
 		];
 
 		if ($before !== null) {
 			$time = $before instanceof TimelineCursor ? $before->publishedAt : $before;
 			$parameters['local_before'] = Time::format($time);
+			$parameters['boost_before'] = Time::format($time);
 			$parameters['remote_before'] = Time::format($time);
 			if ($before instanceof TimelineCursor) {
 				$parameters['local_before_equal'] = Time::format($time);
+				$parameters['boost_before_equal'] = Time::format($time);
 				$parameters['remote_before_equal'] = Time::format($time);
 				$parameters['local_before_id'] = $before->id;
+				$parameters['boost_before_id'] = $before->id;
 				$parameters['remote_before_id'] = $before->id;
 			}
 		}

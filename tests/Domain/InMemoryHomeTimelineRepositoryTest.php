@@ -17,6 +17,8 @@ use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Post\Boost;
+use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Timeline\HomeTimelineRepository;
@@ -26,6 +28,8 @@ use AlohaSocial\Core\Support\Time;
 final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTestCase
 {
 	private InMemoryPostRepository $posts;
+
+	private InMemoryBoostRepository $boosts;
 
 	private InMemoryRemotePostRepository $remotePosts;
 
@@ -46,6 +50,7 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 	protected function setUp(): void
 	{
 		$this->posts = new InMemoryPostRepository();
+		$this->boosts = new InMemoryBoostRepository();
 		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->following = new InMemoryFollowingRepository();
 		$this->blocks = new InMemoryBlockRepository();
@@ -56,6 +61,8 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 			$this->following,
 			$this->blocks,
 			$this->mutes,
+			null,
+			$this->boosts,
 		);
 	}
 
@@ -67,6 +74,11 @@ final class InMemoryHomeTimelineRepositoryTest extends HomeTimelineRepositoryTes
 	protected function addPost(Post $post): void
 	{
 		$this->posts->insert($post);
+	}
+
+	protected function addBoost(Boost $boost): void
+	{
+		$this->boosts->insert($boost);
 	}
 
 	protected function addRemote(RemotePost $remote): void

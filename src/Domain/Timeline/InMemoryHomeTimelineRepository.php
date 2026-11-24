@@ -15,8 +15,10 @@ use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Post\BoostRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\TimelineCursor;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Clock\SystemClock;
 use DateTimeImmutable;
@@ -38,6 +40,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		private readonly BlockRepository $blocks,
 		private readonly ?MuteRepository $mutes = null,
 		private readonly ?Clock $clock = null,
+		private readonly ?BoostRepository $boosts = null,
 	) {
 	}
 
@@ -65,6 +68,32 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		}
 
 		$blocked = array_fill_keys($this->blocks->actorIds($localUserId), true);
+		foreach ($this->boosts?->timelineForUsers([$localUserId], self::UNBOUNDED, $before) ?? [] as $boost) {
+			$post = $this->posts->find($boost->postId);
+			if ($post === null
+				|| $post->isDeleted()
+				|| $post->archivedAt !== null
+				|| !in_array($post->visibility, [Visibility::Public, Visibility::Unlisted], true)
+				|| ($hideReplies && $post->inReplyToId !== null)
+				|| isset($blocked[$post->authorId])
+				|| isset($muted[$post->authorId])
+			) {
+				continue;
+			}
+
+			$entries[] = new TimelineEntry(
+				id: $boost->id,
+				authorId: $boost->userId,
+				objectId: $post->id,
+				objectAuthorId: $post->authorId,
+				content: $post->content,
+				contentWarning: $post->contentWarning,
+				publishedAt: $boost->createdAt,
+				visibility: $post->visibility,
+				boostedBy: $boost->userId,
+				inReplyToId: $post->inReplyToId,
+			);
+		}
 
 		foreach ($this->remotePosts->timelineForActors(
 			$this->following->actorIds($localUserId),
