@@ -769,18 +769,20 @@ host's own tests as well.
 The core is a foundation, not a drop-in replacement for the current Nextcloud
 app. It contains local image upload, validation and thumbnails, and remote
 image ingestion for incoming `Create`/`Announce` posts with SSRF, size,
-timeout and redirect guards. It does not contain an admin UI, the full Mastodon server API or an
-object-storage adapter. The local Mastodon subset, AT Protocol remote delete,
-the OAuth session-refresh exchange and the authorization-code/PAR/revocation
-protocol client are implemented; the account-linking UI/callback, flow store
-and the credential store remain host work. It does provide a
-bounded outbox backfill for missed `Create`/`Announce` activities. A host that
+timeout and redirect guards. It does not contain an admin UI or the full
+Mastodon server API. Core provides an optional S3-compatible `BlobStore`; the
+host supplies and configures the network client. The local Mastodon subset,
+AT Protocol remote delete, the OAuth session-refresh exchange and the
+authorization-code/PAR/revocation protocol client are implemented; the
+account-linking UI/callback, flow store and credential store remain host work.
+It does provide a bounded outbox backfill for missed `Create`/`Announce`
+activities. A host that
 needs the remaining features either keeps its existing implementation for them
 or waits for the corresponding core milestone. See [media](media.md) for the
 storage and remote-fetch contract and
 [retention cleanup](retention-cleanup.md) for orphan media, read
-notifications and the thread cache; an object-storage adapter is still a host
-decision.
+notifications and the thread cache. Choosing and configuring object storage
+remains a host decision.
 
 The integration is therefore incremental: move one slice (for example posts
 and timelines), keep the old path for everything else, and never run two

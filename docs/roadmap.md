@@ -223,8 +223,6 @@ owner or an accepted follower, and the authenticated media route applies the
   Nextcloud page and the standalone server.
 - The external remainder of the Mastodon server API and of the AT Protocol
   stack.
-- An object-storage adapter such as S3; the core ships memory and local stores
-  behind `BlobStore`.
 
 ## Milestones
 
@@ -242,7 +240,7 @@ server or a product decision.
 | M5a | Host-neutral interaction API and shared write screens | done | core / `ui` | Profile/follow, notification and composer routes plus the three screens are tested end to end |
 | M5 | Shared UI rollout | partial | `ui` + hosts | The standalone bridge and `/app` mount exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); the Nextcloud bridge and mount page, and the host smoke tests in both hosts, remain |
 | M6 | Compatibility remainder | partial / external | core + hosts | The external remainder is either implemented by a host or explicitly not planned |
-| M7 | Operations and packaging | partial | `server` / ops | Installer, worker and container exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); backup, monitoring and an object-storage option remain, and the core cleanup job is already available |
+| M7 | Operations and packaging | partial | `server` / ops | Installer, worker, container and optional S3-compatible storage exist in [SchBenedikt/server](https://github.com/SchBenedikt/server); backup, restore and monitoring remain, and the core cleanup job is available |
 
 ## Now (core)
 
@@ -298,10 +296,9 @@ server or a product decision.
   The external-PDS client remains independent.
 - **AT Protocol after this publishing slice:** link cards, video transcoding and
   full multi-layer repository writes.
-- **Object storage:** an S3-compatible `BlobStore` adapter when a host needs it.
-- **Operations:** backup/restore and monitoring for the standalone host,
-  plus an S3-compatible blob store whose layout can be swept independently of
-  the core metadata cleanup.
+- **Operations:** backup/restore and monitoring for the standalone host. Core
+  provides an S3-compatible `BlobStore` over a host-injected client; the server
+  configures it optionally and keeps local storage as its default.
 - **Admin UI:** host pages; the core keeps the settings rules.
 
 ## Explicitly not planned
