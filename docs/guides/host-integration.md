@@ -503,6 +503,8 @@ relationship reads, add
 answer `503 follows_not_configured`. For AT Protocol publishing, create
 `social_atproto_publication` from `AtprotoPublicationSchema::statements()` and
 supply an `AtprotoAccountResolver`;
+existing installations must also call `AtprotoPublicationSchema::upgrade()` to
+add the nullable `cid` column before they use the updated repository.
 supplying no resolver leaves the existing route at `503 atproto_not_configured`
 without writing anything. For inbound sync, create the three tables from
 `AtprotoInboundSchema::statements()` and supply an `AtprotoEventSource`; there

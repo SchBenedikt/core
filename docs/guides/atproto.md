@@ -522,10 +522,10 @@ retryable; OAuth refusals expose a safe `errorCode` and are retryable only for
    write inline.
 3. The worker calls `publish()`, resolves the account, builds the record and a
    deterministic TID, then calls `putRecord`.
-4. Only after the PDS returns an `at://` URI does the core insert the local
-   publication row. A PDS or transport failure therefore leaves no publication
-   row; the job is retried with the queue's normal backoff and the same record
-   key.
+4. Only after the PDS returns the expected `at://` URI and a record CID does
+   the core insert the local publication row. A PDS or transport failure
+   therefore leaves no publication row; the job is retried with the queue's
+   normal backoff and the same record key.
 5. A repeat, whether from a retried job or the explicit route, returns the
    stored publication without another PDS request. `putRecord` is also an
    upsert, so even a lost response does not create a second record with the
@@ -600,6 +600,7 @@ ActivityPub object and the PDS record relate.
 | `local_user_id` | `VARCHAR(255)` | part of the primary key |
 | `post_id` | `VARCHAR(64)` | part of the primary key |
 | `rkey` | `VARCHAR(13)` | deterministic TID; unique per account |
+| `cid` | `VARCHAR(256) NULL` | PDS content revision; null only for older rows |
 | `uri` | `VARCHAR(512)` | canonical AT URI returned by the PDS |
 | `published_at` | `VARCHAR(20)` | canonical UTC timestamp |
 

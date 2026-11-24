@@ -194,6 +194,7 @@ final class AtprotoFollowServiceTest extends TestCase
 		$uri = 'at://' . self::ACCOUNT_DID . '/' . AtprotoFollowRecord::COLLECTION . '/' . $rkey;
 		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
 			'uri' => $uri,
+			'cid' => 'bafy-follow',
 		], JSON_THROW_ON_ERROR)));
 		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
 			'uri' => $uri,

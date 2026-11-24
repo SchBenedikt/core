@@ -42,6 +42,16 @@ final class InMemoryAtprotoPublicationRepository implements AtprotoPublicationRe
 		$this->publications[$key] = $publication;
 	}
 
+	public function update(AtprotoPublication $publication): void
+	{
+		$key = $this->key($publication->localUserId, $publication->postId);
+		if (!isset($this->publications[$key])) {
+			throw new DatabaseException('The AT Protocol publication does not exist.');
+		}
+
+		$this->publications[$key] = $publication;
+	}
+
 	public function removeForPost(string $localUserId, string $postId): bool
 	{
 		$key = $this->key($localUserId, $postId);

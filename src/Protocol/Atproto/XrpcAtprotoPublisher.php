@@ -14,6 +14,8 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoIdentifiers;
 use AlohaSocial\Core\Domain\Atproto\AtprotoDeleter;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublishFailedException;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
+use AlohaSocial\Core\Domain\Atproto\AtprotoRecordPublisher;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPublishedRecord;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
@@ -33,7 +35,7 @@ use function strlen;
  * or DPoP, nonce retry) comes from `AtprotoPdsRequest`. Neither a token nor a
  * proof is ever logged or echoed in an exception.
  */
-final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
+final class XrpcAtprotoPublisher implements AtprotoRecordPublisher, AtprotoDeleter
 {
 	public const ENDPOINT = '/xrpc/com.atproto.repo.putRecord';
 
@@ -56,6 +58,15 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 		array $record,
 		string $collection = AtprotoPostRecord::COLLECTION,
 	): string {
+		return $this->publishRecord($account, $rkey, $record, $collection)->uri;
+	}
+
+	public function publishRecord(
+		AtprotoAccount $account,
+		string $rkey,
+		array $record,
+		string $collection = AtprotoPostRecord::COLLECTION,
+	): AtprotoPublishedRecord {
 		$this->assertCollection($collection);
 		$url = rtrim($account->pdsUrl, '/') . self::ENDPOINT;
 
@@ -85,11 +96,14 @@ final class XrpcAtprotoPublisher implements AtprotoPublisher, AtprotoDeleter
 
 		$uri = is_array($decoded) ? ($decoded['uri'] ?? null) : null;
 		$expectedUri = AtprotoIdentifiers::uri($account->did, $collection, $rkey);
-		if (!is_string($uri) || $uri !== $expectedUri || strlen($uri) > 512) {
-			throw new AtprotoPublishFailedException(502, 'The AT Protocol PDS returned an unexpected record URI.');
+		$cid = is_array($decoded) ? ($decoded['cid'] ?? null) : null;
+		if (!is_string($uri) || $uri !== $expectedUri || strlen($uri) > 512
+			|| !is_string($cid) || $cid === '' || trim($cid) !== $cid || strlen($cid) > 256
+		) {
+			throw new AtprotoPublishFailedException(502, 'The AT Protocol PDS returned invalid record identifiers.');
 		}
 
-		return $uri;
+		return new AtprotoPublishedRecord($uri, $cid);
 	}
 
 	public function delete(

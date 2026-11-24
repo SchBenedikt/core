@@ -24,6 +24,9 @@ interface AtprotoPublicationRepository
 	 */
 	public function insert(AtprotoPublication $publication): void;
 
+	/** Updates the URI revision after the PDS accepted an upsert. */
+	public function update(AtprotoPublication $publication): void;
+
 	/**
 	 * Removes the local idempotency record after the remote record was deleted.
 	 * The caller must delete the remote record first; removing only the row

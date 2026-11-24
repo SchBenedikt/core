@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Atproto;
 
 use AlohaSocial\Core\Platform\Db\Connection;
+use AlohaSocial\Core\Platform\Db\SchemaUpgrade;
 
 /**
  * The canonical schema of the AT Protocol publication table.
@@ -33,6 +34,7 @@ final class AtprotoPublicationSchema
 			. ' post_id VARCHAR(64) NOT NULL,'
 			. ' rkey VARCHAR(13) NOT NULL,'
 			. ' uri VARCHAR(512) NOT NULL,'
+			. ' cid VARCHAR(256) NULL,'
 			. ' pds_url VARCHAR(512) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
 			. ' PRIMARY KEY (local_user_id, post_id)'
@@ -49,5 +51,17 @@ final class AtprotoPublicationSchema
 		foreach (self::statements() as $statement) {
 			$connection->execute($statement);
 		}
+	}
+
+	/** Adds the PDS CID column to installations created before it was stored. */
+	public static function upgrade(Connection $connection): void
+	{
+		if (!SchemaUpgrade::tableExists($connection, self::TABLE)) {
+			self::create($connection);
+
+			return;
+		}
+
+		SchemaUpgrade::addColumnIfMissing($connection, self::TABLE, 'cid', 'VARCHAR(256) NULL');
 	}
 }

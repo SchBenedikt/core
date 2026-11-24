@@ -33,13 +33,14 @@ final class XrpcAtprotoPublisherTest extends TestCase
 			'cid' => 'bafyrei',
 		], JSON_THROW_ON_ERROR)));
 
-		$uri = (new XrpcAtprotoPublisher($http))->publish(
+		$published = (new XrpcAtprotoPublisher($http))->publishRecord(
 			$this->account(),
 			'234567abcdefg',
 			AtprotoPostRecord::fromPost($this->post()),
 		);
 
-		self::assertSame(self::URI, $uri);
+		self::assertSame(self::URI, $published->uri);
+		self::assertSame('bafyrei', $published->cid);
 		self::assertCount(1, $http->requests);
 		$request = $http->requests[0];
 
@@ -144,7 +145,7 @@ final class XrpcAtprotoPublisherTest extends TestCase
 			'at://did:plc:alice/app.bsky.feed.post/another-key',
 		] as $uri) {
 			$http = new FakeHttpClient();
-			$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR)));
+			$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => $uri, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR)));
 
 			try {
 				(new XrpcAtprotoPublisher($http))->publish(
@@ -166,6 +167,7 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		$http = new FakeHttpClient();
 		$http->queueResponse(new HttpResponse(200, [], json_encode([
 			'uri' => 'at://did:plc:alice/app.bsky.feed.like/rkey1',
+			'cid' => 'bafy-like',
 		], JSON_THROW_ON_ERROR)));
 		$publisher = new XrpcAtprotoPublisher($http);
 
@@ -185,6 +187,19 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		self::assertSame('rkey1', $delete['rkey']);
 	}
 
+	public function testAResponseWithoutARecordCidIsRejected(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+
+		$this->expectException(AtprotoPublishFailedException::class);
+		(new XrpcAtprotoPublisher($http))->publishRecord(
+			$this->account(),
+			'234567abcdefg',
+			AtprotoPostRecord::fromPost($this->post()),
+		);
+	}
+
 	public function testAnInvalidCollectionIsRejectedBeforeTheRequest(): void
 	{
 		$http = new FakeHttpClient();
@@ -202,7 +217,7 @@ final class XrpcAtprotoPublisherTest extends TestCase
 	public function testADpopAccountSendsADpopResourceRequest(): void
 	{
 		$http = new FakeHttpClient();
-		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR)));
 
 		$uri = (new XrpcAtprotoPublisher($http, $this->dpop()))->publish(
 			$this->account(),
@@ -225,7 +240,7 @@ final class XrpcAtprotoPublisherTest extends TestCase
 	public function testAccountBoundDpopKeyOverridesTheHostDefault(): void
 	{
 		$http = new FakeHttpClient();
-		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR)));
 		$accountKey = $this->dpop();
 		$hostKey = $this->dpop();
 		$account = new AtprotoAccount(
@@ -251,7 +266,7 @@ final class XrpcAtprotoPublisherTest extends TestCase
 	{
 		$http = new FakeHttpClient();
 		$http->queueResponse(new HttpResponse(400, ['dpop-nonce' => 'nonce-1'], '{"error":"use_dpop_nonce"}'));
-		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI], JSON_THROW_ON_ERROR)));
+		$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => self::URI, 'cid' => 'bafy-record'], JSON_THROW_ON_ERROR)));
 
 		$uri = (new XrpcAtprotoPublisher($http, $this->dpop()))->publish(
 			$this->account(),
