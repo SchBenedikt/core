@@ -64,8 +64,10 @@ what a host must provide.
   metadata: issuer binding, PAR, issuer response parameter, client metadata,
   authorization code, refresh token, S256 PKCE, `none` client authentication,
   ES256 DPoP and the mandatory `atproto` scope. It only follows the PDS URL
-  chosen by the host and that PDS's single advertised authorization server;
-  the browser cannot supply either endpoint.
+  chosen by the host and that PDS's single advertised authorization server.
+  Both metadata fetches use the federation target guard, pin validated public
+  DNS addresses, and enforce a response-size limit; the browser cannot supply
+  either endpoint.
 - `Domain\Atproto\AtprotoEventSource`, `AtprotoEvent` and
   `Service\Atproto\AtprotoSyncService` import bounded relay/Jetstream/AppView
   pages with a durable cursor, sequence/revision ordering, tombstones, account
@@ -459,8 +461,9 @@ nonce out of the browser.
 ```php
 use AlohaSocial\Core\Protocol\Atproto\AtprotoOAuthMetadataResolver;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoOAuthClient;
+use AlohaSocial\Core\Service\Federation\FederationTargetGuard;
 
-$server = (new AtprotoOAuthMetadataResolver($httpClient))->resolve($pdsUrl);
+$server = (new AtprotoOAuthMetadataResolver($httpClient, $targetGuard))->resolve($pdsUrl);
 $request = $oauthClient->begin($server, $did, $pdsUrl, $handle);
 // Redirect the browser to $request->authorizationUrl after saving $request
 // under $request->state. On the callback, verify state and pass the `iss`.
