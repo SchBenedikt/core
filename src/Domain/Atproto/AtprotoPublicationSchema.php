@@ -33,6 +33,7 @@ final class AtprotoPublicationSchema
 			. ' post_id VARCHAR(64) NOT NULL,'
 			. ' rkey VARCHAR(13) NOT NULL,'
 			. ' uri VARCHAR(512) NOT NULL,'
+			. ' pds_url VARCHAR(512) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
 			. ' PRIMARY KEY (local_user_id, post_id)'
 			. ')',

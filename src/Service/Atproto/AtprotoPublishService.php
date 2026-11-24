@@ -308,6 +308,7 @@ final class AtprotoPublishService
 			rkey: $rkey,
 			uri: $uri,
 			publishedAt: Time::toSecondPrecision($this->clock->now()),
+			pdsUrl: $account->pdsUrl,
 		);
 
 		try {

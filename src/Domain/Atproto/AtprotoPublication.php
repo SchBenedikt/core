@@ -28,6 +28,7 @@ final readonly class AtprotoPublication
 		public string $rkey,
 		public string $uri,
 		public DateTimeImmutable $publishedAt,
+		public ?string $pdsUrl = null,
 	) {
 		if ($localUserId === '' || $postId === '' || $rkey === '') {
 			throw new InvalidArgumentException('An AT Protocol publication needs an account, a post and a record key.');
@@ -35,6 +36,21 @@ final readonly class AtprotoPublication
 
 		if (!str_starts_with($uri, 'at://') || strlen($uri) > 512) {
 			throw new InvalidArgumentException('An AT Protocol publication needs a valid AT URI.');
+		}
+
+		if ($pdsUrl !== null) {
+			$parts = parse_url($pdsUrl);
+			if ($parts === false
+				|| !isset($parts['scheme'], $parts['host'])
+				|| !in_array(strtolower((string) $parts['scheme']), ['http', 'https'], true)
+				|| (string) $parts['host'] === ''
+				|| isset($parts['user'])
+				|| isset($parts['pass'])
+				|| isset($parts['query'])
+				|| isset($parts['fragment'])
+			) {
+				throw new InvalidArgumentException('An AT Protocol publication needs a valid PDS URL.');
+			}
 		}
 	}
 
@@ -47,6 +63,7 @@ final readonly class AtprotoPublication
 			'post_id' => $this->postId,
 			'rkey' => $this->rkey,
 			'uri' => $this->uri,
+			'pds_url' => $this->pdsUrl ?? '',
 			'published_at' => Time::format($this->publishedAt),
 		];
 	}
