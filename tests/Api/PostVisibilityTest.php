@@ -132,6 +132,27 @@ final class PostVisibilityTest extends TestCase
 		self::assertSame([], $carolHome);
 	}
 
+	public function testDirectTimelineContainsOnlyTheSignedInAccountsMessages(): void
+	{
+		$sent = $this->post('alice to bob', 'direct', recipientIds: ['bob'])->decodedBody()['post'];
+		$received = $this->post('bob to alice', 'direct', authorId: 'bob', recipientIds: ['alice'])->decodedBody()['post'];
+		$elsewhere = $this->post('bob to carol', 'direct', authorId: 'bob', recipientIds: ['carol'])->decodedBody()['post'];
+		$this->post('public post', 'public', authorId: 'bob');
+
+		self::assertSame(401, $this->app->handle(new Request('GET', '/api/v1/timelines/direct'))->status);
+		$alice = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'alice'));
+		self::assertSame(200, $alice->status);
+		$expected = [$received['id'], $sent['id']];
+		usort($expected, static fn (string $left, string $right): int => strcmp($right, $left));
+		self::assertSame($expected, array_column($alice->decodedBody()['posts'], 'id'));
+		$sentPost = array_values(array_filter($alice->decodedBody()['posts'], static fn (array $post): bool => $post['id'] === $sent['id']))[0];
+		self::assertSame(['bob'], $sentPost['recipient_ids']);
+		self::assertFalse($alice->decodedBody()['has_more']);
+
+		$carol = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'carol'));
+		self::assertSame([$elsewhere['id']], array_column($carol->decodedBody()['posts'], 'id'));
+	}
+
 	public function testDirectRecipientsMustBeKnownLocalAccounts(): void
 	{
 		self::assertSame(422, $this->post('nobody', 'direct', recipientIds: ['unknown'])->status);

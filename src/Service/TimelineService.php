@@ -87,6 +87,26 @@ final class TimelineService
 	}
 
 	/**
+	 * Direct posts sent by or addressed to the signed-in account.
+	 *
+	 * @return list<Post>
+	 *
+	 * @throws InvalidCursorException
+	 */
+	public function direct(
+		string $userId,
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+		?string $beforeId = null,
+	): array {
+		return $this->onlyAllowed($this->posts->directTimelineForUser(
+			$userId,
+			$this->clamp($limit),
+			$this->cursor($before, $beforeId),
+		));
+	}
+
+	/**
 	 * @return list<Post>
 	 *
 	 * @throws InvalidCursorException

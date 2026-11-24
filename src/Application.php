@@ -71,6 +71,7 @@ use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\PdsXrpcHandler;
 use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
+use AlohaSocial\Core\Api\DirectTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\LikeRemotePostHandler;
@@ -1685,6 +1686,7 @@ final readonly class Application
 			->with(FollowHashtagHandler::class, static fn (): FollowHashtagHandler => new FollowHashtagHandler($followedHashtagService))
 			->with(UnfollowHashtagHandler::class, static fn (): UnfollowHashtagHandler => new UnfollowHashtagHandler($followedHashtagService))
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService, $filterService))
+			->with(DirectTimelineHandler::class, static fn (): DirectTimelineHandler => new DirectTimelineHandler($timelines, $mediaService, $filterService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(BlocksHandler::class, static fn (): BlocksHandler => new BlocksHandler($blockService))

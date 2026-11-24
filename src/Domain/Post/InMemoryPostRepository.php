@@ -399,6 +399,22 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		);
 	}
 
+	public function directTimelineForUser(string $userId, int $limit, DateTimeImmutable|TimelineCursor|null $before = null): array
+	{
+		return $this->slice(
+			array_values(array_filter(
+				$this->posts,
+				static fn (Post $post): bool => !$post->isDeleted()
+					&& !$post->isArchived()
+					&& $post->visibility === Visibility::Direct
+					&& ($post->authorId === $userId || in_array($userId, $post->recipientIds, true)),
+			)),
+			$limit,
+			$before instanceof TimelineCursor ? $before->publishedAt : $before,
+			$before instanceof TimelineCursor ? $before->id : null,
+		);
+	}
+
 	public function incrementPollVote(PollVote $vote): void
 	{
 		$post = $this->posts[$vote->postId] ?? null;

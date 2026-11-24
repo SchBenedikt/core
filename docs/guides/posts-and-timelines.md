@@ -89,12 +89,12 @@ for the host's cleanup policy; the post itself is no longer served.
 
 ## Visibility
 
-| Visibility | Public timeline | Home timeline | Single post |
+| Visibility | Public timeline | Home timeline | Direct timeline | Single post |
 | --- | --- | --- | --- |
-| `public` | yes | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | anyone |
-| `unlisted` | no (link only) | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | anyone with the link |
-| `followers` | no | own posts and boosts; local followers-only posts from followed local accounts | author and accepted local followers |
-| `direct` | no | own posts and direct posts addressed to the reader | author and recipients |
+| `public` | yes | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | no | anyone |
+| `unlisted` | no (link only) | own posts and boosts; remote posts and boosts from followed actors; local posts and boosts from followed local accounts | no | anyone with the link |
+| `followers` | no | own posts and boosts; local followers-only posts from followed local accounts | no | author and accepted local followers |
+| `direct` | no | own posts and direct posts addressed to the reader | own messages and messages addressed to the reader | author and recipients |
 
 The home timeline contains the reader's **own** local posts and boosts
 regardless of visibility, remote posts and boosts by actors in the reader's
@@ -109,6 +109,12 @@ signing actor and a blocked boosted author are filtered, and a blocked
 followed local account is omitted from the local half. See
 [blocks](blocks.md). Remote entries have no local visibility field and are
 serialized with `visibility: null`.
+
+`GET /api/v1/timelines/direct` is the private, paginated inbox source for the
+signed-in account. It returns only live direct posts the account authored or
+was named to receive, with the same timestamp-plus-id cursor as the other
+timelines. It does not expose direct posts to anonymous readers or unrelated
+accounts.
 
 The single-post rule is enforced by `PostService::getVisible()`: a non-public
 post answers 404 to anyone but its author, except that a followers-only post

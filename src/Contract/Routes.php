@@ -82,6 +82,7 @@ use AlohaSocial\Core\Api\FollowersHandler;
 use AlohaSocial\Core\Api\HealthHandler;
 use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
+use AlohaSocial\Core\Api\DirectTimelineHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\LikeRemotePostHandler;
@@ -641,6 +642,14 @@ final class Routes
 				handler: FollowedHashtagTimelineHandler::class,
 				requiresAuth: true,
 				summary: 'Posts carrying any hashtag the signed-in account follows, newest first.',
+			),
+			new Route(
+				name: 'timelines.direct',
+				method: 'GET',
+				path: $base . '/timelines/direct',
+				handler: DirectTimelineHandler::class,
+				requiresAuth: true,
+				summary: 'Direct posts sent by or addressed to the signed-in account.',
 			),
 			new Route(
 				name: 'timelines.home',
