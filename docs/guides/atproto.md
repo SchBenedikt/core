@@ -1,10 +1,11 @@
 # AT Protocol publishing and inbound sync
 
-The core owns a deliberately small, public, text-only AT Protocol publishing
-foundation. It owns deterministic record writes, the matching remote record
-delete for mirrored posts, the OAuth refresh exchange for a host-owned session,
-the authorization-code/PAR/revocation protocol client and an inbound importer
-for normalized relay/Jetstream/AppView events. It does not own the
+The core publishes public AT Protocol posts with text, image/video embeds,
+facets, replies, authorized quotes and minimal external-link cards. It also
+owns deterministic record writes, matching remote deletes for mirrored posts,
+the OAuth refresh exchange for a host-owned session, the
+authorization-code/PAR/revocation protocol client and an inbound importer for
+normalized relay/Jetstream/AppView events. It does not own the
 account-linking UI/callback, the credential store, PDS selection, the event
 transport or a full repository client; those remain in the host or in a future
 standalone client. This guide describes the implemented seams, their limits and
@@ -170,7 +171,10 @@ an optional parent URI and the facet inputs rather than a pre-built payload.
 `XrpcAtprotoBlobUploader` sends the raw bytes to
 `com.atproto.repo.uploadBlob` with the media type as the request Content-Type,
 over the same bearer/DPoP transport as the record writer, and reads the blob
-reference (`$type: blob`, `ref.$link`, `mimeType`, `size`) from the answer.
+reference (`$type: blob`, `ref.$link`, `mimeType`, `size`) from the answer. If
+the PDS returns MIME or size metadata, the uploader requires it to match the
+uploaded bytes; absent fields are filled from the request metadata. A mismatch
+fails the upload and prevents a post from referencing the blob.
 `AtprotoEmbed` validates everything before the first upload and then builds
 `app.bsky.embed.images` or `app.bsky.embed.video`.
 
@@ -650,8 +654,9 @@ resolves or is refused; `AtprotoReplyBuilderTest` covers root inheritance, the
 CID lookup, an unreadable parent and an unreadable root;
 `XrpcAtprotoIdentityResolverTest` and `XrpcAtprotoRecordResolverTest` cover the
 XRPC adapters and their failure answers. `XrpcAtprotoBlobUploaderTest` covers
-the upload request, the DPoP variant, a refused upload, a transport failure and
-a success without a blob reference; `AtprotoEmbedTest` covers 1–4 images, a
+the upload request, the DPoP variant, refused and malformed responses,
+inconsistent response metadata, a transport failure and a success without a
+blob reference; `AtprotoEmbedTest` covers 1–4 images, a
 video, mixed media, every refusal above and the aspect-ratio pass-through.
 `AtprotoProfileRecordTest` covers the `self` record and its bounds;
 `AtprotoProfileServiceTest` covers the avatar upload, both refusals without a
@@ -687,7 +692,8 @@ The full AT Protocol stack is still host/app work:
   reads are implemented as a port;
 - video transcoding and image processing for AT Protocol (the core uploads
   bytes the caller already prepared);
-- link cards and richer mention/facet targets;
+- rich link previews with fetched titles, descriptions and thumbnails;
+- remote quote resolution and richer mention/facet targets;
 - migrating the existing AT Protocol implementation out of the Nextcloud app.
 
 Remote delete for records published by this core is implemented locally, and
@@ -696,7 +702,7 @@ are implemented locally. Deleting records created outside this core, the
 account-linking UI/callback, the credential store and full account/AppView
 extraction remain external.
 
-The remaining protocol follow-ups — link cards, richer media and the
+The remaining protocol follow-ups — rich link previews, richer media and the
 relay/AppView consumer transport — are listed as Later in the
 [roadmap](../roadmap.md). The rest is tracked there as the compatibility
 remainder (M6), not as part of this publishing foundation.

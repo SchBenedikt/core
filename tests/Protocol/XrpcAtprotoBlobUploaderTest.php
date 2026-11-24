@@ -74,6 +74,46 @@ final class XrpcAtprotoBlobUploaderTest extends TestCase
 		self::assertSame(7, $blob->size);
 	}
 
+	public function testItRejectsResponseMetadataThatChangesTheUploadedMimeType(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse($this->blobResponse([
+			'ref' => ['$link' => self::BLOB_CID],
+			'mimeType' => 'image/jpeg',
+			'size' => 5,
+		]));
+
+		try {
+			(new XrpcAtprotoBlobUploader($http))->upload(
+				$this->account(),
+				new AtprotoMedia('image/png', 'bytes'),
+			);
+			self::fail('Mismatched PDS media metadata must be rejected.');
+		} catch (AtprotoBlobException $exception) {
+			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+		}
+	}
+
+	public function testItRejectsResponseMetadataThatChangesTheUploadedSize(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse($this->blobResponse([
+			'ref' => ['$link' => self::BLOB_CID],
+			'mimeType' => 'image/png',
+			'size' => 500,
+		]));
+
+		try {
+			(new XrpcAtprotoBlobUploader($http))->upload(
+				$this->account(),
+				new AtprotoMedia('image/png', 'bytes'),
+			);
+			self::fail('Mismatched PDS media metadata must be rejected.');
+		} catch (AtprotoBlobException $exception) {
+			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+		}
+	}
+
 	public function testADpopProviderTurnsTheUploadIntoADpopRequest(): void
 	{
 		$http = new FakeHttpClient();
