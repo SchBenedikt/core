@@ -194,11 +194,27 @@ appends a `#commit` event containing `repo`, `commit`, `rev`, `since`, `ops`,
 `blobs` and a complete CARv1 `blocks` payload. The blob event has an empty
 `ops` list and carries the raw blob CID in `blobs`.
 
-The WebSocket process is `bin/pds-firehose`:
+The WebSocket process is `bin/pds-firehose`. For the standalone SQLite setup,
+the existing path option remains available:
 
 ```sh
 php bin/pds-firehose --database=/var/lib/aloha/pds.sqlite --port=2584
 ```
+
+Hosts that use the main application database can give the process the same PDO
+DSN and credentials as the HTTP host, without putting a password in the process
+arguments:
+
+```sh
+PDS_DATABASE_DSN='pgsql:host=127.0.0.1;port=5432;dbname=alohasocial' \
+PDS_DATABASE_USER=alohasocial PDS_DATABASE_PASSWORD='…' \
+php bin/pds-firehose --host=127.0.0.1 --port=2584
+```
+
+`PDS_DATABASE_DSN`, `PDS_DATABASE_USER` and `PDS_DATABASE_PASSWORD` configure
+PDO directly. `--dsn=…` can be used instead of `PDS_DATABASE_DSN`; the legacy
+`--database` option and `PDS_DATABASE` environment variable continue to mean a
+SQLite path.
 
 It serves `/xrpc/com.atproto.sync.subscribeRepos` on the socket. A subscriber
 without `cursor` starts at the current sequence; `cursor=N` replays every
