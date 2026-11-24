@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
@@ -91,6 +93,36 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 		self::assertSame($uri, $this->service->like('alice', 'post-1'));
 		self::assertCount(2, $this->http->requests, 'A retry must return the stored record without a second PDS write.');
+	}
+
+	public function testRemoteLikeUsesProjectionStrongRefAndIsIdempotent(): void
+	{
+		$target = $this->remoteTarget();
+		$service = $this->remoteService(allow: true);
+		$this->http->queueResponseFactory($this->publishedRecord());
+
+		$uri = $service->likeRemote('alice', $target);
+		self::assertCount(1, $this->http->requests);
+		$body = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.like', $body['collection']);
+		self::assertSame([
+			'uri' => $target->uri,
+			'cid' => $target->cid,
+		], $body['record']['subject']);
+		self::assertSame($uri, $service->likeRemote('alice', $target));
+		self::assertCount(1, $this->http->requests, 'A retry must reuse the interaction ledger entry.');
+	}
+
+	public function testRemoteInteractionRequiresHostTargetPolicy(): void
+	{
+		$this->expectException(AtprotoNotConfiguredException::class);
+		$this->service->likeRemote('alice', $this->remoteTarget());
+	}
+
+	public function testRemoteInteractionPolicyCanRejectTargetWithoutPublishing(): void
+	{
+		$this->expectException(AtprotoInteractionRejectedException::class);
+		$this->remoteService(allow: false)->likeRemote('alice', $this->remoteTarget());
 	}
 
 	public function testSubjectRecordIsResolvedOnItsPublishersPds(): void
@@ -380,6 +412,46 @@ final class AtprotoInteractionServiceTest extends TestCase
 			$this->blocks,
 			$this->activities(),
 			$this->interactionRecords,
+		);
+	}
+
+	private function remoteService(bool $allow): AtprotoInteractionService
+	{
+		$publisher = new XrpcAtprotoPublisher($this->http);
+		return new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			$publisher,
+			null,
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			$publisher,
+			null,
+			null,
+			$this->interactionRecords,
+			new class($allow) implements AtprotoInteractionTargetPolicy {
+				public function __construct(private readonly bool $allow) {}
+				public function allows(string $localUserId, AtprotoPostProjection $target): bool { return $this->allow; }
+			},
+		);
+	}
+
+	private function remoteTarget(): AtprotoPostProjection
+	{
+		return new AtprotoPostProjection(
+			'at://did:plc:bob/app.bsky.feed.post/post-bob',
+			'bafy-bob-post',
+			'did:plc:bob',
+			null,
+			'hello from Bob',
+			Time::parse('2026-11-11T10:00:00Z'),
+			null,
+			null,
+			[],
+			null,
 		);
 	}
 
