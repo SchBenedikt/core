@@ -57,6 +57,13 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		bool $hideReplies = false,
 	): array {
 		$entries = $this->base->forUser($localUserId, $limit, $before, $hideReplies);
+		// The base timeline may already include the reader's own boosts (and,
+		// depending on its adapter, posts from local follows). Keep the wrapper
+		// additions idempotent by timeline item ID.
+		$entryIds = array_fill_keys(array_map(
+			static fn (TimelineEntry $entry): string => $entry->id,
+			$entries,
+		), true);
 		$muted = array_fill_keys(
 			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
 			true,
@@ -72,8 +79,12 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 				if (isset($muted[$post->authorId])) {
 					continue;
 				}
+				if (isset($entryIds[$post->id])) {
+					continue;
+				}
 
 				$entries[] = TimelineEntry::fromPost($post);
+				$entryIds[$post->id] = true;
 			}
 		}
 
@@ -86,6 +97,9 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			static fn (string $authorId): bool => !isset($muted[$authorId]) && !isset($exclusive[$authorId]),
 		));
 		foreach ($this->boosts?->timelineForUsers($boostAuthors, $limit, $before) ?? [] as $boost) {
+			if (isset($entryIds[$boost->id])) {
+				continue;
+			}
 			$post = $this->posts->find($boost->postId);
 			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
 				continue;
@@ -114,6 +128,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 				boostedBy: $boost->userId,
 				inReplyToId: $post->inReplyToId,
 			);
+			$entryIds[$boost->id] = true;
 		}
 
 		usort($entries, static function (TimelineEntry $a, TimelineEntry $b): int {
