@@ -588,9 +588,9 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		);
 	}
 
-	public function erase(string $userId, string $actorId): AccountDataErasure
+	public function erase(string $userId, string $actorId, ?DateTimeImmutable $deletedAt = null): AccountDataErasure
 	{
-		return $this->database->transaction(function () use ($userId, $actorId): AccountDataErasure {
+		return $this->database->transaction(function () use ($userId, $actorId, $deletedAt): AccountDataErasure {
 			// Collect paths before deleting the metadata rows that name them.
 			$blobPaths = $this->blobPaths($userId);
 			$counts = [];
@@ -607,7 +607,11 @@ final class PdoAccountDataRepository implements AccountDataRepository
 				);
 			}
 
-			$counts = $this->erasePds($counts, ['user' => $userId]);
+			$counts = $this->erasePds(
+				$counts,
+				['user' => $userId],
+				Time::format($deletedAt ?? new DateTimeImmutable('now', new \DateTimeZone('UTC'))),
+			);
 
 			return new AccountDataErasure($counts, $blobPaths);
 		});
@@ -715,12 +719,16 @@ final class PdoAccountDataRepository implements AccountDataRepository
 	 * @param array{user: string} $parameters
 	 * @return array<string, int>
 	 */
-	private function erasePds(array $counts, array $parameters): array
+	private function erasePds(array $counts, array $parameters, string $deletedAt): array
 	{
 		if (!$this->tableExists(PdsSchema::IDENTITY_TABLE)) {
 			return $counts;
 		}
 
+		$identities = $this->database->fetchAll(
+			'SELECT did FROM ' . PdsSchema::IDENTITY_TABLE . ' WHERE local_user_id = :user ORDER BY did',
+			$parameters,
+		);
 		$didScope = 'did IN (SELECT did FROM ' . PdsSchema::IDENTITY_TABLE . ' WHERE local_user_id = :user)';
 		foreach ([
 			PdsSchema::KEY_TABLE,
@@ -745,6 +753,57 @@ final class PdoAccountDataRepository implements AccountDataRepository
 			'DELETE FROM ' . PdsSchema::IDENTITY_TABLE . ' WHERE local_user_id = :user',
 			$parameters,
 		);
+
+		if ($identities !== []
+			&& $this->tableExists(PdsSchema::EVENT_TABLE)
+			&& $this->tableExists(PdsSchema::SEQUENCE_TABLE)
+		) {
+			foreach ($identities as $identity) {
+				$did = (string) ($identity['did'] ?? '');
+				if ($did === '') {
+					continue;
+				}
+
+				$sequence = $this->database->fetchValue(
+					'SELECT value FROM ' . PdsSchema::SEQUENCE_TABLE . ' WHERE name = :name',
+					['name' => 'firehose'],
+				);
+				if ($sequence === null) {
+					$seq = (int) $this->database->fetchValue(
+						'SELECT COALESCE(MAX(seq), 0) + 1 FROM ' . PdsSchema::EVENT_TABLE,
+					);
+					$this->database->execute(
+						'INSERT INTO ' . PdsSchema::SEQUENCE_TABLE . ' (name, value) VALUES (:name, :value)',
+						['name' => 'firehose', 'value' => $seq],
+					);
+				} else {
+					$this->database->execute(
+						'UPDATE ' . PdsSchema::SEQUENCE_TABLE . ' SET value = value + 1 WHERE name = :name',
+						['name' => 'firehose'],
+					);
+					$seq = (int) $this->database->fetchValue(
+						'SELECT value FROM ' . PdsSchema::SEQUENCE_TABLE . ' WHERE name = :name',
+						['name' => 'firehose'],
+					);
+				}
+				$this->database->execute(
+					'INSERT INTO ' . PdsSchema::EVENT_TABLE
+					. ' (seq, did, commit_cid, rev, since_rev, ops_json, blocks_car, blobs_json, created_at)'
+					. ' VALUES (:seq, :did, :commit, :rev, :status, :ops, :blocks, :blobs, :created)',
+					[
+						'seq' => $seq,
+						'did' => $did,
+						'commit' => '',
+						'rev' => '',
+						'status' => 'deleted',
+						'ops' => '[]',
+						'blocks' => '',
+						'blobs' => '[]',
+						'created' => $deletedAt,
+					],
+				);
+			}
+		}
 
 		return $counts;
 	}

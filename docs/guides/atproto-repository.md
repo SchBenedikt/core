@@ -194,6 +194,12 @@ appends a `#commit` event containing `repo`, `commit`, `rev`, `since`, `ops`,
 `blobs` and a complete CARv1 `blocks` payload. The blob event has an empty
 `ops` list and carries the raw blob CID in `blobs`.
 
+Erasing a hosted account removes its repository data and appends a sequenced
+`#account` event with `active: false` and `status: "deleted"`. The deletion
+event remains in the replay log after that account's earlier repository events
+are removed, so a relay that resumes from an older cursor can still learn the
+repository is no longer served.
+
 The WebSocket process is `bin/pds-firehose`. For the standalone SQLite setup,
 the existing path option remains available:
 
@@ -219,9 +225,9 @@ SQLite path.
 It serves `/xrpc/com.atproto.sync.subscribeRepos` on the socket. A subscriber
 without `cursor` starts at the current sequence; `cursor=N` replays every
 event with `seq > N` from the persisted log before following live commits.
-Frames are DAG-CBOR `#commit` messages in binary WebSocket frames. The normal
-HTTP route is registered as well but answers `426 UpgradeRequired`; the socket
-process is the transport, not a second repository implementation.
+Frames are DAG-CBOR `#commit` or `#account` messages in binary WebSocket frames.
+The normal HTTP route is registered as well but answers `426 UpgradeRequired`;
+the socket process is the transport, not a second repository implementation.
 
 ## DID and key lifecycle
 

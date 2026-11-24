@@ -41,9 +41,22 @@ final readonly class PdsEvent
 			throw new \InvalidArgumentException('A firehose sequence cannot be negative.');
 		}
 
-		if ($did === '' || $commitCid === '' || $rev === '') {
-			throw new \InvalidArgumentException('A firehose event needs a DID, commit and rev.');
+		if ($did === '') {
+			throw new \InvalidArgumentException('A firehose event needs a DID.');
 		}
+
+		if ($rev === '' && ($commitCid !== '' || $sinceRev !== 'deleted' || $ops !== [] || $blocks !== '' || $blobs !== [])) {
+			throw new \InvalidArgumentException('An account deletion event has an invalid payload.');
+		}
+
+		if ($rev !== '' && $commitCid === '') {
+			throw new \InvalidArgumentException('A repository commit event needs a commit CID.');
+		}
+	}
+
+	public static function accountDeleted(int $seq, string $did, string $createdAt): self
+	{
+		return new self($seq, $did, '', '', 'deleted', [], '', [], $createdAt);
 	}
 
 	public function withSeq(int $seq): self
@@ -68,6 +81,17 @@ final readonly class PdsEvent
 	 */
 	public function toArray(): array
 	{
+		if ($this->rev === '') {
+			return [
+				'$type' => '#account',
+				'seq' => $this->seq,
+				'did' => $this->did,
+				'time' => $this->createdAt,
+				'active' => false,
+				'status' => $this->sinceRev,
+			];
+		}
+
 		$ops = [];
 		foreach ($this->ops as $op) {
 			$entry = [
