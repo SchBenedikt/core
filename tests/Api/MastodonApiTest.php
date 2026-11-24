@@ -195,6 +195,16 @@ final class MastodonApiTest extends TestCase
 		self::assertSame(200, $next->status);
 		self::assertSame($local['id'], $next->decodedBody()[0]['id']);
 
+		$newer = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',
+			query: ['limit' => '1', 'since_id' => $local['id']],
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(200, $newer->status);
+		self::assertSame($remoteObjectId, $newer->decodedBody()[0]['id']);
+
 		self::assertSame(401, $app->handle(new Request(
 			method: 'GET',
 			path: MastodonApiConfig::DEFAULT_PREFIX . '/timelines/home',

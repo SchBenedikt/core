@@ -85,9 +85,10 @@ mute bookkeeping, private list bookkeeping with list timelines and the
 exclusive home filter, boost/reblog bookkeeping, reply context, local
 follow/unfollow and remote Follow/Undo lifecycle, relationship bookkeeping,
 local notifications with dismiss/unread state, media upload, metadata
-update/delete and local media attachments. It deliberately
-does **not** implement remote timelines, remote favourite counts, remote boost federation, remote notifications,
-streaming, fetching remote polls, followed tags, OAuth
+update/delete and local media attachments. In addition to the authenticated
+home timeline described above, it deliberately does **not** implement the
+public remote timeline, remote favourite counts, remote boost federation,
+remote notifications, streaming, fetching remote polls, followed tags, OAuth
 authorization/token endpoints, remote search, remote profile fetching, admin
 APIs or the full account management surface. Keyword filters are supported
 locally (see below). Scheduled statuses are
