@@ -158,6 +158,7 @@ use AlohaSocial\Core\Api\Mastodon\MastodonNotificationUnreadCountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonNotificationsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPollHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonPublicTimelineHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonHashtagTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonHomeTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
@@ -1247,6 +1248,15 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '60/60',
 				summary: 'Public local statuses in the Mastodon shape.',
+			),
+			new Route(
+				name: 'mastodon.timelines.tag',
+				method: 'GET',
+				path: $mastodon . '/timelines/tag/{tag}',
+				handler: MastodonHashtagTimelineHandler::class,
+				requiresAuth: false,
+				rateLimit: '60/60',
+				summary: 'Public local statuses carrying a hashtag.',
 			),
 			new Route(
 				name: 'mastodon.timelines.home',

@@ -180,7 +180,7 @@ final class MastodonApiTest extends TestCase
 			userId: 'alice',
 			scopes: ['read:statuses'],
 		));
-		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame(200, $first->status);
 		self::assertSame($remoteObjectId, $first->decodedBody()[0]['id']);
 		self::assertSame($actorId, $first->decodedBody()[0]['account']['id']);
 		self::assertStringContainsString(rawurlencode($remoteObjectId), $first->headers['Link']);
@@ -364,6 +364,32 @@ final class MastodonApiTest extends TestCase
 		self::assertSame($poll, $timeline->decodedBody()[0]['poll']);
 	}
 
+	public function testMastodonHashtagTimelineIsPublicAndPagesWithMaxId(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob']);
+		$older = $this->createStatus($app, ['status' => 'Older #Core'])->decodedBody();
+		$this->clock->advance(1);
+		$newer = $this->createStatus($app, ['status' => 'Newer #core'])->decodedBody();
+		$private = $this->createStatus($app, [
+			'status' => 'Private #core',
+			'visibility' => 'private',
+		])->decodedBody();
+
+		$path = MastodonApiConfig::DEFAULT_PREFIX . '/timelines/tag/core';
+		$first = $app->handle(new Request('GET', $path, ['limit' => '1']));
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame([$newer['id']], array_column($first->decodedBody(), 'id'));
+		self::assertStringContainsString('limit=1&max_id=' . $newer['id'], (string) $first->header('Link'));
+
+		$second = $app->handle(new Request('GET', $path, ['limit' => '1', 'max_id' => $newer['id']]));
+		self::assertSame([$older['id']], array_column($second->decodedBody(), 'id'));
+		self::assertNotContains($private['id'], array_column($first->decodedBody(), 'id'));
+
+		$unsupported = $app->handle(new Request('GET', $path, ['since_id' => $older['id']]));
+		self::assertSame(422, $unsupported->status);
+		self::assertSame(422, $app->handle(new Request('GET', MastodonApiConfig::DEFAULT_PREFIX . '/timelines/tag/!'))->status);
+	}
+
 	public function testPollAcceptsJsonAndAnExplicitExpiry(): void
 	{
 		$app = $this->app();
@@ -481,7 +507,7 @@ final class MastodonApiTest extends TestCase
 		$first = $this->createStatus($app, $fields, ['Idempotency-Key' => 'poll-key']);
 		$second = $this->createStatus($app, $fields, ['Idempotency-Key' => 'poll-key']);
 
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertSame(200, $second->status);
 		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
 		self::assertSame($first->decodedBody()['poll'], $second->decodedBody()['poll']);
@@ -505,7 +531,7 @@ final class MastodonApiTest extends TestCase
 			['Idempotency-Key' => 'client-key-1'],
 		);
 
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertSame(200, $second->status);
 		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
 
@@ -530,7 +556,7 @@ final class MastodonApiTest extends TestCase
 			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
 			['limit' => '2'],
 		));
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertCount(2, $first->decodedBody());
 		self::assertSame([$ids[2], $ids[1]], array_column($first->decodedBody(), 'id'));
 		self::assertStringContainsString('max_id=' . rawurlencode($ids[1]), (string) $first->header('Link'));
@@ -707,7 +733,7 @@ final class MastodonApiTest extends TestCase
 		$first = $this->upload($app, $this->png(), 'retry me', ['Idempotency-Key' => 'media-key-1']);
 		$second = $this->upload($app, $this->png(), 'retry me', ['Idempotency-Key' => 'media-key-1']);
 
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertSame(200, $second->status);
 		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
 		self::assertSame(1, $attachments->count());
@@ -886,7 +912,7 @@ final class MastodonApiTest extends TestCase
 		$status = $this->createStatus($app, ['status' => 'favourite me'])->decodedBody();
 
 		$first = $this->favourite($app, $status['id']);
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertTrue($first->decodedBody()['favourited']);
 		self::assertSame(1, $first->decodedBody()['favourites_count']);
 		self::assertSame(1, $favourites->countForPost($status['id']));
@@ -2716,7 +2742,7 @@ final class MastodonApiTest extends TestCase
 
 		$first = $this->votePoll($app, $pollId, [1], userId: 'bob');
 		$second = $this->votePoll($app, $pollId, ['1'], userId: 'bob');
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		self::assertSame(200, $second->status);
 		self::assertSame(1, $second->decodedBody()['votes_count']);
 		self::assertSame(1, $second->decodedBody()['voters_count']);
@@ -2856,7 +2882,7 @@ final class MastodonApiTest extends TestCase
 			userId: 'bob',
 			scopes: ['write:statuses'],
 		));
-		self::assertSame(200, $first->status);
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
 		$boost = $first->decodedBody();
 		self::assertSame('bob', $boost['account']['id']);
 		self::assertSame($status['id'], $boost['reblog']['id']);

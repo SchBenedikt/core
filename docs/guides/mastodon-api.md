@@ -15,6 +15,7 @@ Locally implemented (core):
 
 - `GET /instance`
 - `GET /timelines/public`
+- `GET /timelines/tag/{tag}`
 - `GET /statuses/{id}`
 - `GET /statuses/{id}/context`
 - `GET /polls/{id}`
@@ -74,6 +75,12 @@ revision history are the same; the answer is the updated status with a non-null
 not_found`, invalid input is `422 validation_failed`, and the route needs
 `write:statuses`.
 
+The public hashtag timeline at `GET /api/mastodon/v1/timelines/tag/{tag}`
+returns local public statuses carrying the normalized hashtag. It supports
+`limit` and `max_id` with a next-page `Link` header. `since_id` and `min_id`
+are rejected until the shared hashtag repository supports stable forward
+pagination.
+
 The authenticated home timeline at `GET /api/mastodon/v1/timelines/home`
 combines the caller's local and accepted-follow remote posts and boosts. It
 requires `read:statuses`, supports `limit`, `max_id` and `since_id`, and returns
@@ -88,7 +95,7 @@ local notifications with dismiss/unread state, media upload, metadata
 update/delete and local media attachments. In addition to the authenticated
 home timeline described above, it deliberately does **not** implement the
 public remote timeline, remote favourite counts, remote boost federation,
-remote notifications, streaming, fetching remote polls, followed tags, OAuth
+remote notifications, streaming, fetching remote polls, followed-tag preferences, OAuth
 authorization/token endpoints, remote search, remote profile fetching, admin
 APIs or the full account management surface. Keyword filters are supported
 locally (see below). Scheduled statuses are

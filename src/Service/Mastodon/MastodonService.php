@@ -179,6 +179,38 @@ final class MastodonService
 	}
 
 	/**
+	 * Public local statuses carrying a hashtag, in the Mastodon status shape.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function hashtagTimeline(string $tag, int $limit, ?string $maxId, ?string $userId): array
+	{
+		$this->requireEnabled();
+		if ($this->homeTimelines === null) {
+			throw new MastodonRequestException(503, 'timeline_not_configured', 'Hashtag timeline storage is not configured.');
+		}
+		[$before, $beforeId] = [null, null];
+		if ($maxId !== null && $maxId !== '') {
+			$post = $this->cursorPost($maxId);
+			$before = $post->publishedAt;
+			$beforeId = $post->id;
+		}
+
+		try {
+			$posts = $this->homeTimelines->tag(
+				$tag,
+				$this->clamp($limit),
+				$before?->format('Y-m-d\\TH:i:s\\Z'),
+				$beforeId,
+			);
+		} catch (\AlohaSocial\Core\Service\InvalidHashtagException $exception) {
+			throw new MastodonRequestException(422, 'validation_failed', $exception->getMessage());
+		}
+
+		return $this->presenter->statuses($posts, $userId);
+	}
+
+	/**
 	 * The authenticated account's combined local and followed-remote timeline.
 	 *
 	 * @return list<array<string, mixed>>
