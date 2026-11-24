@@ -158,6 +158,38 @@ final class AtprotoInteractionServiceTest extends TestCase
 		self::assertCount(1, $this->http->requests, 'A retry must reuse the interaction ledger entry.');
 	}
 
+	public function testRemoteLikeCanBeRemovedAfterItsTargetRecordWasDeleted(): void
+	{
+		$target = $this->remoteTarget();
+		$service = $this->remoteService(allow: true);
+		$this->http->queueResponseFactory($this->publishedRecord());
+		$service->likeRemote('alice', $target);
+
+		$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+		$service->unlikeRemoteUri('alice', $target->uri);
+
+		self::assertCount(2, $this->http->requests);
+		$delete = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.like', $delete['collection']);
+		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', hash('sha256', $target->uri), 'like'));
+	}
+
+	public function testRemoteRepostCanBeUndoneAfterItsTargetRecordWasDeleted(): void
+	{
+		$target = $this->remoteTarget();
+		$service = $this->remoteService(allow: true);
+		$this->http->queueResponseFactory($this->publishedRecord());
+		$service->repostRemote('alice', $target);
+
+		$this->http->queueResponse(new HttpResponse(200, [], '{}'));
+		$service->undoRemoteRepostUri('alice', $target->uri);
+
+		self::assertCount(2, $this->http->requests);
+		$delete = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('app.bsky.feed.repost', $delete['collection']);
+		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', hash('sha256', $target->uri), 'repost'));
+	}
+
 	public function testRemoteInteractionRequiresHostTargetPolicy(): void
 	{
 		$this->expectException(AtprotoNotConfiguredException::class);

@@ -145,9 +145,21 @@ final class AtprotoInteractionService
 		$this->removeRemote(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $target, $accountDid);
 	}
 
+	/** Remove a stored like after its remote post has been deleted from the host's feed. */
+	public function unlikeRemoteUri(string $localUserId, string $postUri, ?string $accountDid = null): void
+	{
+		$this->removeRemoteByUri(self::KIND_LIKE, AtprotoInteractionRecord::LIKE, $localUserId, $postUri, $accountDid);
+	}
+
 	public function undoRemoteRepost(string $localUserId, AtprotoPostProjection $target, ?string $accountDid = null): void
 	{
 		$this->removeRemote(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $target, $accountDid);
+	}
+
+	/** Remove a stored repost after its remote post has been deleted from the host's feed. */
+	public function undoRemoteRepostUri(string $localUserId, string $postUri, ?string $accountDid = null): void
+	{
+		$this->removeRemoteByUri(self::KIND_REPOST, AtprotoInteractionRecord::REPOST, $localUserId, $postUri, $accountDid);
 	}
 
 	private function writeRemote(
@@ -196,6 +208,35 @@ final class AtprotoInteractionService
 		$rkey = $existing?->rkey ?? $this->remoteRkey($kind, $localUserId, $target, $account);
 		$this->deleter->delete($account, $rkey, $collection);
 		$this->interactionRecords?->remove($localUserId, $account->did, $postId, $kind);
+	}
+
+	private function removeRemoteByUri(
+		string $kind,
+		string $collection,
+		string $localUserId,
+		string $postUri,
+		?string $accountDid,
+	): void {
+		$parts = explode('/', $postUri);
+		if (!AtprotoIdentifiers::isAtUri($postUri)
+			|| ($parts[3] ?? null) !== AtprotoPostProjection::COLLECTION
+			|| AtprotoIdentifiers::uri((string) ($parts[2] ?? ''), AtprotoPostProjection::COLLECTION, (string) ($parts[4] ?? '')) !== $postUri
+		) {
+			throw new AtprotoInteractionRejectedException(AtprotoInteractionRejectedException::SUBJECT_UNRESOLVABLE);
+		}
+		if ($this->deleter === null || $this->interactionRecords === null) {
+			throw new AtprotoNotConfiguredException();
+		}
+
+		$account = $this->account($localUserId, $accountDid);
+		$postId = hash('sha256', $postUri);
+		$existing = $this->interactionRecords->find($localUserId, $account->did, $postId, $kind);
+		if ($existing === null) {
+			return;
+		}
+
+		$this->deleter->delete($account, $existing->rkey, $collection);
+		$this->interactionRecords->remove($localUserId, $account->did, $postId, $kind);
 	}
 
 	private function assertRemoteTarget(string $localUserId, AtprotoPostProjection $target): void
