@@ -243,7 +243,9 @@ resolution remain unsupported.
 - For remote posts, the host passes a trusted `AtprotoPostProjection` and must
   inject `AtprotoInteractionTargetPolicy`. The policy must recheck that the
   viewer can interact with the post and has not blocked its author. Missing
-  policy configuration refuses writes. The projection's URI and CID form the
+  policy configuration refuses writes. A host assembled with
+  `Application::forHost()` supplies this as `atprotoRemoteTargetPolicy`. The
+  projection's URI and CID form the
   strong reference directly; retries are deduplicated in the interaction
   ledger, keyed by local user, linked DID, post URI and interaction kind.
 - `AtprotoPublisher::publish()` and `AtprotoDeleter::delete()` take the

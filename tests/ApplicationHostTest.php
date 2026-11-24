@@ -28,6 +28,8 @@ use AlohaSocial\Core\Domain\Federation\PdoFollowingRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionTargetPolicy;
+use AlohaSocial\Core\Domain\Atproto\AtprotoPostProjection;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
@@ -88,6 +90,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\RandomIdGenerator;
 use AlohaSocial\Core\Support\Time;
+use AlohaSocial\Core\Service\Atproto\AtprotoInteractionRejectedException;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
@@ -299,6 +302,37 @@ final class ApplicationHostTest extends TestCase
 			FollowState::Pending->value,
 			(new PdoFollowingRepository($database))->find('alice', self::BOB)?->state->value,
 		);
+	}
+
+	public function testForHostPassesTheRemoteAtprotoTargetPolicyToInteractionService(): void
+	{
+		$policy = new class implements AtprotoInteractionTargetPolicy {
+			public function allows(string $localUserId, AtprotoPostProjection $target): bool
+			{
+				return false;
+			}
+		};
+		$app = $this->host(
+			$this->database(),
+			new FakeHttpClient(),
+			atproto: true,
+			atprotoRemoteTargetPolicy: $policy,
+		);
+		$target = new AtprotoPostProjection(
+			'at://did:plc:bob/app.bsky.feed.post/post-bob',
+			'bafy-bob-post',
+			'did:plc:bob',
+			null,
+			'hello from Bob',
+			Time::parse('2026-11-11T10:00:00Z'),
+			null,
+			null,
+			[],
+			null,
+		);
+
+		$this->expectException(AtprotoInteractionRejectedException::class);
+		$app->atprotoInteractions?->likeRemote('alice', $target);
 	}
 
 	public function testForHostRollsBackThePostWhenTheQueueRejectsIt(): void
@@ -1347,6 +1381,7 @@ final class ApplicationHostTest extends TestCase
 		?BlobStore $blobStore = null,
 		?JobQueue $queue = null,
 		?InboxResolver $inboxResolver = null,
+		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 	): Application {
 		return Application::forHost(
 			config: new ArrayConfig([
@@ -1366,6 +1401,7 @@ final class ApplicationHostTest extends TestCase
 			activityLog: new PdoActivityLog($database),
 			actorResolver: $actorResolver,
 			atprotoAccounts: $atprotoAccounts,
+			atprotoRemoteTargetPolicy: $atprotoRemoteTargetPolicy,
 			blobStore: $blobStore,
 			clock: $this->clock,
 			hostResolver: new TestHostResolver([
