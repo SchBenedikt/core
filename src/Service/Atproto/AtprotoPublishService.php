@@ -115,7 +115,7 @@ final class AtprotoPublishService
 	 */
 	public function scheduleDelete(Post $post): void
 	{
-		if (!$this->isEnabled() || !$this->isDeleteConfigured()) {
+		if (!$this->isDeleteConfigured()) {
 			return;
 		}
 
@@ -167,7 +167,6 @@ final class AtprotoPublishService
 	 * Deletes the remote AT Protocol record for a local post and removes the
 	 * local publication row. Repeating this operation is a no-op.
 	 *
-	 * @throws AtprotoPublishDisabledException
 	 * @throws AtprotoNotConfiguredException
 	 * @throws AtprotoAccountNotConnectedException
 	 * @throws PostNotFoundException when a still-present post belongs to another user
@@ -175,10 +174,6 @@ final class AtprotoPublishService
 	 */
 	public function deleteRemote(string $localUserId, string $postId): void
 	{
-		if (!$this->isEnabled()) {
-			throw new AtprotoPublishDisabledException();
-		}
-
 		if (!$this->isDeleteConfigured()) {
 			throw new AtprotoNotConfiguredException();
 		}
