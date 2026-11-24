@@ -166,7 +166,9 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 
 		$rows = $this->db->fetchAll($sql, $parameters);
 
-		return array_map(fn (array $row): TimelineEntry => $this->hydrate($row), $rows);
+		return TimelineEntryDeduplicator::deduplicateBoosts(
+			array_map(fn (array $row): TimelineEntry => $this->hydrate($row), $rows),
+		);
 	}
 
 	/**
