@@ -415,7 +415,16 @@ final class AtprotoPublishService
 
 			try {
 				$embed = $this->embeds->build($media, $account);
-			} catch (AtprotoBlobException | AtprotoEmbedException $exception) {
+			} catch (AtprotoBlobException $exception) {
+				if ($exception->retryable) {
+					throw new AtprotoPublishFailedException(
+						$exception->status,
+						'The AT Protocol PDS could not upload the attached media.',
+					);
+				}
+
+				throw new AtprotoPostRejectedException($exception->reason);
+			} catch (AtprotoEmbedException $exception) {
 				throw new AtprotoPostRejectedException($exception->reason);
 			}
 		}

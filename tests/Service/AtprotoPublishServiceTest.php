@@ -576,8 +576,8 @@ final class AtprotoPublishServiceTest extends TestCase
 				new AtprotoMedia('image/png', 'png', 'alt'),
 			]);
 			self::fail('A failed upload should have refused the post.');
-		} catch (AtprotoPostRejectedException $exception) {
-			self::assertSame(AtprotoBlobException::UPLOAD_FAILED, $exception->reason);
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(500, $exception->status);
 		}
 
 		self::assertCount(1, $this->http->requests);

@@ -53,6 +53,7 @@ final class XrpcAtprotoBlobUploader implements AtprotoBlobUploader
 			throw new AtprotoBlobException(
 				AtprotoBlobException::UPLOAD_FAILED,
 				'The AT Protocol PDS could not be reached for the blob upload.',
+				retryable: true,
 			);
 		}
 
@@ -60,6 +61,12 @@ final class XrpcAtprotoBlobUploader implements AtprotoBlobUploader
 			throw new AtprotoBlobException(
 				AtprotoBlobException::UPLOAD_FAILED,
 				'The AT Protocol PDS refused the blob upload.',
+				retryable: $response->status === 401
+					|| $response->status === 408
+					|| $response->status === 425
+					|| $response->status === 429
+					|| $response->status >= 500,
+				status: $response->status,
 			);
 		}
 

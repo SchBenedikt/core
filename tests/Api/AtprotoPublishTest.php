@@ -152,6 +152,64 @@ final class AtprotoPublishTest extends TestCase
 		self::assertCount(0, $app->queue->pending(), 'Unsupported media should not be queued for a permanent refusal.');
 	}
 
+	public function testATemporaryBlobUploadFailureRetriesTheQueuedPublication(): void
+	{
+		$attachmentId = 'attachment-retry';
+		$attachment = new Attachment(
+			id: $attachmentId,
+			ownerId: self::ALICE,
+			storageKey: 'media/' . $attachmentId . '/original.png',
+			thumbnailKey: 'media/' . $attachmentId . '/thumbnail.png',
+			mimeType: 'image/png',
+			width: 20,
+			height: 20,
+			byteSize: 3,
+			altText: 'Retry image',
+			createdAt: $this->clock->now(),
+			kind: MediaKind::Image,
+		);
+		$attachments = new InMemoryAttachmentRepository();
+		$attachments->insert($attachment);
+		$blobs = new InMemoryBlobStore();
+		$blobs->put($attachment->storageKey, 'png');
+		$app = Application::inMemory(
+			clock: $this->clock,
+			config: new ArrayConfig([
+				InstanceInfo::CONFIG_APP => ['instance.url' => 'https://social.example', 'atproto.publish' => 'true'],
+			]),
+			httpClient: $this->http,
+			attachmentRepository: $attachments,
+			blobStore: $blobs,
+			atprotoAccounts: new InMemoryAtprotoAccountResolver([self::ALICE => $this->account()]),
+			atprotoPublications: $this->publications,
+		);
+		$post = $app->posts->create(new CreatePost(
+			self::ALICE,
+			'Image post that should retry',
+			attachmentIds: [$attachmentId],
+		));
+
+		$this->http->queueResponse(new HttpResponse(503, [], '{"error":"ServiceUnavailable"}'));
+		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
+			'blob' => [
+				'$type' => 'blob',
+				'ref' => ['$link' => 'bafy-retry-image'],
+				'mimeType' => 'image/png',
+				'size' => 3,
+			],
+		], JSON_THROW_ON_ERROR)));
+		$this->http->queueResponseFactory($this->success());
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame(1, $app->queue->pendingCount(), 'A temporary upload failure must keep the job for retry.');
+		self::assertNull($this->publications->findForPost(self::ALICE, $post->id));
+
+		$this->clock->advance(30);
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertCount(3, $this->http->requests);
+		self::assertNotNull($this->publications->findForPost(self::ALICE, $post->id));
+	}
+
 	public function testARetryAfterAPdsFailureUsesTheSameRecordKey(): void
 	{
 		$app = $this->app();
