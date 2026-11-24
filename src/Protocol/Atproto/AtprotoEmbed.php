@@ -137,6 +137,10 @@ final class AtprotoEmbed
 		foreach ($images as $image) {
 			$this->assertSupportedImage($image);
 			$this->assertAlt($image, true);
+			// Validate every field that can reject the embed before the first
+			// remote upload. Otherwise a later image with an invalid aspect ratio
+			// leaves earlier blobs orphaned in the PDS.
+			$this->aspectRatio($image);
 			$validated[] = $image;
 		}
 

@@ -250,15 +250,20 @@ final class AtprotoEmbedTest extends TestCase
 
 	public function testAnIncompleteAspectRatioIsRefused(): void
 	{
+		$uploader = $this->uploader();
 		$this->expectException(AtprotoEmbedException::class);
 
 		try {
-			(new AtprotoEmbed($this->uploader()))->build(
-				[new AtprotoMedia('image/png', 'png', 'alt', 800, null)],
+			(new AtprotoEmbed($uploader))->build(
+				[
+					new AtprotoMedia('image/png', 'valid image', 'alt'),
+					new AtprotoMedia('image/png', 'invalid image', 'alt', 800, null),
+				],
 				$this->account(),
 			);
 		} catch (AtprotoEmbedException $exception) {
 			self::assertSame(AtprotoEmbedException::ASPECT_RATIO_INVALID, $exception->reason);
+			self::assertCount(0, $uploader->uploaded, 'Invalid metadata must be rejected before uploading any image.');
 
 			throw $exception;
 		}
