@@ -138,22 +138,67 @@ final class AtprotoPublishServiceTest extends TestCase
 		$this->service->publish('bob', $post->id);
 	}
 
-	public function testDeleteIsDisabledWithTheFeatureSwitch(): void
+	public function testDeleteStillRunsAfterPublishingIsDisabled(): void
 	{
+		$post = $this->post();
+		$this->posts->insert($post);
+		$this->publications->insert(new AtprotoPublication(
+			'alice',
+			$post->id,
+			'post1',
+			self::URI,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
 		$clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$service = new AtprotoPublishService(
 			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'false']]),
 			$this->posts,
 			$this->publications,
-			null,
-			null,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			new XrpcAtprotoPublisher($this->http),
 			$this->queue,
 			$clock,
+			new XrpcAtprotoPublisher($this->http),
 		);
-
-		$this->expectException(AtprotoPublishDisabledException::class);
+		$this->http->queueResponse(new HttpResponse(200, [], '{}'));
 
 		$service->deleteRemote('alice', 'post-1');
+
+		self::assertNull($this->publications->findForPost('alice', 'post-1'));
+		self::assertCount(1, $this->http->requests);
+		self::assertStringContainsString('com.atproto.repo.deleteRecord', $this->http->requests[0]['url']);
+	}
+
+	public function testDeleteIsQueuedAfterPublishingIsDisabled(): void
+	{
+		$post = $this->post();
+		$this->publications->insert(new AtprotoPublication(
+			'alice',
+			$post->id,
+			'post1',
+			self::URI,
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+		$service = new AtprotoPublishService(
+			new ArrayConfig([InstanceInfo::CONFIG_APP => ['atproto.publish' => 'false']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'token'),
+			]),
+			new XrpcAtprotoPublisher($this->http),
+			$this->queue,
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			new XrpcAtprotoPublisher($this->http),
+		);
+
+		$service->scheduleDelete($post);
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('atproto.delete', $jobs[0]->type);
 	}
 
 	public function testDeleteWithoutAPublicationIsANoOp(): void

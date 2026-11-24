@@ -45,8 +45,7 @@ final class AtprotoDeleteHandler implements JobHandler
 
 		try {
 			$this->service->deleteRemote($userId, $postId);
-		} catch (AtprotoPublishDisabledException
-			| AtprotoNotConfiguredException
+		} catch (AtprotoNotConfiguredException
 			| AtprotoAccountNotConnectedException $exception
 		) {
 			$this->logger->info('Skipped AT Protocol remote delete.', [

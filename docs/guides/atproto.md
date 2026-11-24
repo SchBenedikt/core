@@ -85,10 +85,11 @@ what a host must provide.
 
 ## What is deliberately not here
 
-Only public posts are mirrored. Posts with attachments, non-public posts and
-text over the AT Protocol limits (300 graphemes or 3000 bytes) are skipped by
-the automatic hook and refused by the explicit route; they are never silently
-truncated. Facets, reply references, image/video embeds, likes/reposts and an
+Only public posts are mirrored. Non-public posts, unsupported attachment
+types and text over the AT Protocol limits (300 graphemes or 3000 bytes) are
+skipped by the automatic hook and refused by the explicit route; they are
+never silently truncated. Image/video embeds, facets, reply references,
+likes/reposts and an
 AppView timeline read are implemented (see below). The core also imports
 normalized inbound relay/Jetstream/AppView pages through
 `AtprotoEventSource`; the host owns the WebSocket/HTTP consumer and hands over
@@ -98,7 +99,10 @@ the full CAR/MST repository and `bin/pds-firehose` WebSocket server (see
 [native PDS](atproto-repository.md)). An interaction with a post this instance
 never published is not here. Remote delete is implemented for records the core
 itself published; deleting arbitrary PDS records is not, and so is deleting an
-uploaded blob.
+uploaded blob. Remote deletion remains enabled when new publishing is disabled,
+so opting out or disabling outbound publishing does not strand existing public
+records. A delete still requires an authorized connected account and retries
+temporary PDS failures through the host job queue.
 
 Editing a public post that already has an AT Protocol publication queues a
 `putRecord` for its existing record key. This replaces the Bluesky record at
