@@ -108,10 +108,10 @@ final class AtprotoSyncServiceTest extends TestCase
 		], null)]);
 
 		$result = $service->sync();
-		self::assertSame(1, $result->applied);
-		self::assertSame(1, $result->skipped);
+		self::assertSame(2, $result->applied);
+		self::assertSame(0, $result->skipped);
 		self::assertNotNull($this->store->record('relay', $this->uri('b')));
-		self::assertNull($this->store->record('relay', $this->uri('c')));
+		self::assertNotNull($this->store->record('relay', $this->uri('c')));
 	}
 
 	public function testASequenceGapRequestsReconciliationAndBackfillClearsIt(): void
@@ -124,7 +124,7 @@ final class AtprotoSyncServiceTest extends TestCase
 
 		$this->source->append([new AtprotoEventPage([
 			$this->postEvent('b', 3, $this->post('three', '2026-11-15T12:00:00Z')),
-		], 'cursor-3', true)]);
+		], 'cursor-3', true, true)]);
 		$gapped = $service->sync();
 		self::assertTrue($gapped->reconcileRequired());
 		self::assertNotNull($this->store->record('relay', $this->uri('b')));
@@ -134,6 +134,24 @@ final class AtprotoSyncServiceTest extends TestCase
 
 		self::assertTrue($backfill->reachedEnd);
 		self::assertFalse($backfill->reconcileRequired());
+	}
+
+	public function testFilteredSequenceJumpsDoNotImplyMissingEvents(): void
+	{
+		$service = $this->service();
+		$this->source->append([new AtprotoEventPage([
+			$this->postEvent('a', 1, $this->post('one', '2026-11-15T10:00:00Z')),
+		], 'cursor-1')]);
+		$service->sync();
+
+		$this->source->append([new AtprotoEventPage([
+			$this->postEvent('b', 900, $this->post('filtered events before me', '2026-11-15T11:00:00Z')),
+		], 'cursor-900')]);
+		$result = $service->sync();
+
+		self::assertFalse($result->reconcileRequired());
+		self::assertSame(900, $result->checkpoint->lastSequence);
+		self::assertNotNull($this->store->record('relay', $this->uri('b')));
 	}
 
 	public function testDeleteBeforeCreateLeavesATombstoneAndALaterCreateRestoresThePost(): void
