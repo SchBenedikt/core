@@ -108,11 +108,14 @@ temporary PDS failures through the host job queue.
 Editing a public post that already has an AT Protocol publication queues a
 `putRecord` for its existing record key. This replaces the Bluesky record at
 the same AT URI; it does not create a second post or claim that the AT Protocol
-has native edit history. If an edit makes the post non-public, the existing
-record is deleted. If the edited post can no longer be represented (for
-example, text exceeds the record limit), the core also removes its old public
-mirror rather than leaving stale text visible. An update job never creates a
-new record if the original publication row has since been removed.
+has native edit history. The stored record CID is sent as `swapRecord`, so a
+concurrent or out-of-band edit at the PDS is refused instead of being silently
+overwritten; the local publication mapping stays at its last confirmed CID.
+If an edit makes the post non-public, the existing record is deleted. If the
+edited post can no longer be represented (for example, text exceeds the
+record limit), the core also removes its old public mirror rather than leaving
+stale text visible. An update job never creates a new record if the original
+publication row has since been removed.
 
 OAuth session refresh and the authorization-code/PAR/revocation protocol are
 implemented. The browser redirect, the short-lived flow store keyed by state,

@@ -66,18 +66,23 @@ final class XrpcAtprotoPublisher implements AtprotoRecordPublisher, AtprotoDelet
 		string $rkey,
 		array $record,
 		string $collection = AtprotoPostRecord::COLLECTION,
+		?string $swapRecord = null,
 	): AtprotoPublishedRecord {
 		$this->assertCollection($collection);
 		$url = rtrim($account->pdsUrl, '/') . self::ENDPOINT;
 
 		try {
-			$body = json_encode([
+			$input = [
 				'repo' => $account->did,
 				'collection' => $collection,
 				'rkey' => $rkey,
 				'record' => $record,
 				'validate' => true,
-			], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+			];
+			if ($swapRecord !== null) {
+				$input['swapRecord'] = $swapRecord;
+			}
+			$body = json_encode($input, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 		} catch (JsonException) {
 			throw new AtprotoPublishFailedException(0, 'The AT Protocol record could not be encoded.');
 		}

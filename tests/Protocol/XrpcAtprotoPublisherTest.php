@@ -55,7 +55,31 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		self::assertSame('app.bsky.feed.post', $body['collection']);
 		self::assertSame('234567abcdefg', $body['rkey']);
 		self::assertTrue($body['validate']);
+		self::assertArrayNotHasKey('swapRecord', $body);
 		self::assertSame('hello', $body['record']['text']);
+	}
+
+	public function testRecordUpdateUsesThePreviousCidAsCompareAndSwap(): void
+	{
+		$http = new FakeHttpClient();
+		$http->queueResponse(new HttpResponse(400, [], '{"error":"InvalidSwap"}'));
+		$publisher = new XrpcAtprotoPublisher($http);
+
+		try {
+			$publisher->publishRecord(
+				$this->account(),
+				'234567abcdefg',
+				AtprotoPostRecord::fromPost($this->post()),
+				swapRecord: 'bafy-previous-cid',
+			);
+			self::fail('A stale PDS record revision must refuse the update.');
+		} catch (AtprotoPublishFailedException $exception) {
+			self::assertSame(400, $exception->status);
+			self::assertStringNotContainsString('InvalidSwap', $exception->getMessage());
+		}
+
+		$body = json_decode($http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame('bafy-previous-cid', $body['swapRecord'] ?? null);
 	}
 
 	public function testItSendsAnAuthenticatedDeleteRecordAndAccepts404AsIdempotent(): void
