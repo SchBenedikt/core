@@ -136,6 +136,31 @@ final class XrpcAtprotoPublisherTest extends TestCase
 		}
 	}
 
+	public function testAResponseForAnotherRepositoryRecordIsRejected(): void
+	{
+		foreach ([
+			'at://did:plc:mallory/app.bsky.feed.post/234567abcdefg',
+			'at://did:plc:alice/app.bsky.feed.like/234567abcdefg',
+			'at://did:plc:alice/app.bsky.feed.post/another-key',
+		] as $uri) {
+			$http = new FakeHttpClient();
+			$http->queueResponse(new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR)));
+
+			try {
+				(new XrpcAtprotoPublisher($http))->publish(
+					$this->account(),
+					'234567abcdefg',
+					AtprotoPostRecord::fromPost($this->post()),
+				);
+				self::fail('A PDS response for a different record must be rejected.');
+			} catch (AtprotoPublishFailedException $exception) {
+				self::assertSame(502, $exception->status);
+			}
+
+			self::assertCount(1, $http->requests);
+		}
+	}
+
 	public function testACustomCollectionIsWrittenAndDeleted(): void
 	{
 		$http = new FakeHttpClient();

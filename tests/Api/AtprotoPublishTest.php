@@ -39,8 +39,6 @@ final class AtprotoPublishTest extends TestCase
 {
 	private const ALICE = 'alice';
 
-	private const URI = 'at://did:plc:alice/app.bsky.feed.post/234567abcdefg';
-
 	private FrozenClock $clock;
 
 	private FakeHttpClient $http;
@@ -57,7 +55,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testCreatingAPostQueuesAndPublishesIt(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 
 		$post = $this->createPost($app, 'hello AT Protocol');
 
@@ -73,7 +71,7 @@ final class AtprotoPublishTest extends TestCase
 
 		$publication = $this->publications->findForPost(self::ALICE, $post);
 		self::assertNotNull($publication);
-		self::assertSame(self::URI, $publication->uri);
+		self::assertSame($this->requestedUri(), $publication->uri);
 	}
 
 	public function testCreatingAnImagePostUploadsItsStoredAttachmentBeforePublishing(): void
@@ -122,7 +120,7 @@ final class AtprotoPublishTest extends TestCase
 				'size' => 3,
 			],
 		], JSON_THROW_ON_ERROR)));
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 
 		self::assertSame(1, $app->worker->runOnce());
 		self::assertCount(2, $this->http->requests);
@@ -158,7 +156,7 @@ final class AtprotoPublishTest extends TestCase
 	{
 		$app = $this->app();
 		$this->http->queueResponse(new HttpResponse(500, [], '{"error":"InternalError"}'));
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'retry me');
 
 		self::assertSame(1, $app->worker->runOnce());
@@ -177,7 +175,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testDeletingAPostRemovesTheRemoteRecordAndPublication(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'delete me');
 		self::assertSame(1, $app->worker->runOnce());
 
@@ -211,7 +209,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testAFailedRemoteDeleteKeepsThePublicationAndRetries(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'retry delete');
 		self::assertSame(1, $app->worker->runOnce());
 
@@ -251,7 +249,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testTheExplicitRoutePublishesAndReturnsTheSameOnRepeat(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'hello route');
 
 		$first = $this->publish($app, $post);
@@ -281,7 +279,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testANonPublicPostIsNotScheduled(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 
 		$response = $app->handle(new Request(
 			method: 'POST',
@@ -317,13 +315,13 @@ final class AtprotoPublishTest extends TestCase
 		self::assertSame(200, $before->status);
 		self::assertNull($before->decodedBody()['publication']);
 
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		self::assertSame(200, $this->publish($app, $post)->status);
 
 		$after = $this->publicationStatus($app, $post, self::ALICE);
 
 		self::assertSame(200, $after->status);
-		self::assertSame(self::URI, $after->decodedBody()['publication']['uri']);
+		self::assertSame($this->requestedUri(), $after->decodedBody()['publication']['uri']);
 		self::assertSame($post, $after->decodedBody()['publication']['post_id']);
 		self::assertSame('2026-11-11T10:00:00Z', $after->decodedBody()['publication']['published_at']);
 	}
@@ -331,7 +329,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testThePublicationStateIsOnlyVisibleToTheAuthor(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 		$post = $this->createPost($app, 'author only');
 		$this->publish($app, $post);
 
@@ -404,7 +402,7 @@ final class AtprotoPublishTest extends TestCase
 	public function testAContentWarningBecomesALabel(): void
 	{
 		$app = $this->app();
-		$this->http->queueResponse($this->success());
+		$this->http->queueResponseFactory($this->success());
 
 		$response = $app->handle(new Request(
 			method: 'POST',
@@ -456,9 +454,21 @@ final class AtprotoPublishTest extends TestCase
 		return new AtprotoAccount('did:plc:alice', 'alice.test', 'https://pds.example', 'secret-token');
 	}
 
-	private function success(): HttpResponse
+	private function success(): \Closure
 	{
-		return new HttpResponse(200, [], json_encode(['uri' => self::URI, 'cid' => 'bafyrei'], JSON_THROW_ON_ERROR));
+		return static function (string $method, string $url, array $headers, string $body): HttpResponse {
+			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
+			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
+
+			return new HttpResponse(200, [], json_encode(['uri' => $uri, 'cid' => 'bafyrei'], JSON_THROW_ON_ERROR));
+		};
+	}
+
+	private function requestedUri(): string
+	{
+		$request = json_decode($this->http->requests[0]['body'], true, 64, JSON_THROW_ON_ERROR);
+
+		return 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
 	}
 
 	private function createPost(Application $app, string $content): string

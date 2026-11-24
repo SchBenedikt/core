@@ -987,7 +987,12 @@ final class ApplicationHostTest extends TestCase
 			]),
 		);
 
-		$http->queueResponse(new HttpResponse(200, [], '{"uri":"at://did:plc:alice/app.bsky.feed.post/234567abcdefg"}'));
+		$http->queueResponseFactory(static function (string $method, string $url, array $headers, string $body): HttpResponse {
+			$request = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
+			$uri = 'at://' . $request['repo'] . '/' . $request['collection'] . '/' . $request['rkey'];
+
+			return new HttpResponse(200, [], json_encode(['uri' => $uri], JSON_THROW_ON_ERROR));
+		});
 		$post = $app->handle(new Request(
 			method: 'POST',
 			path: '/api/v1/posts',
