@@ -250,7 +250,7 @@ while (true) {
 				continue;
 			}
 
-			$enabled = filter_var(getenv('PDS_FIREHOSE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOL);
+			$enabled = filter_var(getenv('PDS_FIREHOSE_ENABLED') ?: 'true', FILTER_VALIDATE_BOOL);
 			if (!$enabled) {
 				firehose_reject($client, 503, 'The native PDS firehose is disabled.');
 				@fclose($stream);
