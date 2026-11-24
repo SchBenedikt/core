@@ -44,10 +44,10 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . ScheduledPostSchema::TABLE
-				. ' (id, author_id, post_id, content, content_warning, visibility, attachment_ids,'
+				. ' (id, author_id, post_id, content, content_warning, visibility, language, attachment_ids,'
 				. ' recipient_ids, in_reply_to_id, scheduled_at, created_at, state, lease_until,'
 				. ' published_at, failure_reason)'
-				. ' VALUES (:id, :author_id, :post_id, :content, :content_warning, :visibility,'
+				. ' VALUES (:id, :author_id, :post_id, :content, :content_warning, :visibility, :language,'
 				. ' :attachment_ids, :recipient_ids, :in_reply_to_id, :scheduled_at, :created_at,'
 				. ' :state, NULL, NULL, NULL)',
 				[
@@ -57,6 +57,7 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 					'content' => $post->content,
 					'content_warning' => $post->contentWarning,
 					'visibility' => $post->visibility->value,
+					'language' => $post->language,
 					'attachment_ids' => $this->encodeList($post->attachmentIds),
 					'recipient_ids' => $this->encodeList($post->recipientIds),
 					'in_reply_to_id' => $post->inReplyToId,
@@ -287,6 +288,7 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 			publishedAt: $row['published_at'] === null ? null : Time::parse((string) $row['published_at']),
 			failureReason: $row['failure_reason'] === null ? null : (string) $row['failure_reason'],
 			leaseUntil: $row['lease_until'] === null ? null : Time::parse((string) $row['lease_until']),
+			language: ($row['language'] ?? null) === null ? null : (string) $row['language'],
 		);
 	}
 }

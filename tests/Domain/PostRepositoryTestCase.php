@@ -36,11 +36,12 @@ abstract class PostRepositoryTestCase extends TestCase
 	public function testInsertAndFind(): void
 	{
 		$repository = $this->repository();
-		$post = $this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z');
+		$post = $this->post('p1', 'alice', Visibility::Public, '2026-11-11T10:00:00Z', language: 'de');
 
 		$repository->insert($post);
 
 		self::assertSame('p1', $repository->find('p1')?->id);
+		self::assertSame('de', $repository->find('p1')?->language);
 		self::assertNull($repository->find('unknown'));
 	}
 
@@ -660,6 +661,7 @@ abstract class PostRepositoryTestCase extends TestCase
 		?Poll $poll = null,
 		array $recipientIds = [],
 		?string $inReplyToId = null,
+		?string $language = null,
 	): Post {
 		return new Post(
 			$id,
@@ -673,6 +675,7 @@ abstract class PostRepositoryTestCase extends TestCase
 			$poll,
 			$recipientIds,
 			$inReplyToId,
+			language: $language,
 		);
 	}
 }

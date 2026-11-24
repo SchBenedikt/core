@@ -33,6 +33,7 @@ final readonly class CreatePost
 		public array $recipientIds = [],
 		public ?string $inReplyToId = null,
 		public ?string $quotedPostId = null,
+		public ?string $language = null,
 	) {
 	}
 }

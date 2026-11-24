@@ -56,6 +56,8 @@ final class PostSchema
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_authorization_id VARCHAR(1024) NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN quote_request_id VARCHAR(1024) NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN archived_at VARCHAR(20) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN language VARCHAR(35) NULL',
+			'ALTER TABLE ' . self::REVISION_TABLE . ' ADD COLUMN language VARCHAR(35) NULL',
 		];
 	}
 
@@ -80,7 +82,8 @@ final class PostSchema
 			. ' quote_state VARCHAR(16) NULL,'
 			. ' quote_authorization_id VARCHAR(1024) NULL,'
 			. ' quote_request_id VARCHAR(1024) NULL,'
-			. ' archived_at VARCHAR(20) NULL'
+			. ' archived_at VARCHAR(20) NULL,'
+			. ' language VARCHAR(35) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',
@@ -114,6 +117,7 @@ final class PostSchema
 			. ' content TEXT NOT NULL,'
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' visibility VARCHAR(16) NOT NULL,'
+			. ' language VARCHAR(35) NULL,'
 			. ' attachment_ids TEXT NOT NULL,'
 			. ' edited_at VARCHAR(20) NOT NULL,'
 			. ' PRIMARY KEY (post_id, revision)'

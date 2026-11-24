@@ -66,6 +66,19 @@ final class ScheduledPostApiTest extends TestCase
 		self::assertSame(0, $this->postCount());
 	}
 
+	public function testTheScheduledLanguageSurvivesPublication(): void
+	{
+		$response = $this->create('Later hello', $this->in(600), ['language' => 'de']);
+		self::assertSame('de', $response->decodedBody()['scheduled_post']['language']);
+
+		$this->clock->advance(600);
+		self::assertSame(1, $this->app->worker->runOnce());
+
+		self::assertSame('de', $this->app->posts->get(
+			$this->publicTimeline()[0]['id'],
+		)?->language);
+	}
+
 	public function testTheWorkerPublishesOnlyAtTheDueTimeAndOnlyOnce(): void
 	{
 		$id = $this->create('Later hello', $this->in(600))->decodedBody()['scheduled_post']['id'];

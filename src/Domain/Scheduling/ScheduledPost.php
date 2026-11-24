@@ -57,6 +57,7 @@ final readonly class ScheduledPost
 		public ?DateTimeImmutable $publishedAt = null,
 		public ?string $failureReason = null,
 		public ?DateTimeImmutable $leaseUntil = null,
+		public ?string $language = null,
 	) {
 		if ($id === '' || $authorId === '' || $postId === '') {
 			throw new InvalidArgumentException('A scheduled post needs an id, an author and a reserved post id.');
@@ -72,6 +73,12 @@ final readonly class ScheduledPost
 
 		if ($contentWarning !== null && mb_strlen($contentWarning) > self::MAX_CONTENT_WARNING_LENGTH) {
 			throw new InvalidArgumentException('The scheduled content warning is too long.');
+		}
+
+		if ($language !== null && (strlen($language) > 35
+			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
+		) {
+			throw new InvalidArgumentException('A scheduled post language must be a valid BCP 47 language tag.');
 		}
 
 		if (count($attachmentIds) > self::MAX_ATTACHMENTS) {
@@ -138,6 +145,7 @@ final readonly class ScheduledPost
 			publishedAt: $publishedAt,
 			failureReason: $failureReason,
 			leaseUntil: $leaseUntil,
+			language: $this->language,
 		);
 	}
 
@@ -156,6 +164,7 @@ final readonly class ScheduledPost
 			'author_id' => $this->authorId,
 			'content' => $this->content,
 			'content_warning' => $this->contentWarning,
+			'language' => $this->language,
 			'visibility' => $this->visibility->value,
 			'attachment_ids' => $this->attachmentIds,
 			'recipient_ids' => $this->recipientIds,

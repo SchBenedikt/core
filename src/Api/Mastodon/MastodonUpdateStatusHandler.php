@@ -59,6 +59,12 @@ final class MastodonUpdateStatusHandler extends MastodonHandler
 			$spoilerProvided = true;
 		}
 
+		$languageProvided = array_key_exists('language', $body);
+		$language = $body['language'] ?? null;
+		if ($languageProvided && $language !== null && !is_string($language)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'language must be a string or null.');
+		}
+
 		$mediaIds = null;
 		if (array_key_exists('media_ids', $body)) {
 			$raw = $body['media_ids'];
@@ -83,6 +89,8 @@ final class MastodonUpdateStatusHandler extends MastodonHandler
 			$spoilerProvided,
 			$spoiler === null || trim($spoiler) === '' ? null : trim($spoiler),
 			$mediaIds,
+			$language,
+			$languageProvided,
 		));
 	}
 }

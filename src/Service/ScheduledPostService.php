@@ -95,6 +95,10 @@ final class ScheduledPostService
 		if ($warning === '') {
 			$warning = null;
 		}
+		$language = $command->language === null ? null : trim($command->language);
+		if ($language === '') {
+			$language = null;
+		}
 
 		$errors = [];
 		if ($content === '') {
@@ -105,6 +109,11 @@ final class ScheduledPostService
 
 		if ($warning !== null && mb_strlen($warning) > PostService::MAX_CONTENT_WARNING_LENGTH) {
 			$errors['content_warning'] = 'The content warning is too long.';
+		}
+		if ($language !== null && (strlen($language) > 35
+			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
+		) {
+			$errors['language'] = 'language must be a valid BCP 47 language tag.';
 		}
 
 		if (count($command->attachmentIds) > ScheduledPost::MAX_ATTACHMENTS) {
@@ -147,6 +156,7 @@ final class ScheduledPostService
 			attachmentIds: $command->attachmentIds,
 			recipientIds: $command->recipientIds,
 			inReplyToId: $command->inReplyToId,
+			language: $language,
 		);
 
 		$this->scheduled->insert($scheduled);
@@ -291,6 +301,7 @@ final class ScheduledPostService
 				postId: $claimed->postId,
 				recipientIds: $claimed->recipientIds,
 				inReplyToId: $claimed->inReplyToId,
+				language: $claimed->language,
 			));
 		} catch (DatabaseException $exception) {
 			// The reserved id is the publication guard. A duplicate means a

@@ -32,6 +32,8 @@ final readonly class UpdatePost
 		 * overwriting an edit that happened in between.
 		 */
 		public ?int $expectedRevision = null,
+		public ?string $language = null,
+		public bool $languageProvided = false,
 	) {
 	}
 
@@ -43,6 +45,7 @@ final readonly class UpdatePost
 		return $this->content === null
 			&& !$this->contentWarningProvided
 			&& $this->attachmentIds === null
-			&& $this->visibility === null;
+			&& $this->visibility === null
+			&& !$this->languageProvided;
 	}
 }

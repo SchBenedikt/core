@@ -529,6 +529,16 @@ final class AtprotoPublishServiceTest extends TestCase
 		self::assertArrayNotHasKey('embed', $this->publishedRecord());
 	}
 
+	public function testPostLanguageIsPublishedWithTheRecord(): void
+	{
+		$this->posts->insert($this->post(language: 'de'));
+		$this->http->queueResponseFactory($this->published());
+
+		$this->serviceWith()->publish('alice', 'post-1');
+
+		self::assertSame(['de'], $this->publishedRecord()['langs']);
+	}
+
 	public function testAUniqueExternalLinkGetsAFallbackCardWithoutRemoteLookup(): void
 	{
 		$post = $this->post(content: 'Read https://example.com/story.');
@@ -722,6 +732,7 @@ final class AtprotoPublishServiceTest extends TestCase
 		?string $inReplyToId = null,
 		?string $quotedObjectId = null,
 		?QuoteState $quoteState = null,
+		?string $language = null,
 	): Post {
 		return new Post(
 			$id,
@@ -733,6 +744,7 @@ final class AtprotoPublishServiceTest extends TestCase
 			inReplyToId: $inReplyToId,
 			quotedObjectId: $quotedObjectId,
 			quoteState: $quoteState,
+			language: $language,
 		);
 	}
 }

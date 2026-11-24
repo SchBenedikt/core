@@ -180,6 +180,7 @@ final class InMemoryScheduledPostRepository implements ScheduledPostRepository
 			attachmentIds: $row->attachmentIds,
 			recipientIds: $row->recipientIds,
 			inReplyToId: $row->inReplyToId,
+			language: $row->language,
 		);
 
 		return true;

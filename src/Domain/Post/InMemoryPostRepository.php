@@ -88,6 +88,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
 			archivedAt: $post->archivedAt,
+			language: $post->language,
 		);
 	}
 
@@ -168,6 +169,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteAuthorizationId: $authorizationId,
 			quoteRequestId: $post->quoteRequestId,
 			archivedAt: $post->archivedAt,
+			language: $post->language,
 		);
 	}
 
@@ -445,6 +447,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			quoteAuthorizationId: $post->quoteAuthorizationId,
 			quoteRequestId: $post->quoteRequestId,
 			archivedAt: $post->archivedAt,
+			language: $post->language,
 		);
 	}
 

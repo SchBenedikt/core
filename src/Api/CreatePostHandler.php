@@ -60,6 +60,11 @@ final class CreatePostHandler implements Handler
 			throw HttpException::validationFailed(['content_warning' => 'content_warning must be a string or null.']);
 		}
 
+		$language = $body['language'] ?? null;
+		if ($language !== null && !is_string($language)) {
+			throw HttpException::validationFailed(['language' => 'language must be a string or null.']);
+		}
+
 		$rawAttachmentIds = $body['attachment_ids'] ?? [];
 		if (!is_array($rawAttachmentIds) || !array_is_list($rawAttachmentIds)) {
 			throw HttpException::validationFailed(['attachment_ids' => 'attachment_ids must be a list of strings.']);
@@ -119,6 +124,7 @@ final class CreatePostHandler implements Handler
 				recipientIds: $recipientIds,
 				inReplyToId: $inReplyToId,
 				quotedPostId: $quotedPostId,
+				language: $language,
 			));
 		} catch (PostHeldException $exception) {
 			return Response::json([

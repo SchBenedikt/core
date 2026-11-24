@@ -99,6 +99,20 @@ final class LocalSocialApiTest extends TestCase
 		)->decodedBody()['account']['followers_count']);
 	}
 
+	public function testPostCreationKeepsTheSelectedLanguage(): void
+	{
+		$response = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'hallo', 'language' => 'de'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $response->status);
+		self::assertSame('de', $response->decodedBody()['post']['language']);
+	}
+
 	public function testProfileAndFollowRejectUnknownUnauthenticatedAndSelfTargets(): void
 	{
 		self::assertSame(404, $this->app->handle(

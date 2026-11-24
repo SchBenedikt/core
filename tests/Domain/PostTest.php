@@ -26,6 +26,7 @@ final class PostTest extends TestCase
 			visibility: Visibility::Public,
 			publishedAt: Time::parse('2026-11-11T10:00:00Z'),
 			contentWarning: 'spoilers',
+			language: 'de',
 		);
 
 		self::assertSame([
@@ -33,6 +34,7 @@ final class PostTest extends TestCase
 			'author_id' => 'alice',
 			'content' => 'hello',
 			'content_warning' => 'spoilers',
+			'language' => 'de',
 			'visibility' => 'public',
 			'published_at' => '2026-11-11T10:00:00Z',
 			'edited_at' => null,

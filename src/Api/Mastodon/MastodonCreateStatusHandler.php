@@ -73,6 +73,10 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 		}
 
 		$visibility = $this->visibility($body['visibility'] ?? 'public');
+		$language = $body['language'] ?? null;
+		if ($language !== null && !is_string($language)) {
+			throw new MastodonRequestException(422, 'validation_failed', 'language must be a string or null.');
+		}
 
 		$mediaIds = $body['media_ids'] ?? [];
 		if (!is_array($mediaIds) || !array_is_list($mediaIds)) {
@@ -153,6 +157,7 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 					attachmentIds: $ids,
 					inReplyToId: $inReplyToId,
 					recipientIds: $recipientIds,
+					language: $language,
 				),
 				$scheduledAt,
 			)));
@@ -169,6 +174,7 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 			$inReplyToId,
 			$recipientIds,
 			$quotedStatusId,
+			$language,
 		));
 	}
 
