@@ -82,6 +82,59 @@ final class AtprotoInteractionServiceTest extends TestCase
 		self::assertTrue($body['validate']);
 	}
 
+	public function testSubjectRecordIsResolvedOnItsPublishersPds(): void
+	{
+		$post = new Post(
+			'post-from-bob',
+			'bob',
+			'bobs public post',
+			Visibility::Public,
+			Time::parse('2026-11-11T10:00:00Z'),
+		);
+		$this->posts->insert($post);
+		$uri = 'at://did:plc:bob/app.bsky.feed.post/bob-post';
+		$this->publications->insert(new AtprotoPublication(
+			'bob',
+			$post->id,
+			'bob-post',
+			$uri,
+			Time::parse('2026-11-11T10:00:00Z'),
+			'https://bob-pds.example',
+		));
+		$publisher = new XrpcAtprotoPublisher($this->http);
+		$service = new AtprotoInteractionService(
+			new ArrayConfig(['social' => ['atproto.publish' => 'true']]),
+			$this->posts,
+			$this->publications,
+			new InMemoryAtprotoAccountResolver([
+				'alice' => new AtprotoAccount('did:plc:alice', 'alice.test', 'https://alice-pds.example', 'token'),
+				'bob' => new AtprotoAccount('did:plc:bob', 'bob.test', 'https://bob-pds.example', 'bob-token'),
+			]),
+			$publisher,
+			new XrpcAtprotoRecordResolver($this->http),
+			new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			$publisher,
+			$this->blocks,
+			$this->activities(),
+		);
+		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
+			'uri' => $uri,
+			'cid' => 'bafy-bob-subject',
+			'value' => ['$type' => 'app.bsky.feed.post', 'text' => 'bobs public post'],
+		], JSON_THROW_ON_ERROR)));
+		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
+			'uri' => 'at://did:plc:alice/app.bsky.feed.like/rkey1',
+			'cid' => 'bafy-like',
+		], JSON_THROW_ON_ERROR)));
+
+		$service->like('alice', $post->id);
+
+		self::assertStringStartsWith('https://bob-pds.example/xrpc/com.atproto.repo.getRecord', $this->http->requests[0]['url']);
+		self::assertStringStartsWith('https://alice-pds.example/xrpc/com.atproto.repo.putRecord', $this->http->requests[1]['url']);
+		$write = json_decode($this->http->requests[1]['body'], true, 64, JSON_THROW_ON_ERROR);
+		self::assertSame(['uri' => $uri, 'cid' => 'bafy-bob-subject'], $write['record']['subject']);
+	}
+
 	public function testUnlikeRemovesExactlyTheRecordTheLikeCreated(): void
 	{
 		$this->publishedPost();

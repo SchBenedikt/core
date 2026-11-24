@@ -225,7 +225,13 @@ final class AtprotoInteractionService
 			throw new AtprotoNotConfiguredException();
 		}
 
-		$record = $this->records->getRecord($account->pdsUrl, $publication->uri);
+		$pdsUrl = $publication->pdsUrl ?? $this->accounts?->resolve($post->authorId)?->pdsUrl;
+		if ($pdsUrl === null) {
+			throw new AtprotoInteractionRejectedException(
+				AtprotoInteractionRejectedException::SUBJECT_UNRESOLVABLE,
+			);
+		}
+		$record = $this->records->getRecord($pdsUrl, $publication->uri);
 		if ($record === null) {
 			throw new AtprotoInteractionRejectedException(
 				AtprotoInteractionRejectedException::SUBJECT_UNRESOLVABLE,

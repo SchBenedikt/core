@@ -19,7 +19,7 @@ use Throwable;
  */
 final class PdoAtprotoPublicationRepository implements AtprotoPublicationRepository
 {
-	private const COLUMNS = 'local_user_id, post_id, rkey, uri, published_at';
+	private const COLUMNS = 'local_user_id, post_id, rkey, uri, published_at, pds_url';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -42,14 +42,15 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 		try {
 			$this->db->execute(
 				'INSERT INTO ' . AtprotoPublicationSchema::TABLE
-				. ' (local_user_id, post_id, rkey, uri, published_at)'
-				. ' VALUES (:local_user_id, :post_id, :rkey, :uri, :published_at)',
+				. ' (local_user_id, post_id, rkey, uri, published_at, pds_url)'
+				. ' VALUES (:local_user_id, :post_id, :rkey, :uri, :published_at, :pds_url)',
 				[
 					'local_user_id' => $publication->localUserId,
 					'post_id' => $publication->postId,
 					'rkey' => $publication->rkey,
 					'uri' => $publication->uri,
 					'published_at' => Time::format($publication->publishedAt),
+					'pds_url' => $publication->pdsUrl,
 				],
 			);
 		} catch (Throwable $exception) {
@@ -81,6 +82,7 @@ final class PdoAtprotoPublicationRepository implements AtprotoPublicationReposit
 			rkey: (string) $row['rkey'],
 			uri: (string) $row['uri'],
 			publishedAt: Time::parse((string) $row['published_at']),
+			pdsUrl: $row['pds_url'] === null ? null : (string) $row['pds_url'],
 		);
 	}
 }

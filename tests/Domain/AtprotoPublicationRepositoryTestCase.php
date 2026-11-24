@@ -33,6 +33,7 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 		self::assertNotNull($stored);
 		self::assertSame('234567abcdefg', $stored->rkey);
 		self::assertSame('at://did:plc:alice/app.bsky.feed.post/234567abcdefg', $stored->uri);
+		self::assertSame('https://pds.example.test', $stored->pdsUrl);
 		self::assertNull($repository->findForPost('alice', 'other'));
 		self::assertNull($repository->findForPost('bob', 'post-1'));
 	}
@@ -76,6 +77,7 @@ abstract class AtprotoPublicationRepositoryTestCase extends TestCase
 			$rkey,
 			'at://did:plc:' . $user . '/app.bsky.feed.post/' . $rkey,
 			Time::parse('2026-11-11T10:00:00Z'),
+			'https://pds.example.test',
 		);
 	}
 }
