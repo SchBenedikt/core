@@ -13,6 +13,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoAccount;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublication;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoAccountResolver;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -42,6 +43,8 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 	private InMemoryAtprotoPublicationRepository $publications;
 
+	private InMemoryAtprotoInteractionRepository $interactionRecords;
+
 	private InMemoryBlockRepository $blocks;
 
 	private FakeHttpClient $http;
@@ -52,6 +55,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 	{
 		$this->posts = new InMemoryPostRepository();
 		$this->publications = new InMemoryAtprotoPublicationRepository();
+		$this->interactionRecords = new InMemoryAtprotoInteractionRepository();
 		$this->blocks = new InMemoryBlockRepository();
 		$this->http = new FakeHttpClient();
 
@@ -80,6 +84,13 @@ final class AtprotoInteractionServiceTest extends TestCase
 		);
 		self::assertSame('2026-11-11T10:00:00Z', $body['record']['createdAt']);
 		self::assertTrue($body['validate']);
+		$stored = $this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'like');
+		self::assertNotNull($stored);
+		self::assertSame($uri, $stored->uri);
+		self::assertSame('rkey1', $stored->rkey);
+
+		self::assertSame($uri, $this->service->like('alice', 'post-1'));
+		self::assertCount(2, $this->http->requests, 'A retry must return the stored record without a second PDS write.');
 	}
 
 	public function testSubjectRecordIsResolvedOnItsPublishersPds(): void
@@ -116,6 +127,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 			$publisher,
 			$this->blocks,
 			$this->activities(),
+			$this->interactionRecords,
 		);
 		$this->http->queueResponse(new HttpResponse(200, [], json_encode([
 			'uri' => $uri,
@@ -151,7 +163,8 @@ final class AtprotoInteractionServiceTest extends TestCase
 		$delete = json_decode($this->http->requests[2]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('did:plc:alice', $delete['repo']);
 		self::assertSame('app.bsky.feed.like', $delete['collection']);
-		self::assertSame($like['rkey'], $delete['rkey']);
+		self::assertSame('rkey1', $delete['rkey']);
+		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'like'));
 	}
 
 	public function testRepostAndUndoUseTheRepostCollection(): void
@@ -170,7 +183,8 @@ final class AtprotoInteractionServiceTest extends TestCase
 
 		$delete = json_decode($this->http->requests[2]['body'], true, 64, JSON_THROW_ON_ERROR);
 		self::assertSame('app.bsky.feed.repost', $delete['collection']);
-		self::assertSame($body['rkey'], $delete['rkey']);
+		self::assertSame('rkey1', $delete['rkey']);
+		self::assertNull($this->interactionRecords->find('alice', 'did:plc:alice', 'post-1', 'repost'));
 	}
 
 	public function testTheFeatureSwitchRefusesInteractions(): void
@@ -336,6 +350,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 			new XrpcAtprotoPublisher($this->http),
 			$this->blocks,
 			$this->activities(),
+			$this->interactionRecords,
 		);
 
 		$this->expectException(AtprotoAccountNotConnectedException::class);
@@ -367,6 +382,7 @@ final class AtprotoInteractionServiceTest extends TestCase
 			$publisher,
 			$this->blocks,
 			$this->activities(),
+			$this->interactionRecords,
 		);
 	}
 

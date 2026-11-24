@@ -172,12 +172,15 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoModerationPolicy;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoInboundRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoFollowRepository;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublisher;
 use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\InMemoryAtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Atproto\PdoAtprotoPublicationRepository;
+use AlohaSocial\Core\Domain\Atproto\PdoAtprotoInteractionRepository;
 use AlohaSocial\Core\Domain\Atproto\Pds\InMemoryPdsRepository;
 use AlohaSocial\Core\Domain\Atproto\Pds\NativePdsService;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdoPdsRepository;
@@ -616,6 +619,7 @@ final readonly class Application
 		?PdsDirectory $pdsDirectory = null,
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
+		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -639,6 +643,7 @@ final readonly class Application
 		$remotePostRepository ??= new InMemoryRemotePostRepository();
 		$remoteThreadRepository ??= new InMemoryRemoteThreadRepository();
 		$atprotoPublications ??= new InMemoryAtprotoPublicationRepository();
+		$atprotoInteractionRepository ??= new InMemoryAtprotoInteractionRepository();
 		$atprotoPublisher ??= $httpClient === null ? null : new XrpcAtprotoPublisher($httpClient, $atprotoDpop);
 		$blockRepository ??= new InMemoryBlockRepository();
 		$attachmentRepository ??= new InMemoryAttachmentRepository($posts, $remotePostRepository);
@@ -751,6 +756,7 @@ final readonly class Application
 			imageProcessor: $imageProcessor,
 			hostResolver: $hostResolver,
 			atprotoPublications: $atprotoPublications,
+			atprotoInteractionRepository: $atprotoInteractionRepository,
 			atprotoFollowRepository: $atprotoFollowRepository ?? new InMemoryAtprotoFollowRepository(),
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher,
@@ -850,6 +856,7 @@ final readonly class Application
 		?PdsDirectory $pdsDirectory = null,
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
+		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -938,6 +945,7 @@ final readonly class Application
 			imageProcessor: $imageProcessor ?? new GdImageProcessor(),
 			hostResolver: $hostResolver,
 			atprotoPublications: $atprotoPublications ?? new PdoAtprotoPublicationRepository($database),
+			atprotoInteractionRepository: $atprotoInteractionRepository ?? new PdoAtprotoInteractionRepository($database),
 			atprotoFollowRepository: $atprotoFollowRepository ?? new PdoAtprotoFollowRepository($database),
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient, $atprotoDpop),
@@ -1001,6 +1009,7 @@ final readonly class Application
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
 		AtprotoPublicationRepository $atprotoPublications,
+		AtprotoInteractionRepository $atprotoInteractionRepository,
 		?AtprotoAccountResolver $atprotoAccounts,
 		?AtprotoPublisher $atprotoPublisher,
 		InboxResolver $inboxResolver,
@@ -1211,6 +1220,7 @@ final readonly class Application
 			$atprotoPublisher instanceof AtprotoDeleter ? $atprotoPublisher : null,
 			$blockRepository,
 			$activities,
+			$atprotoInteractionRepository,
 		);
 		// The profile write shares the blob uploader with post media; the
 		// timeline read is a port so a host can cache or map it as it likes.

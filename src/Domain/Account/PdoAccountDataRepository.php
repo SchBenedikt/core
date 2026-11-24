@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Account;
 
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
@@ -304,6 +305,11 @@ final class PdoAccountDataRepository implements AccountDataRepository
 			'delete' => 'local_user_id = :user',
 			'order' => 'local_user_id, subject_did',
 		],
+		AtprotoInteractionSchema::TABLE => [
+			'export' => 'local_user_id = :user',
+			'delete' => 'local_user_id = :user',
+			'order' => 'local_user_id, account_did, post_id, kind',
+		],
 	];
 
 	/**
@@ -338,6 +344,7 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		SearchIndexSchema::TABLE,
 		ScheduledPostSchema::TABLE,
 		AtprotoFollowSchema::TABLE,
+		AtprotoInteractionSchema::TABLE,
 		AtprotoPublicationSchema::TABLE,
 		AttachmentSchema::TABLE,
 		FavouriteSchema::TABLE,

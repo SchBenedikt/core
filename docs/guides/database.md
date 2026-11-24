@@ -77,6 +77,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Account/AccountDeletionSchema.php` → `social_account_deletion` (the durable `frozen`/`erasing`/`erased` tombstone, requested/completed timestamps, deletion report and lease)
 - `src/Domain/Federation/ActivityLogSchema.php` → `social_activity_log`
 - `src/Domain/Atproto/AtprotoPublicationSchema.php` → `social_atproto_publication`
+- `src/Domain/Atproto/AtprotoInteractionSchema.php` → `social_atproto_interaction` (confirmed outbound likes and reposts, keyed by local account, ATProto DID, post and kind; stores the PDS record URI/key for idempotent retry and deletion)
 - `src/Domain/Atproto/AtprotoFollowSchema.php` → `social_atproto_follow`
 - `src/Domain/Atproto/AtprotoInboundSchema.php` → `social_atproto_sync_checkpoint`, `social_atproto_remote_record` and `social_atproto_remote_account`
 - `src/Domain/Atproto/Pds/PdsSchema.php` → `social_pds_identity`, `social_pds_key`, `social_pds_record`, `social_pds_commit`, `social_pds_block`, `social_pds_blob`, `social_pds_event`, `social_pds_sequence` and `social_pds_plc_operation`. Private keys are stored only as sealed payloads; binary blocks and firehose CAR payloads are base64 text so the same schema runs on SQLite and relational databases. Blob bytes live in the host `BlobStore`, while the table carries only DID, CID, media type, size and creation time. A commit, its blocks, the affected records, the identity head and the firehose event are written in one transaction. `social_pds_sequence` makes the firehose `seq` global and gap-free. `PdsSchema::upgrade()` adds the blob and firehose tables to an older installation
@@ -290,6 +291,15 @@ remote delete. OAuth sessions are not stored here either: the access and
 refresh tokens are host credentials, and `AtprotoSessionStore` keeps them in
 the host's secret store. The core's only session adapter is the in-memory fake
 for tests. See [AT Protocol publishing](atproto.md).
+
+`social_atproto_interaction` stores the PDS-confirmed record URI and key for
+each locally requested AT Protocol like or repost. Its primary key
+`(local_user_id, account_did, post_id, kind)` prevents duplicate records for
+one connected identity; `(account_did, rkey)` prevents assigning one PDS record
+to two local interactions. A retry returns the stored URI without writing a
+second record, and unlike/undo deletes the stored record key. Failed PDS
+deletes leave the ledger row available for another cleanup attempt. The rows
+also support account export and erasure.
 
 `AtprotoInboundSchema` stores the host-fed inbound sync. A checkpoint row per
 source holds the opaque cursor, the last sequence and event time, the last

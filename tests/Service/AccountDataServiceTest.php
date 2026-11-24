@@ -15,6 +15,7 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Domain\Atproto\AtprotoFollowSchema;
 use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
+use AlohaSocial\Core\Domain\Atproto\AtprotoInteractionSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
@@ -125,6 +126,7 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['move-a'], array_column($archive['data']['social_account_move'], 'event_id'));
 		self::assertSame(['coll-alice'], array_column($archive['data']['social_media_collection'], 'id'));
 		self::assertSame(['pub-a'], array_column($archive['data']['social_atproto_publication'], 'post_id'));
+		self::assertSame(['interaction-a'], array_column($archive['data']['social_atproto_interaction'], 'post_id'));
 		self::assertSame(
 			['did:plc:followed-by-alice'],
 			array_column($archive['data']['social_atproto_follow'], 'subject_did'),
@@ -200,6 +202,7 @@ final class AccountDataServiceTest extends TestCase
 		self::assertSame(['coll-bob'], array_column($this->rows(MediaCollectionSchema::TABLE), 'id'));
 		self::assertSame(['coll-bob'], array_column($this->rows(MediaCollectionSchema::ITEM_TABLE), 'collection_id'));
 		self::assertSame(['pub-b'], array_column($this->rows(AtprotoPublicationSchema::TABLE), 'post_id'));
+		self::assertSame(['interaction-b'], array_column($this->rows(AtprotoInteractionSchema::TABLE), 'post_id'));
 		self::assertSame(
 			['did:plc:followed-by-bob'],
 			array_column($this->rows(AtprotoFollowSchema::TABLE), 'subject_did'),
@@ -340,6 +343,7 @@ final class AccountDataServiceTest extends TestCase
 		AccountListSchema::create($this->database);
 		FollowedHashtagSchema::create($this->database);
 		AtprotoPublicationSchema::create($this->database);
+		AtprotoInteractionSchema::create($this->database);
 		AtprotoFollowSchema::create($this->database);
 		ReportSchema::create($this->database);
 		HeldPostSchema::create($this->database);
@@ -756,6 +760,15 @@ final class AccountDataServiceTest extends TestCase
 				'cid' => 'bafy' . $user,
 				'state' => 'active',
 				'followed_at' => '2026-11-16T10:52:00Z',
+			]);
+			$this->insert(AtprotoInteractionSchema::TABLE, [
+				'local_user_id' => $user,
+				'account_did' => 'did:plc:' . $user,
+				'post_id' => 'interaction-' . $user[0],
+				'kind' => 'like',
+				'rkey' => 'like-' . $user,
+				'uri' => 'at://did:plc:' . $user . '/app.bsky.feed.like/like-' . $user,
+				'created_at' => '2026-11-16T10:52:00Z',
 			]);
 		}
 
