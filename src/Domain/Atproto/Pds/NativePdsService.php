@@ -367,6 +367,10 @@ final class NativePdsService
 
 		$now = $this->clock->now();
 		$timestamp = Time::format($now);
+		$swapCommit = $input['swapCommit'] ?? null;
+		if ($swapCommit !== null && (!is_string($swapCommit) || $identity->head->toString() !== $swapCommit)) {
+			throw PdsError::invalidSwap();
+		}
 		$records = $this->repository->records($identity->did);
 		$puts = [];
 		$deletes = [];
@@ -402,6 +406,12 @@ final class NativePdsService
 			}
 			if ($action !== 'create' && $existing === null) {
 				throw PdsError::recordNotFound();
+			}
+			$swapRecord = $write['swapRecord'] ?? null;
+			if ($action !== 'create' && $swapRecord !== null
+				&& (!is_string($swapRecord) || $existing->cid->toString() !== $swapRecord)
+			) {
+				throw PdsError::invalidSwap();
 			}
 
 			if ($action === 'delete') {
