@@ -332,7 +332,10 @@ final class LocalRelationshipService
 	 */
 	public function localFollowerIds(string $userId): array
 	{
-		$userId = $this->known($userId);
+		$userId = trim($userId);
+		if ($userId === '' || !$this->actors->has($userId)) {
+			return [];
+		}
 
 		return $this->followers->localUserIdsFollowedBy($this->activities->actorId($userId));
 	}
