@@ -1334,9 +1334,12 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   belong to the host or a dedicated identity service. The core only checks the
   scopes the host resolved; it does not own tokens, sessions or roles. See
   [ADR 0006](../adr/0006-host-owned-accounts.md).
-- Public remote timelines, remote interaction counts, remote notifications,
-  streaming and remote search need remote data the core does not fetch for
-  this surface. Local boosts/reblogs, outbound remote `Like`/`Undo` and
+- Public remote timelines, remote interaction counts, notifications outside
+  the imported event subset and global remote search need data the core does
+  not fetch for this surface. The standalone host implements an SSE transport
+  for six channels; Core exposes the host-neutral event contract, and the
+  Nextcloud host transport plus live Mastodon-client validation remain open.
+  Local boosts/reblogs, outbound remote `Like`/`Undo` and
   `Announce`/`Undo` for cached posts, private bookmarks, local mutes, private
   lists, notification listing and local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile

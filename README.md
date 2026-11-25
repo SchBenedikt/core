@@ -118,10 +118,11 @@ The milestone order and current status are in [the roadmap](docs/roadmap.md).
   existing Nextcloud data stay with the host. See
   [migrating a Nextcloud installation](docs/guides/migration-from-nextcloud.md).
 - **The full Mastodon server API:** OAuth authorization/token issuance and app
-  registration; real remote timelines and remote delivery; favourite
-  federation; remote notifications; streaming infrastructure; remote
-  poll fetching/voting/federation; remote search; and remote
-  relationship/admin APIs. The local subset and the exact external list are in
+  registration; public remote timelines and global remote search; remote
+  interaction totals and unsupported remote actions; notifications outside
+  the imported event subset; WebSocket and non-standalone stream transports;
+  and remote relationship/admin APIs. The standalone host has an SSE transport
+  for its documented channels. The local subset and exact external list are in
   [Mastodon-compatible API](docs/guides/mastodon-api.md#what-remains-external).
 - **The AT Protocol host glue:** account-linking UI/browser callback, the
   short-lived flow store, credential storage, refresh serialization, PDS
