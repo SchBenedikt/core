@@ -15,8 +15,9 @@ use AlohaSocial\Core\Domain\Post\Hashtags;
 final readonly class StreamSubscription
 {
 	/**
-	 * @param list<string> $channels Mastodon channel names, optionally with a validated suffix.
+ * @param list<string> $channels Mastodon channel names, optionally with a validated suffix.
 	 * @param list<string> $hashtags Normalized hashtag filters.
+ * @param string|null $listId Opaque owner-scoped list id required by the `list` channel.
 	 */
 	public function __construct(
 		public string $userId,
