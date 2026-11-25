@@ -34,6 +34,7 @@ use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
 use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationRecordStatus;
 use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
@@ -1105,6 +1106,44 @@ final class MastodonApiTest extends TestCase
 		$unknownType = $this->notifications($app, ['types' => ['mention']], userId: 'bob');
 		self::assertSame(200, $unknownType->status);
 		self::assertSame([], $unknownType->decodedBody());
+	}
+
+	public function testNotificationCanBeProjectedByIdOnlyForItsVisibleRecipient(): void
+	{
+		$notifications = new InMemoryNotificationRepository();
+		$notifications->insert(new Notification(
+			id: 'older-notification',
+			recipientId: 'alice',
+			actorId: 'bob',
+			type: NotificationType::Follow,
+			postId: null,
+			createdAt: $this->clock->now(),
+		));
+		$notifications->insert(new Notification(
+			id: 'hidden-notification',
+			recipientId: 'alice',
+			actorId: 'bob',
+			type: NotificationType::Follow,
+			postId: null,
+			createdAt: $this->clock->now(),
+			status: NotificationRecordStatus::Dropped,
+		));
+		$notifications->insert(new Notification(
+			id: 'foreign-notification',
+			recipientId: 'bob',
+			actorId: 'alice',
+			type: NotificationType::Follow,
+			postId: null,
+			createdAt: $this->clock->now(),
+		));
+		$app = $this->app(notificationRepository: $notifications);
+
+		$visible = $app->mastodon?->notificationById('alice', 'older-notification');
+		self::assertIsArray($visible);
+		self::assertSame('older-notification', $visible['id']);
+		self::assertSame('follow', $visible['type']);
+		self::assertNull($app->mastodon?->notificationById('alice', 'hidden-notification'));
+		self::assertNull($app->mastodon?->notificationById('alice', 'foreign-notification'));
 	}
 
 	public function testDismissClearAndUnreadCountFollowTheReadMarker(): void

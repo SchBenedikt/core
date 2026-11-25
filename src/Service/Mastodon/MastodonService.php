@@ -1619,34 +1619,75 @@ final class MastodonService
 
 		$result = [];
 		foreach ($notifications as $notification) {
-			$status = $notification->postId === null
-				? null
-				: $this->posts->find($notification->postId);
-			if ($status?->isDeleted() === true) {
-				$status = null;
-			}
-			if ($status === null && $notification->postId !== null && $this->remotePosts !== null) {
-				$remote = $this->remotePosts->findPostByObjectId($notification->postId);
-				if ($remote !== null && $remote->deletedAt === null) {
-					try {
-						$remote = $this->remotePost($userId, $remote->objectId);
-						$interactions = $this->reactions?->remoteInteractionsFor($userId, $remote);
-						$status = $this->presenter->remoteStatus(
-							$remote,
-							($interactions['viewer']['favourited'] ?? false) === true,
-							($interactions['viewer']['reblogged'] ?? false) === true,
-						);
-					} catch (MastodonRequestException) {
-						// A notification never grants access to a private or unfollowed
-						// remote status; keep the event but omit its status projection.
-					}
-				}
-			}
-
-			$result[] = $this->presenter->notification($notification, $status);
+			$result[] = $this->presentNotification($notification, $userId);
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Projects one recipient-owned notification without paging through the
+	 * newest notification list. Streaming hosts use this for durable event
+	 * replay, where the notification may be older than a normal page.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public function notificationById(string $userId, string $id): ?array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$service = $this->requireNotifications();
+
+		try {
+			$notification = $service->find($id);
+			$mutedActors = $this->mutes?->notificationActorIds($userId) ?? [];
+		} catch (DatabaseException) {
+			throw new MastodonRequestException(
+				503,
+				'notifications_unavailable',
+				'Notification storage is not available.',
+			);
+		}
+
+		if ($notification === null
+			|| $notification->recipientId !== $userId
+			|| !$notification->isVisible()
+			|| in_array($notification->actorId, $mutedActors, true)
+		) {
+			return null;
+		}
+
+		return $this->presentNotification($notification, $userId);
+	}
+
+	/** @return array<string, mixed> */
+	private function presentNotification(Notification $notification, string $userId): array
+	{
+		$status = $notification->postId === null
+			? null
+			: $this->posts->find($notification->postId);
+		if ($status?->isDeleted() === true) {
+			$status = null;
+		}
+		if ($status === null && $notification->postId !== null && $this->remotePosts !== null) {
+			$remote = $this->remotePosts->findPostByObjectId($notification->postId);
+			if ($remote !== null && $remote->deletedAt === null) {
+				try {
+					$remote = $this->remotePost($userId, $remote->objectId);
+					$interactions = $this->reactions?->remoteInteractionsFor($userId, $remote);
+					$status = $this->presenter->remoteStatus(
+						$remote,
+						($interactions['viewer']['favourited'] ?? false) === true,
+						($interactions['viewer']['reblogged'] ?? false) === true,
+					);
+				} catch (MastodonRequestException) {
+					// A notification never grants access to a private or unfollowed
+					// remote status; keep the event but omit its status projection.
+				}
+			}
+		}
+
+		return $this->presenter->notification($notification, $status);
 	}
 
 	/**
