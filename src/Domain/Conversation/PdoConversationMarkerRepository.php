@@ -47,46 +47,50 @@ final class PdoConversationMarkerRepository implements ConversationMarkerReposit
 
 	public function save(ConversationMarker $marker): void
 	{
-		$parameters = [
-			'id' => $marker->id,
-			'user_id' => $marker->userId,
-			'conversation_id' => $marker->conversationId,
-			'read_through_post_id' => $marker->readThroughPostId,
-			'read_through_at' => $marker->readThroughAt === null ? null : Time::format($marker->readThroughAt),
-			'dismissed_through_post_id' => $marker->dismissedThroughPostId,
-			'dismissed_through_at' => $marker->dismissedThroughAt === null ? null : Time::format($marker->dismissedThroughAt),
-		];
-		$updateParameters = $parameters;
-		unset($updateParameters['user_id'], $updateParameters['conversation_id']);
-		try {
-			$changed = $this->db->execute(
-				'UPDATE ' . ConversationMarkerSchema::TABLE
-				. ' SET read_through_post_id = :read_through_post_id, read_through_at = :read_through_at,'
-				. ' dismissed_through_post_id = :dismissed_through_post_id, dismissed_through_at = :dismissed_through_at'
-				. ' WHERE id = :id',
-				$updateParameters,
-			);
-			if ($changed !== 0 || $this->find($marker->userId, $marker->conversationId) !== null) {
-				return;
+		if ($this->find($marker->userId, $marker->conversationId) === null) {
+			try {
+				$this->db->execute(
+					'INSERT INTO ' . ConversationMarkerSchema::TABLE
+					. ' (id, user_id, conversation_id, read_through_post_id, read_through_at, dismissed_through_post_id, dismissed_through_at)'
+					. ' VALUES (?, ?, ?, ?, ?, ?, ?)',
+					[
+						$marker->id,
+						$marker->userId,
+						$marker->conversationId,
+						$marker->readThroughPostId,
+						$marker->readThroughAt === null ? null : Time::format($marker->readThroughAt),
+						$marker->dismissedThroughPostId,
+						$marker->dismissedThroughAt === null ? null : Time::format($marker->dismissedThroughAt),
+					],
+				);
+			} catch (PDOException $exception) {
+				if ($this->find($marker->userId, $marker->conversationId) === null) {
+					throw new DatabaseException('Conversation marker could not be saved.', 0, $exception);
+				}
 			}
+		}
+
+		$this->advance('read_through_post_id', 'read_through_at', $marker->id, $marker->readThroughPostId, $marker->readThroughAt);
+		$this->advance('dismissed_through_post_id', 'dismissed_through_at', $marker->id, $marker->dismissedThroughPostId, $marker->dismissedThroughAt);
+	}
+
+	private function advance(string $postColumn, string $timeColumn, string $id, ?string $postId, ?\DateTimeImmutable $at): void
+	{
+		if ($postId === null || $at === null) {
+			return;
+		}
+
+		$timestamp = Time::format($at);
+		try {
 			$this->db->execute(
-				'INSERT INTO ' . ConversationMarkerSchema::TABLE
-				. ' (id, user_id, conversation_id, read_through_post_id, read_through_at, dismissed_through_post_id, dismissed_through_at)'
-				. ' VALUES (:id, :user_id, :conversation_id, :read_through_post_id, :read_through_at, :dismissed_through_post_id, :dismissed_through_at)',
-				$parameters,
+				'UPDATE ' . ConversationMarkerSchema::TABLE
+				. ' SET ' . $postColumn . ' = ?, ' . $timeColumn . ' = ?'
+				. ' WHERE id = ? AND (' . $timeColumn . ' IS NULL OR ' . $timeColumn . ' < ?'
+				. ' OR (' . $timeColumn . ' = ? AND ' . $postColumn . ' < ?))',
+				[$postId, $timestamp, $id, $timestamp, $timestamp, $postId],
 			);
 		} catch (PDOException $exception) {
-			$existing = $this->find($marker->userId, $marker->conversationId);
-			if ($existing === null) {
-				throw new DatabaseException('Conversation marker could not be saved.', 0, $exception);
-			}
-			$this->db->execute(
-				'UPDATE ' . ConversationMarkerSchema::TABLE
-				. ' SET read_through_post_id = :read_through_post_id, read_through_at = :read_through_at,'
-				. ' dismissed_through_post_id = :dismissed_through_post_id, dismissed_through_at = :dismissed_through_at'
-				. ' WHERE id = :id',
-				$updateParameters,
-			);
+			throw new DatabaseException('Conversation marker could not be advanced.', 0, $exception);
 		}
 	}
 }
