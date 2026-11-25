@@ -61,6 +61,61 @@ final class FollowRequestService
 	}
 
 	/**
+	 * Mastodon exposes account ids as follow-request cursors. The internal row
+	 * id breaks ties when requests share a timestamp. A stale cursor produces
+	 * an empty page, which is safe to retry.
+	 *
+	 * @return list<Follower>
+	 */
+	public function pendingBetweenActors(
+		string $localUserId,
+		int $limit,
+		?string $maxActorId,
+		?string $sinceActorId,
+	): array
+	{
+		$localUserId = trim($localUserId);
+		if ($localUserId === '') {
+			return [];
+		}
+
+		$maxCursor = $this->cursorActor($localUserId, $maxActorId);
+		$sinceCursor = $this->cursorActor($localUserId, $sinceActorId);
+		if (($maxActorId !== null && $maxCursor === null)
+			|| ($sinceActorId !== null && $sinceCursor === null)
+		) {
+			return [];
+		}
+
+		return $this->followerService->pending(
+			$localUserId,
+			$limit,
+			$maxCursor?->followedAt->format('Y-m-d\\TH:i:s\\Z'),
+			$maxCursor?->id,
+			$sinceCursor?->followedAt->format('Y-m-d\\TH:i:s\\Z'),
+			$sinceCursor?->id,
+		);
+	}
+
+	private function cursorActor(string $localUserId, ?string $actorId): ?Follower
+	{
+		if ($actorId === null || trim($actorId) === '') {
+			return null;
+		}
+
+		$follower = $this->followers->findByActor($localUserId, trim($actorId));
+
+		return $follower !== null && $follower->isPending() ? $follower : null;
+	}
+
+	public function isAcceptedFollower(string $localUserId, string $actorId): bool
+	{
+		$follower = $this->followers->findByActor(trim($localUserId), trim($actorId));
+
+		return $follower !== null && $follower->state === FollowState::Accepted;
+	}
+
+	/**
 	 * @throws FollowRequestNotFoundException
 	 */
 	public function accept(string $localUserId, string $requestId): Follower
@@ -74,6 +129,28 @@ final class FollowRequestService
 	public function reject(string $localUserId, string $requestId): Follower
 	{
 		return $this->respond($localUserId, $requestId, false);
+	}
+
+	/** @throws FollowRequestNotFoundException */
+	public function acceptActor(string $localUserId, string $actorId): Follower
+	{
+		return $this->respondToActor($localUserId, $actorId, true);
+	}
+
+	/** @throws FollowRequestNotFoundException */
+	public function rejectActor(string $localUserId, string $actorId): Follower
+	{
+		return $this->respondToActor($localUserId, $actorId, false);
+	}
+
+	private function respondToActor(string $localUserId, string $actorId, bool $accept): Follower
+	{
+		$follower = $this->followers->findByActor(trim($localUserId), trim($actorId));
+		if ($follower === null || !$follower->isPending()) {
+			throw new FollowRequestNotFoundException('Follow request not found.');
+		}
+
+		return $this->respond($localUserId, $follower->id, $accept);
 	}
 
 	/**

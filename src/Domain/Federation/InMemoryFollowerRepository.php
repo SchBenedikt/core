@@ -88,13 +88,25 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return true;
 	}
 
-	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
+	public function pending(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array
 	{
 		$matching = array_values(array_filter(
 			$this->followers,
 			static fn (Follower $follower): bool => $follower->localUserId === $localUserId
 				&& $follower->state === FollowState::Pending
-				&& ($before === null || $follower->followedAt < $before),
+				&& ($before === null
+					|| $follower->followedAt < $before
+					|| ($beforeId !== null && $follower->followedAt == $before && strcmp($follower->id, $beforeId) < 0))
+				&& ($after === null
+					|| $follower->followedAt > $after
+					|| ($afterId !== null && $follower->followedAt == $after && strcmp($follower->id, $afterId) > 0)),
 		));
 
 		usort($matching, static function (Follower $a, Follower $b): int {

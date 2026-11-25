@@ -114,14 +114,35 @@ final class PdoFollowerRepository implements FollowerRepository
 		) > 0;
 	}
 
-	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
+	public function pending(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+		?string $beforeId = null,
+		?DateTimeImmutable $after = null,
+		?string $afterId = null,
+	): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
 			. ' WHERE local_user_id = :local_user_id AND state = :state';
 		$parameters = ['local_user_id' => $localUserId, 'state' => FollowState::Pending->value];
 		if ($before !== null) {
-			$sql .= ' AND followed_at < :before';
+			$sql .= $beforeId === null
+				? ' AND followed_at < :before'
+				: ' AND (followed_at < :before OR (followed_at = :before AND id < :before_id))';
 			$parameters['before'] = Time::format($before);
+			if ($beforeId !== null) {
+				$parameters['before_id'] = $beforeId;
+			}
+		}
+		if ($after !== null) {
+			$sql .= $afterId === null
+				? ' AND followed_at > :after'
+				: ' AND (followed_at > :after OR (followed_at = :after AND id > :after_id))';
+			$parameters['after'] = Time::format($after);
+			if ($afterId !== null) {
+				$parameters['after_id'] = $afterId;
+			}
 		}
 
 		$sql .= ' ORDER BY followed_at DESC, id DESC LIMIT ' . max(1, $limit);

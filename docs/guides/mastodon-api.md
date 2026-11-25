@@ -29,6 +29,9 @@ Locally implemented (core):
 - `GET /bookmarks`
 - `POST /statuses/{id}/reblog`
 - `POST /statuses/{id}/unreblog`
+- `GET /follow_requests`
+- `POST /follow_requests/{id}/authorize`
+- `POST /follow_requests/{id}/reject`
 - `GET /accounts/relationships`
 - `GET /accounts/lookup`
 - `POST /accounts/{id}/follow`
@@ -62,9 +65,10 @@ Locally implemented (core):
 
 `GET /notifications` and `GET /notifications/unread_count` apply the sender
 policy before filtering and pagination: `held` and `dropped` events are absent,
-and `POST /notifications/{id}/dismiss` only dismisses a visible own row. The
-sender-policy and request lifecycle routes are neutral (`/api/v1`); the
-Mastodon projection intentionally exposes no separate request endpoints.
+and `POST /notifications/{id}/dismiss` only dismisses a visible own row.
+Notification sender-policy and notification-request lifecycle routes are
+neutral (`/api/v1`). Inbound ActivityPub follow requests use the Mastodon
+`/follow_requests` endpoints below.
 
 `PUT /statuses/{id}` is Mastodon's status edit: `status`, `spoiler_text`,
 `sensitive` and `media_ids`. Visibility and the reply target are not editable
@@ -103,6 +107,18 @@ SSE separately.
 Lists are limited to known local account ids; remote list membership is
 external.
 
+Locked-account follow requests are available at `GET /follow_requests`,
+`POST /follow_requests/{account_id}/authorize` and
+`POST /follow_requests/{account_id}/reject`. The list returns Mastodon Account
+objects and accepts `max_id`/`since_id`; clients should follow the `Link`
+header for older pages. `min_id` is rejected because it cannot be translated
+to the stable timestamp and row-id cursor. Account ids map to pending inbound
+ActivityPub actors.
+Accept and reject are owner-scoped, require `write:follows`, and queue one
+signed `Accept` or `Reject` to the requester's individual inbox. A repeated or
+foreign-account decision returns 404. The `read:follows` and `write:follows`
+scopes are also available through Mastodon's legacy `follow` scope.
+
 The favourite/unfavourite and reblog/unreblog routes also accept the object
 URL of a cached remote post, but only when the signed-in account follows its
 author and neither side has blocked the other. They send ActivityPub
@@ -132,9 +148,9 @@ remote relationship/status totals and custom fields are unavailable and are
 reported as empty values.
 
 Local search over local accounts and statuses is implemented below; remote
-status search and hashtag search are external. Followed tags, follow requests/locked
-accounts and the wider account-management surface are product follow-ups
-listed as Later in the [roadmap](../roadmap.md).
+status search and hashtag search are external. Followed tags and the wider
+account-management surface are product follow-ups listed as Later in the
+[roadmap](../roadmap.md).
 
 ### Remote compatibility matrix (Mastodon API v1, core 0.8)
 
@@ -142,6 +158,7 @@ listed as Later in the [roadmap](../roadmap.md).
 | --- | --- | --- |
 | Home timeline | Supported | Local posts plus accepted-follow cached remote posts; cursor paging. `MastodonApiTest::testAuthenticatedHomeTimelineReturnsLocalAndAcceptedRemoteStatusesWithCursor` |
 | Follow/unfollow and relationship state | Supported | Remote actors require guarded lookup; outgoing signed Follow/Undo is pending until Accept. `MastodonApiTest::testRemoteFollowUnfollowAndRelationshipsUseFederationLifecycle` |
+| Locked-account follow requests | Supported | Lists pending inbound actors with stable cursor pagination; authorize/reject use the Account id, enforce owner/scope checks, update `followed_by` and queue signed responses. `MastodonApiTest::testMastodonFollowRequestsListAndAuthorizeRejectUseAccountIds`, `FollowerRepositoryTestCase::testPendingCursorUsesRowIdToPageRequestsWithTheSameTimestamp` |
 | Favourite/unfavourite cached remote post | Supported | Requires accepted follow and no block; emits Like/Undo; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Reblog/unreblog cached remote post | Supported | Requires the same cached, visible remote target and federation policy; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Remote notifications | Supported | Signed follows and reactions, replies to visible local public/unlisted posts and boosts of local public/unlisted posts. Local blocks, notification mutes and private local post audiences suppress notifications. Remote reply statuses are projected only for an accepted follower. `InboundTimelineTest::testRemoteRepliesAndBoostsOfLocalPublicPostsCreateNotifications`, `InboundTimelineTest::testRemoteBoostNotificationsRespectLocalBlocksAndNotificationMutes`, `InboundTimelineTest::testRemoteBoostOfFollowersOnlyLocalPostDoesNotCreateNotification`, `MastodonApiTest::testRemoteMentionNotificationEmbedsTheStatusOnlyForAFollower` |

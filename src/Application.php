@@ -127,6 +127,9 @@ use AlohaSocial\Core\Api\Mastodon\MastodonHashtagTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonHomeTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFollowRequestsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAuthorizeFollowRequestHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRejectFollowRequestHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\SearchHandler;
@@ -1511,6 +1514,7 @@ final readonly class Application
 			$timelines,
 			$remotePosts,
 			$remoteActorSearch,
+			$followRequestService,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -1792,6 +1796,9 @@ final readonly class Application
 			->with(MastodonDeleteStatusHandler::class, static fn (): MastodonDeleteStatusHandler => new MastodonDeleteStatusHandler($mastodonService))
 			->with(MastodonUpdateStatusHandler::class, static fn (): MastodonUpdateStatusHandler => new MastodonUpdateStatusHandler($mastodonService))
 			->with(MastodonRelationshipsHandler::class, static fn (): MastodonRelationshipsHandler => new MastodonRelationshipsHandler($mastodonService))
+			->with(MastodonFollowRequestsHandler::class, static fn (): MastodonFollowRequestsHandler => new MastodonFollowRequestsHandler($mastodonService))
+			->with(MastodonAuthorizeFollowRequestHandler::class, static fn (): MastodonAuthorizeFollowRequestHandler => new MastodonAuthorizeFollowRequestHandler($mastodonService))
+			->with(MastodonRejectFollowRequestHandler::class, static fn (): MastodonRejectFollowRequestHandler => new MastodonRejectFollowRequestHandler($mastodonService))
 			->with(MastodonFollowAccountHandler::class, static fn (): MastodonFollowAccountHandler => new MastodonFollowAccountHandler($mastodonService))
 			->with(MastodonUnfollowAccountHandler::class, static fn (): MastodonUnfollowAccountHandler => new MastodonUnfollowAccountHandler($mastodonService))
 			->with(MastodonMuteAccountHandler::class, static fn (): MastodonMuteAccountHandler => new MastodonMuteAccountHandler($mastodonService))

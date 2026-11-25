@@ -332,6 +332,30 @@ abstract class FollowerRepositoryTestCase extends TestCase
 		self::assertNull($repository->find('rejected'));
 	}
 
+	public function testPendingCursorUsesRowIdToPageRequestsWithTheSameTimestamp(): void
+	{
+		$repository = $this->repository();
+		$time = Time::parse('2026-11-11T10:00:00Z');
+		foreach (['a', 'b', 'c'] as $id) {
+			$repository->insert(new Follower(
+				$id,
+				'alice',
+				'https://remote.example/users/' . $id,
+				'https://remote.example/users/' . $id . '/inbox',
+				$time,
+				state: FollowState::Pending,
+				followActivity: ['id' => 'https://remote.example/follows/' . $id, 'type' => 'Follow'],
+			));
+		}
+
+		$first = $repository->pending('alice', 1);
+		self::assertSame(['c'], array_map(static fn (Follower $follower): string => $follower->id, $first));
+		$second = $repository->pending('alice', 1, $time, $first[0]->id);
+		self::assertSame(['b'], array_map(static fn (Follower $follower): string => $follower->id, $second));
+		$third = $repository->pending('alice', 1, $time, $second[0]->id);
+		self::assertSame(['a'], array_map(static fn (Follower $follower): string => $follower->id, $third));
+	}
+
 	public function testMoveScansAndReplacesAnAcceptedFollower(): void
 	{
 		$repository = $this->repository();
