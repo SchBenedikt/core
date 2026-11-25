@@ -325,13 +325,15 @@ These parts are implemented by a host or need remote data; they are not hidden
 local gaps. The detailed lists live in the guides.
 
 - **Mastodon:** OAuth authorization/token issuance/revocation and app
-  registration; remote timelines and delivery; remote counts for an outbound
-  `Like` (the count itself lives on the remote instance); remote boost
-  federation; remote notifications; stream host transport and broker remain
-  incomplete (Core now has the event contract and post-created publication); remote poll
-  fetching/voting/`Question` federation; search across a global remote corpus
-  (exact remote handle lookup and a bounded local/cached index exist); remote
-  relationship/admin APIs. See
+  registration; public remote timelines and global remote search; remote counts
+  for outbound interactions; remaining remote actions and remote
+  relationship/admin APIs. The standalone host provides a durable SSE broker
+  and transport for six channels; Core owns the event contract, while a
+  Nextcloud transport and live third-party client compatibility run remain.
+  Remote notifications outside the imported event subset and remote poll
+  fetching/voting/`Question` federation are still open. Search across a global
+  remote corpus (exact remote handle lookup and a bounded local/cached index
+  exist). See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
   store, credential storage and PDS selection; video transcoding; the
