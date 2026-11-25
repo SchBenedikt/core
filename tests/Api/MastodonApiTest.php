@@ -32,6 +32,9 @@ use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Federation\RemotePollOption;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
+use AlohaSocial\Core\Domain\Notification\Notification;
+use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Domain\Notification\NotificationRepository;
 use AlohaSocial\Core\Domain\Post\BookmarkRepository;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
@@ -998,6 +1001,59 @@ final class MastodonApiTest extends TestCase
 		$own = $this->createStatus($app, ['status' => 'do not notify myself'])->decodedBody();
 		$this->favourite($app, $own['id']);
 		self::assertCount(0, $this->notifications($app, userId: 'alice')->decodedBody());
+	}
+
+	public function testRemoteMentionNotificationEmbedsTheStatusOnlyForAFollower(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$objectId = 'https://remote.example/notes/reply';
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/reply',
+			objectId: $objectId,
+			actorId: $actorId,
+			kind: RemotePostKind::Post,
+			content: 'A remote reply to Alice',
+			contentWarning: null,
+			publishedAt: $this->clock->now(),
+			objectAuthorId: $actorId,
+		));
+		$notifications = new InMemoryNotificationRepository();
+		$notifications->insert(new Notification(
+			id: 'notification-remote-mention',
+			recipientId: 'alice',
+			actorId: $actorId,
+			type: NotificationType::Mention,
+			postId: $objectId,
+			createdAt: $this->clock->now(),
+		));
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-alice-bob',
+			localUserId: 'alice',
+			actorId: $actorId,
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Accepted,
+		));
+
+		$app = $this->app(
+			followingRepository: $following,
+			remotePostRepository: $remotePosts,
+			notificationRepository: $notifications,
+		);
+		$visible = $this->notifications($app);
+		self::assertSame(200, $visible->status);
+		self::assertSame('<p>A remote reply to Alice</p>', $visible->decodedBody()[0]['status']['content']);
+		self::assertSame($objectId, $visible->decodedBody()[0]['status']['id']);
+
+		$unfollowed = $this->notifications($this->app(
+			followingRepository: new InMemoryFollowingRepository(),
+			remotePostRepository: $remotePosts,
+			notificationRepository: $notifications,
+		));
+		self::assertSame(200, $unfollowed->status);
+		self::assertArrayNotHasKey('status', $unfollowed->decodedBody()[0]);
 	}
 
 	public function testFollowNotificationsAreFilteredAndPaginated(): void

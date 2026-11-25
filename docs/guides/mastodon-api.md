@@ -91,10 +91,15 @@ The local routes cover public/unlisted/followers-only text posts, local poll
 creation, private bookmarks and mutes, private list bookkeeping and timelines,
 reply context, notifications, media, and local follow actions. Selected
 actions also work with cached remote objects as described below. OAuth
-authorization/token endpoints, streaming, public remote timelines, remote
-notifications, remote profile detail, general remote search, admin APIs and
-the full account-management surface remain outside this compatibility surface.
-Keyword filters and scheduled statuses are supported locally (see below).
+authorization/token endpoints, public remote timelines, remote profile detail,
+general remote search, admin APIs and the full account-management surface
+remain outside this compatibility surface. Signed inbound follows, reactions,
+replies to local public/unlisted posts, and boosts of local public/unlisted
+posts can create notifications. A remote reply's status is embedded only when
+the recipient follows its author; notification existence alone never grants
+access to a remote status. Keyword filters and scheduled statuses are
+supported locally (see below). The standalone server supplies authenticated
+SSE separately.
 Lists are limited to known local account ids; remote list membership is
 external.
 
@@ -139,10 +144,11 @@ listed as Later in the [roadmap](../roadmap.md).
 | Follow/unfollow and relationship state | Supported | Remote actors require guarded lookup; outgoing signed Follow/Undo is pending until Accept. `MastodonApiTest::testRemoteFollowUnfollowAndRelationshipsUseFederationLifecycle` |
 | Favourite/unfavourite cached remote post | Supported | Requires accepted follow and no block; emits Like/Undo; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
 | Reblog/unreblog cached remote post | Supported | Requires the same cached, visible remote target and federation policy; remote totals are unavailable. `ReactionFederationTest::testMastodonCanLikeUnlikeReblogAndUnreblogAFollowedRemoteStatus` |
+| Remote notifications | Supported | Signed follows and reactions, replies to visible local public/unlisted posts and boosts of local public/unlisted posts. Local blocks, notification mutes and private local post audiences suppress notifications. Remote reply statuses are projected only for an accepted follower. `InboundTimelineTest::testRemoteRepliesAndBoostsOfLocalPublicPostsCreateNotifications`, `InboundTimelineTest::testRemoteBoostNotificationsRespectLocalBlocksAndNotificationMutes`, `InboundTimelineTest::testRemoteBoostOfFollowersOnlyLocalPostDoesNotCreateNotification`, `MastodonApiTest::testRemoteMentionNotificationEmbedsTheStatusOnlyForAFollower` |
 | Read/vote on cached remote poll | Supported | Requires accepted follow; vote uses signed ActivityPub delivery. `MastodonApiTest::testImportedRemotePollsCanBeReadAndVotedThroughMastodonApi` |
 | Exact remote account resolution | Supported | Search with `resolve=true` and direct `GET /accounts/lookup?acct=...` accept an exact valid handle; uses bounded WebFinger/ActivityPub fetching and filters blocked actors. `MastodonApiTest::testSearchResolveFetchesOnlyAnExactRemoteAccountHandle`, `MastodonApiTest::testAccountLookupResolvesLocalAndExactRemoteHandles` |
 | Remote profile detail by handle | Supported | `GET /accounts/lookup` resolves exact local or remote handles; blocked actors are hidden. Arbitrary remote profile fetching by URL or ID remains unsupported. |
-| General remote search, public timeline, notifications and streaming | Unsupported | These routes do not fetch arbitrary remote data or open streaming connections; unsupported writes are not reported as successful. |
+| General remote search and public timeline | Unsupported | These routes do not fetch arbitrary remote data; unsupported writes are not reported as successful. |
 
 This matrix describes Core's current handlers and their host ports. It does not
 claim compatibility with every Mastodon client; OAuth/token issuance remains

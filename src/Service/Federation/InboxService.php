@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
+use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
@@ -19,6 +20,7 @@ use AlohaSocial\Core\Domain\Post\QuoteState;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\LocalActorProfileProvider;
+use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
@@ -27,6 +29,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
+use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
@@ -48,6 +51,7 @@ use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Support\Time;
 use Throwable;
 
+use function in_array;
 use function is_string;
 
 /**
@@ -111,6 +115,9 @@ final class InboxService
 		private readonly ?\AlohaSocial\Core\Domain\Federation\LocalActorDirectory $localActors = null,
 		private readonly ?EventBroker $eventBroker = null,
 		private readonly ?TransactionRunner $transactions = null,
+		private readonly ?PostRepository $posts = null,
+		private readonly ?BlockRepository $blocks = null,
+		private readonly ?MuteRepository $mutes = null,
 	) {
 	}
 
@@ -320,6 +327,7 @@ final class InboxService
 		}
 
 		$this->persistRemotePostAndStreamEvent($post, $activity);
+		$this->notifyForLocalReply($post, $actor);
 
 		// Import after the post is durable. The importer isolates every
 		// attachment, so a slow or broken image never discards the post.
@@ -449,8 +457,56 @@ final class InboxService
 
 		$post = $this->remotePostFactory->fromAnnounce($actor->actorId, $activity, $target);
 		$this->insertRemotePost($post);
+		$this->notifyForLocalReblog($objectId, $actor);
 
 		$this->remoteMedia?->import($post, $activity['object'] ?? null);
+	}
+
+	private function notifyForLocalReply(RemotePost $reply, RemoteActor $actor): void
+	{
+		if ($this->posts === null || $this->notifications === null || $reply->inReplyToId === null) {
+			return;
+		}
+
+		$postId = $this->activities->postIdFromUrl($reply->inReplyToId);
+		$parent = $postId === null ? null : $this->posts->find($postId);
+		if ($parent === null || $parent->isDeleted() || $parent->isArchived()
+			|| !$parent->visibility->isPubliclyVisible() || !$this->shouldNotify($parent->authorId, $actor->actorId)
+		) {
+			return;
+		}
+
+		$this->notifications->recordMention($parent->authorId, $actor->actorId, $reply->objectId);
+	}
+
+	private function notifyForLocalReblog(string $objectId, RemoteActor $actor): void
+	{
+		if ($this->posts === null || $this->notifications === null) {
+			return;
+		}
+
+		$postId = $this->activities->postIdFromUrl($objectId);
+		$post = $postId === null ? null : $this->posts->find($postId);
+		if ($post === null || $post->isDeleted() || $post->isArchived()
+			|| !$post->visibility->isPubliclyVisible() || !$this->shouldNotify($post->authorId, $actor->actorId)
+		) {
+			return;
+		}
+
+		$this->notifications->recordReblog($post->authorId, $actor->actorId, $post->id);
+	}
+
+	private function shouldNotify(string $recipientId, string $actorId): bool
+	{
+		if ($this->blocks?->findByActor($recipientId, $actorId) !== null) {
+			return false;
+		}
+
+		return !in_array(
+			$actorId,
+			$this->mutes?->notificationActorIds($recipientId, $this->clock->now()) ?? [],
+			true,
+		);
 	}
 
 	/**

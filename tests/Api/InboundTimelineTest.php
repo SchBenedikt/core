@@ -10,10 +10,14 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
+use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
@@ -149,6 +153,77 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
 	}
 
+	public function testRemoteRepliesAndBoostsOfLocalPublicPostsCreateNotifications(): void
+	{
+		$app = $this->app();
+		$local = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'local post', 'visibility' => 'public'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $local->status, $local->body);
+		$localPostId = $local->decodedBody()['post']['id'];
+		$localNoteId = 'https://localhost:8080/api/v1/posts/' . rawurlencode($localPostId);
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-to-local',
+			'https://remote.example/notes/reply-to-local',
+			'remote reply',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+
+		$boost = [
+			'id' => 'https://remote.example/activities/boost-local',
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'published' => '2026-11-11T10:02:00Z',
+			'object' => $localNoteId,
+		];
+		self::assertSame(202, $this->deliver($app, $boost)->status);
+
+		$page = $app->handle(new Request('GET', '/api/v1/notifications', userId: 'alice'));
+		self::assertSame(200, $page->status);
+		$notifications = $page->decodedBody()['notifications'];
+		self::assertCount(2, $notifications);
+		$byType = [];
+		foreach ($notifications as $notification) {
+			$byType[$notification['type']] = $notification;
+			self::assertSame(self::BOB, $notification['actor_id']);
+		}
+		self::assertSame('https://remote.example/notes/reply-to-local', $byType['mention']['post_id']);
+		self::assertSame($localPostId, $byType['reblog']['post_id']);
+	}
+
+	public function testRemoteBoostOfFollowersOnlyLocalPostDoesNotCreateNotification(): void
+	{
+		$app = $this->app();
+		$local = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'private post', 'visibility' => 'followers'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $local->status, $local->body);
+		$localNoteId = 'https://localhost:8080/api/v1/posts/' . rawurlencode($local->decodedBody()['post']['id']);
+		self::assertSame(202, $this->deliver($app, [
+			'id' => 'https://remote.example/activities/boost-private-local',
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'object' => $localNoteId,
+		])->status);
+
+		self::assertSame([], $app->handle(new Request(
+			'GET',
+			'/api/v1/notifications',
+			userId: 'alice',
+		))->decodedBody()['notifications']);
+	}
+
 	public function testAnAcceptedRemoteUpdatePublishesTheEditedObjectToTheHomeAudience(): void
 	{
 		$published = [];
@@ -179,6 +254,42 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame(['status_id' => self::NOTE_1], $published[1]->payload);
 		self::assertSame(['alice'], $published[1]->recipientIds);
 		self::assertSame('edited text', $this->feed($app)->decodedBody()['posts'][0]['content']);
+	}
+
+	public function testRemoteBoostNotificationsRespectLocalBlocksAndNotificationMutes(): void
+	{
+		$blocks = new InMemoryBlockRepository();
+		$blocks->insert(new Block('block-bob', 'alice', self::BOB, $this->clock->now()));
+		$this->assertRemoteBoostNotificationMissing($this->app(blockRepository: $blocks), 'blocked-local-post');
+
+		$mutes = new InMemoryMuteRepository();
+		$mutes->save(new Mute('alice', self::BOB, true, $this->clock->now()));
+		$this->assertRemoteBoostNotificationMissing($this->app(muteRepository: $mutes), 'muted-local-post');
+	}
+
+	private function assertRemoteBoostNotificationMissing(Application $app, string $content): void
+	{
+		$local = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => $content, 'visibility' => 'public'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $local->status, $local->body);
+		$localNoteId = 'https://localhost:8080/api/v1/posts/' . rawurlencode($local->decodedBody()['post']['id']);
+		self::assertSame(202, $this->deliver($app, [
+			'id' => 'https://remote.example/activities/boost-' . $content,
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'object' => $localNoteId,
+		])->status);
+
+		self::assertSame([], $app->handle(new Request(
+			'GET',
+			'/api/v1/notifications',
+			userId: 'alice',
+		))->decodedBody()['notifications']);
 	}
 
 	public function testSignedInHomeFeedHidesRemoteRepliesButKeepsRootPosts(): void
@@ -460,6 +571,8 @@ final class InboundTimelineTest extends TestCase
 		?InMemoryFollowingRepository $following = null,
 		?BlockedActorPolicy $blockedActors = null,
 		?EventBroker $events = null,
+		?InMemoryBlockRepository $blockRepository = null,
+		?InMemoryMuteRepository $muteRepository = null,
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -476,6 +589,8 @@ final class InboundTimelineTest extends TestCase
 			activityLog: new InMemoryActivityLog(),
 			followingRepository: $following ?? $this->following,
 			blockedActors: $blockedActors,
+			blockRepository: $blockRepository,
+			muteRepository: $muteRepository,
 			eventBroker: $events,
 		);
 	}
