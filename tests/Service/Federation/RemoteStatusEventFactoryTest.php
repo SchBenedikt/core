@@ -55,6 +55,32 @@ final class RemoteStatusEventFactoryTest extends TestCase
 		self::assertSame(StreamAudience::Followers, $event->audience);
 	}
 
+	public function testUpdateUsesTheRemoteObjectIdAndItsEditTimestamp(): void
+	{
+		$remotePost = $this->post();
+		$remotePost = new RemotePost(
+			activityId: $remotePost->activityId,
+			objectId: $remotePost->objectId,
+			actorId: $remotePost->actorId,
+			kind: $remotePost->kind,
+			content: 'An edited remote status',
+			contentWarning: null,
+			publishedAt: $remotePost->publishedAt,
+			objectAuthorId: $remotePost->objectAuthorId,
+			updatedAt: new DateTimeImmutable('2026-11-25T00:01:00Z'),
+		);
+		$event = $this->factory->forUpdate(
+			$remotePost,
+			['object' => ['to' => ['https://www.w3.org/ns/activitystreams#Public']]],
+			['alice'],
+		);
+
+		self::assertNotNull($event);
+		self::assertSame('status.updated', $event->name);
+		self::assertSame(['status_id' => 'https://peer.example/posts/1'], $event->payload);
+		self::assertSame('2026-11-25T00:01:00Z', $event->occurredAt);
+	}
+
 	public function testFollowersOnlyRemotePostsAreScopedAndDirectPostsProduceNoEvent(): void
 	{
 		$activity = ['object' => ['to' => [self::ACTOR . '/followers']]];

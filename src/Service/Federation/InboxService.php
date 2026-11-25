@@ -374,23 +374,46 @@ final class InboxService
 			return;
 		}
 
-		$this->remotePosts->updatePostContent(
-			$updated->objectId,
-			$actor->actorId,
-			$updated->content,
-			$updated->contentWarning,
-			$updated->updatedAt ?? Time::toSecondPrecision($this->clock->now()),
-		);
+		$this->persistRemotePostUpdateAndStreamEvent($updated, $activity, $actor->actorId);
+	}
 
-		$object = $activity['object'] ?? null;
-		if ($this->remotePolls !== null && is_array($object) && $updated->objectType->value === 'question') {
-			$this->remotePolls->importQuestion(
-				$updated,
-				$object,
-				$updated->activityId,
-				$updated->updatedAt ?? Time::toSecondPrecision($this->clock->now()),
+	/** @param array<string, mixed> $activity */
+	private function persistRemotePostUpdateAndStreamEvent(RemotePost $post, array $activity, string $actorId): void
+	{
+		$persist = function () use ($post, $activity, $actorId): void {
+			$updatedAt = $post->updatedAt ?? Time::toSecondPrecision($this->clock->now());
+			$this->remotePosts->updatePostContent(
+				$post->objectId,
+				$actorId,
+				$post->content,
+				$post->contentWarning,
+				$updatedAt,
 			);
+
+			$object = $activity['object'] ?? null;
+			if ($this->remotePolls !== null && is_array($object) && $post->objectType->value === 'question') {
+				$this->remotePolls->importQuestion($post, $object, $post->activityId, $updatedAt);
+			}
+
+			if ($this->eventBroker === null) {
+				return;
+			}
+			$draft = (new RemoteStatusEventFactory())->forUpdate(
+				$post,
+				$activity,
+				$this->following->localUserIdsForActor($post->actorId),
+			);
+			if ($draft !== null) {
+				$this->eventBroker->publish($draft);
+			}
+		};
+
+		if ($this->transactions === null) {
+			$persist();
+			return;
 		}
+
+		$this->transactions->transaction($persist);
 	}
 
 	private function applyPendingUpdate(RemotePost $post, RemoteActor $actor): void

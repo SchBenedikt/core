@@ -15,7 +15,7 @@ use AlohaSocial\Core\Platform\Events\StreamAudience;
 use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Support\Time;
 
-/** Builds home-scoped events for newly imported remote statuses. */
+/** Builds home-scoped events for imported remote statuses. */
 final class RemoteStatusEventFactory
 {
 	private const PUBLIC_COLLECTION = 'https://www.w3.org/ns/activitystreams#Public';
@@ -25,6 +25,30 @@ final class RemoteStatusEventFactory
 	 * @param list<string> $recipientIds
 	 */
 	public function forCreate(RemotePost $post, array $activity, array $recipientIds): ?StreamEventDraft
+	{
+		return $this->forStatus('status.created', $post, $activity, $recipientIds, Time::format($post->publishedAt));
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 * @param list<string> $recipientIds
+	 */
+	public function forUpdate(RemotePost $post, array $activity, array $recipientIds): ?StreamEventDraft
+	{
+		return $this->forStatus(
+			'status.updated',
+			$post,
+			$activity,
+			$recipientIds,
+			Time::format($post->updatedAt ?? $post->publishedAt),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 * @param list<string> $recipientIds
+	 */
+	private function forStatus(string $name, RemotePost $post, array $activity, array $recipientIds, string $occurredAt): ?StreamEventDraft
 	{
 		if ($post->kind !== RemotePostKind::Post || $recipientIds === []) {
 			return null;
@@ -49,12 +73,12 @@ final class RemoteStatusEventFactory
 		}
 
 		return new StreamEventDraft(
-			name: 'status.created',
+			name: $name,
 			audience: StreamAudience::Followers,
 			actorId: $post->actorId,
 			recipientIds: array_values(array_unique($recipientIds)),
 			payload: ['status_id' => $post->objectId],
-			occurredAt: Time::format($post->publishedAt),
+			occurredAt: $occurredAt,
 		);
 	}
 
