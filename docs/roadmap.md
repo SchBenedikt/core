@@ -57,13 +57,13 @@ the host that serves it. See
    disabled by default where documented; no host-specific branch appears in
    `src/`.
 
-## Where we are (2026-11-16)
+## Where we are (2026-11-25)
 
 | Measure | Value |
 | --- | --- |
 | HTTP contract | 238 routes, 56 of them under the Mastodon prefix |
 | Persistence | 40 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 224 PHP test files (1841 tests, 10109 assertions) and 9 UI test files (69 tests) |
+| Tests | 239 PHP test files (2061 tests, 11499 assertions, 11 deprecations) and 9 UI test files (69 tests) |
 | Versions | core `0.8.0` / UI `0.8.0` / HostBridge contract `1` / HTTP `v1`; the `0.8.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.8.0` is the source release candidate, not tagged yet; the signed-tag GitHub workflow will publish the Composer archive, npm tarball and checksums ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -330,10 +330,11 @@ local gaps. The detailed lists live in the guides.
   relationship/admin APIs. The standalone host provides a durable SSE broker
   and transport for six channels; Core owns the event contract, while a
   Nextcloud transport and live third-party client compatibility run remain.
-  Remote notifications outside the imported event subset and remote poll
-  fetching/voting/`Question` federation are still open. Search across a global
-  remote corpus (exact remote handle lookup and a bounded local/cached index
-  exist). See
+  Remote notifications outside the imported event subset remain open. Cached,
+  followed remote `Question` polls can be read and voted on; unbounded remote
+  `Question` fetching and federation of polls created locally remain open.
+  Search across a global remote corpus (exact remote handle lookup and a
+  bounded local/cached index exist). See
   [Mastodon-compatible API](guides/mastodon-api.md#what-remains-external).
 - **AT Protocol:** account-linking UI/browser callback, the short-lived flow
   store, credential storage and PDS selection; video transcoding; the

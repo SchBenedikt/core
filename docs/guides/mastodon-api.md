@@ -1344,16 +1344,18 @@ Turning this into a complete Mastodon server is intentionally out of scope:
   lists, notification listing and local status/actor search are done above.
 - Notification dismissal/unread state and the narrower local account/profile
   endpoints are done above. Instance metadata and statistics are done above.
-  Remote profile fetching, remote relationship APIs, domain blocks that would
-  need a remote moderation feed, and remote search remain external; remote
-  poll reads/votes for cached followed Questions are supported. The local
+  Arbitrary remote profile fetching, relationship lookup for unresolved remote
+  identifiers, domain blocks that would need a remote moderation feed, and
+  remote search remain external; remote poll reads/votes for cached followed
+  Questions are supported. The local
   follow/unfollow, relationship, profile, follower/following list,
   bookmark, mute, list, notification, search, poll-creation/voting and
   instance views above are done.
-- Following a remote actor through the compatibility prefix uses the shared
-  federation lifecycle and needs a guarded remote actor fetcher plus signed
-  delivery. Public profile lists project stored remote follow edges; they do
-  not fetch remote collections. Moderation and admin APIs are external.
+- Following a remote actor through the compatibility prefix uses a guarded
+  exact-handle lookup and the shared federation lifecycle; signed Follow/Undo
+  delivery remains pending until the remote actor accepts. Arbitrary remote
+  IDs and public profile lists do not trigger remote fetching. Moderation and
+  admin APIs are external.
 - The host must map bearer tokens to `userId`/`scopes`, enforce the declared
   rate limits and decide whether to expose the custom prefix publicly.
 
