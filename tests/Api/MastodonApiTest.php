@@ -2362,6 +2362,35 @@ final class MastodonApiTest extends TestCase
 		self::assertSame([$status['id']], array_column($restored->decodedBody()['posts'], 'id'));
 	}
 
+	public function testBlockingTheOriginalAuthorHidesTheirPostWhenBoostedByALocalFollowedAccount(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol']);
+		$status = $this->createStatus($app, ['status' => 'blocked original'], userId: 'bob')->decodedBody();
+		$boost = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts/' . rawurlencode($status['id']) . '/boost',
+			userId: 'carol',
+		));
+		self::assertSame(201, $boost->status, $boost->body);
+		$this->followAccount($app, 'carol', userId: 'alice');
+
+		$visible = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'));
+		self::assertSame($boost->decodedBody()['boost']['id'], $visible->decodedBody()['posts'][0]['id']);
+
+		$blocked = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/blocks',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => 'https://social.example/@bob'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $blocked->status, $blocked->body);
+
+		$home = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'));
+		self::assertSame(200, $home->status, $home->body);
+		self::assertSame([], $home->decodedBody()['posts']);
+	}
+
 	public function testAccountStatusesRespectLocalFollowerVisibility(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob', 'carol']);
