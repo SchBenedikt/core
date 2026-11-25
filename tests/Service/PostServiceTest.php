@@ -25,6 +25,9 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\PostService;
@@ -69,6 +72,36 @@ final class PostServiceTest extends TestCase
 		self::assertSame(Visibility::Public, $post->visibility);
 		self::assertSame('2026-11-11T10:00:00Z', Time::format($post->publishedAt));
 		self::assertSame('post-1', $this->repository->find('post-1')?->id);
+	}
+
+	public function testPublishingAPostWritesAReplayablePublicStreamEvent(): void
+	{
+		$broker = $this->createMock(EventBroker::class);
+		$broker->expects(self::once())
+			->method('publish')
+			->with(self::callback(static fn (StreamEventDraft $event): bool =>
+				$event->name === 'status.created'
+				&& $event->audience === StreamAudience::Public
+				&& $event->actorId === 'alice'
+				&& $event->recipientIds === ['alice']
+				&& $event->payload === ['status_id' => 'post-1']
+				&& $event->occurredAt === '2026-11-11T10:00:00Z'
+			));
+
+		$this->service(events: $broker)->create(new CreatePost('alice', 'hello'));
+	}
+
+	public function testFollowersPostStreamEventIsNotPubliclyAddressed(): void
+	{
+		$broker = $this->createMock(EventBroker::class);
+		$broker->expects(self::once())
+			->method('publish')
+			->with(self::callback(static fn (StreamEventDraft $event): bool =>
+				$event->audience === StreamAudience::Followers
+				&& $event->recipientIds === ['alice']
+			));
+
+		$this->service(events: $broker)->create(new CreatePost('alice', 'hello', Visibility::Followers));
 	}
 
 	public function testStoresAndNormalizesThePostLanguage(): void
@@ -348,6 +381,7 @@ final class PostServiceTest extends TestCase
 		?ArrayConfig $config = null,
 		?MentionResolver $mentions = null,
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
+		?EventBroker $events = null,
 	): PostService {
 		return new PostService(
 			$this->repository,
@@ -359,6 +393,7 @@ final class PostServiceTest extends TestCase
 			$this->ids,
 			mentions: $mentions,
 			inboundBlocks: $inboundBlocks,
+			events: $events,
 		);
 	}
 }

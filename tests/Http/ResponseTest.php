@@ -83,6 +83,38 @@ final class ResponseTest extends TestCase
 		self::assertSame('1', $response->header('X'));
 	}
 
+	public function testStreamResponseProducesChunksLazilyAndPreservesProducerWhenDecorated(): void
+	{
+		$started = false;
+		$response = Response::stream(static function () use (&$started): iterable {
+			$started = true;
+			yield "event: update\ndata: {\"id\":\"1\"}\n\n";
+			yield ": keepalive\n\n";
+		}, ['Content-Type' => 'text/event-stream']);
+
+		self::assertFalse($started);
+		self::assertSame('text/event-stream', $response->header('content-type'));
+		$decorated = $response->withHeader('Cache-Control', 'no-cache')->withStatus(206);
+		self::assertSame(206, $decorated->status);
+		self::assertSame('no-cache', $decorated->header('Cache-Control'));
+		self::assertSame($response->streamBody, $decorated->streamBody);
+		self::assertSame([
+			"event: update\ndata: {\"id\":\"1\"}\n\n",
+			": keepalive\n\n",
+		], iterator_to_array($response->chunks(), false));
+		self::assertTrue($started);
+	}
+
+	public function testStreamResponseRejectsNonStringChunks(): void
+	{
+		$response = Response::stream(static function (): iterable {
+			yield ['not', 'a', 'string'];
+		});
+
+		$this->expectException(\UnexpectedValueException::class);
+		iterator_to_array($response->chunks(), false);
+	}
+
 	public function testToArrayExposesTheWireShape(): void
 	{
 		$response = new Response(201, ['X' => '1'], 'y');

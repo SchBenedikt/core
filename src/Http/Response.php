@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Http;
 
 use JsonException;
+use Closure;
 
 /**
  * One outbound HTTP response, independent of the host's framework.
@@ -26,7 +27,26 @@ final readonly class Response
 		public int $status,
 		public array $headers = [],
 		public string $body = '',
+		public ?Closure $streamBody = null,
 	) {
+	}
+
+	/**
+	 * Build a response whose body is produced incrementally by the host.
+	 * The callback must return an iterable of UTF-8/binary-safe string chunks.
+	 * Keeping the producer lazy lets hosts flush each SSE frame as it is made.
+	 *
+	 * @param callable():iterable<string> $producer
+	 * @param array<string, string> $headers
+	 */
+	public static function stream(callable $producer, array $headers = []): self
+	{
+		return new self(
+			200,
+			$headers,
+			'',
+			Closure::fromCallable($producer),
+		);
 	}
 
 	/**
@@ -86,12 +106,12 @@ final readonly class Response
 
 		$headers[$name] = $value;
 
-		return new self($this->status, $headers, $this->body);
+		return new self($this->status, $headers, $this->body, $this->streamBody);
 	}
 
 	public function withStatus(int $status): self
 	{
-		return new self($status, $this->headers, $this->body);
+		return new self($status, $this->headers, $this->body, $this->streamBody);
 	}
 
 	/**
@@ -105,8 +125,30 @@ final readonly class Response
 			header($name . ': ' . $value);
 		}
 
+		foreach ($this->chunks() as $chunk) {
+			echo $chunk;
+			if (function_exists('ob_flush')) {
+				@ob_flush();
+			}
+			flush();
+		}
+	}
+
+	/** @return iterable<string> */
+	public function chunks(): iterable
+	{
 		if ($this->body !== '') {
-			echo $this->body;
+			yield $this->body;
+		}
+		if ($this->streamBody === null) {
+			return;
+		}
+
+		foreach (($this->streamBody)() as $chunk) {
+			if (!is_string($chunk)) {
+				throw new \UnexpectedValueException('Response stream producers must yield strings.');
+			}
+			yield $chunk;
 		}
 	}
 

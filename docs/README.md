@@ -18,6 +18,7 @@ one rule this repository has. Everything else goes deeper on one part.
 | [ADR 0008 — optional native PDS](adr/0008-native-pds.md) | Core-owned DID/PLC lifecycle, repository engine, security gates and the staged native PDS |
 | [ADR 0009 — E2EE direct messages](adr/0009-e2ee-direct-messages.md) | Why remote DMs wait for MLS, what the server may store, and the no-plaintext boundary |
 | [ADR 0010 — E2EE direct-message delivery](adr/0010-e2ee-direct-messages-delivery.md) | The accepted MLS ciphersuite, ciphertext envelope, device/key-package model, storage boundary and feature gate |
+| [ADR 0012 — host-owned Mastodon event streaming](adr/0012-mastodon-streaming.md) | Durable host event storage, SSE transport, cursors, authorization and stream lifecycle |
 | [E2EE direct-message threat model](security/e2ee-direct-messages-threat-model.md) | Adversaries, security objectives, non-goals, accepted residual risks and implementation gates |
 
 ## Guides

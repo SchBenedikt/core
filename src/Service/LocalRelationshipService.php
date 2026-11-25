@@ -322,6 +322,21 @@ final class LocalRelationshipService
 		);
 	}
 
+	/**
+	 * Local accounts who currently follow one local account.
+	 *
+	 * The event stores this fan-out snapshot; the broker still checks current
+	 * account, block, and mute state before delivering each event.
+	 *
+	 * @return list<string>
+	 */
+	public function localFollowerIds(string $userId): array
+	{
+		$userId = $this->known($userId);
+
+		return $this->followers->localUserIdsForActor($this->activities->actorId($userId));
+	}
+
 	private function known(string $userId): string
 	{
 		$userId = trim($userId);

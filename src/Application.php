@@ -379,6 +379,7 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\TransactionRunner;
+use AlohaSocial\Core\Platform\Events\EventBroker;
 use AlohaSocial\Core\Platform\Http\BoundedHttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Image\GdImageProcessor;
@@ -539,6 +540,7 @@ final readonly class Application
 		public ?AtprotoFollowService $atprotoFollows = null,
 		public ?ReactionService $reactions = null,
 		public ?BoostService $boosts = null,
+		public ?EventBroker $eventBroker = null,
 	) {
 	}
 
@@ -628,6 +630,7 @@ final readonly class Application
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
+		?EventBroker $eventBroker = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -766,6 +769,7 @@ final readonly class Application
 			atprotoPublications: $atprotoPublications,
 			atprotoInteractionRepository: $atprotoInteractionRepository,
 			atprotoFollowRepository: $atprotoFollowRepository ?? new InMemoryAtprotoFollowRepository(),
+			eventBroker: $eventBroker,
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher,
 			inboxResolver: $inboxResolver,
@@ -866,6 +870,7 @@ final readonly class Application
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
+		?EventBroker $eventBroker = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -959,6 +964,7 @@ final readonly class Application
 			atprotoAccounts: $atprotoAccounts,
 			atprotoPublisher: $atprotoPublisher ?? new XrpcAtprotoPublisher($httpClient, $atprotoDpop),
 			atprotoRemoteTargetPolicy: $atprotoRemoteTargetPolicy,
+			eventBroker: $eventBroker,
 			inboxResolver: $inboxResolver,
 			httpClient: $httpClient,
 			signingKey: $signingKey,
@@ -1075,6 +1081,7 @@ final readonly class Application
 		?InboundBlockRepository $inboundBlocks = null,
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
+		?EventBroker $eventBroker = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1363,6 +1370,7 @@ final readonly class Application
 			mentions: $mentionResolver,
 			inboundBlocks: $inboundBlocks,
 			accountMoves: $accountMoveRepository,
+			events: $eventBroker,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,
@@ -1897,6 +1905,7 @@ final readonly class Application
 			$atprotoFollowService,
 			$reactionService,
 			$boostService,
+			$eventBroker,
 		);
 	}
 
