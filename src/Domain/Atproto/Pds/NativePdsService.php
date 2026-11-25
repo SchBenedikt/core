@@ -977,7 +977,7 @@ final class NativePdsService
 	public function listMissingBlobs(
 		string $localUserId,
 		string $repo,
-		int $limit = 50,
+		int $limit = 500,
 		?string $cursor = null,
 	): array {
 		$identity = $this->requireIdentityForUser($localUserId);
