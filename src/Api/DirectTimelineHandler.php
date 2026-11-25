@@ -15,6 +15,7 @@ use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\FilterService;
+use AlohaSocial\Core\Service\ConversationService;
 use AlohaSocial\Core\Service\InvalidCursorException;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\TimelineService;
@@ -28,6 +29,7 @@ final class DirectTimelineHandler implements Handler
 		private readonly TimelineService $timelines,
 		private readonly ?MediaService $media = null,
 		?FilterService $filters = null,
+		private readonly ?ConversationService $conversations = null,
 	) {
 		$this->presenter = $filters === null ? null : new PostFilterPresenter($filters, $media);
 	}
@@ -65,6 +67,12 @@ final class DirectTimelineHandler implements Handler
 
 		$hasExtra = count($presented) > $limit;
 		$visible = array_slice($presented, 0, $limit);
+		$metadata = $this->conversations?->metadata($userId, $posts) ?? [];
+		$visible = array_map(static function (array $post) use ($metadata): array {
+			$state = $metadata[(string) ($post['id'] ?? '')] ?? null;
+
+			return $state === null ? $post : $post + $state;
+		}, $visible);
 		$cursorPost = $hasExtra
 			? $visible[array_key_last($visible)]
 			: ($posts === [] ? null : $posts[array_key_last($posts)]->toArray());

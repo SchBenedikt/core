@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Atproto\AtprotoPublicationSchema;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsEvent;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsSchema;
 use AlohaSocial\Core\Domain\Collection\MediaCollectionSchema;
+use AlohaSocial\Core\Domain\Conversation\ConversationMarkerSchema;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
@@ -254,6 +255,11 @@ final class PdoAccountDataRepository implements AccountDataRepository
 			'delete' => 'user_id = :user',
 			'order' => 'user_id, conversation_id',
 		],
+		ConversationMarkerSchema::TABLE => [
+			'export' => 'user_id = :user',
+			'delete' => 'user_id = :user',
+			'order' => 'user_id, conversation_id',
+		],
 		ReportSchema::TABLE => [
 			'export' => 'reporter_id = :user',
 			'delete' => 'reporter_id = :user',
@@ -348,6 +354,7 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		NotificationSchema::TABLE,
 		NotificationPolicySchema::TABLE,
 		ConversationMuteSchema::TABLE,
+		ConversationMarkerSchema::TABLE,
 		ReportSchema::TABLE,
 		HeldPostSchema::TABLE,
 		SearchIndexSchema::TABLE,

@@ -28,11 +28,13 @@ use PHPUnit\Framework\TestCase;
 final class PostVisibilityTest extends TestCase
 {
 	private Application $app;
+	private FrozenClock $clock;
 
 	protected function setUp(): void
 	{
+		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$this->app = Application::inMemory(
-			clock: new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
+			clock: $this->clock,
 			config: new ArrayConfig([
 				InstanceInfo::CONFIG_APP => [
 					'instance.url' => 'https://social.example',
@@ -151,6 +153,45 @@ final class PostVisibilityTest extends TestCase
 
 		$carol = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'carol'));
 		self::assertSame([$elsewhere['id']], array_column($carol->decodedBody()['posts'], 'id'));
+	}
+
+	public function testDirectConversationReadAndDismissMarkersArePrivateAndAdvance(): void
+	{
+		$root = $this->post('hello', 'direct', recipientIds: ['bob'])->decodedBody()['post'];
+		$this->clock->advance(1);
+		$reply = $this->post('reply', 'direct', authorId: 'bob', recipientIds: ['alice'], inReplyToId: $root['id'])->decodedBody()['post'];
+
+		$timelineResponse = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'alice'));
+		self::assertSame(200, $timelineResponse->status, json_encode($timelineResponse->decodedBody(), JSON_THROW_ON_ERROR));
+		$timeline = $timelineResponse->decodedBody()['posts'];
+		self::assertCount(2, $timeline);
+		foreach ($timeline as $message) {
+			self::assertSame($root['id'], $message['conversation_id']);
+		}
+		self::assertTrue(array_values(array_filter($timeline, static fn (array $post): bool => $post['id'] === $reply['id']))[0]['unread']);
+
+		$read = $this->app->handle(new Request('POST', '/api/v1/conversations/' . $reply['id'] . '/read', userId: 'alice'));
+		self::assertSame(200, $read->status);
+		$timeline = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'alice'))->decodedBody()['posts'];
+		foreach ($timeline as $message) {
+			self::assertFalse($message['unread']);
+		}
+
+		$dismiss = $this->app->handle(new Request('POST', '/api/v1/conversations/' . $reply['id'] . '/dismiss', userId: 'alice'));
+		self::assertSame(200, $dismiss->status);
+		$timeline = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'alice'))->decodedBody()['posts'];
+		foreach ($timeline as $message) {
+			self::assertTrue($message['dismissed']);
+		}
+
+		self::assertSame(404, $this->app->handle(new Request('POST', '/api/v1/conversations/' . $reply['id'] . '/read', userId: 'carol'))->status);
+		$this->clock->advance(1);
+		$newReply = $this->post('new message', 'direct', authorId: 'bob', recipientIds: ['alice'], inReplyToId: $reply['id'])->decodedBody()['post'];
+		$timeline = $this->app->handle(new Request('GET', '/api/v1/timelines/direct', userId: 'alice'))->decodedBody()['posts'];
+		$newMessage = array_values(array_filter($timeline, static fn (array $post): bool => $post['id'] === $newReply['id']))[0];
+		self::assertSame($root['id'], $newMessage['conversation_id']);
+		self::assertTrue($newMessage['unread']);
+		self::assertFalse($newMessage['dismissed']);
 	}
 
 	public function testDirectRecipientsMustBeKnownLocalAccounts(): void
