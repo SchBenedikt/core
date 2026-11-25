@@ -189,7 +189,11 @@ final class FollowerService
 	 *
 	 * @throws InvalidCursorException
 	 */
-	public function pending(string $localUserId, int $limit = self::DEFAULT_LIMIT, ?string $before = null): array
+	public function pending(
+		string $localUserId,
+		int $limit = self::DEFAULT_LIMIT,
+		?string $before = null,
+	): array
 	{
 		return $this->followers->pending(
 			$localUserId,

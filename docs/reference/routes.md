@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 239 routes in total; 56 use the
+defaults to `/api/mastodon/v1`). There are 245 routes in total; 59 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -184,6 +184,9 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `mastodon.filters.show` | `GET` | `/api/mastodon/v1/filters/{id}` | yes, `read:filters` | 120 / 60 s |
 | `mastodon.filters.update` | `PUT` | `/api/mastodon/v1/filters/{id}` | yes, `write:filters` | 30 / 900 s |
 | `mastodon.filters.delete` | `DELETE` | `/api/mastodon/v1/filters/{id}` | yes, `write:filters` | 30 / 900 s |
+| `mastodon.follow_requests.list` | `GET` | `/api/mastodon/v1/follow_requests` | yes, `read:follows` | 60 / 60 s |
+| `mastodon.follow_requests.authorize` | `POST` | `/api/mastodon/v1/follow_requests/{id}/authorize` | yes, `write:follows` | 30 / 900 s |
+| `mastodon.follow_requests.reject` | `POST` | `/api/mastodon/v1/follow_requests/{id}/reject` | yes, `write:follows` | 30 / 900 s |
 | `mastodon.statuses.reblog` | `POST` | `/api/mastodon/v1/statuses/{id}/reblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.unreblog` | `POST` | `/api/mastodon/v1/statuses/{id}/unreblog` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.favourite` | `POST` | `/api/mastodon/v1/statuses/{id}/favourite` | yes, `write:favourites` | 30 / 900 s |
@@ -246,6 +249,9 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `compat.mastodon.lists.accounts.add` | `POST` | `/api/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
 | `compat.mastodon.lists.accounts.remove` | `DELETE` | `/api/v1/lists/{id}/accounts` | yes, `write:lists` | 30 / 900 s |
 | `compat.mastodon.timelines.list` | `GET` | `/api/v1/timelines/list/{list_id}` | yes, `read:lists` | 60 / 60 s |
+| `compat.mastodon.follow_requests.list` | `GET` | `/api/v1/follow_requests` | yes, `read:follows` | 60 / 60 s |
+| `compat.mastodon.follow_requests.authorize` | `POST` | `/api/v1/follow_requests/{id}/authorize` | yes, `write:follows` | 30 / 900 s |
+| `compat.mastodon.follow_requests.reject` | `POST` | `/api/v1/follow_requests/{id}/reject` | yes, `write:follows` | 30 / 900 s |
 | `compat.mastodon.polls.show` | `GET` | `/api/v1/polls/{id}` | no | 120 / 60 s |
 | `compat.mastodon.polls.vote` | `POST` | `/api/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `compat.mastodon.accounts.relationships` | `GET` | `/api/v1/accounts/relationships` | yes, `read:follows` | 60 / 60 s |

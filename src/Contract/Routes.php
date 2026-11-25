@@ -165,6 +165,9 @@ use AlohaSocial\Core\Api\Mastodon\MastodonHashtagTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonHomeTimelineHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonReblogStatusHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRelationshipsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonFollowRequestsHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonAuthorizeFollowRequestHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonRejectFollowRequestHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
@@ -1603,6 +1606,36 @@ final class Routes
 				rateLimit: '30/900',
 				requiredScopes: ['write:statuses'],
 				summary: 'Vote in a visible local poll or an imported remote poll from an accepted follow; an identical retry is idempotent.',
+			),
+			new Route(
+				name: 'mastodon.follow_requests.list',
+				method: 'GET',
+				path: $mastodon . '/follow_requests',
+				handler: MastodonFollowRequestsHandler::class,
+				requiresAuth: true,
+				rateLimit: '60/60',
+				requiredScopes: ['read:follows'],
+				summary: 'List pending inbound Follow requests as Mastodon account objects.',
+			),
+			new Route(
+				name: 'mastodon.follow_requests.authorize',
+				method: 'POST',
+				path: $mastodon . '/follow_requests/{id}/authorize',
+				handler: MastodonAuthorizeFollowRequestHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:follows'],
+				summary: 'Accept one pending inbound Follow and queue its signed Accept.',
+			),
+			new Route(
+				name: 'mastodon.follow_requests.reject',
+				method: 'POST',
+				path: $mastodon . '/follow_requests/{id}/reject',
+				handler: MastodonRejectFollowRequestHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/900',
+				requiredScopes: ['write:follows'],
+				summary: 'Reject one pending inbound Follow and queue its signed Reject.',
 			),
 			new Route(
 					name: 'mastodon.accounts.relationships',

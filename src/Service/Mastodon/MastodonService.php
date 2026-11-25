@@ -11,6 +11,7 @@ namespace AlohaSocial\Core\Service\Mastodon;
 
 use AlohaSocial\Core\Domain\Federation\LocalActorDirectory;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
@@ -60,7 +61,10 @@ use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\FollowingBlockedException;
 use AlohaSocial\Core\Service\FollowingNotConfiguredException;
+use AlohaSocial\Core\Service\FollowRequestNotFoundException;
+use AlohaSocial\Core\Service\FollowRequestService;
 use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Service\PendingFollowCursorUnavailableException;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\PostHeldException;
@@ -143,6 +147,7 @@ final class MastodonService
 		private readonly ?TimelineService $homeTimelines = null,
 		private readonly ?RemotePostRepository $remotePosts = null,
 		private readonly ?RemoteActorSearch $remoteAccountSearch = null,
+		private readonly ?FollowRequestService $followRequests = null,
 	) {
 	}
 
@@ -1560,6 +1565,67 @@ final class MastodonService
 	}
 
 	/**
+	 * The pending inbound Follow inbox in Mastodon's account-array shape.
+	 * Mastodon account IDs are cursors; the repository cursor uses the internal
+	 * row id as a stable tie-break for requests with the same timestamp.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function followRequests(string $userId, int $limit, ?string $maxId, ?string $sinceId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		$requests = $this->requireFollowRequests();
+		try {
+			$pending = $requests->pendingBetweenActors(
+				$userId,
+				$this->clampAccountList($limit),
+				$maxId,
+				$sinceId,
+			);
+		} catch (PendingFollowCursorUnavailableException $exception) {
+			throw new MastodonRequestException(
+				503,
+				'follow_request_pagination_unavailable',
+				$exception->getMessage(),
+			);
+		}
+
+		return array_map(
+			fn (Follower $follower): array => $this->presenter->actorAccount($follower->actorId),
+			$pending,
+		);
+	}
+
+	/** @return array<string, mixed> */
+	public function authorizeFollowRequest(string $userId, string $accountId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		try {
+			$follower = $this->requireFollowRequests()->acceptActor($userId, $accountId);
+		} catch (FollowRequestNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'Follow request not found.');
+		}
+
+		return $this->remoteRelationship($userId, $follower->actorId);
+	}
+
+	/** @return array<string, mixed> */
+	public function rejectFollowRequest(string $userId, string $accountId): array
+	{
+		$this->requireEnabled();
+		$this->requireLocalAccount($userId);
+		try {
+			$follower = $this->requireFollowRequests()->rejectActor($userId, $accountId);
+		} catch (FollowRequestNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'Follow request not found.');
+		}
+
+		return $this->remoteRelationship($userId, $follower->actorId);
+	}
+
+	/**
 	 * @param list<string> $types
 	 * @param list<string> $excludeTypes
 	 *
@@ -2506,7 +2572,7 @@ final class MastodonService
 			'showing_reblogs' => true,
 			'notifying' => false,
 			'languages' => [],
-			'followed_by' => false,
+			'followed_by' => $this->followRequests?->isAcceptedFollower($userId, $actorId) ?? false,
 			'blocking' => $blocking,
 			'blocked_by' => $blockedBy,
 			'muting' => false,
@@ -2529,6 +2595,19 @@ final class MastodonService
 		}
 
 		return $this->relationships;
+	}
+
+	private function requireFollowRequests(): FollowRequestService
+	{
+		if ($this->followRequests === null) {
+			throw new MastodonRequestException(
+				503,
+				'follows_not_configured',
+				'Follow request storage is not configured.',
+			);
+		}
+
+		return $this->followRequests;
 	}
 
 	private function requireNotifications(): NotificationService

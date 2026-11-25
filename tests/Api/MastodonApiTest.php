@@ -55,6 +55,7 @@ use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Platform\Storage\InMemoryBlobStore;
+use AlohaSocial\Core\Service\FollowActor;
 use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\MuteService;
@@ -2468,6 +2469,123 @@ final class MastodonApiTest extends TestCase
 
 		$tooMany = array_map(static fn (int $index): string => 'id-' . $index, range(1, 101));
 		self::assertSame(422, $this->relationships($app, $tooMany)->status);
+	}
+
+	public function testMastodonFollowRequestsListAndAuthorizeRejectUseAccountIds(): void
+	{
+		$app = $this->app();
+		$actors = [
+			'https://remote.example/users/bob',
+			'https://remote.example/users/carol',
+			'https://remote.example/users/dave',
+		];
+		foreach ($actors as $actorId) {
+			$app->followers->follow(
+				new FollowActor('alice', $actorId, 'https://remote.example/inbox'),
+				requiresApproval: true,
+				followActivity: [
+					'id' => $actorId . '/follows/alice',
+					'type' => 'Follow',
+					'actor' => $actorId,
+					'object' => 'https://social.example/@alice',
+				],
+			);
+		}
+
+		$pendingIds = [];
+		$maxId = null;
+		for ($page = 0; $page < 4; $page++) {
+			$query = ['limit' => '1'];
+			if ($maxId !== null) {
+				$query['max_id'] = $maxId;
+			}
+			$response = $app->handle(new Request(
+				method: 'GET',
+				path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests',
+				query: $query,
+				userId: 'alice',
+				scopes: ['read:follows'],
+			));
+			self::assertSame(200, $response->status);
+			$accounts = $response->decodedBody();
+			if ($accounts === []) {
+				break;
+			}
+			self::assertArrayHasKey('username', $accounts[0]);
+			$pendingIds[] = $accounts[0]['id'];
+			$link = $response->header('Link');
+			if ($link === null) {
+				break;
+			}
+			parse_str((string) parse_url(substr($link, 1, strpos($link, '>') - 1), PHP_URL_QUERY), $linkQuery);
+			$maxId = $linkQuery['max_id'] ?? null;
+		}
+
+		self::assertCount(3, array_unique($pendingIds), 'same-second requests must paginate without gaps or duplicates');
+		self::assertEqualsCanonicalizing($actors, $pendingIds);
+		$newer = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests',
+			query: ['limit' => '10', 'since_id' => $pendingIds[2]],
+			userId: 'alice',
+			scopes: ['read:follows'],
+		));
+		self::assertEqualsCanonicalizing(array_slice($pendingIds, 0, 2), array_column($newer->decodedBody(), 'id'));
+
+		$authorized = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests/' . rawurlencode($actors[0]) . '/authorize',
+			userId: 'alice',
+			scopes: ['write:follows'],
+		));
+		self::assertSame(200, $authorized->status);
+		self::assertSame($actors[0], $authorized->decodedBody()['id']);
+		self::assertTrue($authorized->decodedBody()['followed_by']);
+
+		$rejected = $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests/' . rawurlencode($actors[1]) . '/reject',
+			userId: 'alice',
+			scopes: ['write:follows'],
+		));
+		self::assertSame(200, $rejected->status);
+		self::assertFalse($rejected->decodedBody()['followed_by']);
+
+		self::assertSame(404, $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests/' . rawurlencode($actors[0]) . '/authorize',
+			userId: 'alice',
+			scopes: ['write:follows'],
+		))->status);
+		self::assertSame(403, $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests/' . rawurlencode($actors[2]) . '/authorize',
+			userId: 'alice',
+			scopes: ['read:follows'],
+		))->status);
+		self::assertSame(401, $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests',
+		))->status);
+		self::assertSame(403, $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests',
+			userId: 'alice',
+			scopes: ['read:accounts'],
+		))->status);
+		self::assertSame(422, $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests',
+			query: ['min_id' => $actors[0]],
+			userId: 'alice',
+			scopes: ['read:follows'],
+		))->status);
+		self::assertSame(404, $app->handle(new Request(
+			method: 'POST',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/follow_requests/' . rawurlencode($actors[2]) . '/authorize',
+			userId: 'carol',
+			scopes: ['write:follows'],
+		))->status);
 	}
 
 	public function testAnExistingAttachmentIsProjectedOnTheStatus(): void

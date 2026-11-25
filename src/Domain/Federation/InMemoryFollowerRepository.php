@@ -17,7 +17,7 @@ use DateTimeImmutable;
  * It mirrors the SQL implementation's ordering, cursor and uniqueness rules,
  * so the two cannot drift without a contract test failing.
  */
-final class InMemoryFollowerRepository implements FollowerRepository
+final class InMemoryFollowerRepository implements FollowerRepository, PendingFollowerCursorRepository
 {
 	/**
 	 * @var array<string, Follower>
@@ -88,13 +88,34 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		return true;
 	}
 
-	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array
+	public function pending(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before = null,
+	): array
+	{
+		return $this->pendingBetween($localUserId, $limit, $before, null, null, null);
+	}
+
+	public function pendingBetween(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before,
+		?string $beforeId,
+		?DateTimeImmutable $after,
+		?string $afterId,
+	): array
 	{
 		$matching = array_values(array_filter(
 			$this->followers,
 			static fn (Follower $follower): bool => $follower->localUserId === $localUserId
 				&& $follower->state === FollowState::Pending
-				&& ($before === null || $follower->followedAt < $before),
+				&& ($before === null
+					|| $follower->followedAt < $before
+					|| ($beforeId !== null && $follower->followedAt == $before && strcmp($follower->id, $beforeId) < 0))
+				&& ($after === null
+					|| $follower->followedAt > $after
+					|| ($afterId !== null && $follower->followedAt == $after && strcmp($follower->id, $afterId) > 0)),
 		));
 
 		usort($matching, static function (Follower $a, Follower $b): int {

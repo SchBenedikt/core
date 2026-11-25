@@ -61,9 +61,9 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 239 routes, 56 of them under the Mastodon prefix |
+| HTTP contract | 245 routes, 59 of them under the Mastodon prefix |
 | Persistence | 40 schema classes, in-memory and PDO adapters behind shared contract tests |
-| Tests | 239 PHP test files (2061 tests, 11499 assertions, 11 deprecations) and 9 UI test files (69 tests) |
+| Tests | 239 PHP test files (2065 tests, 11582 assertions, 11 deprecations) and 9 UI test files (69 tests) |
 | Versions | core `0.8.0` / UI `0.8.0` / HostBridge contract `1` / HTTP `v1`; the `0.8.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
 | Release | `0.8.0` is the source release candidate, not tagged yet; the signed-tag GitHub workflow will publish the Composer archive, npm tarball and checksums ([artifacts](operations/release.md)) |
 | Local feature slice | complete for the scope described below |
@@ -178,11 +178,12 @@ owner or an accepted follower, and the authenticated media route applies the
   UI, credential storage, PDS selection and the event transport stay with the host. See
   [AT Protocol publishing](guides/atproto.md) and
   [two protocols, one model](guides/dual-protocol.md).
-- **Mastodon compatibility** — 44 local routes behind a configurable,
+- **Mastodon compatibility** — 47 local routes behind a configurable,
   disabled-by-default prefix: instance metadata/statistics, public and list
   timelines, status read/create/delete, reblogs, context, polls, favourites,
   bookmarks, mutes, lists, notifications, local search, media management,
-  account profiles, follower/following lists and verify credentials.
+  account profiles, follower/following lists, locked-account follow requests
+  and verify credentials.
 - **HTTP contract** — one route manifest, generic kernel, one error shape,
   OpenAPI 3.1 export and stable error codes. See [routes](reference/routes.md).
 - **Persistence and migration** — schema classes for every core table,
@@ -283,9 +284,9 @@ server or a product decision.
 
 ## Later
 
-- **Locally implementable Mastodon remainder:** follow requests/locked accounts
-  and the wider account-management surface. These are product decisions, not
-  protocol blockers; they are not part of the local slice above.
+- **Locally implementable Mastodon remainder:** the wider account-management
+  surface. These are product decisions, not protocol blockers; they are not
+  part of the local slice above.
 - **Native AT Protocol PDS (optional):** the accepted full-host target is in
   [ADR 0008](adr/0008-native-pds.md). The durable repository store, multi-layer
   MST writer, signed commit chain, DID/PLC key lifecycle and the identity/repo/
