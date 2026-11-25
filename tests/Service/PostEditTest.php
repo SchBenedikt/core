@@ -27,6 +27,8 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\Atproto\XrpcAtprotoPublisher;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
@@ -94,6 +96,25 @@ final class PostEditTest extends TestCase
 		self::assertNotNull($edited->editedAt);
 		self::assertSame('second', $service->get($post->id)->content);
 		self::assertSame(2, $service->get($post->id)->revision);
+	}
+
+	public function testEditsPublishUpdateAndAudienceNarrowingPublishesDeleteThenCreate(): void
+	{
+		$events = $this->createMock(EventBroker::class);
+		$published = [];
+		$events->expects(self::exactly(4))->method('publish')->willReturnCallback(
+			static function ($event) use (&$published): void { $published[] = $event; },
+		);
+		$service = $this->service(events: $events);
+		$post = $service->create(new CreatePost('alice', 'first'));
+
+		$service->edit('alice', $post->id, new UpdatePost(content: 'second'));
+		$service->edit('alice', $post->id, new UpdatePost(content: 'private', visibility: Visibility::Followers));
+
+		self::assertSame(['status.created', 'status.updated', 'status.deleted', 'status.created'], array_column($published, 'name'));
+		self::assertSame(StreamAudience::Public, $published[2]->audience);
+		self::assertSame(StreamAudience::Followers, $published[3]->audience);
+		self::assertSame($post->id, $published[3]->payload['status_id']);
 	}
 
 	public function testAnEditLeavesEveryFieldItDoesNotNameAlone(): void
@@ -423,7 +444,7 @@ final class PostEditTest extends TestCase
 		self::assertCount(1, $this->revisions->forPost($post->id));
 	}
 
-	private function service(?InboxResolver $inboxes = null, ?AtprotoPublishService $atproto = null): PostService
+	private function service(?InboxResolver $inboxes = null, ?AtprotoPublishService $atproto = null, ?EventBroker $events = null): PostService
 	{
 		return new PostService(
 			$this->posts,
@@ -435,6 +456,7 @@ final class PostEditTest extends TestCase
 			new SequenceIdGenerator('post-'),
 			atproto: $atproto,
 			revisions: $this->revisions,
+			events: $events,
 		);
 	}
 

@@ -12,6 +12,8 @@ namespace AlohaSocial\Core\Service;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
 use AlohaSocial\Core\Domain\Post\Boost;
 use AlohaSocial\Core\Domain\Post\BoostRepository;
+use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Jobs\JobQueue;
@@ -19,6 +21,10 @@ use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Db\TransactionRunner;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Support\IdGenerator;
 use AlohaSocial\Core\Support\Time;
@@ -49,6 +55,9 @@ final class BoostService
 		private readonly ?ActivityFactory $activities = null,
 		private readonly ?InboxResolver $inboxes = null,
 		private readonly ?NotificationService $notifications = null,
+		private readonly ?EventBroker $events = null,
+		private readonly ?LocalRelationshipService $relationships = null,
+		private readonly ?TransactionRunner $transactions = null,
 	) {
 	}
 
@@ -76,8 +85,13 @@ final class BoostService
 			createdAt: Time::toSecondPrecision($this->clock->now()),
 		);
 
-		try {
+		$persist = function () use ($boost, $post): void {
 			$this->boosts->insert($boost);
+			$this->events?->publish($this->streamEventFor($boost, $post, 'status.created'));
+		};
+
+		try {
+			$this->write($persist);
 		} catch (DatabaseException $exception) {
 			// The unique (user, post) index is the authority. Two concurrent
 			// taps of the same button answer with the stored winner.
@@ -101,13 +115,60 @@ final class BoostService
 	public function unboost(string $userId, string $postId): bool
 	{
 		$boost = $this->boosts->findByUserAndPost($userId, $postId);
-		if ($boost === null || !$this->boosts->remove($userId, $postId)) {
+		if ($boost === null) {
+			return false;
+		}
+		try {
+			$post = $this->posts->get($postId);
+		} catch (PostNotFoundException) {
+			$post = null;
+		}
+		$removed = false;
+		$this->write(function () use ($userId, $postId, $boost, $post, &$removed): void {
+			$removed = $this->boosts->remove($userId, $postId);
+			if ($removed && $post !== null) {
+				$this->events?->publish($this->streamEventFor($boost, $post, 'status.deleted'));
+			}
+		});
+		if (!$removed) {
 			return false;
 		}
 
 		$this->queueActivity($boost, true);
 
 		return true;
+	}
+
+	private function write(callable $work): void
+	{
+		if ($this->transactions === null) {
+			$work();
+			return;
+		}
+
+		$this->transactions->transaction($work);
+	}
+
+	private function streamEventFor(Boost $boost, Post $post, string $name): StreamEventDraft
+	{
+		$audience = $post->visibility === Visibility::Public
+			? StreamAudience::Public
+			: StreamAudience::Followers;
+		$recipientIds = array_values(array_unique([
+			$boost->userId,
+			...($this->relationships?->localFollowerIds($boost->userId) ?? []),
+		]));
+
+		return new StreamEventDraft(
+			name: $name,
+			audience: $audience,
+			actorId: $boost->userId,
+			recipientIds: $recipientIds,
+			payload: ['status_id' => $boost->id],
+			occurredAt: $name === 'status.created'
+				? Time::format($boost->createdAt)
+				: Time::format($this->clock->now()),
+		);
 	}
 
 	private function queueActivity(Boost $boost, bool $undo): void
