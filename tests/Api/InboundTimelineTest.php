@@ -518,6 +518,7 @@ final class InboundTimelineTest extends TestCase
 			'id' => $activityId,
 			'type' => 'Create',
 			'actor' => self::BOB,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'published' => $publishedAt,
 			'object' => [
 				'id' => $noteId,

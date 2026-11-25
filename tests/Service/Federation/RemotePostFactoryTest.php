@@ -39,6 +39,51 @@ final class RemotePostFactoryTest extends TestCase
 		$this->factory = new RemotePostFactory(new FrozenClock(Time::parse('2026-11-11T12:00:00Z')));
 	}
 
+	public function testPrivateAndUnaddressedCreatesAreRejected(): void
+	{
+		$private = $this->create([
+			'id' => 'https://peer.example/notes/private',
+			'type' => 'Note',
+			'content' => 'private',
+			'attributedTo' => self::ACTOR,
+		]);
+		$private['object']['to'] = ['https://local.example/users/alice'];
+		unset($private['to']);
+		try {
+			$this->factory->fromCreate(self::ACTOR, $private);
+			self::fail('A direct message must not become a timeline post.');
+		} catch (InboxRejectedException $exception) {
+			self::assertSame('unsupported_audience', $exception->reason);
+		}
+
+		$unaddressed = $this->create([
+			'id' => 'https://peer.example/notes/unaddressed',
+			'type' => 'Note',
+			'content' => 'unaddressed',
+			'attributedTo' => self::ACTOR,
+		]);
+		unset($unaddressed['to']);
+		try {
+			$this->factory->fromCreate(self::ACTOR, $unaddressed);
+			self::fail('An unaddressed post must not become timeline data.');
+		} catch (InboxRejectedException $exception) {
+			self::assertSame('unsupported_audience', $exception->reason);
+		}
+	}
+
+	public function testFollowersOnlyCreateIsAccepted(): void
+	{
+		$post = $this->create([
+			'id' => 'https://peer.example/notes/followers',
+			'type' => 'Note',
+			'content' => 'followers only',
+			'attributedTo' => self::ACTOR,
+		]);
+		$post['object']['to'] = [self::ACTOR . '/followers'];
+
+		self::assertSame('followers only', $this->factory->fromCreate(self::ACTOR, $post)->content);
+	}
+
 	public function testAnArticleKeepsItsTitleWithAnEmptyBody(): void
 	{
 		$post = $this->factory->fromCreate(self::ACTOR, $this->create([
@@ -291,6 +336,7 @@ final class RemotePostFactoryTest extends TestCase
 			'id' => $activityId ?? 'https://peer.example/activities/1',
 			'type' => 'Create',
 			'actor' => self::ACTOR,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => $object,
 		];
 	}

@@ -56,6 +56,7 @@ final class RemotePostFactory
 	 */
 	public function fromCreate(string $actorId, array $activity): RemotePost
 	{
+		$this->requireSupportedAudience($actorId, $activity);
 		$activityId = $this->activityId($activity);
 		$object = $activity['object'] ?? null;
 		if (!is_array($object)) {
@@ -97,6 +98,54 @@ final class RemotePostFactory
 			metadata: $metadata,
 			quotedObjectId: $this->quotedObjectId($object),
 			inReplyToId: $this->referenceId($object['inReplyTo'] ?? null),
+		);
+	}
+
+	/**
+	 * The timeline store currently represents public and follower-visible posts.
+	 * Do not turn a direct message (or an unaddressed object) into timeline data.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function requireSupportedAudience(string $actorId, array $activity): void
+	{
+		$object = $activity['object'] ?? null;
+		$public = 'https://www.w3.org/ns/activitystreams#Public';
+		$followers = rtrim($actorId, '/') . '/followers';
+		$recipients = [];
+		foreach ([$activity, is_array($object) ? $object : []] as $document) {
+			$documentRecipients = [];
+			foreach (['to', 'cc', 'audience'] as $field) {
+				$value = $document[$field] ?? [];
+				if (is_string($value)) {
+					$documentRecipients[] = $value;
+				} elseif (is_array($value)) {
+					foreach ($value as $recipient) {
+						if (is_string($recipient)) {
+							$documentRecipients[] = $recipient;
+						}
+					}
+				}
+			}
+			if ($documentRecipients !== []
+				&& !in_array($public, $documentRecipients, true)
+				&& !in_array($followers, $documentRecipients, true)
+			) {
+				throw new InboxRejectedException(
+					'unsupported_audience',
+					'The remote post is not addressed to a supported public or followers audience.',
+				);
+			}
+			$recipients = [...$recipients, ...$documentRecipients];
+		}
+
+		if (in_array($public, $recipients, true) || in_array($followers, $recipients, true)) {
+			return;
+		}
+
+		throw new InboxRejectedException(
+			'unsupported_audience',
+			'The remote post is not addressed to a supported public or followers audience.',
 		);
 	}
 
