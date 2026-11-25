@@ -438,6 +438,7 @@ final class ApplicationHostTest extends TestCase
 			'id' => 'https://remote.example/activities/create-1',
 			'type' => 'Create',
 			'actor' => self::BOB,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => [
 				'id' => 'https://remote.example/notes/1',
 				'type' => 'Note',
@@ -909,6 +910,7 @@ final class ApplicationHostTest extends TestCase
 			'id' => 'https://remote.example/activities/create-stats',
 			'type' => 'Create',
 			'actor' => self::BOB,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => [
 				'id' => 'https://remote.example/notes/stats',
 				'type' => 'Note',

@@ -183,6 +183,7 @@ final class RemotePollApiTest extends TestCase
 			'id' => 'https://remote.example/activities/question-1',
 			'type' => 'Create',
 			'actor' => self::ACTOR,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => [
 				'id' => self::QUESTION,
 				'type' => 'Question',

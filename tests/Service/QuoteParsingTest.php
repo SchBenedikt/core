@@ -71,6 +71,7 @@ final class QuoteParsingTest extends TestCase
 			'id' => 'https://remote.example/activities/1',
 			'type' => 'Create',
 			'actor' => 'https://remote.example/users/bob',
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => [
 				'id' => 'https://remote.example/notes/1',
 				'type' => 'Note',

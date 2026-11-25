@@ -312,6 +312,7 @@ final class RemotePollServiceTest extends TestCase
 			'id' => 'https://remote.example/activities/1',
 			'type' => 'Create',
 			'actor' => self::ACTOR,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => $question,
 		]);
 

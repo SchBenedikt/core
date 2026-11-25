@@ -260,6 +260,7 @@ switch ($path) {
 				'id' => 'https://remote.example/activities/create-backfill-' . $activitySuffix,
 				'type' => $activityType,
 				'actor' => 'https://remote.example/users/bob',
+				'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 				'published' => '2026-11-11T10:01:00Z',
 				'object' => [
 					'id' => 'https://remote.example/notes/backfill-' . $activitySuffix,

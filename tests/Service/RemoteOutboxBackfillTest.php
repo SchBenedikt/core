@@ -206,6 +206,7 @@ final class RemoteOutboxBackfillTest extends TestCase
 			'id' => $activityId,
 			'type' => 'Create',
 			'actor' => $actor,
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'published' => '2026-11-11T10:00:00Z',
 			'object' => [
 				'id' => $noteId,

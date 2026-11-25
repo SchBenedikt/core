@@ -199,7 +199,17 @@ final class HttpActorResolver implements PinnedActorResolver, RemoteActorFetcher
 			$sharedInbox,
 			$this->alsoKnownAs($document),
 			$this->movedTo($document),
+			$this->followersUrl($document),
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $document
+	 */
+	private function followersUrl(array $document): ?string
+	{
+		$url = $document['followers'] ?? null;
+		return is_string($url) && self::isHttpUrl($url) ? $url : null;
 	}
 
 	/**
