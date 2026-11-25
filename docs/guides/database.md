@@ -58,6 +58,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Notification/NotificationPolicySchema.php` → `social_notification_policy` (one JSON category-action map and new-account threshold per recipient)
 - `src/Domain/Notification/NotificationSenderSchema.php` → `social_notification_sender` (one held, allowed or dismissed sender decision per recipient and actor, with the remembered category)
 - `src/Domain/Notification/ConversationMuteSchema.php` → `social_conversation_mute` (private thread-root notification mutes, unique by user and conversation root)
+- `src/Domain/Conversation/ConversationMarkerSchema.php` → `social_conversation_marker` (private per-account direct-message read and dismiss watermarks, unique by user and thread root)
 - `src/Domain/Search/SearchIndexSchema.php` → `social_search_index` (public local and cached remote accounts/posts with source, aliases, hashtags and cache timestamp)
 - `src/Domain/Search/TrendSchema.php` → `social_search_trend` (one hashtag row per indexed record, unique by entry and hashtag, with a time index for bounded trend windows)
 - `src/Domain/Media/AttachmentSchema.php` → `social_attachment` (including nullable `source_url` and its unique index, `media_kind`, `duration_seconds`, `animated` and the optional focal point `focus_x`/`focus_y`)

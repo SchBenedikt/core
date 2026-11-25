@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 236 routes in total; 56 use the
+defaults to `/api/mastodon/v1`). There are 238 routes in total; 56 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -68,6 +68,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `timelines.followed_tags` | `GET` | `/api/v1/timelines/followed_tags` | yes | — |
 | `timelines.home` | `GET` | `/api/v1/timelines/home` | yes | — |
 | `timelines.direct` | `GET` | `/api/v1/timelines/direct` | yes | — |
+| `conversations.read` | `POST` | `/api/v1/conversations/{id}/read` | yes | — |
+| `conversations.dismiss` | `POST` | `/api/v1/conversations/{id}/dismiss` | yes | — |
 | `followed_tags.list` | `GET` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.follow` | `POST` | `/api/v1/followed_tags` | yes | — |
 | `followed_tags.unfollow` | `DELETE` | `/api/v1/followed_tags/{tag}` | yes | — |
@@ -595,6 +597,8 @@ request: they are logged with a stable `thread_*` reason and omitted. See
 GET /api/v1/timelines/public?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
 GET /api/v1/timelines/home
 GET /api/v1/timelines/direct?limit=20&before=2026-11-11T10:00:00Z&before_id=post-id
+POST /api/v1/conversations/{direct_post_id}/read
+POST /api/v1/conversations/{direct_post_id}/dismiss
 ```
 
 ```json
@@ -606,6 +610,13 @@ Public, tag and followed-tag timeline responses return `posts`, `has_more`,
 page can contain fewer than `limit` visible posts when reader filters hide
 entries and still have more results. The cursor advances past scanned hidden
 entries without skipping visible posts.
+
+Direct posts also carry `conversation_id`, `unread` and `dismissed`. The
+conversation ID is the direct thread root. Marking a visible direct post as
+read advances that account's read watermark through the selected message.
+Dismissing it hides the thread through the selected message; a newer reply
+makes the thread visible again. Both actions return `404 not_found` for a
+missing, foreign or non-direct post. Marker state is private to the account.
 
 `limit` defaults to 20 and is clamped to 1–40. `before` is exclusive. Pass
 `before_id` with it to break ties between posts published in the same second.

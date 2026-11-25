@@ -14,6 +14,8 @@ use AlohaSocial\Core\Api\BlockActorHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\ConversationMuteStatusHandler;
+use AlohaSocial\Core\Api\DismissConversationHandler;
+use AlohaSocial\Core\Api\MarkConversationReadHandler;
 use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\ActorCollectionsHandler;
 use AlohaSocial\Core\Api\ActorFeaturedHandler;
@@ -653,6 +655,22 @@ final class Routes
 				handler: DirectTimelineHandler::class,
 				requiresAuth: true,
 				summary: 'Direct posts sent by or addressed to the signed-in account.',
+			),
+			new Route(
+				name: 'conversations.read',
+				method: 'POST',
+				path: $base . '/conversations/{id}/read',
+				handler: MarkConversationReadHandler::class,
+				requiresAuth: true,
+				summary: 'Mark a direct-message thread read through the selected message.',
+			),
+			new Route(
+				name: 'conversations.dismiss',
+				method: 'POST',
+				path: $base . '/conversations/{id}/dismiss',
+				handler: DismissConversationHandler::class,
+				requiresAuth: true,
+				summary: 'Dismiss a direct-message thread until a newer message arrives.',
 			),
 			new Route(
 				name: 'timelines.home',

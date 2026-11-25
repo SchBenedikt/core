@@ -15,6 +15,7 @@ use AlohaSocial\Core\Api\BoostPostHandler;
 use AlohaSocial\Core\Api\BlocksHandler;
 use AlohaSocial\Core\Api\ClearNotificationsHandler;
 use AlohaSocial\Core\Api\ConversationMuteStatusHandler;
+use AlohaSocial\Core\Api\DismissConversationHandler;
 use AlohaSocial\Core\Api\CreatePostHandler;
 use AlohaSocial\Core\Api\CreateFilterHandler;
 use AlohaSocial\Core\Api\CreateRecommendationFeedbackHandler;
@@ -72,6 +73,7 @@ use AlohaSocial\Core\Api\PdsXrpcHandler;
 use AlohaSocial\Core\Api\HashtagTimelineHandler;
 use AlohaSocial\Core\Api\HomeTimelineHandler;
 use AlohaSocial\Core\Api\DirectTimelineHandler;
+use AlohaSocial\Core\Api\MarkConversationReadHandler;
 use AlohaSocial\Core\Api\InboxHandler;
 use AlohaSocial\Core\Api\InstanceHandler;
 use AlohaSocial\Core\Api\LikeRemotePostHandler;
@@ -260,6 +262,9 @@ use AlohaSocial\Core\Domain\Media\PdoAttachmentRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationRepository;
 use AlohaSocial\Core\Domain\Notification\ConversationMuteRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryConversationMuteRepository;
+use AlohaSocial\Core\Domain\Conversation\ConversationMarkerRepository;
+use AlohaSocial\Core\Domain\Conversation\InMemoryConversationMarkerRepository;
+use AlohaSocial\Core\Domain\Conversation\PdoConversationMarkerRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationPolicyRepository;
 use AlohaSocial\Core\Domain\Notification\InMemoryNotificationSenderRepository;
 use AlohaSocial\Core\Domain\Notification\NotificationEventSink;
@@ -442,6 +447,7 @@ use AlohaSocial\Core\Service\BlockService;
 use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\Cleanup\CleanupJobHandler;
 use AlohaSocial\Core\Service\Cleanup\CleanupService;
+use AlohaSocial\Core\Service\ConversationService;
 use AlohaSocial\Core\Service\Federation\WebFingerService;
 use AlohaSocial\Core\Service\FollowedHashtagService;
 use AlohaSocial\Core\Service\FollowerService;
@@ -631,6 +637,7 @@ final readonly class Application
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 		?EventBroker $eventBroker = null,
+		?ConversationMarkerRepository $conversationMarkers = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -715,6 +722,7 @@ final readonly class Application
 			notificationPolicies: $notificationPolicies,
 			notificationSenders: $notificationSenders,
 			conversationMutes: $conversationMutes,
+			conversationMarkers: $conversationMarkers ?? new InMemoryConversationMarkerRepository(),
 			notificationRelationships: $notificationRelationships,
 			notificationSenderAge: $notificationSenderAge,
 			notificationEventSink: $notificationEventSink,
@@ -871,6 +879,7 @@ final readonly class Application
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 		?EventBroker $eventBroker = null,
+		?ConversationMarkerRepository $conversationMarkers = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -914,6 +923,7 @@ final readonly class Application
 			notificationPolicies: $notificationPolicies ?? new PdoNotificationPolicyRepository($database),
 			notificationSenders: $notificationSenders ?? new PdoNotificationSenderRepository($database),
 			conversationMutes: $conversationMutes ?? new PdoConversationMuteRepository($database),
+			conversationMarkers: $conversationMarkers ?? new PdoConversationMarkerRepository($database),
 			notificationRelationships: $notificationRelationships,
 			notificationSenderAge: $notificationSenderAge,
 			notificationEventSink: $notificationEventSink,
@@ -1009,6 +1019,7 @@ final readonly class Application
 		?NotificationPolicyRepository $notificationPolicies,
 		?NotificationSenderRepository $notificationSenders,
 		?ConversationMuteRepository $conversationMutes,
+		ConversationMarkerRepository $conversationMarkers,
 		?NotificationRelationshipReader $notificationRelationships,
 		?NotificationSenderAge $notificationSenderAge,
 		?NotificationEventSink $notificationEventSink,
@@ -1462,6 +1473,7 @@ final readonly class Application
 			);
 		}
 		$timelines = new TimelineService($posts, $homeTimeline, $moderationPolicy);
+		$conversationService = new ConversationService($postService, $posts, $conversationMarkers);
 		// Remote actor lookup and media fetching require the bounded client and
 		// the host resolver. An unbounded HTTP client is never used for these.
 		$resolver = $hostResolver ?? new DnsHostResolver();
@@ -1714,7 +1726,9 @@ final readonly class Application
 			->with(FollowHashtagHandler::class, static fn (): FollowHashtagHandler => new FollowHashtagHandler($followedHashtagService))
 			->with(UnfollowHashtagHandler::class, static fn (): UnfollowHashtagHandler => new UnfollowHashtagHandler($followedHashtagService))
 			->with(HomeTimelineHandler::class, static fn (): HomeTimelineHandler => new HomeTimelineHandler($timelines, $mediaService, $filterService))
-			->with(DirectTimelineHandler::class, static fn (): DirectTimelineHandler => new DirectTimelineHandler($timelines, $mediaService, $filterService))
+			->with(DirectTimelineHandler::class, static fn (): DirectTimelineHandler => new DirectTimelineHandler($timelines, $mediaService, $filterService, $conversationService))
+			->with(MarkConversationReadHandler::class, static fn (): MarkConversationReadHandler => new MarkConversationReadHandler($conversationService))
+			->with(DismissConversationHandler::class, static fn (): DismissConversationHandler => new DismissConversationHandler($conversationService))
 			->with(FollowersHandler::class, static fn (): FollowersHandler => new FollowersHandler($followerService))
 			->with(FollowHandler::class, static fn (): FollowHandler => new FollowHandler($followerService))
 			->with(BlocksHandler::class, static fn (): BlocksHandler => new BlocksHandler($blockService))
