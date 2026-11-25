@@ -1,6 +1,6 @@
 # Roadmap
 
-Status of the core, not a promise about dates. Last reviewed: 2026-11-23.
+Status of the core, not a promise about dates. Last reviewed: 2026-11-25.
 
 This is the canonical status document. The guides explain how a part works;
 this page says what exists, what is next and which repository owns it. If a
@@ -327,7 +327,8 @@ local gaps. The detailed lists live in the guides.
 - **Mastodon:** OAuth authorization/token issuance/revocation and app
   registration; remote timelines and delivery; remote counts for an outbound
   `Like` (the count itself lives on the remote instance); remote boost
-  federation; remote notifications; streaming; remote poll
+  federation; remote notifications; stream host transport and broker remain
+  incomplete (Core now has the event contract and post-created publication); remote poll
   fetching/voting/`Question` federation; search across a global remote corpus
   (exact remote handle lookup and a bounded local/cached index exist); remote
   relationship/admin APIs. See

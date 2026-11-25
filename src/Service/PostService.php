@@ -34,6 +34,9 @@ use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\TransactionRunner;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
 use AlohaSocial\Core\Service\LocalRelationshipService;
@@ -90,6 +93,7 @@ final class PostService
 		private readonly ?MentionResolver $mentions = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?AccountMoveRepository $accountMoves = null,
+		private readonly ?EventBroker $events = null,
 	) {
 	}
 
@@ -170,6 +174,7 @@ final class PostService
 		// write, while a successful insert joins this transaction.
 		$this->runWrite(function () use ($post, $parent, $quote, $command, $mentionTargets): void {
 			$this->posts->insert($post);
+			$this->events?->publish($this->streamEventFor($post));
 			if ($quote !== null) {
 				$this->quotes?->commit($quote, $command->authorId);
 			}
@@ -185,6 +190,28 @@ final class PostService
 		$this->searchIndexer?->indexPost($post);
 
 		return $post;
+	}
+
+	private function streamEventFor(Post $post): StreamEventDraft
+	{
+		$audience = match ($post->visibility) {
+			Visibility::Public => StreamAudience::Public,
+			Visibility::Unlisted, Visibility::Followers => StreamAudience::Followers,
+			Visibility::Direct => StreamAudience::Direct,
+		};
+		$recipients = $audience === StreamAudience::Direct
+			? [$post->authorId, ...$post->recipientIds]
+			: [$post->authorId, ...($this->relationships?->localFollowerIds($post->authorId) ?? [])];
+		$recipients = array_values(array_unique($recipients));
+
+		return new StreamEventDraft(
+			name: 'status.created',
+			audience: $audience,
+			actorId: $post->authorId,
+			recipientIds: $recipients,
+			payload: ['status_id' => $post->id],
+			occurredAt: Time::format($post->publishedAt),
+		);
 	}
 
 	/**

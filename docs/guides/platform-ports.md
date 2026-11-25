@@ -19,6 +19,7 @@ request.
 | `Http\BoundedHttpClient` | `request()` + bounded `requestBounded()` | `FakeHttpClient` (tests) | `CurlHttpClient` |
 | `Network\HostResolver` | `resolve()` | `DnsHostResolver`, test map | `DnsHostResolver` |
 | `Image\ImageProcessor` | `thumbnail()` | test adapter | `GdImageProcessor` |
+| `Events\EventBroker` | `publish()`/`read()` | test double | host-owned durable event store |
 
 ## What each one promises
 
@@ -96,6 +97,18 @@ default `DnsHostResolver` asks for A and AAAA records and returns all answers;
 the media guard rejects the fetch if any answer is private, loopback or
 otherwise non-public. Tests use a small map, and a host may supply its own DNS
 policy. Returning an empty list means the name did not resolve.
+
+### EventBroker
+
+The broker persists social stream events with an ordered replay cursor and
+returns only events visible to the authenticated `StreamSubscription`. It is
+injected into `Application::forHost()` and publishes post-created events in
+the post write transaction. A production adapter must keep the event row and
+post atomic, preserve ordering across processes, recheck current account,
+block, and mute state when reading, and cap every read. It must not rely on a
+process-global in-memory bus. `StreamEventDraft` carries a post id rather than
+a pre-rendered status; the host renders the status with the active viewer so
+the stream and REST APIs apply the same visibility rules.
 
 ## Domain-level host ports
 
