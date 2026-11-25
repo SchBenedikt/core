@@ -123,7 +123,7 @@ final class MastodonPresenter
 	/**
 	 * @return array<string, mixed>
 	 */
-	public function notification(Notification $notification, ?Post $status = null): array
+	public function notification(Notification $notification, Post|array|null $status = null): array
 	{
 		$result = [
 			'id' => $notification->id,
@@ -133,7 +133,9 @@ final class MastodonPresenter
 			'unread' => !$notification->isRead(),
 		];
 
-		if ($status !== null) {
+		if (is_array($status)) {
+			$result['status'] = $status;
+		} elseif ($status !== null) {
 			$result['status'] = $this->status($status, $notification->recipientId);
 		}
 

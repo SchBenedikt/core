@@ -1590,6 +1590,9 @@ final readonly class Application
 				localActors: $localActors,
 				eventBroker: $eventBroker,
 				transactions: $transactions,
+				posts: $posts,
+				blocks: $blockRepository,
+				mutes: $muteRepository,
 			)
 			: null;
 

@@ -1625,6 +1625,23 @@ final class MastodonService
 			if ($status?->isDeleted() === true) {
 				$status = null;
 			}
+			if ($status === null && $notification->postId !== null && $this->remotePosts !== null) {
+				$remote = $this->remotePosts->findPostByObjectId($notification->postId);
+				if ($remote !== null && $remote->deletedAt === null) {
+					try {
+						$remote = $this->remotePost($userId, $remote->objectId);
+						$interactions = $this->reactions?->remoteInteractionsFor($userId, $remote);
+						$status = $this->presenter->remoteStatus(
+							$remote,
+							($interactions['viewer']['favourited'] ?? false) === true,
+							($interactions['viewer']['reblogged'] ?? false) === true,
+						);
+					} catch (MastodonRequestException) {
+						// A notification never grants access to a private or unfollowed
+						// remote status; keep the event but omit its status projection.
+					}
+				}
+			}
 
 			$result[] = $this->presenter->notification($notification, $status);
 		}
