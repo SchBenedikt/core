@@ -42,6 +42,7 @@ final class PdoConversationMarkerRepositoryTest extends TestCase
 			dismissedThroughPostId: 'post-2',
 			dismissedThroughAt: Time::parse('2026-11-25T10:01:00Z'),
 		));
+		$repository->save($marker);
 
 		$saved = $repository->find('alice', 'root-1');
 		self::assertSame('post-2', $saved?->readThroughPostId);
