@@ -210,7 +210,6 @@ final class PostService
 			actorId: $post->authorId,
 			recipientIds: $recipients,
 			payload: ['status_id' => $post->id],
-<<<<<<< HEAD
 			occurredAt: $occurredAt ?? Time::format($post->publishedAt),
 		);
 	}
