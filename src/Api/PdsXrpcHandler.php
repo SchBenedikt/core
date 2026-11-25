@@ -163,7 +163,7 @@ final class PdsXrpcHandler implements Handler
 		return Response::json($pds->listMissingBlobs(
 			$this->userId($request),
 			$this->requiredQuery($request, 'repo'),
-			$request->queryInt('limit', 50, 1, 1000),
+			$request->queryInt('limit', 500, 1, 1000),
 			$request->queryParam('cursor'),
 		));
 	}
