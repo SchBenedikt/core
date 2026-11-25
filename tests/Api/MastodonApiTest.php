@@ -1136,6 +1136,15 @@ final class MastodonApiTest extends TestCase
 			postId: null,
 			createdAt: $this->clock->now(),
 		));
+		$notifications->insert(new Notification(
+			id: 'read-notification',
+			recipientId: 'alice',
+			actorId: 'bob',
+			type: NotificationType::Follow,
+			postId: null,
+			createdAt: $this->clock->now(),
+			readAt: $this->clock->now(),
+		));
 		$app = $this->app(notificationRepository: $notifications);
 
 		$visible = $app->mastodon?->notificationById('alice', 'older-notification');
@@ -1144,6 +1153,7 @@ final class MastodonApiTest extends TestCase
 		self::assertSame('follow', $visible['type']);
 		self::assertNull($app->mastodon?->notificationById('alice', 'hidden-notification'));
 		self::assertNull($app->mastodon?->notificationById('alice', 'foreign-notification'));
+		self::assertNull($app->mastodon?->notificationById('alice', 'read-notification'));
 	}
 
 	public function testDismissClearAndUnreadCountFollowTheReadMarker(): void

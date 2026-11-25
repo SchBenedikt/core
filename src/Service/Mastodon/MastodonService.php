@@ -1652,6 +1652,7 @@ final class MastodonService
 		if ($notification === null
 			|| $notification->recipientId !== $userId
 			|| !$notification->isVisible()
+			|| $notification->isRead()
 			|| in_array($notification->actorId, $mutedActors, true)
 		) {
 			return null;
