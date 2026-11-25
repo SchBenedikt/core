@@ -64,6 +64,7 @@ use AlohaSocial\Core\Service\FollowingNotConfiguredException;
 use AlohaSocial\Core\Service\FollowRequestNotFoundException;
 use AlohaSocial\Core\Service\FollowRequestService;
 use AlohaSocial\Core\Service\FollowingService;
+use AlohaSocial\Core\Service\PendingFollowCursorUnavailableException;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Service\PostHeldException;
@@ -1575,12 +1576,20 @@ final class MastodonService
 		$this->requireEnabled();
 		$this->requireLocalAccount($userId);
 		$requests = $this->requireFollowRequests();
-		$pending = $requests->pendingBetweenActors(
-			$userId,
-			$this->clampAccountList($limit),
-			$maxId,
-			$sinceId,
-		);
+		try {
+			$pending = $requests->pendingBetweenActors(
+				$userId,
+				$this->clampAccountList($limit),
+				$maxId,
+				$sinceId,
+			);
+		} catch (PendingFollowCursorUnavailableException $exception) {
+			throw new MastodonRequestException(
+				503,
+				'follow_request_pagination_unavailable',
+				$exception->getMessage(),
+			);
+		}
 
 		return array_map(
 			fn (Follower $follower): array => $this->presenter->actorAccount($follower->actorId),

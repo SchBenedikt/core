@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
+use AlohaSocial\Core\Domain\Federation\PendingFollowerCursorRepository;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
@@ -78,6 +79,11 @@ final class FollowRequestService
 		if ($localUserId === '') {
 			return [];
 		}
+		if (!$this->followers instanceof PendingFollowerCursorRepository) {
+			throw new PendingFollowCursorUnavailableException(
+				'The follower storage does not support stable request pagination.',
+			);
+		}
 
 		$maxCursor = $this->cursorActor($localUserId, $maxActorId);
 		$sinceCursor = $this->cursorActor($localUserId, $sinceActorId);
@@ -87,12 +93,12 @@ final class FollowRequestService
 			return [];
 		}
 
-		return $this->followerService->pending(
+		return $this->followers->pendingBetween(
 			$localUserId,
-			$limit,
-			$maxCursor?->followedAt->format('Y-m-d\\TH:i:s\\Z'),
+			max(1, min(FollowerService::MAX_LIMIT, $limit)),
+			$maxCursor?->followedAt,
 			$maxCursor?->id,
-			$sinceCursor?->followedAt->format('Y-m-d\\TH:i:s\\Z'),
+			$sinceCursor?->followedAt,
 			$sinceCursor?->id,
 		);
 	}

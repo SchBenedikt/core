@@ -49,14 +49,7 @@ interface FollowerRepository
 	 *
 	 * @return list<Follower>
 	 */
-	public function pending(
-		string $localUserId,
-		int $limit,
-		?DateTimeImmutable $before = null,
-		?string $beforeId = null,
-		?DateTimeImmutable $after = null,
-		?string $afterId = null,
-	): array;
+	public function pending(string $localUserId, int $limit, ?DateTimeImmutable $before = null): array;
 
 	/**
 	 * Accepted and pending follower edges of one actor, across local users.

@@ -17,7 +17,7 @@ use DateTimeImmutable;
  * It mirrors the SQL implementation's ordering, cursor and uniqueness rules,
  * so the two cannot drift without a contract test failing.
  */
-final class InMemoryFollowerRepository implements FollowerRepository
+final class InMemoryFollowerRepository implements FollowerRepository, PendingFollowerCursorRepository
 {
 	/**
 	 * @var array<string, Follower>
@@ -92,9 +92,18 @@ final class InMemoryFollowerRepository implements FollowerRepository
 		string $localUserId,
 		int $limit,
 		?DateTimeImmutable $before = null,
-		?string $beforeId = null,
-		?DateTimeImmutable $after = null,
-		?string $afterId = null,
+	): array
+	{
+		return $this->pendingBetween($localUserId, $limit, $before, null, null, null);
+	}
+
+	public function pendingBetween(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before,
+		?string $beforeId,
+		?DateTimeImmutable $after,
+		?string $afterId,
 	): array
 	{
 		$matching = array_values(array_filter(

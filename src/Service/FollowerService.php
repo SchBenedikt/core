@@ -193,18 +193,12 @@ final class FollowerService
 		string $localUserId,
 		int $limit = self::DEFAULT_LIMIT,
 		?string $before = null,
-		?string $beforeId = null,
-		?string $after = null,
-		?string $afterId = null,
 	): array
 	{
 		return $this->followers->pending(
 			$localUserId,
 			max(1, min(self::MAX_LIMIT, $limit)),
 			$this->cursor($before),
-			$beforeId,
-			$this->cursor($after),
-			$afterId,
 		);
 	}
 

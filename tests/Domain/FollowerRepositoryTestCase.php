@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\PendingFollowerCursorRepository;
 use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
@@ -350,9 +351,10 @@ abstract class FollowerRepositoryTestCase extends TestCase
 
 		$first = $repository->pending('alice', 1);
 		self::assertSame(['c'], array_map(static fn (Follower $follower): string => $follower->id, $first));
-		$second = $repository->pending('alice', 1, $time, $first[0]->id);
+		self::assertInstanceOf(PendingFollowerCursorRepository::class, $repository);
+		$second = $repository->pendingBetween('alice', 1, $time, $first[0]->id, null, null);
 		self::assertSame(['b'], array_map(static fn (Follower $follower): string => $follower->id, $second));
-		$third = $repository->pending('alice', 1, $time, $second[0]->id);
+		$third = $repository->pendingBetween('alice', 1, $time, $second[0]->id, null, null);
 		self::assertSame(['a'], array_map(static fn (Follower $follower): string => $follower->id, $third));
 	}
 

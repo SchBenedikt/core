@@ -19,7 +19,7 @@ use DateTimeImmutable;
  * Timestamps use the canonical fixed-width form, so `followed_at` compares
  * chronologically as text and the cursor query is one indexed range scan.
  */
-final class PdoFollowerRepository implements FollowerRepository
+final class PdoFollowerRepository implements FollowerRepository, PendingFollowerCursorRepository
 {
 	private const COLUMNS = 'id, local_user_id, actor_id, inbox_url, shared_inbox_url, followed_at, is_local, state, follow_activity';
 
@@ -118,9 +118,18 @@ final class PdoFollowerRepository implements FollowerRepository
 		string $localUserId,
 		int $limit,
 		?DateTimeImmutable $before = null,
-		?string $beforeId = null,
-		?DateTimeImmutable $after = null,
-		?string $afterId = null,
+	): array
+	{
+		return $this->pendingBetween($localUserId, $limit, $before, null, null, null);
+	}
+
+	public function pendingBetween(
+		string $localUserId,
+		int $limit,
+		?DateTimeImmutable $before,
+		?string $beforeId,
+		?DateTimeImmutable $after,
+		?string $afterId,
 	): array
 	{
 		$sql = 'SELECT ' . self::COLUMNS . ' FROM ' . FollowerSchema::TABLE
