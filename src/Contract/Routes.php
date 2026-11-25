@@ -1906,6 +1906,15 @@ final class Routes
 				summary: 'Page through a collection of a public repository.',
 			),
 			new Route(
+				name: 'xrpc.repo.listMissingBlobs',
+				method: 'GET',
+				path: '/xrpc/com.atproto.repo.listMissingBlobs',
+				handler: PdsXrpcHandler::class,
+				requiresAuth: true,
+				rateLimit: '120/60',
+				summary: 'List repository blob references whose bytes are missing at this PDS.',
+			),
+			new Route(
 				name: 'xrpc.repo.describeRepo',
 				method: 'GET',
 				path: '/xrpc/com.atproto.repo.describeRepo',

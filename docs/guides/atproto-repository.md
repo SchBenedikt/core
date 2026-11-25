@@ -102,6 +102,7 @@ error shape `{error, message}`. The host authenticates and sets
 | `POST` | `/xrpc/com.atproto.repo.importRepo` | yes | Import a CAR archive into the signed-in empty repository |
 | `GET` | `/xrpc/com.atproto.repo.getRecord?repo=…&collection=…&rkey=…` | no | Read one record, optionally pinned to a `cid` |
 | `GET` | `/xrpc/com.atproto.repo.listRecords?repo=…&collection=…` | no | Page a collection (limit 1–100) |
+| `GET` | `/xrpc/com.atproto.repo.listMissingBlobs?repo=…` | yes | Find referenced blobs that must be uploaded after a repository import |
 | `GET` | `/xrpc/com.atproto.repo.describeRepo?repo=…` | no | DID document and collections |
 | `GET` | `/xrpc/com.atproto.server.describeServer` | no | Handle domains and server DID |
 | `GET` | `/xrpc/com.atproto.sync.getRepo?did=…` | no | Full repository as `application/vnd.ipld.car` |

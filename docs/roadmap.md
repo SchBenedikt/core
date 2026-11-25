@@ -61,7 +61,7 @@ the host that serves it. See
 
 | Measure | Value |
 | --- | --- |
-| HTTP contract | 238 routes, 56 of them under the Mastodon prefix |
+| HTTP contract | 239 routes, 56 of them under the Mastodon prefix |
 | Persistence | 40 schema classes, in-memory and PDO adapters behind shared contract tests |
 | Tests | 239 PHP test files (2061 tests, 11499 assertions, 11 deprecations) and 9 UI test files (69 tests) |
 | Versions | core `0.8.0` / UI `0.8.0` / HostBridge contract `1` / HTTP `v1`; the `0.8.x` pair is enforced by tests ([matrix](guides/host-integration.md#compatibility)) |
