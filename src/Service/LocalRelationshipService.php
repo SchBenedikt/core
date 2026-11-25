@@ -334,7 +334,7 @@ final class LocalRelationshipService
 	{
 		$userId = $this->known($userId);
 
-		return $this->followers->localUserIdsForActor($this->activities->actorId($userId));
+		return $this->followers->localUserIdsFollowedBy($this->activities->actorId($userId));
 	}
 
 	private function known(string $userId): string
