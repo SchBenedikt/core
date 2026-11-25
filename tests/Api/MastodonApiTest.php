@@ -2391,6 +2391,53 @@ final class MastodonApiTest extends TestCase
 		self::assertSame([], $home->decodedBody()['posts']);
 	}
 
+	public function testHomeTimelineFillsPastRecentBoostsOfBlockedLocalAuthors(): void
+	{
+		$app = $this->app(actors: ['alice', 'bob', 'carol', 'dave']);
+		$visibleStatus = $this->createStatus($app, ['status' => 'older visible boost'], userId: 'dave')->decodedBody();
+		$visibleBoost = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts/' . rawurlencode($visibleStatus['id']) . '/boost',
+			userId: 'carol',
+		));
+		self::assertSame(201, $visibleBoost->status, $visibleBoost->body);
+
+		for ($index = 0; $index < 3; ++$index) {
+			$this->clock->advance(1);
+			$blockedStatus = $this->createStatus(
+				$app,
+				['status' => 'blocked boost ' . $index],
+				userId: 'bob',
+			)->decodedBody();
+			$boost = $app->handle(new Request(
+				method: 'POST',
+				path: '/api/v1/posts/' . rawurlencode($blockedStatus['id']) . '/boost',
+				userId: 'carol',
+			));
+			self::assertSame(201, $boost->status, $boost->body);
+		}
+
+		$this->followAccount($app, 'carol', userId: 'alice');
+		$blocked = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/blocks',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['actor' => 'https://social.example/@bob'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $blocked->status, $blocked->body);
+
+		$home = $app->handle(new Request(
+			'GET',
+			'/api/v1/timelines/home',
+			query: ['limit' => '1'],
+			userId: 'alice',
+		));
+		self::assertSame(200, $home->status, $home->body);
+		self::assertSame($visibleStatus['id'], $home->decodedBody()['posts'][0]['object_id'] ?? null);
+		self::assertSame('boost', $home->decodedBody()['posts'][0]['kind'] ?? null);
+	}
+
 	public function testAccountStatusesRespectLocalFollowerVisibility(): void
 	{
 		$app = $this->app(actors: ['alice', 'bob', 'carol']);

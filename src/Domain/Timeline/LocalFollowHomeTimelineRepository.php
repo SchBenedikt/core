@@ -64,6 +64,10 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			static fn (TimelineEntry $entry): string => $entry->id,
 			$entries,
 		), true);
+		$representedObjects = array_fill_keys(array_map(
+			static fn (TimelineEntry $entry): string => $entry->objectId,
+			$entries,
+		), true);
 		$muted = array_fill_keys(
 			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
 			true,
@@ -88,55 +92,75 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 
 				$entries[] = TimelineEntry::fromPost($post);
 				$entryIds[$post->id] = true;
+				$representedObjects[$post->id] = true;
 			}
 		}
 
-		// The reader's own boosts belong on their home timeline even when
-		// they do not follow another local account yet.
+		// The base repository owns the reader's own posts and boosts. Query only
+		// followed local boosters here; otherwise their rejected own boosts can
+		// consume this page before it ever reaches an eligible followed boost.
 		$boostAuthors = $authors;
-		$boostAuthors[] = $localUserId;
-		$boostAuthors = array_values(array_filter(
-			array_unique($boostAuthors),
-			static fn (string $authorId): bool => !isset($blocked[$authorId])
-				&& !isset($muted[$authorId])
-				&& !isset($exclusive[$authorId]),
-		));
-		foreach ($this->boosts?->timelineForUsers($boostAuthors, $limit, $before) ?? [] as $boost) {
-			if (isset($entryIds[$boost->id])) {
-				continue;
-			}
-			$post = $this->posts->find($boost->postId);
-			if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
-				continue;
-			}
-			if ($hideReplies && $post->inReplyToId !== null) {
-				continue;
+		$boostBatchSize = max(20, $limit);
+		$boostCursor = $before;
+		$visibleBoosts = 0;
+		while ($boostAuthors !== [] && $this->boosts !== null && $visibleBoosts < max(1, $limit)) {
+			$boostPage = $this->boosts->timelineForUsers($boostAuthors, $boostBatchSize, $boostCursor);
+			if ($boostPage === []) {
+				break;
 			}
 
-			if (isset($muted[$boost->userId]) || isset($muted[$post->authorId])) {
-				continue;
+			$lastBoost = $boostPage[array_key_last($boostPage)];
+			$nextBoostCursor = new TimelineCursor($lastBoost->createdAt, $lastBoost->id);
+			if (!$this->cursorAdvances($boostCursor, $nextBoostCursor)) {
+				break;
 			}
-			if (isset($blocked[$boost->userId]) || isset($blocked[$post->authorId])) {
-				continue;
+			$boostCursor = $nextBoostCursor;
+
+			foreach ($boostPage as $boost) {
+				if (isset($entryIds[$boost->id]) || isset($representedObjects[$boost->postId])) {
+					continue;
+				}
+				$post = $this->posts->find($boost->postId);
+				if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
+					continue;
+				}
+				if ($hideReplies && $post->inReplyToId !== null) {
+					continue;
+				}
+
+				if (isset($muted[$boost->userId]) || isset($muted[$post->authorId])) {
+					continue;
+				}
+				if (isset($blocked[$boost->userId]) || isset($blocked[$post->authorId])) {
+					continue;
+				}
+				if (isset($exclusive[$boost->userId]) || isset($exclusive[$post->authorId])) {
+					continue;
+				}
+
+				$entries[] = new TimelineEntry(
+					id: $boost->id,
+					authorId: $boost->userId,
+					objectId: $post->id,
+					objectAuthorId: $post->authorId,
+					content: $post->content,
+					contentWarning: $post->contentWarning,
+					publishedAt: $boost->createdAt,
+					visibility: $post->visibility,
+					boostedBy: $boost->userId,
+					inReplyToId: $post->inReplyToId,
+				);
+				$entryIds[$boost->id] = true;
+				$representedObjects[$post->id] = true;
+				++$visibleBoosts;
+				if ($visibleBoosts >= max(1, $limit)) {
+					break;
+				}
 			}
 
-			if (isset($exclusive[$boost->userId]) || isset($exclusive[$post->authorId])) {
-				continue;
+			if (count($boostPage) < $boostBatchSize) {
+				break;
 			}
-
-			$entries[] = new TimelineEntry(
-				id: $boost->id,
-				authorId: $boost->userId,
-				objectId: $post->id,
-				objectAuthorId: $post->authorId,
-				content: $post->content,
-				contentWarning: $post->contentWarning,
-				publishedAt: $boost->createdAt,
-				visibility: $post->visibility,
-				boostedBy: $boost->userId,
-				inReplyToId: $post->inReplyToId,
-			);
-			$entryIds[$boost->id] = true;
 		}
 
 		usort($entries, static function (TimelineEntry $a, TimelineEntry $b): int {
@@ -146,5 +170,21 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		});
 
 		return TimelineEntryDeduplicator::deduplicateBoosts(array_slice($entries, 0, max(1, $limit)));
+	}
+
+	private function cursorAdvances(DateTimeImmutable|TimelineCursor|null $current, TimelineCursor $next): bool
+	{
+		if ($current === null) {
+			return true;
+		}
+
+		$currentTime = $current instanceof TimelineCursor ? $current->publishedAt : $current;
+		if ($next->publishedAt < $currentTime) {
+			return true;
+		}
+
+		return $current instanceof TimelineCursor
+			&& $next->publishedAt == $currentTime
+			&& strcmp($next->id, $current->id) < 0;
 	}
 }
