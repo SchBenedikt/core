@@ -532,6 +532,80 @@ final class PdsHttpTest extends TestCase
 		self::assertSame(404, $foreign['status']);
 	}
 
+	public function testListMissingBlobsFindsRepositoryReferencesAndPaginates(): void
+	{
+		$this->startServer();
+
+		$alice = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'alice.pds.example'], 'alice');
+		$bob = $this->jsonRequest('POST', '/xrpc/com.atproto.identity.createDid', ['handle' => 'bob.pds.example'], 'bob');
+		self::assertSame(200, $alice['status'], $alice['body']);
+		self::assertSame(200, $bob['status'], $bob['body']);
+		$aliceDid = $alice['json']['did'] ?? '';
+		$bobDid = $bob['json']['did'] ?? '';
+
+		$anonymous = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.listMissingBlobs?' . http_build_query(['repo' => $aliceDid]));
+		self::assertSame(401, $anonymous['status']);
+		$wrongRepo = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.listMissingBlobs?' . http_build_query(['repo' => $bobDid]), null, 'alice');
+		self::assertSame(403, $wrongRepo['status']);
+
+		$blobCids = [];
+		foreach (["\x89PNG\r\n\x1a\nfirst", "\x89PNG\r\n\x1a\nsecond"] as $bytes) {
+			$uploaded = $this->rawRequest('POST', '/xrpc/com.atproto.repo.uploadBlob', $bytes, 'image/png', 'bob');
+			self::assertSame(200, $uploaded['status'], $uploaded['body']);
+			$blobCids[] = json_decode($uploaded['body'], true)['blob']['ref']['$link'] ?? '';
+		}
+		sort($blobCids, SORT_STRING);
+
+		$recordUris = [];
+		foreach ($blobCids as $index => $cid) {
+			$response = $this->jsonRequest('POST', '/xrpc/com.atproto.repo.createRecord', [
+				'repo' => $aliceDid,
+				'collection' => 'app.bsky.feed.post',
+				'rkey' => 'blob-' . $index,
+				'record' => [
+					'$type' => 'app.bsky.feed.post',
+					'text' => 'migration blob reference',
+					'createdAt' => '2026-11-25T00:00:00Z',
+					'embed' => [
+						'$type' => 'app.bsky.embed.images',
+						'images' => [[
+							'alt' => '',
+							'image' => ['$type' => 'blob', 'ref' => ['$link' => $cid], 'mimeType' => 'image/png', 'size' => 16],
+						]],
+					],
+				],
+			], 'alice');
+			self::assertSame(200, $response['status'], $response['body']);
+			$recordUris[$cid] = $response['json']['uri'] ?? '';
+			$rkey = substr($recordUris[$cid], strrpos($recordUris[$cid], '/') + 1);
+			$read = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.getRecord?' . http_build_query([
+				'repo' => $aliceDid,
+				'collection' => 'app.bsky.feed.post',
+				'rkey' => $rkey,
+			]));
+			self::assertSame($cid, $read['json']['value']['embed']['images'][0]['image']['ref']['$link'] ?? null);
+		}
+
+		$query = '/xrpc/com.atproto.repo.listMissingBlobs?' . http_build_query(['repo' => $aliceDid, 'limit' => 1]);
+		$pageOne = $this->jsonRequest('GET', $query, null, 'alice');
+		self::assertSame(200, $pageOne['status'], $pageOne['body']);
+		self::assertCount(1, $pageOne['json']['blobs'] ?? []);
+		self::assertSame($blobCids[0], $pageOne['json']['blobs'][0]['cid'] ?? null);
+		self::assertSame($recordUris[$blobCids[0]], $pageOne['json']['blobs'][0]['recordUri'] ?? null);
+		self::assertSame($blobCids[0], $pageOne['json']['cursor'] ?? null);
+
+		$pageTwo = $this->jsonRequest('GET', $query . '&cursor=' . rawurlencode($pageOne['json']['cursor']), null, 'alice');
+		self::assertSame(200, $pageTwo['status'], $pageTwo['body']);
+		self::assertCount(1, $pageTwo['json']['blobs'] ?? []);
+		self::assertSame($blobCids[1], $pageTwo['json']['blobs'][0]['cid'] ?? null);
+		self::assertArrayNotHasKey('cursor', $pageTwo['json']);
+
+		$present = $this->rawRequest('POST', '/xrpc/com.atproto.repo.uploadBlob', "\x89PNG\r\n\x1a\nfirst", 'image/png', 'alice');
+		self::assertSame(200, $present['status'], $present['body']);
+		$remaining = $this->jsonRequest('GET', '/xrpc/com.atproto.repo.listMissingBlobs?' . http_build_query(['repo' => $aliceDid]), null, 'alice');
+		self::assertSame([$blobCids[1]], array_column($remaining['json']['blobs'] ?? [], 'cid'));
+	}
+
 	public function testFirehoseStreamsEveryMutationAndReplaysFromACursor(): void
 	{
 		$this->startServer();

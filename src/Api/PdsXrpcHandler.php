@@ -61,6 +61,7 @@ final class PdsXrpcHandler implements Handler
 			'/xrpc/com.atproto.repo.applyWrites' => $this->applyWrites($request, $pds),
 			'/xrpc/com.atproto.repo.getRecord' => $this->getRecord($request, $pds),
 			'/xrpc/com.atproto.repo.listRecords' => $this->listRecords($request, $pds),
+			'/xrpc/com.atproto.repo.listMissingBlobs' => $this->listMissingBlobs($request, $pds),
 			'/xrpc/com.atproto.repo.describeRepo' => $this->describeRepo($request, $pds),
 			'/xrpc/com.atproto.repo.uploadBlob' => $this->uploadBlob($request, $pds),
 			'/xrpc/com.atproto.repo.importRepo' => $this->importRepo($request, $pds),
@@ -155,6 +156,16 @@ final class PdsXrpcHandler implements Handler
 	private function describeRepo(Request $request, NativePdsService $pds): Response
 	{
 		return Response::json($pds->describeRepo($this->requiredQuery($request, 'repo')));
+	}
+
+	private function listMissingBlobs(Request $request, NativePdsService $pds): Response
+	{
+		return Response::json($pds->listMissingBlobs(
+			$this->userId($request),
+			$this->requiredQuery($request, 'repo'),
+			$request->queryInt('limit', 50, 1, 1000),
+			$request->queryParam('cursor'),
+		));
 	}
 
 	private function uploadBlob(Request $request, NativePdsService $pds): Response

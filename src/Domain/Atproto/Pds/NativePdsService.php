@@ -484,7 +484,7 @@ final class NativePdsService
 		return [
 			'uri' => $record->uri(),
 			'cid' => $record->cid->toString(),
-			'value' => $value,
+			'value' => $this->presentRecordBlobs($value),
 		];
 	}
 
@@ -588,7 +588,7 @@ final class NativePdsService
 			$output[] = [
 				'uri' => $record->uri(),
 				'cid' => $record->cid->toString(),
-				'value' => $value,
+				'value' => $this->presentRecordBlobs($value),
 			];
 		}
 
@@ -968,6 +968,94 @@ final class NativePdsService
 	}
 
 	/**
+	 * List blob references in this account's repository whose bytes are not
+	 * present at this PDS. This is used by an account-move client after it has
+	 * imported the repository CAR and before it uploads the referenced blobs.
+	 *
+	 * @return array{blobs: list<array{cid: string, recordUri: string}>, cursor?: string}
+	 */
+	public function listMissingBlobs(
+		string $localUserId,
+		string $repo,
+		int $limit = 50,
+		?string $cursor = null,
+	): array {
+		$identity = $this->requireIdentityForUser($localUserId);
+		$repo = trim($repo);
+		if ($repo !== $identity->did && strtolower($repo) !== $identity->handle) {
+			throw PdsError::forbidden();
+		}
+
+		$limit = max(1, min(1000, $limit));
+		$references = [];
+		foreach ($this->repository->records($identity->did) as $record) {
+			try {
+				$value = DagCbor::decode($record->cbor);
+			} catch (InvalidArgumentException) {
+				throw PdsError::internal('A repository record is not valid DAG-CBOR.');
+			}
+
+			if (!is_array($value)) {
+				throw PdsError::internal('A repository record is not a DAG-CBOR object.');
+			}
+
+			$this->collectBlobReferences($value, $record->uri(), $references);
+		}
+
+		foreach ($references as $cid => $recordUris) {
+			$uris = array_keys($recordUris);
+			sort($uris, SORT_STRING);
+			$references[$cid] = $uris[0];
+		}
+		ksort($references, SORT_STRING);
+		$missing = [];
+		foreach ($references as $cid => $recordUri) {
+			if ($cursor !== null && $cursor !== '' && strcmp($cid, $cursor) <= 0) {
+				continue;
+			}
+
+			$blob = $this->repository->blob($identity->did, $cid);
+			$store = $this->blobs;
+			if ($blob !== null && $store !== null && $store->exists($this->blobPath($identity->did, $cid))) {
+				continue;
+			}
+
+			$missing[] = ['cid' => $cid, 'recordUri' => $recordUri];
+			if (count($missing) > $limit) {
+				break;
+			}
+		}
+
+		$hasMore = count($missing) > $limit;
+		$missing = array_slice($missing, 0, $limit);
+		$result = ['blobs' => $missing];
+		if ($hasMore && $missing !== []) {
+			$result['cursor'] = $missing[array_key_last($missing)]['cid'];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * @param array<string, mixed> $value
+	 * @param array<string, array<string, true>> $references CID to referencing record URIs
+	 */
+	private function collectBlobReferences(array $value, string $recordUri, array &$references): void
+	{
+		if (($value['$type'] ?? null) === 'blob' && ($value['ref'] ?? null) instanceof Cid) {
+			$references[$value['ref']->toString()][$recordUri] = true;
+
+			return;
+		}
+
+		foreach ($value as $child) {
+			if (is_array($child)) {
+				$this->collectBlobReferences($child, $recordUri, $references);
+			}
+		}
+	}
+
+	/**
 	 * Import a CAR archive into the signed-in account's empty repository.
 	 *
 	 * The source commit is not trusted as a head: its MST and record blocks
@@ -1210,7 +1298,61 @@ final class NativePdsService
 			throw PdsError::invalid('record.$type must equal collection.');
 		}
 
-		return $recordInput;
+		return $this->normalizeRecordBlobs($recordInput);
+	}
+
+	/**
+	 * Convert the JSON representation of a blob reference into the CID link
+	 * value DAG-CBOR requires. Imported CAR records already contain Cid objects.
+	 *
+	 * @param array<string, mixed> $value
+	 * @return array<string, mixed>
+	 */
+	private function normalizeRecordBlobs(array $value): array
+	{
+		if (($value['$type'] ?? null) === 'blob' && is_array($value['ref'] ?? null)) {
+			$ref = $value['ref'];
+			if (isset($ref['$link']) && is_string($ref['$link'])) {
+				try {
+					$value['ref'] = Cid::fromBlobString($ref['$link']);
+				} catch (InvalidArgumentException) {
+					throw PdsError::invalid('record blob reference must be a valid raw CID.');
+				}
+			}
+
+			return $value;
+		}
+
+		foreach ($value as $key => $child) {
+			if (is_array($child)) {
+				$value[$key] = $this->normalizeRecordBlobs($child);
+			}
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Restore the JSON `$link` form for XRPC record responses.
+	 *
+	 * @param array<string, mixed> $value
+	 * @return array<string, mixed>
+	 */
+	private function presentRecordBlobs(array $value): array
+	{
+		if (($value['$type'] ?? null) === 'blob' && ($value['ref'] ?? null) instanceof Cid) {
+			$value['ref'] = ['$link' => $value['ref']->toString()];
+
+			return $value;
+		}
+
+		foreach ($value as $key => $child) {
+			if (is_array($child)) {
+				$value[$key] = $this->presentRecordBlobs($child);
+			}
+		}
+
+		return $value;
 	}
 
 	private function validatedRkey(mixed $rkey, bool $required): ?string

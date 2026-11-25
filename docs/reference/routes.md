@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 238 routes in total; 56 use the
+defaults to `/api/mastodon/v1`). There are 239 routes in total; 56 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -149,6 +149,7 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `xrpc.repo.importRepo` | `POST` | `/xrpc/com.atproto.repo.importRepo` | yes | 5 / 3600 s |
 | `xrpc.repo.getRecord` | `GET` | `/xrpc/com.atproto.repo.getRecord` | no | 120 / 60 s |
 | `xrpc.repo.listRecords` | `GET` | `/xrpc/com.atproto.repo.listRecords` | no | 120 / 60 s |
+| `xrpc.repo.listMissingBlobs` | `GET` | `/xrpc/com.atproto.repo.listMissingBlobs` | yes | 120 / 60 s |
 | `xrpc.repo.describeRepo` | `GET` | `/xrpc/com.atproto.repo.describeRepo` | no | 120 / 60 s |
 | `xrpc.server.describeServer` | `GET` | `/xrpc/com.atproto.server.describeServer` | no | 120 / 60 s |
 | `xrpc.sync.getRepo` | `GET` | `/xrpc/com.atproto.sync.getRepo` | no | 60 / 60 s |
