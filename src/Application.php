@@ -1168,6 +1168,7 @@ final readonly class Application
 			$notificationPolicyService,
 			$notificationEventSink,
 			$notificationThreadResolver,
+			$eventBroker,
 		);
 		$reactionService = new ReactionService(
 			$posts,

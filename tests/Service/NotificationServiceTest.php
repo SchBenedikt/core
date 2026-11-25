@@ -14,6 +14,9 @@ use AlohaSocial\Core\Domain\Notification\NotificationSchema;
 use AlohaSocial\Core\Domain\Notification\PdoNotificationRepository;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Db\PdoConnection;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Service\NotificationService;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\ArrayPsrLogger;
@@ -54,6 +57,24 @@ final class NotificationServiceTest extends TestCase
 
 		self::assertSame(1, $repository->countUnread('alice'));
 		self::assertCount(1, $service->listFor('alice', 10));
+	}
+
+	public function testVisibleNotificationsPublishARecipientScopedStreamEvent(): void
+	{
+		$broker = $this->createMock(EventBroker::class);
+		$broker->expects(self::once())
+			->method('publish')
+			->with(self::callback(static fn (StreamEventDraft $event): bool =>
+				$event->name === 'notification.created'
+				&& $event->audience === StreamAudience::Direct
+				&& $event->actorId === 'alice'
+				&& $event->recipientIds === ['alice']
+				&& $event->payload['notification_id'] === 'notification-'
+					. substr(hash('sha256', "alice\0bob\0follow\0\0"), 0, 32)
+			));
+
+		$service = new NotificationService(new InMemoryNotificationRepository(), $this->clock, events: $broker);
+		$service->recordFollow('alice', 'bob');
 	}
 
 	public function testAStorageFailureIsLoggedWithoutFailingThePrimaryWrite(): void

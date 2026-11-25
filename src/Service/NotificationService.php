@@ -20,6 +20,9 @@ use AlohaSocial\Core\Domain\Notification\NotificationType;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Service\Notification\NotificationPolicyService;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -55,6 +58,7 @@ final class NotificationService
 		private readonly ?NotificationPolicyService $policy = null,
 		private readonly ?NotificationEventSink $sink = null,
 		private readonly ?NotificationThreadResolver $threads = null,
+		private readonly ?EventBroker $events = null,
 	) {
 		$this->logger = $logger ?? new NullLogger();
 	}
@@ -373,6 +377,25 @@ final class NotificationService
 			]);
 
 			return;
+		}
+
+		if ($status->isVisible() && $this->events !== null) {
+			try {
+				$this->events->publish(new StreamEventDraft(
+					name: 'notification.created',
+					audience: StreamAudience::Direct,
+					actorId: $recipientId,
+					recipientIds: [$recipientId],
+					payload: ['notification_id' => $notification->id],
+					occurredAt: Time::format($notification->createdAt),
+				));
+			} catch (Throwable $exception) {
+				$this->logger->error('Notification stream event could not be stored.', [
+					'recipient_id' => $recipientId,
+					'notification_id' => $notification->id,
+					'exception' => $exception,
+				]);
+			}
 		}
 
 		if ($status->isVisible() && $this->sink !== null) {
