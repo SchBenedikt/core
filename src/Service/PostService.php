@@ -192,7 +192,7 @@ final class PostService
 		return $post;
 	}
 
-	private function streamEventFor(Post $post): StreamEventDraft
+	private function streamEventFor(Post $post, string $name = 'status.created', ?string $occurredAt = null): StreamEventDraft
 	{
 		$audience = match ($post->visibility) {
 			Visibility::Public => StreamAudience::Public,
@@ -205,12 +205,13 @@ final class PostService
 		$recipients = array_values(array_unique($recipients));
 
 		return new StreamEventDraft(
-			name: 'status.created',
+			name: $name,
 			audience: $audience,
 			actorId: $post->authorId,
 			recipientIds: $recipients,
 			payload: ['status_id' => $post->id],
-			occurredAt: Time::format($post->publishedAt),
+<<<<<<< HEAD
+			occurredAt: $occurredAt ?? Time::format($post->publishedAt),
 		);
 	}
 
@@ -325,6 +326,11 @@ final class PostService
 
 		$this->runWrite(function () use ($post, $postId, $deletedAt): void {
 			$this->posts->softDelete($postId, $deletedAt);
+			$this->events?->publish($this->streamEventFor(
+				$post,
+				'status.deleted',
+				Time::format($deletedAt),
+			));
 			$this->pins?->removeForPost($postId);
 			$this->atproto?->scheduleDelete($post);
 
@@ -423,6 +429,24 @@ final class PostService
 
 		$this->runWrite(function () use ($post, $edited, $snapshot, $editedAt, $deliver, $mentionTargets): void {
 			$this->posts->update($edited);
+			if ($edited->visibility !== $post->visibility) {
+				$this->events?->publish($this->streamEventFor(
+					$post,
+					'status.deleted',
+					Time::format($editedAt),
+				));
+				$this->events?->publish($this->streamEventFor(
+					$edited,
+					'status.created',
+					Time::format($editedAt),
+				));
+			} else {
+				$this->events?->publish($this->streamEventFor(
+					$edited,
+					'status.updated',
+					Time::format($editedAt),
+				));
+			}
 			$this->revisions?->add($snapshot);
 			if (!$edited->visibility->mayListPublicly()) {
 				// AT Protocol records are public. If this post was mirrored while

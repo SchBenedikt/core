@@ -104,6 +104,23 @@ final class PostServiceTest extends TestCase
 		$this->service(events: $broker)->create(new CreatePost('alice', 'hello', Visibility::Followers));
 	}
 
+	public function testDeletingAPostPublishesItsRemovalInTheSameAudience(): void
+	{
+		$published = [];
+		$broker = $this->createMock(EventBroker::class);
+		$broker->expects(self::exactly(2))->method('publish')->willReturnCallback(
+			static function (StreamEventDraft $event) use (&$published): void { $published[] = $event; },
+		);
+		$service = $this->service(events: $broker);
+		$post = $service->create(new CreatePost('alice', 'hello', Visibility::Followers));
+
+		$service->delete('alice', $post->id);
+
+		self::assertSame(['status.created', 'status.deleted'], array_column($published, 'name'));
+		self::assertSame(StreamAudience::Followers, $published[1]->audience);
+		self::assertSame(['status_id' => $post->id], $published[1]->payload);
+	}
+
 	public function testStoresAndNormalizesThePostLanguage(): void
 	{
 		$post = $this->service()->create(new CreatePost('alice', 'hello', language: ' de-DE '));

@@ -18,6 +18,8 @@ use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\Time;
@@ -145,6 +147,38 @@ final class InboundTimelineTest extends TestCase
 		))->status);
 
 		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+	}
+
+	public function testAnAcceptedRemoteUpdatePublishesTheEditedObjectToTheHomeAudience(): void
+	{
+		$published = [];
+		$broker = $this->createMock(EventBroker::class);
+		$broker->expects(self::exactly(2))->method('publish')->willReturnCallback(
+			static function (StreamEventDraft $event) use (&$published): void { $published[] = $event; },
+		);
+		$app = $this->app(events: $broker);
+		$create = $this->create(
+			'https://remote.example/activities/create-streamed',
+			self::NOTE_1,
+			'original text',
+			'2026-11-11T10:01:00Z',
+		);
+		$create['object']['to'] = ['https://www.w3.org/ns/activitystreams#Public'];
+		self::assertSame(202, $this->deliver($app, $create)->status);
+
+		$update = $this->update(
+			'https://remote.example/activities/update-streamed',
+			self::NOTE_1,
+			'edited text',
+			'2026-11-11T10:02:00Z',
+		);
+		$update['object']['to'] = ['https://www.w3.org/ns/activitystreams#Public'];
+		self::assertSame(202, $this->deliver($app, $update)->status);
+
+		self::assertSame(['status.created', 'status.updated'], array_column($published, 'name'));
+		self::assertSame(['status_id' => self::NOTE_1], $published[1]->payload);
+		self::assertSame(['alice'], $published[1]->recipientIds);
+		self::assertSame('edited text', $this->feed($app)->decodedBody()['posts'][0]['content']);
 	}
 
 	public function testSignedInHomeFeedHidesRemoteRepliesButKeepsRootPosts(): void
@@ -425,6 +459,7 @@ final class InboundTimelineTest extends TestCase
 	private function app(
 		?InMemoryFollowingRepository $following = null,
 		?BlockedActorPolicy $blockedActors = null,
+		?EventBroker $events = null,
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -441,6 +476,7 @@ final class InboundTimelineTest extends TestCase
 			activityLog: new InMemoryActivityLog(),
 			followingRepository: $following ?? $this->following,
 			blockedActors: $blockedActors,
+			eventBroker: $events,
 		);
 	}
 

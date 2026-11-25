@@ -1446,6 +1446,9 @@ final readonly class Application
 			$activities,
 			$inboxResolver,
 			$notificationService,
+			$eventBroker,
+			$localRelationships,
+			$transactions,
 		);
 		if ($localRelationships !== null) {
 			$homeTimeline = new LocalFollowHomeTimelineRepository(
@@ -1585,6 +1588,8 @@ final readonly class Application
 				storyService: $storyService,
 				inboundBlocks: $inboundBlocks ?? new InMemoryInboundBlockRepository(),
 				localActors: $localActors,
+				eventBroker: $eventBroker,
+				transactions: $transactions,
 			)
 			: null;
 
