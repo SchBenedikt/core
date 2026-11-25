@@ -13,9 +13,11 @@ namespace AlohaSocial\Core\Platform\Events;
  * Host-owned durable event storage for realtime transports.
  *
  * Implementations must preserve a stable cursor order across processes,
- * enforce each subscription's audience/recipient visibility, and bound reads
- * to the requested limit. Core deliberately does not keep a process-global
- * event bus: hosts can use their shared database or another durable broker.
+ * honor the channel semantics in each subscription (including restricting
+ * `public:local` to locally owned actors), enforce audience/recipient
+ * visibility, and bound reads to the requested limit. Local actor lookup is
+ * host-owned. Core deliberately does not keep a process-global event bus:
+ * hosts can use their shared database or another durable broker.
  */
 interface EventBroker
 {
