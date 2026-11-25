@@ -32,6 +32,8 @@ use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Platform\Db\TransactionRunner;
+use AlohaSocial\Core\Platform\Events\EventBroker;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\SignatureException;
@@ -107,6 +109,8 @@ final class InboxService
 		private readonly ?\AlohaSocial\Core\Service\Story\StoryService $storyService = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?\AlohaSocial\Core\Domain\Federation\LocalActorDirectory $localActors = null,
+		private readonly ?EventBroker $eventBroker = null,
+		private readonly ?TransactionRunner $transactions = null,
 	) {
 	}
 
@@ -315,7 +319,7 @@ final class InboxService
 			$this->remotePolls->importQuestion($post, $object, $post->activityId, Time::toSecondPrecision($this->clock->now()));
 		}
 
-		$this->insertRemotePost($post);
+		$this->persistRemotePostAndStreamEvent($post, $activity);
 
 		// Import after the post is durable. The importer isolates every
 		// attachment, so a slow or broken image never discards the post.
@@ -515,6 +519,33 @@ final class InboxService
 
 			throw $exception;
 		}
+	}
+
+	/** @param array<string, mixed> $activity */
+	private function persistRemotePostAndStreamEvent(RemotePost $post, array $activity): void
+	{
+		$persist = function () use ($post, $activity): void {
+			$this->insertRemotePost($post);
+			if ($this->eventBroker === null) {
+				return;
+			}
+
+			$draft = (new RemoteStatusEventFactory())->forCreate(
+				$post,
+				$activity,
+				$this->following->localUserIdsForActor($post->actorId),
+			);
+			if ($draft !== null) {
+				$this->eventBroker->publish($draft);
+			}
+		};
+
+		if ($this->transactions === null) {
+			$persist();
+			return;
+		}
+
+		$this->transactions->transaction($persist);
 	}
 
 	/**

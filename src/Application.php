@@ -1585,6 +1585,8 @@ final readonly class Application
 				storyService: $storyService,
 				inboundBlocks: $inboundBlocks ?? new InMemoryInboundBlockRepository(),
 				localActors: $localActors,
+				eventBroker: $eventBroker,
+				transactions: $transactions,
 			)
 			: null;
 
