@@ -68,10 +68,13 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			$this->mutes?->actorIds($localUserId, ($this->clock ?? new SystemClock())->now()) ?? [],
 			true,
 		);
+		$blocked = array_fill_keys($this->relationships->blockedAccountIds($localUserId), true);
 		$exclusive = array_fill_keys($this->lists?->exclusiveActorIds($localUserId) ?? [], true);
 		$authors = array_values(array_filter(
 			$this->relationships->localFollowingUserIds($localUserId),
-			static fn (string $authorId): bool => !isset($muted[$authorId]) && !isset($exclusive[$authorId]),
+			static fn (string $authorId): bool => !isset($blocked[$authorId])
+				&& !isset($muted[$authorId])
+				&& !isset($exclusive[$authorId]),
 		));
 
 		if ($authors !== []) {
@@ -94,7 +97,9 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 		$boostAuthors[] = $localUserId;
 		$boostAuthors = array_values(array_filter(
 			array_unique($boostAuthors),
-			static fn (string $authorId): bool => !isset($muted[$authorId]) && !isset($exclusive[$authorId]),
+			static fn (string $authorId): bool => !isset($blocked[$authorId])
+				&& !isset($muted[$authorId])
+				&& !isset($exclusive[$authorId]),
 		));
 		foreach ($this->boosts?->timelineForUsers($boostAuthors, $limit, $before) ?? [] as $boost) {
 			if (isset($entryIds[$boost->id])) {
@@ -109,6 +114,9 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 			}
 
 			if (isset($muted[$boost->userId]) || isset($muted[$post->authorId])) {
+				continue;
+			}
+			if (isset($blocked[$boost->userId]) || isset($blocked[$post->authorId])) {
 				continue;
 			}
 
