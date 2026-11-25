@@ -32,6 +32,8 @@ final readonly class RemoteActor
 		public array $alsoKnownAs = [],
 		/** The actor this account moved to, when the document advertises one. */
 		public ?string $movedTo = null,
+		/** The actor's followers collection, which may use a non-standard URL. */
+		public ?string $followersUrl = null,
 	) {
 		if ($actorId === '' || $keyId === '' || $inboxUrl === '' || $publicKeyPem === '') {
 			throw new InvalidArgumentException('A remote actor needs an id, a key id, an inbox and a public key.');
@@ -43,6 +45,10 @@ final readonly class RemoteActor
 
 		if ($movedTo !== null && $movedTo === '') {
 			throw new InvalidArgumentException('A movedTo actor must be an absolute URL when present.');
+		}
+
+		if ($followersUrl !== null && $followersUrl === '') {
+			throw new InvalidArgumentException('A followers collection must be an absolute URL when present.');
 		}
 	}
 

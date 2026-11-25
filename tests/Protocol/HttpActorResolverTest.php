@@ -69,6 +69,16 @@ final class HttpActorResolverTest extends TestCase
 		self::assertSame(self::ACTOR, $this->http->requests[0]['url']);
 	}
 
+	public function testResolvesACustomFollowersCollection(): void
+	{
+		$this->http->queueResponse($this->document(['followers' => 'https://remote.example/collections/followers']));
+
+		self::assertSame(
+			'https://remote.example/collections/followers',
+			$this->resolver->resolveByKeyId(self::KEY_ID)->followersUrl,
+		);
+	}
+
 	public function testTheDocumentAliasesAndMovedToAreValidated(): void
 	{
 		$this->http->queueResponse($this->document([

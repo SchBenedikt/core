@@ -54,9 +54,9 @@ final class RemotePostFactory
 	/**
 	 * @param array<string, mixed> $activity
 	 */
-	public function fromCreate(string $actorId, array $activity): RemotePost
+	public function fromCreate(string $actorId, array $activity, ?string $followersUrl = null): RemotePost
 	{
-		$this->requireSupportedAudience($actorId, $activity);
+		$this->requireSupportedAudience($actorId, $activity, $followersUrl);
 		$activityId = $this->activityId($activity);
 		$object = $activity['object'] ?? null;
 		if (!is_array($object)) {
@@ -107,11 +107,11 @@ final class RemotePostFactory
 	 *
 	 * @param array<string, mixed> $activity
 	 */
-	private function requireSupportedAudience(string $actorId, array $activity): void
+	private function requireSupportedAudience(string $actorId, array $activity, ?string $followersUrl): void
 	{
 		$object = $activity['object'] ?? null;
 		$public = 'https://www.w3.org/ns/activitystreams#Public';
-		$followers = rtrim($actorId, '/') . '/followers';
+		$followers = $followersUrl ?? rtrim($actorId, '/') . '/followers';
 		$recipients = [];
 		foreach ([$activity, is_array($object) ? $object : []] as $document) {
 			$documentRecipients = [];

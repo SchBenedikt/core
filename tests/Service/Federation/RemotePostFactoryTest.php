@@ -79,9 +79,12 @@ final class RemotePostFactoryTest extends TestCase
 			'content' => 'followers only',
 			'attributedTo' => self::ACTOR,
 		]);
-		$post['object']['to'] = [self::ACTOR . '/followers'];
+		$post['object']['to'] = ['https://peer.example/collections/friends'];
 
-		self::assertSame('followers only', $this->factory->fromCreate(self::ACTOR, $post)->content);
+		self::assertSame(
+			'followers only',
+			$this->factory->fromCreate(self::ACTOR, $post, 'https://peer.example/collections/friends')->content,
+		);
 	}
 
 	public function testAnArticleKeepsItsTitleWithAnEmptyBody(): void
