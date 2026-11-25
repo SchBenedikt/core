@@ -22,6 +22,8 @@ use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobType;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Platform\Events\EventBroker;
+use AlohaSocial\Core\Platform\Events\StreamAudience;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\BoostService;
 use AlohaSocial\Core\Service\CreatePost;
@@ -142,6 +144,32 @@ final class BoostServiceTest extends TestCase
 		self::assertCount(1, $undos);
 		self::assertSame('Announce', $undos[0]->payload['activity']['object']['type']);
 		self::assertNull($this->boosts->find($boost->id));
+	}
+
+	public function testBoostAndUnboostPublishTimelineLifecycleEvents(): void
+	{
+		$events = $this->createMock(EventBroker::class);
+		$published = [];
+		$events->expects(self::exactly(2))->method('publish')->willReturnCallback(
+			static function ($event) use (&$published): void { $published[] = $event; },
+		);
+		$post = $this->postService->create(new CreatePost('alice', 'boost me'));
+		$service = new BoostService(
+			$this->postService,
+			$this->boosts,
+			$this->clock,
+			new SequenceIdGenerator('event-'),
+			$this->queue,
+			events: $events,
+		);
+
+		$boost = $service->boost('bob', $post->id)->boost;
+		self::assertTrue($service->unboost('bob', $post->id));
+
+		self::assertSame(['status.created', 'status.deleted'], array_column($published, 'name'));
+		self::assertSame(StreamAudience::Public, $published[0]->audience);
+		self::assertSame($boost->id, $published[0]->payload['status_id']);
+		self::assertSame($boost->id, $published[1]->payload['status_id']);
 	}
 
 	public function testOnlyPublicAndUnlistedPostsCanBeBoosted(): void

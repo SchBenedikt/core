@@ -1446,6 +1446,9 @@ final readonly class Application
 			$activities,
 			$inboxResolver,
 			$notificationService,
+			$eventBroker,
+			$localRelationships,
+			$transactions,
 		);
 		if ($localRelationships !== null) {
 			$homeTimeline = new LocalFollowHomeTimelineRepository(
