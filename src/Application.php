@@ -1388,6 +1388,9 @@ final readonly class Application
 			inboundBlocks: $inboundBlocks,
 			accountMoves: $accountMoveRepository,
 			events: $eventBroker,
+			remotePosts: $remotePosts,
+			remoteAccess: new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
+			remoteActors: $remoteActors,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,

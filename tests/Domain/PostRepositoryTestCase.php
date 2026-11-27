@@ -290,6 +290,30 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame('parent', $repository->find('reply')?->inReplyToId);
 	}
 
+	public function testRemoteReplyTargetSurvivesARoundTrip(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post(
+			'reply',
+			'bob',
+			Visibility::Public,
+			'2026-11-11T10:01:00Z',
+			remoteParentObjectId: 'https://remote.example/notes/1',
+			remoteParentAuthorId: 'https://remote.example/users/carol',
+		));
+
+		$post = $repository->find('reply');
+		self::assertNotNull($post);
+		self::assertNull($post->inReplyToId);
+		self::assertSame('https://remote.example/notes/1', $post->remoteParentObjectId);
+		self::assertSame('https://remote.example/users/carol', $post->remoteParentAuthorId);
+		self::assertSame('https://remote.example/notes/1', $post->toArray()['remote_parent_object_id']);
+		self::assertSame('https://remote.example/users/carol', $post->toArray()['remote_parent_author_id']);
+
+		$repository->softDelete('reply', Time::parse('2026-11-11T11:00:00Z'));
+		self::assertSame('https://remote.example/notes/1', $repository->find('reply')?->remoteParentObjectId);
+	}
+
 	public function testTimelineForAuthorsIncludesTheirLivePostsOnly(): void
 	{
 		$repository = $this->repository();
@@ -689,6 +713,8 @@ abstract class PostRepositoryTestCase extends TestCase
 		?Poll $poll = null,
 		array $recipientIds = [],
 		?string $inReplyToId = null,
+		?string $remoteParentObjectId = null,
+		?string $remoteParentAuthorId = null,
 		?string $language = null,
 	): Post {
 		return new Post(
@@ -703,6 +729,8 @@ abstract class PostRepositoryTestCase extends TestCase
 			$poll,
 			$recipientIds,
 			$inReplyToId,
+			remoteParentObjectId: $remoteParentObjectId,
+			remoteParentAuthorId: $remoteParentAuthorId,
 			language: $language,
 		);
 	}

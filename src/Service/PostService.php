@@ -14,6 +14,9 @@ use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\AccountMoveRepository;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Moderation\HeldPost;
 use AlohaSocial\Core\Domain\Moderation\HeldPostRepository;
@@ -39,6 +42,7 @@ use AlohaSocial\Core\Platform\Events\StreamAudience;
 use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Atproto\AtprotoPublishService;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\Search\SearchIndexer;
 use AlohaSocial\Core\Support\IdGenerator;
@@ -94,6 +98,9 @@ final class PostService
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?AccountMoveRepository $accountMoves = null,
 		private readonly ?EventBroker $events = null,
+		private readonly ?RemotePostRepository $remotePosts = null,
+		private readonly ?RemotePostAccess $remoteAccess = null,
+		private readonly ?RemoteActorFetcher $remoteActors = null,
 	) {
 	}
 
@@ -120,10 +127,16 @@ final class PostService
 			$inReplyToId = null;
 		}
 
+		$remoteParent = null;
+		if ($inReplyToId !== null && $this->isRemoteParentRef($inReplyToId)) {
+			$remoteParent = $this->remoteParentFor($inReplyToId, $command->authorId);
+			$inReplyToId = null;
+		}
+
 		$parent = $this->parentFor($inReplyToId, $command->authorId);
 		$recipientIds = $this->recipientsFor($command, $parent);
 
-		$this->validate($command, $content, $warning, $recipientIds, $parent);
+		$this->validate($command, $content, $warning, $recipientIds, $parent, $remoteParent);
 
 		if ($applyHold) {
 			$this->holdIfNeeded($command, $content, $warning, $inReplyToId);
@@ -157,6 +170,10 @@ final class PostService
 			poll: $command->poll,
 			recipientIds: $recipientIds,
 			inReplyToId: $inReplyToId,
+			remoteParentObjectId: $remoteParent?->objectId,
+			remoteParentAuthorId: $remoteParent === null
+				? null
+				: ($remoteParent->objectAuthorId ?? $remoteParent->actorId),
 			quotedObjectId: $quote?->quotedObjectId,
 			quoteState: $quote?->state,
 			quoteAuthorizationId: $quote?->authorizationId,
@@ -385,7 +402,21 @@ final class PostService
 		// The reply target cannot change on an edit, but the parent still
 		// decides whether the new visibility is allowed at all.
 		$parent = $post->inReplyToId === null ? null : $this->posts->find($post->inReplyToId);
-		$this->validateEdit($post, $content, $warning, $attachmentIds, $visibility, $parent, $language);
+		$remoteParent = $post->remoteParentObjectId === null
+			? null
+			: $this->remotePosts?->findPostByObjectId($post->remoteParentObjectId);
+		$remoteParentMissing = $post->remoteParentObjectId !== null && $remoteParent === null;
+		$this->validateEdit(
+			$post,
+			$content,
+			$warning,
+			$attachmentIds,
+			$visibility,
+			$parent,
+			$language,
+			$remoteParent,
+			$remoteParentMissing,
+		);
 
 		$editedAt = Time::toSecondPrecision($this->clock->now());
 		$edited = new Post(
@@ -399,6 +430,8 @@ final class PostService
 			poll: $post->poll,
 			recipientIds: $post->recipientIds,
 			inReplyToId: $post->inReplyToId,
+			remoteParentObjectId: $post->remoteParentObjectId,
+			remoteParentAuthorId: $post->remoteParentAuthorId,
 			editedAt: $editedAt,
 			revision: $post->revision + 1,
 			quotedObjectId: $post->quotedObjectId,
@@ -533,6 +566,60 @@ final class PostService
 	}
 
 	/**
+	 * Whether an `in_reply_to_id` value names a remote object rather than a
+	 * local post. Local post URLs on this instance still resolve locally via
+	 * {@see ActivityFactory::postIdFromUrl()}; every other absolute http(s)
+	 * URL is a federation object id.
+	 */
+	private function isRemoteParentRef(string $inReplyToId): bool
+	{
+		if ($this->activities->postIdFromUrl($inReplyToId) !== null) {
+			return false;
+		}
+
+		$scheme = parse_url($inReplyToId, PHP_URL_SCHEME);
+
+		return is_string($scheme) && in_array(strtolower($scheme), ['http', 'https'], true);
+	}
+
+	/**
+	 * Resolves a remote reply target from the stored federation posts.
+	 *
+     * The same visibility rule as a read applies: an unknown, deleted or
+     * audience-restricted remote post is the same 422 as a missing local
+     * parent, so the write route never becomes an existence oracle.
+     *
+     * @throws ValidationException
+     */
+	private function remoteParentFor(string $objectId, string $authorId): RemotePost
+	{
+		$post = $this->remotePosts?->findPostByObjectId($objectId);
+		if ($post === null) {
+			throw new ValidationException([
+				'in_reply_to_id' => 'The reply target does not exist or is not visible to this account.',
+			]);
+		}
+
+		$missing = [
+			'in_reply_to_id' => 'The reply target does not exist or is not visible to this account.',
+		];
+
+		if ($this->remoteAccess !== null) {
+			$visible = $this->remoteAccess->viewerMayRead($post, $authorId);
+		} else {
+			// Without the shared policy only verified public content is safe
+			// to reply to; anything else fails closed.
+			$visible = $post->audience === Visibility::Public || $post->audience === Visibility::Unlisted;
+		}
+
+		if ($post->deletedAt !== null || !$visible) {
+			throw new ValidationException($missing);
+		}
+
+		return $post;
+	}
+
+	/**
 	 * Resolves a reply target through the same visibility check as a read.
 	 *
 	 * A missing parent and a parent the author may not see are the same 422:
@@ -637,6 +724,7 @@ final class PostService
 		?string $warning,
 		array $recipientIds,
 		?Post $parent,
+		?RemotePost $remoteParent = null,
 	): void {
 		$errors = [];
 
@@ -658,6 +746,11 @@ final class PostService
 		);
 		$errors += $this->attachmentErrors($command->attachmentIds, $command->authorId);
 		$errors += $this->parentErrors($parent, $command->visibility);
+		$errors += $this->remoteParentErrors($remoteParent, $command->visibility);
+
+		if ($command->visibility === Visibility::Direct && $remoteParent !== null) {
+			$errors['in_reply_to_id'] = 'A direct reply needs a local parent.';
+		}
 
 		if ($command->visibility === Visibility::Direct && $recipientIds === []) {
 			$errors['recipient_ids'] = 'A direct post needs at least one local recipient.';
@@ -681,6 +774,8 @@ final class PostService
 		Visibility $visibility,
 		?Post $parent,
 		?string $language,
+		?RemotePost $remoteParent = null,
+		bool $remoteParentMissing = false,
 	): void {
 		$errors = $this->contentErrors(
 			$content,
@@ -688,7 +783,8 @@ final class PostService
 			$attachmentIds !== [] || $post->poll !== null,
 		)
 			+ $this->attachmentErrors($attachmentIds, $post->authorId)
-			+ $this->parentErrors($parent, $visibility);
+			+ $this->parentErrors($parent, $visibility)
+			+ $this->remoteParentErrors($remoteParent, $visibility, $remoteParentMissing);
 		if ($language !== null && (strlen($language) > 35
 			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
 		) {
@@ -810,6 +906,32 @@ final class PostService
 		if ($parent->visibility === Visibility::Followers
 			&& ($visibility === Visibility::Public || $visibility === Visibility::Unlisted)
 		) {
+			return ['in_reply_to_id' => 'A reply to a followers-only post cannot be public or unlisted.'];
+		}
+
+		return [];
+	}
+
+	/**
+	 * The remote counterpart of {@see parentErrors()}: a verified followers
+	 * audience — and an unknown legacy audience, which fails closed — keeps
+	 * the same no-public-reply rule a local followers post applies.
+	 *
+	 * @return array<string, string>
+	 */
+	private function remoteParentErrors(?RemotePost $parent, Visibility $visibility, bool $parentMissing = false): array
+	{
+		if ($parent === null && !$parentMissing) {
+			return [];
+		}
+
+		$restricted = $parentMissing
+			|| $parent === null
+			|| $parent->audience === Visibility::Followers
+			|| $parent->audience === Visibility::Direct
+			|| $parent->audience === null;
+
+		if ($restricted && ($visibility === Visibility::Public || $visibility === Visibility::Unlisted)) {
 			return ['in_reply_to_id' => 'A reply to a followers-only post cannot be public or unlisted.'];
 		}
 
@@ -978,8 +1100,15 @@ final class PostService
 			}
 		}
 
+		// A reply to a remote post is delivered to the parent's author even
+		// when the local author has no followers at all — that inbox is the
+		// only way the remote side learns the reply exists. Resolution is
+		// best effort like a mention: an unreachable actor document must not
+		// block the local write, and a block in either direction skips it.
+		$parentInbox = $this->remoteParentInbox($post);
+
 		$inboxes = array_values(array_unique(array_filter(
-			array_merge($this->inboxes->inboxesFor($post->authorId), $mentionInboxes),
+			array_merge($this->inboxes->inboxesFor($post->authorId), $mentionInboxes, $parentInbox),
 			static fn (mixed $inbox): bool => is_string($inbox) && trim($inbox) !== '',
 		)));
 
@@ -997,6 +1126,33 @@ final class PostService
 				'key_id' => $keyId,
 			], subject: JobSubject::account($post->authorId));
 		}
+	}
+
+	/**
+	 * The inbox of a remote reply target's author, or an empty list.
+	 *
+	 * @return list<string>
+	 */
+	private function remoteParentInbox(Post $post): array
+	{
+		$authorId = $post->remoteParentAuthorId;
+		if ($authorId === null || $this->remoteActors === null) {
+			return [];
+		}
+
+		if ($this->inboundBlocks?->isBlocked($post->authorId, $authorId) === true) {
+			return [];
+		}
+
+		try {
+			$actor = $this->remoteActors->fetch($authorId);
+		} catch (Throwable) {
+			return [];
+		}
+
+		$inbox = $actor->sharedInboxUrl ?? $actor->inboxUrl;
+
+		return trim($inbox) === '' ? [] : [$inbox];
 	}
 
 	/**

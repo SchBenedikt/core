@@ -10,10 +10,19 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
-use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
@@ -30,6 +39,7 @@ use AlohaSocial\Core\Platform\Events\StreamAudience;
 use AlohaSocial\Core\Platform\Events\StreamEventDraft;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\CreatePost;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Support\Time;
@@ -393,12 +403,151 @@ final class PostServiceTest extends TestCase
 		self::assertSame([], $deliveries);
 	}
 
+	public function testRepliesToARemotePublicPost(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent());
+
+		$post = $this->service(
+			remotePosts: $remotePosts,
+			remoteActors: $this->remoteActorFetcher(),
+		)->create(new CreatePost('alice', 'hi there', inReplyToId: 'https://remote.example/notes/1'));
+
+		self::assertNull($post->inReplyToId);
+		self::assertSame('https://remote.example/notes/1', $post->remoteParentObjectId);
+		self::assertSame('https://remote.example/users/bob', $post->remoteParentAuthorId);
+		self::assertSame('https://remote.example/notes/1', $post->toArray()['remote_parent_object_id']);
+		self::assertSame('https://remote.example/users/bob', $this->repository->find($post->id)?->remoteParentAuthorId);
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('https://remote.example/inbox', $jobs[0]->payload['inbox']);
+		$note = $jobs[0]->payload['activity']['object'];
+		self::assertSame('https://remote.example/notes/1', $note['inReplyTo']);
+		self::assertContains('https://remote.example/users/bob', $note['cc']);
+	}
+
+	public function testRemoteReplyToAnUnknownParentIsRejectedLikeAMissingLocalOne(): void
+	{
+		$this->expectException(ValidationException::class);
+
+		$this->service(remotePosts: new InMemoryRemotePostRepository())
+			->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/missing'));
+	}
+
+	public function testRemoteReplyToADeletedParentIsRejected(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent());
+		$remotePosts->softDeletePostByObjectId(
+			'https://remote.example/notes/1',
+			'https://remote.example/users/bob',
+			Time::parse('2026-11-11T09:30:00Z'),
+		);
+
+		$this->expectException(ValidationException::class);
+
+		$this->service(remotePosts: $remotePosts)
+			->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/1'));
+	}
+
+	public function testRemoteReplyNeedsTheSameVisibilityRuleAsARead(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent(Visibility::Followers));
+
+		$this->expectException(ValidationException::class);
+
+		$this->service(remotePosts: $remotePosts)
+			->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/1'));
+	}
+
+	public function testAFollowersReplyToARemoteFollowersPostNeedsAnAcceptedFollow(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent(Visibility::Followers));
+		$following = new InMemoryFollowingRepository();
+		$service = $this->service(remotePosts: $remotePosts, following: $following);
+
+		// A pending follow does not grant read access to followers-only
+		// remote content, so the reply is refused exactly like a read.
+		$following->insert(new FollowedActor(
+			id: 'follow-1',
+			localUserId: 'alice',
+			actorId: 'https://remote.example/users/bob',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: Time::parse('2026-11-11T09:00:00Z'),
+			state: FollowState::Pending,
+		));
+
+		try {
+			$service->create(new CreatePost(
+				'alice',
+				'hi',
+				Visibility::Followers,
+				inReplyToId: 'https://remote.example/notes/1',
+			));
+			self::fail('A pending follow must not unlock a followers-only remote parent.');
+		} catch (ValidationException) {
+		}
+
+		$following->updateState('follow-1', FollowState::Pending, FollowState::Accepted);
+
+		$post = $service->create(new CreatePost(
+			'alice',
+			'hi',
+			Visibility::Followers,
+			inReplyToId: 'https://remote.example/notes/1',
+		));
+
+		self::assertSame('https://remote.example/notes/1', $post->remoteParentObjectId);
+	}
+
+	public function testAPublicReplyCannotWidenARemoteFollowersParent(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent(Visibility::Followers));
+		$following = new InMemoryFollowingRepository();
+		$following->insert(new FollowedActor(
+			id: 'follow-1',
+			localUserId: 'alice',
+			actorId: 'https://remote.example/users/bob',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: Time::parse('2026-11-11T09:00:00Z'),
+		));
+
+		$this->expectException(ValidationException::class);
+
+		$this->service(remotePosts: $remotePosts, following: $following)
+			->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/1'));
+	}
+
+	public function testDirectReplyCannotTargetARemoteParent(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent());
+
+		$this->expectException(ValidationException::class);
+
+		$this->service(remotePosts: $remotePosts)
+			->create(new CreatePost(
+				'alice',
+				'secret',
+				Visibility::Direct,
+				recipientIds: ['bob'],
+				inReplyToId: 'https://remote.example/notes/1',
+			));
+	}
+
 	private function service(
 		?InboxResolver $inboxes = null,
 		?ArrayConfig $config = null,
 		?MentionResolver $mentions = null,
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
 		?EventBroker $events = null,
+		?InMemoryRemotePostRepository $remotePosts = null,
+		?InMemoryFollowingRepository $following = null,
+		?InMemoryRemoteActorFetcher $remoteActors = null,
 	): PostService {
 		return new PostService(
 			$this->repository,
@@ -411,6 +560,39 @@ final class PostServiceTest extends TestCase
 			mentions: $mentions,
 			inboundBlocks: $inboundBlocks,
 			events: $events,
+			remotePosts: $remotePosts,
+			remoteAccess: $remotePosts === null ? null : new RemotePostAccess(
+				$following ?? new InMemoryFollowingRepository(),
+				new InMemoryBlockRepository(),
+				$inboundBlocks,
+			),
+			remoteActors: $remoteActors,
 		);
+	}
+
+	private function remoteParent(Visibility $audience = Visibility::Public): RemotePost
+	{
+		return new RemotePost(
+			activityId: 'https://remote.example/activities/1',
+			objectId: 'https://remote.example/notes/1',
+			actorId: 'https://remote.example/users/bob',
+			kind: RemotePostKind::Post,
+			content: 'remote hello',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
+			objectAuthorId: 'https://remote.example/users/bob',
+			audience: $audience,
+		);
+	}
+
+	private function remoteActorFetcher(): InMemoryRemoteActorFetcher
+	{
+		return (new InMemoryRemoteActorFetcher())->with(new RemoteActor(
+			actorId: 'https://remote.example/users/bob',
+			keyId: 'https://remote.example/users/bob#main-key',
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			publicKeyPem: "-----BEGIN PUBLIC KEY-----\nremote\n-----END PUBLIC KEY-----\n",
+			sharedInboxUrl: 'https://remote.example/inbox',
+		));
 	}
 }
