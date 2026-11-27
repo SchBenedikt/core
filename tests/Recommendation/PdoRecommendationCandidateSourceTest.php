@@ -43,11 +43,19 @@ final class PdoRecommendationCandidateSourceTest extends TestCase
 			['at' => $at],
 		);
 		$db->execute(
-			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, object_author_id, kind, content, published_at) VALUES ('https://remote/activities/1', 'https://remote/objects/1', 'https://remote/actors/bob', 'https://remote/actors/bob', 'post', 'remote', :at)",
+			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, object_author_id, kind, content, published_at, audience) VALUES ('https://remote/activities/1', 'https://remote/objects/1', 'https://remote/actors/bob', 'https://remote/actors/bob', 'post', 'remote', :at, 'public')",
 			['at' => $at],
 		);
 		$db->execute(
-			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, kind, content, published_at) VALUES ('https://remote/activities/2', 'https://remote/objects/2', 'https://remote/actors/bob', 'boost', 'boost', :at)",
+			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, kind, content, published_at, audience) VALUES ('https://remote/activities/2', 'https://remote/objects/2', 'https://remote/actors/bob', 'boost', 'boost', :at, 'public')",
+			['at' => $at],
+		);
+		$db->execute(
+			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, kind, content, published_at, audience) VALUES ('https://remote/activities/3', 'https://remote/objects/3', 'https://remote/actors/bob', 'post', 'followers only', :at, 'followers')",
+			['at' => $at],
+		);
+		$db->execute(
+			"INSERT INTO social_remote_post (activity_id, object_id, actor_id, kind, content, published_at) VALUES ('https://remote/activities/4', 'https://remote/objects/4', 'https://remote/actors/bob', 'post', 'unknown audience', :at)",
 			['at' => $at],
 		);
 
@@ -60,6 +68,8 @@ final class PdoRecommendationCandidateSourceTest extends TestCase
 		self::assertNotContains('local:deleted', $ids);
 		self::assertNotContains('local:archived', $ids);
 		self::assertNotContains('remote:https://remote/activities/2', $ids);
+		self::assertNotContains('remote:https://remote/activities/3', $ids);
+		self::assertNotContains('remote:https://remote/activities/4', $ids);
 		self::assertSame('https://remote/actors/bob', $candidates[0]->authorId);
 	}
 }

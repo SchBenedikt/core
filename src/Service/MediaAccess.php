@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 
 use function array_filter;
 use function array_values;
@@ -44,19 +47,32 @@ use function in_array;
  * private media is not advertised to them (see
  * {@see MediaService::presentActivityAttachments()}); authenticated remote
  * fetch is a separate feature, not something a static id should bypass.
+ *
+ * Attachments imported for a remote post follow the same rule through
+ * {@see RemotePostAccess}: a followers-only remote image must not become
+ * public just because no local post links it.
  */
 final class MediaAccess
 {
 	public function __construct(
 		private readonly PostRepository $posts,
 		private readonly ?LocalRelationshipService $relationships = null,
+		private readonly ?RemotePostRepository $remotePosts = null,
+		private readonly ?RemotePostAccess $remoteAccess = null,
 	) {
 	}
 
 	public function evaluate(Attachment $attachment, ?string $viewerId): MediaAccessDecision
 	{
 		$linked = $this->posts->postsForAttachment($attachment->id);
-		if ($linked === []) {
+		$remoteAll = $this->remotePosts === null || $this->remoteAccess === null
+			? []
+			: $this->remotePosts->postsForAttachment($attachment->id);
+		$remoteLinked = array_values(array_filter(
+			$remoteAll,
+			static fn (RemotePost $post): bool => $post->deletedAt === null,
+		));
+		if ($linked === [] && $remoteAll === []) {
 			return MediaAccessDecision::permit(publiclyCacheable: true);
 		}
 
@@ -71,12 +87,24 @@ final class MediaAccess
 			}
 		}
 
+		foreach ($remoteLinked as $post) {
+			if ($post->audience === Visibility::Public || $post->audience === Visibility::Unlisted) {
+				return MediaAccessDecision::permit(publiclyCacheable: true);
+			}
+		}
+
 		if ($viewerId === null) {
 			return MediaAccessDecision::refuse();
 		}
 
 		foreach ($live as $post) {
 			if ($this->mayReadPost($post, $viewerId)) {
+				return MediaAccessDecision::permit(publiclyCacheable: false);
+			}
+		}
+
+		foreach ($remoteLinked as $post) {
+			if ($this->remoteAccess?->viewerMayRead($post, $viewerId) === true) {
 				return MediaAccessDecision::permit(publiclyCacheable: false);
 			}
 		}

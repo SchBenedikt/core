@@ -193,6 +193,29 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 		return count($domains);
 	}
 
+	public function postsForAttachment(string $attachmentId): array
+	{
+		$posts = [];
+		foreach ($this->attachments as $activityId => $attachmentIds) {
+			if (!in_array($attachmentId, $attachmentIds, true)) {
+				continue;
+			}
+
+			$post = $this->posts[$activityId] ?? null;
+			if ($post !== null) {
+				$posts[] = $post;
+			}
+		}
+
+		usort($posts, static function (RemotePost $a, RemotePost $b): int {
+			$byTime = $b->publishedAt <=> $a->publishedAt;
+
+			return $byTime !== 0 ? $byTime : strcmp($b->activityId, $a->activityId);
+		});
+
+		return $posts;
+	}
+
 	public function isAttachmentLinked(string $attachmentId): bool
 	{
 		foreach ($this->attachments as $attachmentIds) {
