@@ -24,6 +24,7 @@ use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 
 use function hash;
+use function in_array;
 use function is_string;
 use function substr;
 
@@ -444,9 +445,22 @@ final class ActivityFactory
 			$note['contentMap'] = [$post->language => $post->content];
 		}
 
-		if ($post->inReplyToId !== null) {
+		if ($post->remoteParentObjectId !== null) {
+			// A remote parent keeps its canonical object id — rewriting it to
+			// a local URL would break the thread on every peer.
+			$note['inReplyTo'] = $post->remoteParentObjectId;
+		} elseif ($post->inReplyToId !== null) {
 			$note['inReplyTo'] = $this->baseUrl()
 				. '/api/v1/posts/' . rawurlencode($post->inReplyToId);
+		}
+
+		// The remote parent author is a conversation participant: putting it
+		// in cc lets the peer render and notify the reply correctly without
+		// widening the declared audience.
+		if ($post->remoteParentAuthorId !== null
+			&& !in_array($post->remoteParentAuthorId, $note['cc'], true)
+		) {
+			$note['cc'][] = $post->remoteParentAuthorId;
 		}
 
 		// Only an accepted quote is advertised. A pending or rejected quote

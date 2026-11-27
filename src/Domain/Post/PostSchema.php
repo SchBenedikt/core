@@ -58,6 +58,8 @@ final class PostSchema
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN archived_at VARCHAR(20) NULL',
 			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN language VARCHAR(35) NULL',
 			'ALTER TABLE ' . self::REVISION_TABLE . ' ADD COLUMN language VARCHAR(35) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN in_reply_to_remote_object_id VARCHAR(512) NULL',
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN in_reply_to_remote_author VARCHAR(512) NULL',
 		];
 	}
 
@@ -74,6 +76,8 @@ final class PostSchema
 			. ' content_warning VARCHAR(255) NULL,'
 			. ' visibility VARCHAR(16) NOT NULL,'
 			. ' in_reply_to_id VARCHAR(64) NULL,'
+			. ' in_reply_to_remote_object_id VARCHAR(512) NULL,'
+			. ' in_reply_to_remote_author VARCHAR(512) NULL,'
 			. ' published_at VARCHAR(20) NOT NULL,'
 			. ' edited_at VARCHAR(20) NULL,'
 			. ' revision INTEGER NOT NULL DEFAULT 1,'
@@ -88,6 +92,7 @@ final class PostSchema
 			'CREATE INDEX ' . self::TABLE . '_timeline ON ' . self::TABLE . ' (visibility, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_reply ON ' . self::TABLE . ' (in_reply_to_id, published_at)',
+			'CREATE INDEX ' . self::TABLE . '_remote_reply ON ' . self::TABLE . ' (in_reply_to_remote_object_id, published_at)',
 			'CREATE INDEX ' . self::TABLE . '_quote ON ' . self::TABLE . ' (quoted_object_id, published_at)',
 			'CREATE TABLE ' . self::ATTACHMENT_TABLE . ' ('
 			. ' post_id VARCHAR(64) NOT NULL,'

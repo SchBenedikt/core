@@ -42,6 +42,8 @@ final class PostTest extends TestCase
 			'deleted_at' => null,
 			'poll' => null,
 			'in_reply_to_id' => null,
+			'remote_parent_object_id' => null,
+			'remote_parent_author_id' => null,
 			'quoted_object_id' => null,
 			'quote_state' => null,
 			'quote_authorization_id' => null,
@@ -79,5 +81,35 @@ final class PostTest extends TestCase
 		$this->expectException(InvalidArgumentException::class);
 
 		new Post('p1', '', 'x', Visibility::Public, Time::parse('2026-11-11T10:00:00Z'));
+	}
+
+	public function testARemoteReplyTargetNeedsAnObjectIdAndAnAuthor(): void
+	{
+		$this->expectException(InvalidArgumentException::class);
+
+		new Post(
+			'p1',
+			'alice',
+			'x',
+			Visibility::Public,
+			Time::parse('2026-11-11T10:00:00Z'),
+			remoteParentObjectId: 'https://remote.example/notes/1',
+		);
+	}
+
+	public function testAPostHasOnlyOneReplyTarget(): void
+	{
+		$this->expectException(InvalidArgumentException::class);
+
+		new Post(
+			'p1',
+			'alice',
+			'x',
+			Visibility::Public,
+			Time::parse('2026-11-11T10:00:00Z'),
+			inReplyToId: 'parent',
+			remoteParentObjectId: 'https://remote.example/notes/1',
+			remoteParentAuthorId: 'https://remote.example/users/bob',
+		);
 	}
 }

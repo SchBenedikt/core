@@ -28,6 +28,7 @@ use function implode;
 final class PdoPostRepository implements PostRepository, PostSearchRepository, PostCount
 {
 	private const COLUMNS = 'id, author_id, content, content_warning, visibility, in_reply_to_id,'
+		. ' in_reply_to_remote_object_id, in_reply_to_remote_author,'
 		. ' published_at, edited_at, revision, deleted_at, quoted_object_id, quote_state,'
 		. ' quote_authorization_id, quote_request_id, archived_at, language';
 
@@ -42,9 +43,11 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$this->db->transaction(function () use ($post): void {
 				$this->db->execute(
 					'INSERT INTO ' . PostSchema::TABLE
-					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, published_at, edited_at, revision, deleted_at,'
+					. ' (id, author_id, content, content_warning, visibility, in_reply_to_id, in_reply_to_remote_object_id,'
+					. ' in_reply_to_remote_author, published_at, edited_at, revision, deleted_at,'
 					. ' quoted_object_id, quote_state, quote_authorization_id, quote_request_id, archived_at, language)'
-					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id, :published_at, :edited_at, :revision, :deleted_at,'
+					. ' VALUES (:id, :author_id, :content, :content_warning, :visibility, :in_reply_to_id,'
+					. ' :in_reply_to_remote_object_id, :in_reply_to_remote_author, :published_at, :edited_at, :revision, :deleted_at,'
 					. ' :quoted_object_id, :quote_state, :quote_authorization_id, :quote_request_id, :archived_at, :language)',
 					[
 						'id' => $post->id,
@@ -53,6 +56,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 						'content_warning' => $post->contentWarning,
 						'visibility' => $post->visibility->value,
 						'in_reply_to_id' => $post->inReplyToId,
+						'in_reply_to_remote_object_id' => $post->remoteParentObjectId,
+						'in_reply_to_remote_author' => $post->remoteParentAuthorId,
 						'published_at' => Time::format($post->publishedAt),
 						'edited_at' => $post->editedAt === null ? null : Time::format($post->editedAt),
 						'revision' => $post->revision,
@@ -918,6 +923,8 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			poll: $poll,
 			recipientIds: $recipientIds,
 			inReplyToId: $row['in_reply_to_id'] === null ? null : (string) $row['in_reply_to_id'],
+			remoteParentObjectId: ($row['in_reply_to_remote_object_id'] ?? null) === null ? null : (string) $row['in_reply_to_remote_object_id'],
+			remoteParentAuthorId: ($row['in_reply_to_remote_author'] ?? null) === null ? null : (string) $row['in_reply_to_remote_author'],
 			editedAt: $row['edited_at'] === null ? null : Time::parse((string) $row['edited_at']),
 			revision: (int) ($row['revision'] ?? 1),
 			quotedObjectId: ($row['quoted_object_id'] ?? null) === null ? null : (string) $row['quoted_object_id'],

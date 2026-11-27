@@ -39,6 +39,13 @@ final readonly class Post
 		/** @var list<string> local account ids for a direct post */
 		public array $recipientIds = [],
 		public ?string $inReplyToId = null,
+		/**
+		 * The canonical ActivityPub object id and author of a remote reply
+		 * target. Both are set together or not at all; `inReplyToId` stays
+		 * reserved for local parents.
+		 */
+		public ?string $remoteParentObjectId = null,
+		public ?string $remoteParentAuthorId = null,
 		public ?DateTimeImmutable $editedAt = null,
 		public int $revision = 1,
 		public ?string $quotedObjectId = null,
@@ -117,6 +124,20 @@ final readonly class Post
 			throw new InvalidArgumentException('A reply target needs an id.');
 		}
 
+		if (($remoteParentObjectId === null) !== ($remoteParentAuthorId === null)) {
+			throw new InvalidArgumentException('A remote reply target needs an object id and an author.');
+		}
+
+		if ($inReplyToId !== null && $remoteParentObjectId !== null) {
+			throw new InvalidArgumentException('A post has one reply target.');
+		}
+
+		foreach (['remoteParentObjectId' => $remoteParentObjectId, 'remoteParentAuthorId' => $remoteParentAuthorId] as $name => $value) {
+			if ($value !== null && (trim($value) === '' || mb_strlen($value) > 512)) {
+				throw new InvalidArgumentException('The ' . $name . ' is invalid.');
+			}
+		}
+
 		if ($quotedObjectId !== null && trim($quotedObjectId) === '') {
 			throw new InvalidArgumentException('A quote target needs an id.');
 		}
@@ -172,6 +193,8 @@ final readonly class Post
 			poll: $this->poll,
 			recipientIds: $this->recipientIds,
 			inReplyToId: $this->inReplyToId,
+			remoteParentObjectId: $this->remoteParentObjectId,
+			remoteParentAuthorId: $this->remoteParentAuthorId,
 			editedAt: $this->editedAt,
 			revision: $this->revision,
 			quotedObjectId: $this->quotedObjectId,
@@ -203,6 +226,8 @@ final readonly class Post
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
 			'poll' => $this->poll?->toArray(),
 			'in_reply_to_id' => $this->inReplyToId,
+			'remote_parent_object_id' => $this->remoteParentObjectId,
+			'remote_parent_author_id' => $this->remoteParentAuthorId,
 			'quoted_object_id' => $this->quotedObjectId,
 			'quote_state' => $this->quoteState?->value,
 			'quote_authorization_id' => $this->quoteAuthorizationId,
