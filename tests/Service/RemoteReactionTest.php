@@ -11,6 +11,9 @@ namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
+use AlohaSocial\Core\Domain\Federation\Follower;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
@@ -65,6 +68,10 @@ final class RemoteReactionTest extends TestCase
 
 	private InMemoryReactionRepository $reactions;
 
+	private InMemoryPostRepository $posts;
+
+	private InMemoryFollowerRepository $followers;
+
 	private InMemoryFollowingRepository $following;
 
 	private InMemoryRemotePostRepository $remotePosts;
@@ -79,6 +86,8 @@ final class RemoteReactionTest extends TestCase
 	{
 		$this->clock = new FrozenClock(Time::parse('2026-11-11T10:00:00Z'));
 		$this->reactions = new InMemoryReactionRepository();
+		$this->posts = new InMemoryPostRepository();
+		$this->followers = new InMemoryFollowerRepository();
 		$this->following = new InMemoryFollowingRepository();
 		$this->remotePosts = new InMemoryRemotePostRepository();
 		$this->blocks = new InMemoryBlockRepository();
@@ -287,6 +296,62 @@ final class RemoteReactionTest extends TestCase
 		}
 	}
 
+	public function testAPendingFollowerCannotReactToAFollowersOnlyLocalPost(): void
+	{
+		$post = new \AlohaSocial\Core\Domain\Post\Post(
+			id: 'post-followers',
+			authorId: 'alice',
+			content: 'Only my followers should see this.',
+			visibility: Visibility::Followers,
+			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
+		);
+		$this->posts->insert($post);
+		$this->followers->insert(new Follower(
+			id: 'follower-pending',
+			localUserId: 'alice',
+			actorId: self::ACTOR,
+			inboxUrl: self::INBOX,
+			followedAt: Time::parse('2026-11-11T09:30:00Z'),
+			state: FollowState::Pending,
+		));
+
+		$actor = new RemoteActor(
+			actorId: self::ACTOR,
+			keyId: self::ACTOR . '#main-key',
+			inboxUrl: self::INBOX,
+			publicKeyPem: 'test-public-key',
+		);
+		$activity = [
+			'id' => 'https://remote.example/activities/like-pending',
+			'type' => 'Like',
+			'actor' => self::ACTOR,
+			'object' => 'https://social.example/api/v1/posts/post-followers',
+		];
+
+		try {
+			$this->service()->receiveLike($actor, $activity);
+			self::fail('A pending follower must not react to a followers-only post.');
+		} catch (InboxRejectedException $exception) {
+			self::assertSame('not_authorized', $exception->reason);
+		}
+
+		self::assertSame(0, $this->reactions->countsForPosts(['post-followers'])['post-followers']['likes']);
+		self::assertSame([], $this->queue->reserve(10, $this->clock->now()));
+
+		$this->followers->updateState(
+			'follower-pending',
+			'alice',
+			FollowState::Pending,
+			FollowState::Accepted,
+		);
+		$this->service()->receiveLike($actor, [
+			...$activity,
+			'id' => 'https://remote.example/activities/like-accepted',
+		]);
+
+		self::assertSame(1, $this->reactions->countsForPosts(['post-followers'])['post-followers']['likes']);
+	}
+
 	public function testABlockedActorCannotBeLiked(): void
 	{
 		$this->blocks->insert(new Block('block-1', 'alice', self::ACTOR, Time::parse('2026-11-11T09:00:00Z')));
@@ -444,10 +509,10 @@ final class RemoteReactionTest extends TestCase
 	): ReactionService
 	{
 		return new ReactionService(
-			posts: new InMemoryPostRepository(),
+			posts: $this->posts,
 			favourites: new InMemoryFavouriteRepository(),
 			reactions: $this->reactions,
-			followers: new InMemoryFollowerRepository(),
+			followers: $this->followers,
 			following: $this->following,
 			blocks: $this->blocks,
 			activities: $this->activities,

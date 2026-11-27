@@ -657,7 +657,13 @@ final class ReactionService
 
 		$allowed = match ($post->visibility) {
 			Visibility::Public, Visibility::Unlisted => true,
-			Visibility::Followers => $this->followers->findByActor($post->authorId, $actor->actorId) !== null,
+			// A pending request is not an entitlement. The repository keeps
+			// pending rows for the approval flow, so authorization must check
+			// the state explicitly instead of treating any row as a follower.
+			Visibility::Followers => $this->followers->findByActor(
+				$post->authorId,
+				$actor->actorId,
+			)?->state === FollowState::Accepted,
 			// A direct post is addressed to named accounts; a reaction would
 			// create a public count for a private conversation.
 			Visibility::Direct => false,
