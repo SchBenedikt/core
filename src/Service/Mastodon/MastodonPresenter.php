@@ -174,8 +174,10 @@ final class MastodonPresenter
 		return [
 			'id' => $post->id,
 			'created_at' => $post->publishedAt->format('Y-m-d\TH:i:s.000\Z'),
-			'in_reply_to_id' => $post->inReplyToId,
-			'in_reply_to_account_id' => $parent?->authorId,
+			// A remote parent keeps its canonical object id so Mastodon
+			// clients can resolve the thread context like any remote reply.
+			'in_reply_to_id' => $post->inReplyToId ?? $post->remoteParentObjectId,
+			'in_reply_to_account_id' => $parent?->authorId ?? $post->remoteParentAuthorId,
 			'sensitive' => $post->contentWarning !== null,
 			'spoiler_text' => $post->contentWarning ?? '',
 			'visibility' => $this->visibility($post->visibility),

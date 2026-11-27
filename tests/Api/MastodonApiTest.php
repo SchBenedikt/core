@@ -43,6 +43,7 @@ use AlohaSocial\Core\Domain\Post\FavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBookmarkRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryBoostRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Search\RemoteActorProfile;
 use AlohaSocial\Core\Domain\Search\RemoteActorSearch;
 use AlohaSocial\Core\Domain\Search\RemoteHandle;
@@ -3065,6 +3066,43 @@ final class MastodonApiTest extends TestCase
 		])->decodedBody();
 		self::assertSame($parent['id'], $reply['in_reply_to_id']);
 		self::assertSame('bob', $reply['in_reply_to_account_id']);
+	}
+
+	public function testAReplyToARemoteStatusKeepsTheCanonicalParent(): void
+	{
+		$actorId = 'https://remote.example/users/bob';
+		$remoteObjectId = 'https://remote.example/notes/1';
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/1',
+			objectId: $remoteObjectId,
+			actorId: $actorId,
+			kind: RemotePostKind::Post,
+			content: 'remote parent',
+			contentWarning: null,
+			publishedAt: $this->clock->now(),
+			objectAuthorId: $actorId,
+			audience: Visibility::Public,
+		));
+		$app = $this->app(
+			remotePostRepository: $remotePosts,
+			remoteActors: (new InMemoryRemoteActorFetcher())->with(new RemoteActor(
+				actorId: $actorId,
+				keyId: $actorId . '#main-key',
+				inboxUrl: $actorId . '/inbox',
+				publicKeyPem: "-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n",
+			)),
+		);
+
+		$reply = $this->createStatus($app, [
+			'status' => 'a remote reply',
+			'in_reply_to_id' => $remoteObjectId,
+		])->decodedBody();
+
+		// Mastodon clients resolve the thread through the canonical remote
+		// object id, exactly like a reply authored on the remote instance.
+		self::assertSame($remoteObjectId, $reply['in_reply_to_id']);
+		self::assertSame($actorId, $reply['in_reply_to_account_id']);
 	}
 
 	public function testAPrivateStatusIsNotPubliclyReadable(): void
