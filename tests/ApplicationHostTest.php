@@ -17,8 +17,10 @@ use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockSchema;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\AccountMoveSchema;
+use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\PdoFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Federation\InboxResolver;
@@ -410,6 +412,78 @@ final class ApplicationHostTest extends TestCase
 		));
 		self::assertSame(200, $unfollow->status);
 		self::assertFalse($unfollow->decodedBody()['relationship']['following']);
+	}
+
+	public function testForHostServesFollowedLocalPostsAndTheirBoostsInTheHomeTimeline(): void
+	{
+		$database = $this->database();
+		$app = $this->host($database, new FakeHttpClient(), mastodon: true, actors: ['alice', 'bob', 'charlie']);
+		$create = static function (Application $app, string $author, string $content, string $visibility = 'public'): string {
+			$response = $app->handle(new Request(
+				method: 'POST',
+				path: '/api/v1/posts',
+				headers: ['Content-Type' => 'application/json'],
+				body: json_encode(['content' => $content, 'visibility' => $visibility], JSON_THROW_ON_ERROR),
+				userId: $author,
+			));
+			self::assertSame(201, $response->status, $response->body);
+
+			return (string) $response->decodedBody()['post']['id'];
+		};
+
+		$bobPublic = $create($app, 'bob', 'bob local public');
+		$bobUnlisted = $create($app, 'bob', 'bob local unlisted', 'unlisted');
+		$bobFollowers = $create($app, 'bob', 'bob local followers', 'followers');
+		$charlie = $create($app, 'charlie', 'charlie local public');
+
+		$follow = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/accounts/bob/follow',
+			userId: 'alice',
+		));
+		self::assertSame(200, $follow->status, $follow->body);
+
+		$home = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts'];
+		$ids = array_column($home, 'id');
+		self::assertContains($bobPublic, $ids);
+		self::assertContains($bobUnlisted, $ids);
+		self::assertContains($bobFollowers, $ids);
+		self::assertNotContains($charlie, $ids, 'Only a boost should bring Charlie into Alice\'s home.');
+
+		$mastodon = $app->handle(new Request(
+			method: 'GET',
+			path: '/api/mastodon/v1/timelines/home',
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertSame(200, $mastodon->status, $mastodon->body);
+		self::assertContains($bobPublic, array_column($mastodon->decodedBody(), 'id'));
+
+		$app->boosts?->boost('bob', $charlie);
+		$boosted = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts'];
+		self::assertContains('charlie local public', array_column($boosted, 'content'));
+
+		$unfollow = $app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/accounts/bob/follow',
+			userId: 'alice',
+		));
+		self::assertSame(200, $unfollow->status, $unfollow->body);
+		$afterUnfollow = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts'];
+		self::assertNotContains($bobPublic, array_column($afterUnfollow, 'id'));
+		self::assertNotContains('charlie local public', array_column($afterUnfollow, 'content'));
+
+		(new PdoFollowerRepository($database))->insert(new Follower(
+			id: 'pending-local-bob',
+			localUserId: 'alice',
+			actorId: 'https://localhost:8080/@bob',
+			inboxUrl: 'https://localhost:8080/inbox/shared',
+			followedAt: $this->clock->now(),
+			local: true,
+			state: FollowState::Pending,
+		));
+		$pending = $app->handle(new Request('GET', '/api/v1/timelines/home', userId: 'alice'))->decodedBody()['posts'];
+		self::assertNotContains($bobPublic, array_column($pending, 'id'));
 	}
 
 	public function testForHostPersistsASignedCreateAndServesItInTheHomeTimeline(): void
