@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Api;
 
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
+use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Http\ApiVersion;
 use AlohaSocial\Core\Http\Handler;
@@ -22,7 +25,12 @@ use AlohaSocial\Core\Service\FollowingBlockedException;
 use AlohaSocial\Core\Service\FollowingService;
 use AlohaSocial\Core\Service\ValidationException;
 
+use function filter_var;
+use function in_array;
 use function is_string;
+use function parse_url;
+use function strtolower;
+use function trim;
 
 /**
  * `POST /api/v1/following`
@@ -38,6 +46,7 @@ final class FollowRemoteActorHandler implements Handler
 {
 	public function __construct(
 		private readonly FollowingService $following,
+		private readonly ?RemoteActorFetcher $remoteActors = null,
 	) {
 	}
 
@@ -57,6 +66,50 @@ final class FollowRemoteActorHandler implements Handler
 
 		$inbox = $body['inbox'] ?? null;
 		if (!is_string($inbox)) {
+			$inbox = null;
+		}
+
+		// Malformed values are refused before any network fetch; the same
+		// rule {@see FollowingService} applies again on the verified values.
+		$errors = [];
+		if (!$this->isAbsoluteHttpUrl($actor)) {
+			$errors['actor'] = 'actor must be an absolute http(s) URL.';
+		}
+		if ($inbox !== null && !$this->isAbsoluteHttpUrl($inbox)) {
+			$errors['inbox'] = 'inbox must be an absolute http(s) URL.';
+		}
+		if ($errors !== []) {
+			throw HttpException::validationFailed($errors);
+		}
+
+		if ($this->remoteActors !== null) {
+			// The client names an actor and maybe an inbox, but only the
+			// actor document fetched through the bounded resolver decides
+			// where the Follow goes. A supplied inbox that matches neither
+			// advertised endpoint is a client bug or an attempt to redirect
+			// deliveries, so it is refused before anything is stored.
+			try {
+				$resolved = $this->resolveActor($actor);
+			} catch (UnknownActorException) {
+				throw HttpException::validationFailed([
+					'actor' => 'The remote actor could not be resolved.',
+				]);
+			}
+
+			$advertised = [$resolved->inboxUrl];
+			if ($resolved->sharedInboxUrl !== null) {
+				$advertised[] = $resolved->sharedInboxUrl;
+			}
+
+			if ($inbox !== null && !in_array($inbox, $advertised, true)) {
+				throw HttpException::validationFailed([
+					'inbox' => 'inbox does not match an inbox advertised by the actor.',
+				]);
+			}
+
+			$actor = $resolved->actorId;
+			$inbox = $resolved->sharedInboxUrl ?? $resolved->inboxUrl;
+		} elseif ($inbox === null) {
 			throw HttpException::validationFailed(['inbox' => 'inbox must be a string.']);
 		}
 
@@ -91,5 +144,44 @@ final class FollowRemoteActorHandler implements Handler
 				? ['Location' => ApiVersion::BASE_PATH . '/following/' . rawurlencode($followed->id)]
 				: [],
 		);
+	}
+
+	/**
+	 * Resolves the actor document, following one `movedTo` hop. A relocation
+	 * is only honoured when the destination document verifies; the follow
+	 * then targets the canonical actor the peer actually operates.
+	 *
+	 * @throws UnknownActorException
+	 */
+	private function resolveActor(string $actor): RemoteActor
+	{
+		$fetcher = $this->remoteActors;
+		if ($fetcher === null) {
+			throw new UnknownActorException($actor);
+		}
+
+		$resolved = $fetcher->fetch($actor);
+		$movedTo = $resolved->movedTo;
+
+		return $movedTo === null ? $resolved : $fetcher->fetch($movedTo);
+	}
+
+	private function isAbsoluteHttpUrl(string $value): bool
+	{
+		if ($value === '' || trim($value) !== $value) {
+			return false;
+		}
+
+		if (filter_var($value, FILTER_VALIDATE_URL) === false) {
+			return false;
+		}
+
+		$scheme = parse_url($value, PHP_URL_SCHEME);
+		$host = parse_url($value, PHP_URL_HOST);
+
+		return is_string($scheme)
+			&& in_array(strtolower($scheme), ['http', 'https'], true)
+			&& is_string($host)
+			&& $host !== '';
 	}
 }

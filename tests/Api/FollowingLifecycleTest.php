@@ -25,6 +25,7 @@ use AlohaSocial\Core\Service\InstanceInfo;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
 use AlohaSocial\Core\Tests\Support\InMemoryActorResolver;
+use AlohaSocial\Core\Tests\Support\RemoteActors;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -240,6 +241,7 @@ final class FollowingLifecycleTest extends TestCase
 			activityLog: new InMemoryActivityLog(),
 			localActors: new InMemoryActorDirectory(['alice']),
 			followingRepository: new InMemoryFollowingRepository(),
+			remoteActors: RemoteActors::fetcher(RemoteActors::actor(self::BOB, self::BOB_INBOX)),
 		);
 	}
 

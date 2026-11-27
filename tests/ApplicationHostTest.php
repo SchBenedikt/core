@@ -98,6 +98,7 @@ use AlohaSocial\Core\Tests\Support\TestHostResolver;
 use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
 use AlohaSocial\Core\Tests\Support\InMemoryActorResolver;
 use AlohaSocial\Core\Tests\Support\RejectingJobQueue;
+use AlohaSocial\Core\Tests\Support\RemoteActors;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -1487,6 +1488,7 @@ final class ApplicationHostTest extends TestCase
 				'remote.example' => ['93.184.216.34'],
 				'localhost' => ['127.0.0.1'],
 			]),
+			remoteActors: RemoteActors::fetcher(RemoteActors::actor(self::BOB, self::BOB_INBOX)),
 		);
 	}
 
