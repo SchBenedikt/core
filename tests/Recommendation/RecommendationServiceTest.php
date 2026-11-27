@@ -225,28 +225,8 @@ final class RecommendationServiceTest extends TestCase
 	public function testARestrictedRemoteCandidateFailsClosedOnTheNextPage(): void
 	{
 		$remotePosts = new InMemoryRemotePostRepository();
-		$remotePosts->insert(new RemotePost(
-			activityId: 'activity-1',
-			objectId: 'https://remote.example/notes/1',
-			actorId: 'https://remote.example/users/bob',
-			kind: RemotePostKind::Post,
-			content: 'remote one',
-			contentWarning: null,
-			publishedAt: $this->ago(10),
-			objectAuthorId: 'https://remote.example/users/bob',
-			audience: Visibility::Public,
-		));
-		$remotePosts->insert(new RemotePost(
-			activityId: 'activity-2',
-			objectId: 'https://remote.example/notes/2',
-			actorId: 'https://remote.example/users/carol',
-			kind: RemotePostKind::Post,
-			content: 'remote two',
-			contentWarning: null,
-			publishedAt: $this->ago(20),
-			objectAuthorId: 'https://remote.example/users/carol',
-			audience: Visibility::Public,
-		));
+		$remotePosts->insert($this->remotePost('activity-1', $this->ago(10)));
+		$remotePosts->insert($this->remotePost('activity-2', $this->ago(20)));
 
 		$service = $this->service(
 			[
@@ -267,12 +247,44 @@ final class RecommendationServiceTest extends TestCase
 		// must not keep serving it.
 		$remotePosts->softDeleteByActivityId(
 			'activity-2',
-			'https://remote.example/users/carol',
+			'https://remote.example/users/activity-2',
 			$this->clock->now(),
 		);
 
 		$second = $service->feed(self::ALICE, 10, $first->nextCursor);
 		self::assertSame([], $second->items);
+	}
+
+	public function testARemoteCandidateWithUnknownAudienceFailsClosedOnTheNextPage(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remotePost('activity-good', $this->ago(5)));
+		$remotePosts->insert($this->remotePost('activity-unknown', $this->ago(15), null));
+		$remotePosts->insert($this->remotePost('activity-old', $this->ago(25)));
+
+		$service = $this->service(
+			[
+				$this->remoteCandidate('remote:activity-good', 'good', $this->ago(5)),
+				$this->remoteCandidate('remote:activity-unknown', 'unknown', $this->ago(15)),
+				$this->remoteCandidate('remote:activity-old', 'old', $this->ago(25)),
+			],
+			refresher: new LiveRecommendationCandidates(
+				new InMemoryPostRepository(),
+				$remotePosts,
+				new RemotePostAccess(new InMemoryFollowingRepository()),
+			),
+		);
+
+		$first = $service->feed(self::ALICE, 1);
+		self::assertNotNull($first->nextCursor);
+
+		// The middle candidate's stored row has no verified audience; the
+		// live candidates around it must still be served.
+		$second = $service->feed(self::ALICE, 10, $first->nextCursor);
+		self::assertSame(['remote:activity-old'], array_map(
+			static fn ($item): string => $item->candidate->id,
+			$second->items,
+		));
 	}
 
 	public function testAnExpiredSnapshotRejectsTheCursorInsteadOfRestartingIt(): void
@@ -430,15 +442,33 @@ final class RecommendationServiceTest extends TestCase
 	): RecommendationCandidate {
 		return new RecommendationCandidate(
 			$id,
-			substr($id, 6),
+			substr($id, 7),
 			RecommendationCandidateKind::Remote,
-			substr($id, 7) . '@remote.example',
+			'https://remote.example/users/' . substr($id, 7),
 			null,
 			$content,
 			null,
 			$publishedAt,
 			Visibility::Public,
 			[],
+		);
+	}
+
+	private function remotePost(
+		string $activityId,
+		DateTimeImmutable $publishedAt,
+		?Visibility $audience = Visibility::Public,
+	): RemotePost {
+		return new RemotePost(
+			activityId: $activityId,
+			objectId: 'https://remote.example/notes/' . $activityId,
+			actorId: 'https://remote.example/users/' . $activityId,
+			kind: RemotePostKind::Post,
+			content: 'content of ' . $activityId,
+			contentWarning: null,
+			publishedAt: $publishedAt,
+			objectAuthorId: 'https://remote.example/users/' . $activityId,
+			audience: $audience,
 		);
 	}
 
