@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Http\Request;
@@ -53,7 +54,15 @@ final class InboundTimelineTest extends TestCase
 
 	private const NOTE_3 = 'https://remote.example/notes/3';
 
+	private const CAROL = 'https://remote.example/users/carol';
+
+	private const CAROL_KEY = 'https://remote.example/users/carol#main-key';
+
+	private const CAROL_INBOX = 'https://remote.example/users/carol/inbox';
+
 	private static RsaKeyPair $remoteKey;
+
+	private static RsaKeyPair $carolKey;
 
 	private static RsaKeyPair $localKey;
 
@@ -66,6 +75,7 @@ final class InboundTimelineTest extends TestCase
 	public static function setUpBeforeClass(): void
 	{
 		self::$remoteKey = RsaKeyPair::generate();
+		self::$carolKey = RsaKeyPair::generate();
 		self::$localKey = RsaKeyPair::generate();
 	}
 
@@ -567,12 +577,293 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame('first version', $this->feed($app)->decodedBody()['posts'][0]['content']);
 	}
 
+	public function testAnUnfollowedReplyToAPublicLocalPostIsAcceptedAndNotified(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'public');
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-unfollowed',
+			'https://remote.example/notes/reply-unfollowed',
+			'hello from afar',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+
+		$stored = $remotePosts->findPostByObjectId('https://remote.example/notes/reply-unfollowed');
+		self::assertNotNull($stored);
+		self::assertSame($localNoteId, $stored->inReplyToId);
+
+		$notifications = $app->handle(new Request(
+			'GET',
+			'/api/v1/notifications',
+			userId: 'alice',
+		))->decodedBody()['notifications'];
+		self::assertCount(1, $notifications);
+		self::assertSame('mention', $notifications[0]['type']);
+		self::assertSame('https://remote.example/notes/reply-unfollowed', $notifications[0]['post_id']);
+
+		// The reply is stored for the thread, but nobody follows the actor:
+		// it must not appear in the home feed.
+		self::assertNotContains(
+			'https://remote.example/notes/reply-unfollowed',
+			array_column($this->feed($app)->decodedBody()['posts'], 'object_id'),
+		);
+	}
+
+	public function testAnUnfollowedReplyToAnUnlistedLocalPostIsAccepted(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'unlisted');
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-unlisted',
+			'https://remote.example/notes/reply-unlisted',
+			'reply to unlisted',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+		self::assertNotNull($remotePosts->findPostByObjectId('https://remote.example/notes/reply-unlisted'));
+	}
+
+	public function testAnUnfollowedReplyToAFollowersOnlyPostWaitsForTheFollow(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'followers');
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-private-1',
+			'https://remote.example/notes/reply-private-1',
+			'too early',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/reply-private-1'));
+
+		// Once the actor follows the author, the same reply is addressed and
+		// entitled: it is accepted and notifies the author.
+		self::assertSame(202, $this->deliver($app, [
+			'id' => 'https://remote.example/activities/follow-alice',
+			'type' => 'Follow',
+			'actor' => self::BOB,
+			'object' => 'https://localhost:8080/@alice',
+		])->status);
+
+		$reply['id'] = 'https://remote.example/activities/reply-private-2';
+		$reply['object']['id'] = 'https://remote.example/notes/reply-private-2';
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+		self::assertNotNull($remotePosts->findPostByObjectId('https://remote.example/notes/reply-private-2'));
+
+		$notifications = $app->handle(new Request(
+			'GET',
+			'/api/v1/notifications',
+			userId: 'alice',
+		))->decodedBody()['notifications'];
+		self::assertCount(2, $notifications);
+	}
+
+	public function testAnUnfollowedReplyToADeletedLocalPostIsRefused(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		[$postId, $localNoteId] = $this->localPostWithId($app, 'public');
+
+		$deleted = $app->handle(new Request('DELETE', '/api/v1/posts/' . $postId, userId: 'alice'));
+		self::assertSame(204, $deleted->status, $deleted->body);
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-deleted',
+			'https://remote.example/notes/reply-deleted',
+			'too late',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnUnfollowedReplyToAnUnknownParentIsRefused(): void
+	{
+		$app = $this->app(new InMemoryFollowingRepository());
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-unknown',
+			'https://remote.example/notes/reply-unknown',
+			'nowhere',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = 'https://elsewhere.example/notes/unknown';
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnUnfollowedReplyToABlockedAuthorsPostIsRefused(): void
+	{
+		$blocks = new InMemoryBlockRepository();
+		$blocks->insert(new Block('block-bob-for-reply', 'alice', self::BOB, $this->clock->now()));
+		$app = $this->app(new InMemoryFollowingRepository(), blockRepository: $blocks);
+		$localNoteId = $this->localPost($app, 'public');
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-blocked-author',
+			'https://remote.example/notes/reply-blocked-author',
+			'blocked',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnUnfollowedBoostOfAPublicLocalPostIsAccepted(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'public');
+
+		$response = $this->deliver($app, [
+			'id' => 'https://remote.example/activities/boost-unfollowed',
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'object' => $localNoteId,
+		]);
+
+		self::assertSame(202, $response->status);
+		self::assertNotNull($remotePosts->findByActivityId('https://remote.example/activities/boost-unfollowed'));
+
+		$notifications = $app->handle(new Request(
+			'GET',
+			'/api/v1/notifications',
+			userId: 'alice',
+		))->decodedBody()['notifications'];
+		self::assertCount(1, $notifications);
+		self::assertSame('reblog', $notifications[0]['type']);
+	}
+
+	public function testAnUnfollowedBoostOfAFollowersOnlyLocalPostIsRefused(): void
+	{
+		$app = $this->app(new InMemoryFollowingRepository());
+		$localNoteId = $this->localPost($app, 'followers');
+
+		$response = $this->deliver($app, [
+			'id' => 'https://remote.example/activities/boost-private',
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'object' => $localNoteId,
+		]);
+
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+	}
+
+	public function testAnUnfollowedActorUpdatesAndDeletesItsAddressedReply(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'public');
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-lifecycle',
+			'https://remote.example/notes/reply-lifecycle',
+			'original reply',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = $localNoteId;
+		self::assertSame(202, $this->deliver($app, $reply)->status);
+
+		$update = $this->update(
+			'https://remote.example/activities/update-lifecycle',
+			'https://remote.example/notes/reply-lifecycle',
+			'edited reply',
+			'2026-11-11T10:05:00Z',
+		);
+		self::assertSame(202, $this->deliver($app, $update)->status);
+		self::assertSame(
+			'edited reply',
+			$remotePosts->findPostByObjectId('https://remote.example/notes/reply-lifecycle')?->content,
+		);
+
+		self::assertSame(202, $this->deliver($app, $this->delete(
+			'https://remote.example/activities/delete-lifecycle',
+			'https://remote.example/notes/reply-lifecycle',
+		))->status);
+		self::assertNotNull(
+			$remotePosts->findByActivityId('https://remote.example/activities/reply-lifecycle')?->deletedAt,
+		);
+	}
+
+	public function testAnUnfollowedActorCannotChangeAnotherActorsStoredPost(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(new InMemoryFollowingRepository(), remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'public');
+
+		// Carol's addressed reply is stored even though nobody follows her.
+		$carolReply = $this->create(
+			'https://remote.example/activities/carol-reply',
+			'https://remote.example/notes/carol-reply',
+			'carol says hi',
+			'2026-11-11T10:01:00Z',
+			self::CAROL,
+		);
+		$carolReply['object']['inReplyTo'] = $localNoteId;
+		self::assertSame(202, $this->deliverCarol($app, $carolReply)->status);
+
+		// Bob is not followed either, and the post is not his: refused.
+		$foreignUpdate = $this->update(
+			'https://remote.example/activities/bob-edit-carol',
+			'https://remote.example/notes/carol-reply',
+			'vandalised',
+			'2026-11-11T10:06:00Z',
+		);
+		$response = $this->deliver($app, $foreignUpdate);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+		self::assertSame(
+			'carol says hi',
+			$remotePosts->findPostByObjectId('https://remote.example/notes/carol-reply')?->content,
+		);
+
+		// Carol herself may still edit her own reply.
+		$ownUpdate = $this->update(
+			'https://remote.example/activities/carol-edit',
+			'https://remote.example/notes/carol-reply',
+			'carol edits',
+			'2026-11-11T10:07:00Z',
+		);
+		$ownUpdate['actor'] = self::CAROL;
+		$ownUpdate['object']['attributedTo'] = self::CAROL;
+		self::assertSame(202, $this->deliverCarol($app, $ownUpdate)->status);
+		self::assertSame(
+			'carol edits',
+			$remotePosts->findPostByObjectId('https://remote.example/notes/carol-reply')?->content,
+		);
+	}
+
 	private function app(
 		?InMemoryFollowingRepository $following = null,
 		?BlockedActorPolicy $blockedActors = null,
 		?EventBroker $events = null,
 		?InMemoryBlockRepository $blockRepository = null,
 		?InMemoryMuteRepository $muteRepository = null,
+		?InMemoryRemotePostRepository $remotePosts = null,
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -585,6 +876,12 @@ final class InboundTimelineTest extends TestCase
 					self::BOB_INBOX,
 					self::$remoteKey->publicKeyPem(),
 				),
+				self::CAROL_KEY => new RemoteActor(
+					self::CAROL,
+					self::CAROL_KEY,
+					self::CAROL_INBOX,
+					self::$carolKey->publicKeyPem(),
+				),
 			]),
 			activityLog: new InMemoryActivityLog(),
 			followingRepository: $following ?? $this->following,
@@ -592,6 +889,7 @@ final class InboundTimelineTest extends TestCase
 			blockRepository: $blockRepository,
 			muteRepository: $muteRepository,
 			eventBroker: $events,
+			remotePostRepository: $remotePosts,
 		);
 	}
 
@@ -605,10 +903,20 @@ final class InboundTimelineTest extends TestCase
 	 */
 	private function deliver(Application $app, array $activity): Response
 	{
+		return $this->deliverAs($app, $activity, self::$remoteKey, self::BOB_KEY);
+	}
+
+	private function deliverCarol(Application $app, array $activity): Response
+	{
+		return $this->deliverAs($app, $activity, self::$carolKey, self::CAROL_KEY);
+	}
+
+	private function deliverAs(Application $app, array $activity, RsaKeyPair $key, string $keyId): Response
+	{
 		$body = json_encode($activity, JSON_THROW_ON_ERROR);
 		$headers = HttpSignature::sign(
-			self::$remoteKey,
-			self::BOB_KEY,
+			$key,
+			$keyId,
 			'POST',
 			'/inbox',
 			'localhost',
@@ -625,20 +933,51 @@ final class InboundTimelineTest extends TestCase
 	}
 
 	/**
+	 * Creates a local post for alice and returns its ActivityPub note id.
+	 */
+	private function localPost(Application $app, string $visibility): string
+	{
+		return $this->localPostWithId($app, $visibility)[1];
+	}
+
+	/**
+	 * @return array{0: string, 1: string} the post id and its note id
+	 */
+	private function localPostWithId(Application $app, string $visibility): array
+	{
+		$local = $app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: ['Content-Type' => 'application/json'],
+			body: json_encode(['content' => 'local ' . $visibility . ' post', 'visibility' => $visibility], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		self::assertSame(201, $local->status, $local->body);
+		$postId = $local->decodedBody()['post']['id'];
+
+		return [$postId, 'https://localhost:8080/api/v1/posts/' . rawurlencode($postId)];
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
-	private function create(string $activityId, string $noteId, string $content, string $publishedAt): array
-	{
+	private function create(
+		string $activityId,
+		string $noteId,
+		string $content,
+		string $publishedAt,
+		string $actor = self::BOB,
+	): array {
 		return [
 			'id' => $activityId,
 			'type' => 'Create',
-			'actor' => self::BOB,
+			'actor' => $actor,
 			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
 			'published' => $publishedAt,
 			'object' => [
 				'id' => $noteId,
 				'type' => 'Note',
-				'attributedTo' => self::BOB,
+				'attributedTo' => $actor,
 				'content' => $content,
 				'published' => $publishedAt,
 			],

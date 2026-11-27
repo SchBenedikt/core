@@ -208,6 +208,17 @@ final class FollowerService
 	}
 
 	/**
+	 * Whether the actor holds an accepted follow edge on the local account.
+	 * Pending requests must not grant followers-only access.
+	 */
+	public function isAcceptedFollower(string $localUserId, string $actorId): bool
+	{
+		$follower = $this->followers->findByActor($localUserId, $actorId);
+
+		return $follower !== null && !$follower->isPending();
+	}
+
+	/**
 	 * One page of the public followers collection, newest first.
 	 *
 	 * @return list<string>
