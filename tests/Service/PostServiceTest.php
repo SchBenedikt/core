@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Service;
 
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\EmptyInboxResolver;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowState;
@@ -430,6 +431,30 @@ final class PostServiceTest extends TestCase
 		self::assertContains('https://remote.example/users/bob', $note['cc']);
 	}
 
+	public function testRemoteReplyDeliversThroughTheInboxResolverWithoutAnActorKeyFetch(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent());
+
+		// The actor document carries no usable signing key, so the full actor
+		// fetch cannot resolve it; the inbox-only resolver still can.
+		$this->service(
+			remotePosts: $remotePosts,
+			actorInboxes: new class implements ActorInboxResolver {
+				public function inboxFor(string $actorId): ?string
+				{
+					return $actorId === 'https://remote.example/users/bob'
+						? 'https://remote.example/inbox'
+						: null;
+				}
+			},
+		)->create(new CreatePost('alice', 'hi there', inReplyToId: 'https://remote.example/notes/1'));
+
+		$jobs = $this->queue->pending();
+		self::assertCount(1, $jobs);
+		self::assertSame('https://remote.example/inbox', $jobs[0]->payload['inbox']);
+	}
+
 	public function testRemoteReplyToAnUnknownParentIsRejectedLikeAMissingLocalOne(): void
 	{
 		$this->expectException(ValidationException::class);
@@ -551,6 +576,7 @@ final class PostServiceTest extends TestCase
 		?InMemoryRemotePostRepository $remotePosts = null,
 		?InMemoryFollowingRepository $following = null,
 		?InMemoryRemoteActorFetcher $remoteActors = null,
+		?ActorInboxResolver $actorInboxes = null,
 	): PostService {
 		return new PostService(
 			$this->repository,
@@ -570,6 +596,7 @@ final class PostServiceTest extends TestCase
 				$inboundBlocks,
 			),
 			remoteActors: $remoteActors,
+			actorInboxes: $actorInboxes,
 		);
 	}
 

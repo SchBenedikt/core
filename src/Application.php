@@ -1392,6 +1392,7 @@ final readonly class Application
 			remotePosts: $remotePosts,
 			remoteAccess: new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
 			remoteActors: $remoteActors,
+			actorInboxes: $actorInboxResolver,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,
