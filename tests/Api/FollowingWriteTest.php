@@ -22,6 +22,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\HttpSignature;
 use AlohaSocial\Core\Protocol\ActivityPub\RsaKeyPair;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FakeHttpClient;
+use AlohaSocial\Core\Tests\Support\RemoteActors;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -228,6 +229,80 @@ final class FollowingWriteTest extends TestCase
 		self::assertSame(0, $this->collection($app)['totalItems']);
 	}
 
+	public function testFollowRejectsAnInboxTheActorDoesNotAdvertise(): void
+	{
+		$app = $this->app();
+
+		$response = $this->followRequestWith($app, [
+			'actor' => self::BOB,
+			'inbox' => 'https://evil.example/collect',
+		]);
+
+		self::assertSame(422, $response->status);
+		self::assertArrayHasKey('inbox', $response->decodedBody()['error']['fields']);
+		self::assertSame(0, $app->following->count('alice'));
+		self::assertSame(0, $app->queue->pendingCount());
+	}
+
+	public function testFollowRejectsAnActorThatCannotBeResolved(): void
+	{
+		$app = Application::inMemory(
+			clock: $this->clock,
+			httpClient: new FakeHttpClient(),
+			signingKey: self::$localKey,
+			localActors: new InMemoryActorDirectory(['alice']),
+			followingRepository: new InMemoryFollowingRepository(),
+			remoteActors: RemoteActors::fetcher(),
+		);
+
+		$response = $this->followRequest($app);
+
+		self::assertSame(422, $response->status);
+		self::assertArrayHasKey('actor', $response->decodedBody()['error']['fields']);
+		self::assertSame(0, $app->following->count('alice'));
+		self::assertSame(0, $app->queue->pendingCount());
+	}
+
+	public function testFollowUsesTheAdvertisedSharedInboxAndFollowsOneMove(): void
+	{
+		$http = new FakeHttpClient();
+		$app = Application::inMemory(
+			clock: $this->clock,
+			httpClient: $http,
+			signingKey: self::$localKey,
+			localActors: new InMemoryActorDirectory(['alice']),
+			followingRepository: new InMemoryFollowingRepository(),
+			remoteActors: RemoteActors::fetcher(
+				RemoteActors::actor(
+					self::BOB,
+					self::BOB_INBOX,
+					sharedInboxUrl: 'https://remote.example/inbox',
+					movedTo: 'https://remote.example/users/bob-new',
+				),
+				RemoteActors::actor(
+					'https://remote.example/users/bob-new',
+					'https://remote.example/users/bob-new/inbox',
+					sharedInboxUrl: 'https://remote.example/inbox',
+				),
+			),
+		);
+
+		// The client may still name the shared inbox; the stored edge targets
+		// the moved actor's verified endpoints.
+		$response = $this->followRequestWith($app, [
+			'actor' => self::BOB,
+			'inbox' => 'https://remote.example/inbox',
+		]);
+
+		self::assertSame(201, $response->status);
+		$stored = $app->following->find('alice', 'https://remote.example/users/bob-new');
+		self::assertNotNull($stored);
+		self::assertSame('https://remote.example/inbox', $stored->inboxUrl);
+
+		self::assertSame(1, $app->worker->runOnce());
+		self::assertSame('https://remote.example/inbox', $http->requests[0]['url']);
+	}
+
 	public function testFollowAndUnfollowRequireAuthentication(): void
 	{
 		$app = $this->app();
@@ -270,6 +345,7 @@ final class FollowingWriteTest extends TestCase
 			signingKey: self::$localKey,
 			localActors: new InMemoryActorDirectory(['alice', 'bob']),
 			followingRepository: new InMemoryFollowingRepository(),
+			remoteActors: RemoteActors::fetcher(RemoteActors::actor(self::BOB, self::BOB_INBOX)),
 		);
 
 		$created = $this->followRequest($app)->decodedBody()['following'];
@@ -296,6 +372,7 @@ final class FollowingWriteTest extends TestCase
 			localActors: new InMemoryActorDirectory(['alice', 'bob']),
 			followingRepository: new InMemoryFollowingRepository(),
 			inboundBlocks: $inboundBlocks,
+			remoteActors: RemoteActors::fetcher(RemoteActors::actor(self::BOB, self::BOB_INBOX)),
 		);
 	}
 

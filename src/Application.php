@@ -1750,7 +1750,7 @@ final readonly class Application
 			->with(BlockActorHandler::class, static fn (): BlockActorHandler => new BlockActorHandler($blockService))
 			->with(UnblockActorHandler::class, static fn (): UnblockActorHandler => new UnblockActorHandler($blockService))
 			->with(UnfollowHandler::class, static fn (): UnfollowHandler => new UnfollowHandler($followerService))
-			->with(FollowRemoteActorHandler::class, static fn (): FollowRemoteActorHandler => new FollowRemoteActorHandler($followingService))
+			->with(FollowRemoteActorHandler::class, static fn (): FollowRemoteActorHandler => new FollowRemoteActorHandler($followingService, $remoteActors))
 			->with(UnfollowRemoteActorHandler::class, static fn (): UnfollowRemoteActorHandler => new UnfollowRemoteActorHandler($followingService))
 			->with(ShowLocalAccountHandler::class, static fn (): ShowLocalAccountHandler => new ShowLocalAccountHandler($localAccounts))
 			->with(FollowLocalAccountHandler::class, static fn (): FollowLocalAccountHandler => new FollowLocalAccountHandler($localAccounts))

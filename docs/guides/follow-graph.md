@@ -87,6 +87,16 @@ is used for delivery, not echoed. The outgoing `POST` adds `state`
 queues a `Follow` instead of recording a follower. The public collection reads
 only accepted edges.
 
+For `POST /api/v1/following` the client names the actor and may name an
+inbox, but the server does not trust either blindly: the actor document is
+resolved through the bounded actor resolver (one `movedTo` hop is followed),
+and a supplied `inbox` must match an endpoint the document advertises —
+its individual or shared inbox. The stored edge targets the verified shared
+inbox when present and the individual inbox otherwise, so client metadata can
+never redirect Follow or Undo deliveries. An unresolvable actor or a
+mismatched inbox is a 422 before anything is stored or queued; `inbox` may be
+omitted entirely.
+
 Deleting is scoped to the caller: the id alone must not let one account remove
 another account's follower, and the answer is 404 rather than 403 so it does
 not reveal that the id exists.
