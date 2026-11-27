@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteEventStatus;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Support\Time;
@@ -276,6 +277,63 @@ final class RemotePostFactoryTest extends TestCase
 		self::assertSame(RemotePostKind::Boost, $post->kind);
 		self::assertSame(RemoteObjectType::Article, $post->objectType);
 		self::assertSame('Shared read', $post->metadata?->title);
+	}
+
+	public function testAPublicAnnounceCannotUpgradeARestrictedEmbeddedObject(): void
+	{
+		$post = $this->factory->fromAnnounce(self::ACTOR, [
+			'id' => 'https://peer.example/announces/restricted',
+			'type' => 'Announce',
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
+			'object' => [
+				'id' => 'https://peer.example/notes/followers-only',
+				'type' => 'Note',
+				'content' => 'followers only',
+				'attributedTo' => 'https://peer.example/users/carol',
+				'to' => ['https://peer.example/users/carol/followers'],
+			],
+			'published' => '2026-11-11T11:00:00Z',
+		]);
+
+		self::assertSame(Visibility::Followers, $post->audience);
+	}
+
+	public function testAnEmbeddedObjectAddressedToStrangersStaysUnknown(): void
+	{
+		$post = $this->factory->fromAnnounce(self::ACTOR, [
+			'id' => 'https://peer.example/announces/strangers',
+			'type' => 'Announce',
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
+			'object' => [
+				'id' => 'https://peer.example/notes/strangers',
+				'type' => 'Note',
+				'content' => 'limited',
+				'attributedTo' => 'https://peer.example/users/carol',
+				'to' => ['https://peer.example/users/dave'],
+			],
+			'published' => '2026-11-11T11:00:00Z',
+		]);
+
+		self::assertNull($post->audience);
+	}
+
+	public function testAPublicEmbeddedObjectKeepsTheVerifiedPublicAudience(): void
+	{
+		$post = $this->factory->fromAnnounce(self::ACTOR, [
+			'id' => 'https://peer.example/announces/public',
+			'type' => 'Announce',
+			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
+			'object' => [
+				'id' => 'https://peer.example/notes/public',
+				'type' => 'Note',
+				'content' => 'public',
+				'attributedTo' => 'https://peer.example/users/carol',
+				'to' => ['https://www.w3.org/ns/activitystreams#Public'],
+			],
+			'published' => '2026-11-11T11:00:00Z',
+		]);
+
+		self::assertSame(Visibility::Public, $post->audience);
 	}
 
 	public function testAnAnnounceWithoutAnEmbeddedObjectFallsBackToTheTarget(): void

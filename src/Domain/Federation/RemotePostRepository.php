@@ -112,6 +112,14 @@ interface RemotePostRepository
 	public function attachmentIdsFor(array $activityIds): array;
 
 	/**
+	 * The remote posts and boosts that still link this attachment, deleted
+	 * rows included so callers can apply their own tombstone rule.
+	 *
+	 * @return list<RemotePost>
+	 */
+	public function postsForAttachment(string $attachmentId): array;
+
+	/**
 	 * Whether any remote post or boost still links this attachment.
 	 *
 	 * Cleanup uses this together with the local post link so a shared remote

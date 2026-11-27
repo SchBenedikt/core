@@ -443,6 +443,7 @@ use AlohaSocial\Core\Service\Federation\RemoteMediaService;
 use AlohaSocial\Core\Service\Federation\RemoteOutboxBackfill;
 use AlohaSocial\Core\Service\Federation\RemotePollCloseHandler;
 use AlohaSocial\Core\Service\Federation\RemotePollService;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Service\Federation\RemoteThreadFetcher;
 use AlohaSocial\Core\Service\Federation\RemoteThreadService;
@@ -1649,8 +1650,14 @@ final readonly class Application
 			: null;
 
 		// Media reads reuse the post visibility rule, so a followers-only image
-		// needs the same relationship as the post that carries it.
-		$mediaAccess = new MediaAccess($posts, $localRelationships);
+		// needs the same relationship as the post that carries it. Remote
+		// attachments go through the shared remote audience rule.
+		$mediaAccess = new MediaAccess(
+			$posts,
+			$localRelationships,
+			$remotePosts,
+			new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
+		);
 
 		$handlers = (new HandlerMap())
 			->with(HealthHandler::class, static fn (): HealthHandler => new HealthHandler())

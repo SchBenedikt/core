@@ -10,8 +10,14 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Api;
 
 use AlohaSocial\Core\Application;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -44,18 +50,26 @@ final class MediaAccessTest extends TestCase
 
 	private Application $app;
 
+	private InMemoryRemotePostRepository $remotePosts;
+
+	private InMemoryFollowingRepository $following;
+
 	private string $lastPostId = '';
 
 	protected function setUp(): void
 	{
 		$this->directory = sys_get_temp_dir() . '/alohasocial-media-access-' . bin2hex(random_bytes(8));
 		mkdir($this->directory, 0o770, true);
+		$this->remotePosts = new InMemoryRemotePostRepository();
+		$this->following = new InMemoryFollowingRepository();
 		$this->app = Application::inMemory(
 			clock: new FrozenClock(Time::parse('2026-11-11T10:00:00Z')),
 			config: new ArrayConfig(['social' => ['instance.url' => 'https://social.example']]),
 			localActors: new InMemoryActorDirectory(['alice', 'bob', 'carol']),
 			attachmentRepository: new InMemoryAttachmentRepository(),
 			blobStore: new LocalBlobStore($this->directory),
+			followingRepository: $this->following,
+			remotePostRepository: $this->remotePosts,
 		);
 	}
 
@@ -175,6 +189,57 @@ final class MediaAccessTest extends TestCase
 		self::assertSame(404, $this->media('missing-id', 'alice')->status);
 	}
 
+	public function testPublicRemoteMediaStaysAnonymousAndCacheable(): void
+	{
+		$id = $this->remoteAttachmentOn(Visibility::Public);
+
+		$response = $this->media($id);
+		self::assertSame(200, $response->status);
+		self::assertStringContainsString('public', $response->headers['Cache-Control']);
+	}
+
+	public function testFollowersOnlyRemoteMediaRequiresAnAcceptedFollow(): void
+	{
+		$id = $this->remoteAttachmentOn(Visibility::Followers);
+
+		self::assertSame(404, $this->media($id)->status);
+		self::assertSame(404, $this->media($id, 'carol')->status);
+
+		$this->following->insert(new FollowedActor(
+			'f-remote',
+			'carol',
+			'https://remote.example/users/bob',
+			'https://remote.example/users/bob/inbox',
+			Time::parse('2026-11-11T09:00:00Z'),
+		));
+
+		$response = $this->media($id, 'carol');
+		self::assertSame(200, $response->status);
+		self::assertSame('private, no-store', $response->headers['Cache-Control']);
+	}
+
+	public function testUnknownAudienceRemoteMediaFailsClosed(): void
+	{
+		$id = $this->remoteAttachmentOn(null);
+
+		self::assertSame(404, $this->media($id)->status);
+		self::assertSame(404, $this->media($id, 'carol')->status);
+	}
+
+	public function testADeletedRemotePostRevokesItsMedia(): void
+	{
+		$id = $this->remoteAttachmentOn(Visibility::Public);
+		self::assertSame(200, $this->media($id)->status);
+
+		$this->remotePosts->softDeleteByActivityId(
+			'https://remote.example/activities/media-1',
+			'https://remote.example/users/bob',
+			Time::parse('2026-11-11T11:00:00Z'),
+		);
+
+		self::assertSame(404, $this->media($id)->status);
+	}
+
 	public function testReusingAnAttachmentAcrossAPublicPostPublishesIt(): void
 	{
 		$id = $this->attachmentOn('followers');
@@ -228,6 +293,31 @@ final class MediaAccessTest extends TestCase
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Uploads an image and links it to a stored remote post, returning the
+	 * attachment id — the shape a remote media import leaves behind.
+	 */
+	private function remoteAttachmentOn(?Visibility $audience): string
+	{
+		$attachment = $this->upload()['attachment'];
+		$this->remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/media-1',
+			objectId: 'https://remote.example/notes/media-1',
+			actorId: 'https://remote.example/users/bob',
+			kind: RemotePostKind::Post,
+			content: 'remote media',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
+			audience: $audience,
+		));
+		$this->remotePosts->linkAttachments(
+			'https://remote.example/activities/media-1',
+			[$attachment['id']],
+		);
+
+		return $attachment['id'];
 	}
 
 	/**

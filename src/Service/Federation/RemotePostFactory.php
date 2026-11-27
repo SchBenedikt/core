@@ -166,9 +166,28 @@ final class RemotePostFactory
 	{
 		$public = 'https://www.w3.org/ns/activitystreams#Public';
 		$followers = rtrim($actorId, '/') . '/followers';
+		$recipients = $this->recipientIds($activity);
+
+		if (in_array($public, $recipients, true)) {
+			return Visibility::Public;
+		}
+		if (in_array($followers, $recipients, true)) {
+			return Visibility::Followers;
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param array<string, mixed> $document
+	 *
+	 * @return list<string>
+	 */
+	private function recipientIds(array $document): array
+	{
 		$recipients = [];
 		foreach (['to', 'cc', 'audience'] as $field) {
-			$value = $activity[$field] ?? [];
+			$value = $document[$field] ?? [];
 			if (is_string($value)) {
 				$recipients[] = $value;
 			} elseif (is_array($value)) {
@@ -180,14 +199,89 @@ final class RemotePostFactory
 			}
 		}
 
-		if (in_array($public, $recipients, true)) {
-			return Visibility::Public;
+		return $recipients;
+	}
+
+	/**
+	 * The audience a boost row may claim.
+	 *
+	 * An Announce addressed to Public can embed an object that is not: the
+	 * envelope's recipients say who may see the boost, the embedded object's
+	 * own addressing says who may see the content. The stored audience is the
+	 * most restrictive verified claim — a public envelope never upgrades a
+	 * restricted embedded object, and an unverifiable signal never upgrades a
+	 * verified one. With no signal at all the audience stays unknown and
+	 * therefore requires a follow before interaction.
+	 *
+	 * @param array<string, mixed> $activity
+	 * @param array<string, mixed> $embedded
+	 */
+	private function announcedAudience(string $actorId, array $activity, array $embedded, ?RemotePost $target): ?Visibility
+	{
+		$sawPublic = false;
+		$sawFollowers = false;
+		$sawRestricted = false;
+
+		[$embeddedClaimed, $embeddedAudience] = $this->embeddedAudience($embedded);
+		if ($embeddedClaimed) {
+			if ($embeddedAudience === Visibility::Public) {
+				$sawPublic = true;
+			} elseif ($embeddedAudience === Visibility::Followers) {
+				$sawFollowers = true;
+			} else {
+				// Addressed to somebody, just not classifiably public or
+				// followers — restricted without a verified collection.
+				$sawRestricted = true;
+			}
 		}
-		if (in_array($followers, $recipients, true)) {
+
+		foreach ([$target?->audience, $this->optionalAudience($actorId, $activity)] as $claim) {
+			if ($claim === Visibility::Public) {
+				$sawPublic = true;
+			} elseif ($claim === Visibility::Followers) {
+				$sawFollowers = true;
+			}
+		}
+
+		if ($sawRestricted) {
+			return null;
+		}
+		if ($sawFollowers) {
 			return Visibility::Followers;
 		}
 
-		return null;
+		return $sawPublic ? Visibility::Public : null;
+	}
+
+	/**
+	 * The audience the embedded announced object addresses, independent of
+	 * the Announce envelope around it.
+	 *
+	 * @param array<string, mixed> $object
+	 *
+	 * @return array{0: bool, 1: ?Visibility} whether the object addresses
+	 *         anybody at all, and its verified audience when classifiable
+	 */
+	private function embeddedAudience(array $object): array
+	{
+		$public = 'https://www.w3.org/ns/activitystreams#Public';
+		$recipients = $this->recipientIds($object);
+		if ($recipients === []) {
+			return [false, null];
+		}
+		if (in_array($public, $recipients, true)) {
+			return [true, Visibility::Public];
+		}
+
+		$author = $object['attributedTo'] ?? null;
+		$followers = is_string($author) && $author !== ''
+			? rtrim($author, '/') . '/followers'
+			: null;
+		if ($followers !== null && in_array($followers, $recipients, true)) {
+			return [true, Visibility::Followers];
+		}
+
+		return [true, null];
 	}
 
 	/**
@@ -204,7 +298,7 @@ final class RemotePostFactory
 		$contentWarning = $this->contentWarning($embedded);
 		$objectType = RemoteObjectType::fromActivityType($embedded['type'] ?? null) ?? $target?->objectType ?? RemoteObjectType::Note;
 		$metadata = $this->metadata($embedded, $objectType) ?? $target?->metadata;
-		$audience = $target?->audience ?? $this->optionalAudience($actorId, $activity);
+		$audience = $this->announcedAudience($actorId, $activity, $embedded, $target);
 
 		return new RemotePost(
 			activityId: $activityId,

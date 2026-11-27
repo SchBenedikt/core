@@ -45,11 +45,14 @@ final class PdoRecommendationCandidateSource implements RecommendationCandidateS
 			['visibility' => Visibility::Public->value],
 		);
 
+		// Only a verified public audience may be recommended to arbitrary
+		// viewers; followers-only and legacy unknown rows stay out.
 		$remote = $this->db->fetchAll(
 			'SELECT activity_id, actor_id, object_author_id, content, content_warning, published_at'
 			. ' FROM social_remote_post WHERE deleted_at IS NULL AND kind = :kind'
+			. ' AND audience = :audience'
 			. ' ORDER BY published_at DESC, activity_id DESC LIMIT ' . $limit,
-			['kind' => 'post'],
+			['kind' => 'post', 'audience' => Visibility::Public->value],
 		);
 
 		$candidates = [];

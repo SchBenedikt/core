@@ -252,6 +252,45 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		$repository->linkAttachments('post-1', ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
 	}
 
+	public function testPostsForAttachmentReturnsLinkedPostsIncludingDeletedRows(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('post-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote('post-2', 'note-2', 'carol', '2026-11-11T10:01:00Z'));
+		$repository->insert($this->remote('other', 'note-3', 'bob', '2026-11-11T10:02:00Z'));
+
+		$repository->linkAttachments('post-1', ['shared', 'only-one']);
+		$repository->linkAttachments('post-2', ['shared']);
+		$repository->linkAttachments('other', ['only-two']);
+
+		self::assertSame(
+			['post-2', 'post-1'],
+			array_map(
+				static fn (RemotePost $post): string => $post->activityId,
+				$repository->postsForAttachment('shared'),
+			),
+		);
+		self::assertSame(
+			['post-1'],
+			array_map(
+				static fn (RemotePost $post): string => $post->activityId,
+				$repository->postsForAttachment('only-one'),
+			),
+		);
+		self::assertSame([], $repository->postsForAttachment('missing'));
+
+		$repository->softDeleteByActivityId('post-1', 'bob', Time::parse('2026-11-11T11:00:00Z'));
+
+		// Callers apply their own tombstone rule, so deleted rows stay listed.
+		self::assertSame(
+			['post-2', 'post-1'],
+			array_map(
+				static fn (RemotePost $post): string => $post->activityId,
+				$repository->postsForAttachment('shared'),
+			),
+		);
+	}
+
 	public function testTimelineForActorsSupportsBeforeAndLimit(): void
 	{
 		$repository = $this->repository();
