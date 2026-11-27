@@ -17,8 +17,10 @@ use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\MuteRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Interaction\Reaction;
 use AlohaSocial\Core\Domain\Interaction\ReactionDirection;
 use AlohaSocial\Core\Domain\Interaction\ReactionKind;
@@ -84,6 +86,7 @@ final class ReactionService
 		private readonly ?MuteRepository $mutes = null,
 		private readonly ?RemotePostRepository $remotePosts = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
+		private readonly ?RemoteActorFetcher $remoteActors = null,
 	) {
 	}
 
@@ -255,19 +258,29 @@ final class ReactionService
 		}
 
 		if (!$allowRelationlessCleanup) {
-			$followed = $this->following->find($userId, $post->actorId);
-			if ($followed === null || $followed->state !== FollowState::Accepted) {
-				throw new ReactionException(
-					'remote_post_not_followed',
-					'Follow the author before reacting to this post.',
-				);
-			}
-
 			if ($this->blocks->findByActor($userId, $post->actorId) !== null) {
 				throw new ReactionException('blocked_actor', 'This actor is blocked.');
 			}
 			if ($this->inboundBlocks?->isBlocked($userId, $post->actorId) === true) {
 				throw new ReactionException('blocked_actor', 'This remote actor has blocked this account.');
+			}
+
+			if ($post->audience === Visibility::Direct) {
+				throw new ReactionException('remote_post_not_found', 'Remote post not found.');
+			}
+
+			$followed = $this->following->find($userId, $post->actorId);
+			$acceptedFollow = $followed !== null && $followed->state === FollowState::Accepted;
+			$isPublic = $post->audience === Visibility::Public || $post->audience === Visibility::Unlisted;
+			// Legacy rows have no stored audience. Keep the old follow gate for
+			// them instead of guessing that an unclassified object is public.
+			$isFollowOnly = $post->audience === Visibility::Followers || $post->audience === null;
+
+			if (!$isPublic && !($isFollowOnly && $acceptedFollow)) {
+				throw new ReactionException(
+					'remote_post_not_followed',
+					'Follow the author before reacting to this post.',
+				);
 			}
 		}
 
@@ -715,12 +728,34 @@ final class ReactionService
 	private function deliver(string $userId, string $actorId, array $activity): void
 	{
 		$followed = $this->following->find($userId, $actorId);
-		if ($followed === null) {
-			return;
+		$inbox = $followed?->inboxUrl;
+
+		if ($inbox === null || trim($inbox) === '') {
+			if ($this->remoteActors === null) {
+				throw new ReactionException(
+					'remote_delivery_unreachable',
+					'The remote author inbox cannot be resolved on this instance.',
+				);
+			}
+
+			try {
+				$actor = $this->remoteActors->fetch($actorId);
+			} catch (UnknownActorException $exception) {
+				throw new ReactionException('remote_delivery_unreachable', $exception->getMessage());
+			}
+
+			if ($actor->actorId !== $actorId || trim($actor->inboxUrl) === '') {
+				throw new ReactionException(
+					'remote_delivery_unreachable',
+					'The remote actor document did not name a usable inbox.',
+				);
+			}
+
+			$inbox = $actor->inboxUrl;
 		}
 
 		$this->queue->push(JobType::FEDERATION_DELIVER, [
-			'inbox' => $followed->inboxUrl,
+			'inbox' => $inbox,
 			'activity' => $activity,
 			'key_id' => $this->activities->keyId($userId),
 		], subject: JobSubject::account($userId));

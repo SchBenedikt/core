@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -46,6 +47,8 @@ final readonly class RemotePost
 		public ?RemoteObjectMetadata $metadata = null,
 		public ?string $quotedObjectId = null,
 		public ?string $inReplyToId = null,
+		/** The audited audience the origin addressed; null means unknown. */
+		public ?Visibility $audience = null,
 	) {
 		if ($activityId === '' || $objectId === '' || $actorId === '') {
 			throw new InvalidArgumentException('A remote post needs an activity, an object and an actor.');
@@ -87,6 +90,7 @@ final readonly class RemotePost
 			'published_at' => Time::format($this->publishedAt),
 			'quoted_object_id' => $this->quotedObjectId,
 			'in_reply_to_id' => $this->inReplyToId,
+			'audience' => $this->audience?->value,
 			'updated_at' => $this->updatedAt === null ? null : Time::format($this->updatedAt),
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
 		];

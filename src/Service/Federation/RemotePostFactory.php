@@ -18,6 +18,7 @@ use AlohaSocial\Core\Domain\Federation\RemoteObjectMetadata;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -56,7 +57,7 @@ final class RemotePostFactory
 	 */
 	public function fromCreate(string $actorId, array $activity, ?string $followersUrl = null): RemotePost
 	{
-		$this->requireSupportedAudience($actorId, $activity, $followersUrl);
+		$audience = $this->audience($actorId, $activity, $followersUrl);
 		$activityId = $this->activityId($activity);
 		$object = $activity['object'] ?? null;
 		if (!is_array($object)) {
@@ -98,6 +99,7 @@ final class RemotePostFactory
 			metadata: $metadata,
 			quotedObjectId: $this->quotedObjectId($object),
 			inReplyToId: $this->referenceId($object['inReplyTo'] ?? null),
+			audience: $audience,
 		);
 	}
 
@@ -107,7 +109,7 @@ final class RemotePostFactory
 	 *
 	 * @param array<string, mixed> $activity
 	 */
-	private function requireSupportedAudience(string $actorId, array $activity, ?string $followersUrl): void
+	private function audience(string $actorId, array $activity, ?string $followersUrl): Visibility
 	{
 		$object = $activity['object'] ?? null;
 		$public = 'https://www.w3.org/ns/activitystreams#Public';
@@ -139,14 +141,53 @@ final class RemotePostFactory
 			$recipients = [...$recipients, ...$documentRecipients];
 		}
 
-		if (in_array($public, $recipients, true) || in_array($followers, $recipients, true)) {
-			return;
+		if (in_array($public, $recipients, true)) {
+			return Visibility::Public;
+		}
+		if (in_array($followers, $recipients, true)) {
+			return Visibility::Followers;
 		}
 
 		throw new InboxRejectedException(
 			'unsupported_audience',
 			'The remote post is not addressed to a supported public or followers audience.',
 		);
+	}
+
+	/**
+	 * An Announce is often addressed publicly even when its embedded object is
+	 * not. The stored target's audience wins; otherwise the activity's own
+	 * recipients are the only available signal. Unknown stays unknown and
+	 * therefore requires a follow before interaction.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function optionalAudience(string $actorId, array $activity): ?Visibility
+	{
+		$public = 'https://www.w3.org/ns/activitystreams#Public';
+		$followers = rtrim($actorId, '/') . '/followers';
+		$recipients = [];
+		foreach (['to', 'cc', 'audience'] as $field) {
+			$value = $activity[$field] ?? [];
+			if (is_string($value)) {
+				$recipients[] = $value;
+			} elseif (is_array($value)) {
+				foreach ($value as $recipient) {
+					if (is_string($recipient)) {
+						$recipients[] = $recipient;
+					}
+				}
+			}
+		}
+
+		if (in_array($public, $recipients, true)) {
+			return Visibility::Public;
+		}
+		if (in_array($followers, $recipients, true)) {
+			return Visibility::Followers;
+		}
+
+		return null;
 	}
 
 	/**
@@ -163,6 +204,7 @@ final class RemotePostFactory
 		$contentWarning = $this->contentWarning($embedded);
 		$objectType = RemoteObjectType::fromActivityType($embedded['type'] ?? null) ?? $target?->objectType ?? RemoteObjectType::Note;
 		$metadata = $this->metadata($embedded, $objectType) ?? $target?->metadata;
+		$audience = $target?->audience ?? $this->optionalAudience($actorId, $activity);
 
 		return new RemotePost(
 			activityId: $activityId,
@@ -181,6 +223,7 @@ final class RemotePostFactory
 			metadata: $metadata,
 			quotedObjectId: $this->quotedObjectId($embedded) ?? $target?->quotedObjectId,
 			inReplyToId: $this->referenceId($embedded['inReplyTo'] ?? null) ?? $target?->inReplyToId,
+			audience: $audience,
 		);
 	}
 
@@ -242,6 +285,7 @@ final class RemotePostFactory
 			metadata: $target->metadata,
 			quotedObjectId: $target->quotedObjectId,
 			inReplyToId: $target->inReplyToId,
+			audience: $target->audience,
 		);
 	}
 

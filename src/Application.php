@@ -1198,6 +1198,7 @@ final readonly class Application
 			$muteRepository,
 			$remotePosts,
 			$inboundBlocks ?? new InMemoryInboundBlockRepository(),
+			$remoteActors,
 		);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);

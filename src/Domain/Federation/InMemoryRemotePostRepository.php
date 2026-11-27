@@ -92,6 +92,7 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 				metadata: $post->metadata,
 				quotedObjectId: $post->quotedObjectId,
 				inReplyToId: $post->inReplyToId,
+				audience: $post->audience,
 			);
 
 			return true;
@@ -232,6 +233,7 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 			metadata: $post->metadata,
 			quotedObjectId: $post->quotedObjectId,
 			inReplyToId: $post->inReplyToId,
+			audience: $post->audience,
 		);
 	}
 }

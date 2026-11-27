@@ -17,6 +17,8 @@ use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Interaction\InMemoryReactionRepository;
@@ -25,6 +27,7 @@ use AlohaSocial\Core\Domain\Interaction\ReactionKind;
 use AlohaSocial\Core\Domain\Interaction\Reaction;
 use AlohaSocial\Core\Domain\Post\InMemoryFavouriteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\InMemoryJobQueue;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobType;
@@ -248,14 +251,37 @@ final class RemoteReactionTest extends TestCase
 		$this->service()->likeRemote('alice', 'https://remote.example/notes/deleted');
 	}
 
-	public function testAPostFromAnUnfollowedActorCannotBeLiked(): void
+	public function testAPublicPostFromAnUnfollowedActorCanBeLiked(): void
 	{
-		$service = $this->service();
+		$service = $this->service(remoteActors: $this->fetcher());
+		$this->following->remove('alice', self::ACTOR);
+
+		$interaction = $service->likeRemote('alice', self::OBJECT);
+
+		self::assertTrue($interaction['viewer']['favourited']);
+		$jobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $jobs);
+		self::assertSame('Like', $jobs[0]->payload['activity']['type']);
+		self::assertSame('https://remote.example/users/bob/inbox', $jobs[0]->payload['inbox']);
+	}
+
+	public function testAFollowersOnlyPostFromAnUnfollowedActorIsRefused(): void
+	{
+		$this->remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/create-followers',
+			objectId: 'https://remote.example/notes/followers',
+			actorId: self::ACTOR,
+			kind: RemotePostKind::Post,
+			content: 'Followers only',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T09:10:00Z'),
+			audience: Visibility::Followers,
+		));
 		$this->following->remove('alice', self::ACTOR);
 
 		try {
-			$service->likeRemote('alice', self::OBJECT);
-			self::fail('Expected an unfollowed actor to be refused.');
+			$this->service()->likeRemote('alice', 'https://remote.example/notes/followers');
+			self::fail('Expected a followers-only post to be refused.');
 		} catch (ReactionException $exception) {
 			self::assertSame('remote_post_not_followed', $exception->reason);
 		}
@@ -372,8 +398,27 @@ final class RemoteReactionTest extends TestCase
 		self::assertSame([$first, $first, $first], $likeActivities);
 	}
 
-	public function testTheRemotePostReadNeedsAnAcceptedFollow(): void
+	public function testAPublicRemotePostReadDoesNotNeedAFollow(): void
 	{
+		$this->following->remove('alice', self::ACTOR);
+
+		$post = $this->service()->remotePostFor('alice', self::OBJECT);
+
+		self::assertSame(self::OBJECT, $post->objectId);
+	}
+
+	public function testAFollowersOnlyRemotePostReadNeedsAnAcceptedFollow(): void
+	{
+		$this->remotePosts->insert(new RemotePost(
+			activityId: 'https://remote.example/activities/create-followers',
+			objectId: 'https://remote.example/notes/followers',
+			actorId: self::ACTOR,
+			kind: RemotePostKind::Post,
+			content: 'Followers only',
+			contentWarning: null,
+			publishedAt: Time::parse('2026-11-11T09:10:00Z'),
+			audience: Visibility::Followers,
+		));
 		$this->following->remove('alice', self::ACTOR);
 		$this->following->insert(new FollowedActor(
 			id: 'follow-2',
@@ -384,12 +429,19 @@ final class RemoteReactionTest extends TestCase
 			state: \AlohaSocial\Core\Domain\Federation\FollowState::Pending,
 		));
 
-		$this->expectException(ReactionException::class);
-
-		$this->service()->remotePostFor('alice', self::OBJECT);
+		try {
+			$this->service()->remotePostFor('alice', 'https://remote.example/notes/followers');
+			self::fail('Expected a followers-only post to require an accepted follow.');
+		} catch (ReactionException $exception) {
+			self::assertSame('remote_post_not_followed', $exception->reason);
+		}
 	}
 
-	private function service(?JobQueue $queue = null, ?InMemoryInboundBlockRepository $inboundBlocks = null): ReactionService
+	private function service(
+		?JobQueue $queue = null,
+		?InMemoryInboundBlockRepository $inboundBlocks = null,
+		?RemoteActorFetcher $remoteActors = null,
+	): ReactionService
 	{
 		return new ReactionService(
 			posts: new InMemoryPostRepository(),
@@ -404,7 +456,23 @@ final class RemoteReactionTest extends TestCase
 			mutes: new InMemoryMuteRepository(),
 			remotePosts: $this->remotePosts,
 			inboundBlocks: $inboundBlocks,
+			remoteActors: $remoteActors,
 		);
+	}
+
+	private function fetcher(): RemoteActorFetcher
+	{
+		return new class implements RemoteActorFetcher {
+			public function fetch(string $actorId): RemoteActor
+			{
+				return new RemoteActor(
+					actorId: $actorId,
+					keyId: $actorId . '#main-key',
+					inboxUrl: 'https://remote.example/users/bob/inbox',
+					publicKeyPem: 'test-public-key',
+				);
+			}
+		};
 	}
 
 	private function seedFollow(): void
@@ -428,6 +496,7 @@ final class RemoteReactionTest extends TestCase
 			content: 'A remote post',
 			contentWarning: null,
 			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
+			audience: Visibility::Public,
 		));
 	}
 }
