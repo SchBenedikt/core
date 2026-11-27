@@ -199,6 +199,7 @@ use AlohaSocial\Core\Domain\Atproto\Pds\PdsDirectory;
 use AlohaSocial\Core\Domain\Atproto\Pds\PdsRepository;
 use AlohaSocial\Core\Domain\Federation\AcceptAllFollows;
 use AlohaSocial\Core\Domain\Federation\ActivityLog;
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\ActorResolver;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
@@ -621,6 +622,7 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?ActorInboxResolver $actorInboxResolver = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -761,6 +763,7 @@ final readonly class Application
 			profileUpdates: $profileUpdates,
 			accountMoveRepository: $accountMoveRepository,
 			remoteActors: $remoteActors,
+			actorInboxResolver: $actorInboxResolver,
 			atprotoEventSource: $atprotoEventSource,
 			atprotoInbound: $atprotoInbound,
 			atprotoModeration: $atprotoModeration,
@@ -872,6 +875,7 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?ActorInboxResolver $actorInboxResolver = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -955,6 +959,7 @@ final readonly class Application
 			profileUpdates: $profileUpdates,
 			accountMoveRepository: $accountMoveRepository ?? new PdoAccountMoveRepository($database),
 			remoteActors: $remoteActors,
+			actorInboxResolver: $actorInboxResolver,
 			atprotoEventSource: $atprotoEventSource,
 			atprotoInbound: $atprotoInbound ?? new PdoAtprotoInboundRepository($database),
 			atprotoModeration: $atprotoModeration,
@@ -1078,6 +1083,7 @@ final readonly class Application
 		?ActorProfileUpdateService $profileUpdates = null,
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?ActorInboxResolver $actorInboxResolver = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -1288,7 +1294,7 @@ final readonly class Application
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$followRequestService = $followRequests
 			?? new FollowRequestService($followers, $followerService, $activities, $queue);
-		$actorInboxResolver = $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
+		$actorInboxResolver ??= $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
 		$blockService = new BlockService(
 			$blockRepository,
 			$clock,
