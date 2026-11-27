@@ -84,6 +84,43 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 		return $row === null ? null : $this->hydrate($row);
 	}
 
+	public function findByActivityIds(array $activityIds): array
+	{
+		$unique = [];
+		foreach ($activityIds as $activityId) {
+			if (is_string($activityId) && $activityId !== '') {
+				$unique[$activityId] = $activityId;
+			}
+		}
+		$activityIds = array_values($unique);
+
+		if ($activityIds === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach ($activityIds as $index => $activityId) {
+			$name = 'activity_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $activityId;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . RemotePostSchema::TABLE
+			. ' WHERE activity_id IN (' . implode(', ', $placeholders) . ')',
+			$parameters,
+		);
+
+		$posts = [];
+		foreach ($rows as $row) {
+			$post = $this->hydrate($row);
+			$posts[$post->activityId] = $post;
+		}
+
+		return $posts;
+	}
+
 	public function findPostByObjectId(string $objectId): ?RemotePost
 	{
 		$row = $this->db->fetchOne(

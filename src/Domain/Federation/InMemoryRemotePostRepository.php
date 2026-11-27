@@ -47,6 +47,18 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 		return $this->posts[$activityId] ?? null;
 	}
 
+	public function findByActivityIds(array $activityIds): array
+	{
+		$posts = [];
+		foreach ($activityIds as $activityId) {
+			if (isset($this->posts[$activityId])) {
+				$posts[$activityId] = $this->posts[$activityId];
+			}
+		}
+
+		return $posts;
+	}
+
 	public function findPostByObjectId(string $objectId): ?RemotePost
 	{
 		foreach ($this->posts as $post) {

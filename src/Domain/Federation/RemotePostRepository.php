@@ -33,6 +33,16 @@ interface RemotePostRepository
 	public function findByActivityId(string $activityId): ?RemotePost;
 
 	/**
+	 * Rows by activity id in one bounded read, soft-deleted included, keyed
+	 * by activity id. Unknown ids are simply absent from the result.
+	 *
+	 * @param list<string> $activityIds
+	 *
+	 * @return array<string, RemotePost>
+	 */
+	public function findByActivityIds(array $activityIds): array;
+
+	/**
 	 * The live post for an object id; boosts are deliberately excluded.
 	 */
 	public function findPostByObjectId(string $objectId): ?RemotePost;

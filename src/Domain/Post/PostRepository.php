@@ -40,6 +40,16 @@ interface PostRepository
 	public function find(string $id): ?Post;
 
 	/**
+	 * Posts by id in one bounded read, live and deleted alike, keyed by id.
+	 * Unknown ids are simply absent from the result.
+	 *
+	 * @param list<string> $ids
+	 *
+	 * @return array<string, Post>
+	 */
+	public function findMany(array $ids): array;
+
+	/**
 	 * Applies the answer to an outgoing quote to the stored post.
 	 *
 	 * The quote target itself and the request id stay; only the state and, for

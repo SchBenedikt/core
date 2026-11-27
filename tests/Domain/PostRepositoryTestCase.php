@@ -290,6 +290,21 @@ abstract class PostRepositoryTestCase extends TestCase
 		self::assertSame('parent', $repository->find('reply')?->inReplyToId);
 	}
 
+	public function testFindManyReturnsPostsByIdIncludingDeleted(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->post('a', 'alice', Visibility::Public, '2026-11-11T10:00:00Z'));
+		$repository->insert($this->post('b', 'bob', Visibility::Followers, '2026-11-11T10:01:00Z'));
+		$repository->softDelete('b', Time::parse('2026-11-11T11:00:00Z'));
+
+		$found = $repository->findMany(['a', 'b', 'missing', 'a']);
+
+		self::assertSame(['a', 'b'], array_keys($found));
+		self::assertSame('alice', $found['a']->authorId);
+		self::assertNotNull($found['b']->deletedAt);
+		self::assertSame([], $repository->findMany([]));
+	}
+
 	public function testRemoteReplyTargetSurvivesARoundTrip(): void
 	{
 		$repository = $this->repository();

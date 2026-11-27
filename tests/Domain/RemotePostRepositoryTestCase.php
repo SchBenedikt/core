@@ -314,6 +314,21 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testFindByActivityIdsReturnsRowsIncludingDeleted(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->insert($this->remote('activity-2', 'note-2', 'bob', '2026-11-11T10:01:00Z'));
+		$repository->softDeleteByActivityId('activity-2', 'bob', Time::parse('2026-11-11T11:00:00Z'));
+
+		$found = $repository->findByActivityIds(['activity-1', 'activity-2', 'missing', 'activity-1']);
+
+		self::assertSame(['activity-1', 'activity-2'], array_keys($found));
+		self::assertNull($found['activity-1']->deletedAt);
+		self::assertNotNull($found['activity-2']->deletedAt);
+		self::assertSame([], $repository->findByActivityIds([]));
+	}
+
 	protected function remote(
 		string $activityId,
 		string $objectId,

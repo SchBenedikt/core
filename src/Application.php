@@ -470,6 +470,7 @@ use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\Mastodon\MastodonApiConfig;
 use AlohaSocial\Core\Service\FilterService;
 use AlohaSocial\Core\Service\Recommendation\DefaultRecommendationRanker;
+use AlohaSocial\Core\Service\Recommendation\LiveRecommendationCandidates;
 use AlohaSocial\Core\Service\Recommendation\RecommendationService;
 use AlohaSocial\Core\Service\Recommendation\StoredRecommendationEligibility;
 use AlohaSocial\Core\Service\Story\StoryAccess;
@@ -1442,6 +1443,11 @@ final readonly class Application
 			$clock,
 			$ids,
 			$recommendationSnapshots ?? new InMemoryRecommendationSnapshotCache(),
+			new LiveRecommendationCandidates(
+				$posts,
+				$remotePosts,
+				new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
+			),
 		);
 		$storyRepository ??= new InMemoryStoryRepository();
 		$storyService ??= new StoryService(
