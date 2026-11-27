@@ -49,17 +49,18 @@ final readonly class PostNotificationThreadResolver implements NotificationThrea
 
 			$local = $this->posts->find($current);
 			if ($local !== null) {
-				if ($local->inReplyToId === null) {
+				$parentRef = $local->replyParentRef();
+				if ($parentRef === null) {
 					return $local->id;
 				}
 
-				if ($this->posts->find($local->inReplyToId) === null
-					&& ($this->remoteThreads?->find($local->inReplyToId) === null)
+				if ($this->posts->find($parentRef) === null
+					&& ($this->remoteThreads?->find($parentRef) === null)
 				) {
 					return null;
 				}
 
-				$current = $local->inReplyToId;
+				$current = $parentRef;
 				continue;
 			}
 

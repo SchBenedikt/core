@@ -61,8 +61,12 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 		$remoteCursor = $before === null ? '' : ($before instanceof TimelineCursor
 			? ' AND (r.published_at < :remote_before OR (r.published_at = :remote_before_equal AND r.activity_id < :remote_before_id))'
 			: ' AND r.published_at < :remote_before');
-		$localReplies = $hideReplies ? ' AND p.in_reply_to_id IS NULL' : '';
-		$boostReplies = $hideReplies ? ' AND p.in_reply_to_id IS NULL' : '';
+		$localReplies = $hideReplies
+			? ' AND p.in_reply_to_id IS NULL AND p.in_reply_to_remote_object_id IS NULL'
+			: '';
+		$boostReplies = $hideReplies
+			? ' AND p.in_reply_to_id IS NULL AND p.in_reply_to_remote_object_id IS NULL'
+			: '';
 		$remoteReplies = $hideReplies ? ' AND r.in_reply_to_id IS NULL' : '';
 
 		$sql = 'SELECT item_id, author_id, object_id, object_author_id, content,'
@@ -72,7 +76,7 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' p.author_id AS object_author_id, p.content AS content,'
 			. ' p.content_warning AS content_warning, p.published_at AS published_at,'
 			. ' p.visibility AS visibility, NULL AS boosted_by,'
-			. ' p.in_reply_to_id AS in_reply_to_id'
+			. ' COALESCE(p.in_reply_to_id, p.in_reply_to_remote_object_id) AS in_reply_to_id'
 			. ' FROM ' . PostSchema::TABLE . ' p'
 			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND (p.author_id = :local_user'
 			. ' OR (p.visibility = :local_direct AND EXISTS ('
@@ -87,7 +91,8 @@ final class PdoHomeTimelineRepository implements HomeTimelineRepository
 			. ' UNION ALL'
 			. ' SELECT b.id AS item_id, b.user_id AS author_id, p.id AS object_id, p.author_id AS object_author_id,'
 			. ' p.content AS content, p.content_warning AS content_warning, b.created_at AS published_at,'
-			. ' p.visibility AS visibility, b.user_id AS boosted_by, p.in_reply_to_id AS in_reply_to_id'
+			. ' p.visibility AS visibility, b.user_id AS boosted_by,'
+			. ' COALESCE(p.in_reply_to_id, p.in_reply_to_remote_object_id) AS in_reply_to_id'
 			. ' FROM ' . BoostSchema::TABLE . ' b JOIN ' . PostSchema::TABLE . ' p ON p.id = b.post_id'
 			. ' WHERE b.user_id = :boost_user AND p.deleted_at IS NULL AND p.archived_at IS NULL'
 			. " AND p.visibility IN ('public', 'unlisted')"

@@ -357,7 +357,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'public' => Visibility::Public->value,
 		];
 		if ($hideReplies) {
-			$sql .= ' AND in_reply_to_id IS NULL';
+			$sql .= ' AND in_reply_to_id IS NULL AND in_reply_to_remote_object_id IS NULL';
 		}
 
 		if ($before !== null) {
@@ -401,7 +401,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			'hashtag' => $hashtag,
 		];
 		if ($hideReplies) {
-			$sql .= ' AND p.in_reply_to_id IS NULL';
+			$sql .= ' AND p.in_reply_to_id IS NULL AND p.in_reply_to_remote_object_id IS NULL';
 		}
 
 		if ($before !== null) {
@@ -445,7 +445,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			. ' WHERE p.deleted_at IS NULL AND p.archived_at IS NULL AND p.visibility = :public'
 			. ' AND h.hashtag IN (' . implode(', ', $placeholders) . ')';
 		if ($hideReplies) {
-			$sql .= ' AND p.in_reply_to_id IS NULL';
+			$sql .= ' AND p.in_reply_to_id IS NULL AND p.in_reply_to_remote_object_id IS NULL';
 		}
 
 		if ($before !== null) {
@@ -578,7 +578,7 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			. ' WHERE deleted_at IS NULL AND archived_at IS NULL AND author_id IN (' . implode(', ', $placeholders) . ')'
 			. ' AND visibility IN (:public, :unlisted, :followers)';
 		if ($hideReplies) {
-			$sql .= ' AND in_reply_to_id IS NULL';
+			$sql .= ' AND in_reply_to_id IS NULL AND in_reply_to_remote_object_id IS NULL';
 		}
 		$parameters['public'] = Visibility::Public->value;
 		$parameters['unlisted'] = Visibility::Unlisted->value;

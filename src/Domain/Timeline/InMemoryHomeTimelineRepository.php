@@ -57,7 +57,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 		);
 
 		foreach ($this->posts->ownTimeline($localUserId, self::UNBOUNDED, $before) as $post) {
-			if ($hideReplies && $post->inReplyToId !== null) {
+			if ($hideReplies && $post->replyParentRef() !== null) {
 				continue;
 			}
 			if (isset($muted[$post->authorId])) {
@@ -74,7 +74,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 				|| $post->isDeleted()
 				|| $post->archivedAt !== null
 				|| !in_array($post->visibility, [Visibility::Public, Visibility::Unlisted], true)
-				|| ($hideReplies && $post->inReplyToId !== null)
+				|| ($hideReplies && $post->replyParentRef() !== null)
 				|| isset($blocked[$post->authorId])
 				|| isset($muted[$post->authorId])
 			) {
@@ -91,7 +91,7 @@ final class InMemoryHomeTimelineRepository implements HomeTimelineRepository
 				publishedAt: $boost->createdAt,
 				visibility: $post->visibility,
 				boostedBy: $boost->userId,
-				inReplyToId: $post->inReplyToId,
+				inReplyToId: $post->replyParentRef(),
 			);
 		}
 

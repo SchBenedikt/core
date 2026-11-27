@@ -179,6 +179,15 @@ final readonly class Post
 		return $this->archivedAt !== null;
 	}
 
+	/**
+	 * The reply target as one reference: a local post id or the remote
+	 * object's canonical URL. A post has at most one of the two.
+	 */
+	public function replyParentRef(): ?string
+	{
+		return $this->inReplyToId ?? $this->remoteParentObjectId;
+	}
+
 	public function withArchivedAt(?DateTimeImmutable $archivedAt): self
 	{
 		return new self(
@@ -225,7 +234,7 @@ final readonly class Post
 			'revision' => $this->revision,
 			'deleted_at' => $this->deletedAt === null ? null : Time::format($this->deletedAt),
 			'poll' => $this->poll?->toArray(),
-			'in_reply_to_id' => $this->inReplyToId,
+			'in_reply_to_id' => $this->replyParentRef(),
 			'remote_parent_object_id' => $this->remoteParentObjectId,
 			'remote_parent_author_id' => $this->remoteParentAuthorId,
 			'quoted_object_id' => $this->quotedObjectId,

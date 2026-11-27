@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\AccountMoveRepository;
 use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
@@ -101,6 +102,7 @@ final class PostService
 		private readonly ?RemotePostRepository $remotePosts = null,
 		private readonly ?RemotePostAccess $remoteAccess = null,
 		private readonly ?RemoteActorFetcher $remoteActors = null,
+		private readonly ?ActorInboxResolver $actorInboxes = null,
 	) {
 	}
 
@@ -1136,11 +1138,22 @@ final class PostService
 	private function remoteParentInbox(Post $post): array
 	{
 		$authorId = $post->remoteParentAuthorId;
-		if ($authorId === null || $this->remoteActors === null) {
+		if ($authorId === null) {
 			return [];
 		}
 
 		if ($this->inboundBlocks?->isBlocked($post->authorId, $authorId) === true) {
+			return [];
+		}
+
+		// The dedicated resolver only needs the actor's inbox; the full actor
+		// fetch additionally demands a signing key that minimal peers may omit.
+		$inbox = $this->actorInboxes?->inboxFor($authorId);
+		if (is_string($inbox) && trim($inbox) !== '') {
+			return [trim($inbox)];
+		}
+
+		if ($this->remoteActors === null) {
 			return [];
 		}
 
