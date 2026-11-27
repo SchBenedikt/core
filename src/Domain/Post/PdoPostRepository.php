@@ -17,6 +17,7 @@ use PDOException;
 
 use function array_values;
 use function implode;
+use function is_string;
 
 /**
  * Post storage in SQL.
@@ -242,6 +243,42 @@ final class PdoPostRepository implements PostRepository, PostSearchRepository, P
 			$this->pollsFor([$id])[$id] ?? null,
 			$this->recipientIdsFor([$id])[$id] ?? [],
 		);
+	}
+
+	public function findMany(array $ids): array
+	{
+		$unique = [];
+		foreach ($ids as $id) {
+			if (is_string($id) && $id !== '') {
+				$unique[$id] = $id;
+			}
+		}
+		$ids = array_values($unique);
+
+		if ($ids === []) {
+			return [];
+		}
+
+		$placeholders = [];
+		$parameters = [];
+		foreach ($ids as $index => $id) {
+			$name = 'id_' . $index;
+			$placeholders[] = ':' . $name;
+			$parameters[$name] = $id;
+		}
+
+		$rows = $this->db->fetchAll(
+			'SELECT ' . self::COLUMNS . ' FROM ' . PostSchema::TABLE
+			. ' WHERE id IN (' . implode(', ', $placeholders) . ')',
+			$parameters,
+		);
+
+		$posts = [];
+		foreach ($this->hydrateAll($rows) as $post) {
+			$posts[$post->id] = $post;
+		}
+
+		return $posts;
 	}
 
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void

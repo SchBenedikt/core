@@ -62,6 +62,18 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 		return $this->posts[$id] ?? null;
 	}
 
+	public function findMany(array $ids): array
+	{
+		$posts = [];
+		foreach ($ids as $id) {
+			if (isset($this->posts[$id])) {
+				$posts[$id] = $this->posts[$id];
+			}
+		}
+
+		return $posts;
+	}
+
 	public function softDelete(string $id, DateTimeImmutable $deletedAt): void
 	{
 		$post = $this->posts[$id] ?? null;

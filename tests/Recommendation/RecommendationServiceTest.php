@@ -11,11 +11,18 @@ namespace AlohaSocial\Core\Tests\Recommendation;
 
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\Mute;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Moderation\AllowsAllModeration;
+use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
+use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationCandidateSource;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateRefresher;
 use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationRepository;
 use AlohaSocial\Core\Domain\Recommendation\InMemoryRecommendationSnapshotCache;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidate;
@@ -24,7 +31,9 @@ use AlohaSocial\Core\Domain\Recommendation\RecommendationFeedbackKind;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationSignalKind;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\Recommendation\DefaultRecommendationRanker;
+use AlohaSocial\Core\Service\Recommendation\LiveRecommendationCandidates;
 use AlohaSocial\Core\Service\Recommendation\InvalidRecommendationCursorException;
 use AlohaSocial\Core\Service\Recommendation\RecommendationConsentRequiredException;
 use AlohaSocial\Core\Service\Recommendation\RecommendationDisabledException;
@@ -184,6 +193,88 @@ final class RecommendationServiceTest extends TestCase
 		));
 	}
 
+	public function testACachedPageRevalidatesCandidatesAgainstLiveObjects(): void
+	{
+		$posts = new InMemoryPostRepository();
+		$posts->insert($this->post('post-1', 'bob', 'first', $this->ago(10)));
+		$posts->insert($this->post('post-2', 'carol', 'second', $this->ago(20)));
+		$posts->insert($this->post('post-3', 'dave', 'third', $this->ago(30)));
+
+		$service = $this->service(
+			[
+				$this->candidate('local:post-1', 'bob', 'first', $this->ago(10)),
+				$this->candidate('local:post-2', 'carol', 'second', $this->ago(20)),
+				$this->candidate('local:post-3', 'dave', 'third', $this->ago(30)),
+			],
+			refresher: new LiveRecommendationCandidates($posts),
+		);
+
+		$first = $service->feed(self::ALICE, 1);
+		self::assertNotNull($first->nextCursor);
+
+		// The middle candidate is deleted and another is archived after the
+		// snapshot was written; the next cursor page must not serve either.
+		$posts->softDelete('post-2', $this->clock->now());
+		$posts->archive('post-3', $this->clock->now());
+
+		$second = $service->feed(self::ALICE, 10, $first->nextCursor);
+		self::assertSame([], $second->items);
+		self::assertNull($second->nextCursor);
+	}
+
+	public function testARestrictedRemoteCandidateFailsClosedOnTheNextPage(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert(new RemotePost(
+			activityId: 'activity-1',
+			objectId: 'https://remote.example/notes/1',
+			actorId: 'https://remote.example/users/bob',
+			kind: RemotePostKind::Post,
+			content: 'remote one',
+			contentWarning: null,
+			publishedAt: $this->ago(10),
+			objectAuthorId: 'https://remote.example/users/bob',
+			audience: Visibility::Public,
+		));
+		$remotePosts->insert(new RemotePost(
+			activityId: 'activity-2',
+			objectId: 'https://remote.example/notes/2',
+			actorId: 'https://remote.example/users/carol',
+			kind: RemotePostKind::Post,
+			content: 'remote two',
+			contentWarning: null,
+			publishedAt: $this->ago(20),
+			objectAuthorId: 'https://remote.example/users/carol',
+			audience: Visibility::Public,
+		));
+
+		$service = $this->service(
+			[
+				$this->remoteCandidate('remote:activity-1', 'remote one', $this->ago(10)),
+				$this->remoteCandidate('remote:activity-2', 'remote two', $this->ago(20)),
+			],
+			refresher: new LiveRecommendationCandidates(
+				new InMemoryPostRepository(),
+				$remotePosts,
+				new RemotePostAccess(new InMemoryFollowingRepository()),
+			),
+		);
+
+		$first = $service->feed(self::ALICE, 1);
+		self::assertNotNull($first->nextCursor);
+
+		// The remote row is tombstoned after the snapshot; the cached page
+		// must not keep serving it.
+		$remotePosts->softDeleteByActivityId(
+			'activity-2',
+			'https://remote.example/users/carol',
+			$this->clock->now(),
+		);
+
+		$second = $service->feed(self::ALICE, 10, $first->nextCursor);
+		self::assertSame([], $second->items);
+	}
+
 	public function testAnExpiredSnapshotRejectsTheCursorInsteadOfRestartingIt(): void
 	{
 		$service = $this->service([
@@ -268,7 +359,11 @@ final class RecommendationServiceTest extends TestCase
 	/**
 	 * @param list<RecommendationCandidate> $candidates
 	 */
-	private function service(array $candidates = [], bool $enabled = true): RecommendationService
+	private function service(
+		array $candidates = [],
+		bool $enabled = true,
+		?RecommendationCandidateRefresher $refresher = null,
+	): RecommendationService
 	{
 		$config = new ArrayConfig([
 			'social' => ['recommendations.enabled' => $enabled ? 'true' : 'false'],
@@ -283,6 +378,7 @@ final class RecommendationServiceTest extends TestCase
 			$this->clock,
 			new RandomIdGenerator(),
 			new InMemoryRecommendationSnapshotCache(),
+			$refresher,
 		);
 	}
 
@@ -309,6 +405,40 @@ final class RecommendationServiceTest extends TestCase
 			$publishedAt,
 			$visibility,
 			$languages,
+		);
+	}
+
+	private function post(
+		string $id,
+		string $author,
+		string $content,
+		DateTimeImmutable $publishedAt,
+	): Post {
+		return new Post(
+			id: $id,
+			authorId: $author,
+			content: $content,
+			visibility: Visibility::Public,
+			publishedAt: $publishedAt,
+		);
+	}
+
+	private function remoteCandidate(
+		string $id,
+		string $content,
+		DateTimeImmutable $publishedAt,
+	): RecommendationCandidate {
+		return new RecommendationCandidate(
+			$id,
+			substr($id, 6),
+			RecommendationCandidateKind::Remote,
+			substr($id, 7) . '@remote.example',
+			null,
+			$content,
+			null,
+			$publishedAt,
+			Visibility::Public,
+			[],
 		);
 	}
 

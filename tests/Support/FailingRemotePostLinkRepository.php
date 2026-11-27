@@ -35,6 +35,11 @@ final class FailingRemotePostLinkRepository implements RemotePostRepository
 		return $this->inner->findByActivityId($activityId);
 	}
 
+	public function findByActivityIds(array $activityIds): array
+	{
+		return $this->inner->findByActivityIds($activityIds);
+	}
+
 	public function findPostByObjectId(string $objectId): ?RemotePost
 	{
 		return $this->inner->findPostByObjectId($objectId);

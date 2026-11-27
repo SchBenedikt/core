@@ -11,6 +11,8 @@ namespace AlohaSocial\Core\Service\Recommendation;
 
 use AlohaSocial\Core\Domain\Post\Hashtags;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationAlgorithm;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidate;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateRefresher;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateSource;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationEligibility;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationFeedback;
@@ -95,6 +97,7 @@ final class RecommendationService
 		private readonly Clock $clock,
 		private readonly IdGenerator $ids,
 		private readonly RecommendationSnapshotCache $snapshots,
+		private readonly ?RecommendationCandidateRefresher $refresher = null,
 	) {
 	}
 
@@ -159,10 +162,9 @@ final class RecommendationService
 		if ($cursor !== null && $cursor !== '') {
 			$snapshot = $this->snapshot($userId, $cursor, $now);
 			$feedback = $this->feedbackMap($userId);
-			$items = $this->presentable($userId, $preference, $snapshot->items, $feedback);
 			$offset = $this->cursorOffset($cursor, strlen($cursor));
 
-			return $this->page($snapshot->id, $items, $offset, $limit, $snapshot->expiresAt, true);
+			return $this->cursorPage($userId, $preference, $snapshot, $offset, $limit, $feedback, $now);
 		}
 
 		$window = max(40, min(self::MAX_CANDIDATES, $limit * 4));
@@ -356,6 +358,84 @@ final class RecommendationService
 		}
 
 		return array_merge($primary, $deferred);
+	}
+
+	/**
+	 * Serves one cursor page out of a stored snapshot. Candidates are
+	 * revalidated against their live records in a single bounded batch
+	 * before anything is filtered or returned; a candidate whose source
+	 * object was deleted, archived, narrowed or removed fails closed. A
+	 * dropped candidate still consumes its snapshot position, so the raw
+	 * cursor offset stays stable, and the walk only stops after `limit`
+	 * presentable items or at the end of the snapshot.
+	 *
+	 * @param array<string, RecommendationFeedback> $feedback
+	 */
+	private function cursorPage(
+		string $userId,
+		RecommendationPreference $preference,
+		RecommendationSnapshot $snapshot,
+		int $offset,
+		int $limit,
+		array $feedback,
+		DateTimeImmutable $now,
+	): RecommendationPage {
+		$total = count($snapshot->items);
+		$live = $this->refresher?->refresh(
+			$userId,
+			array_values(array_map(
+				static fn (RecommendationItem $item): RecommendationCandidate => $item->candidate,
+				$snapshot->items,
+			)),
+			$now,
+		);
+
+		$aligned = [];
+		foreach ($snapshot->items as $item) {
+			$candidate = $live === null ? $item->candidate : ($live[$item->candidate->id] ?? null);
+			if ($candidate === null) {
+				$aligned[] = null;
+				continue;
+			}
+
+			$aligned[] = $candidate === $item->candidate
+				? $item
+				: new RecommendationItem($candidate, $item->score, $item->reasons, $item->algorithmVersion);
+		}
+
+		$allowed = [];
+		foreach ($this->presentable(
+			$userId,
+			$preference,
+			array_values(array_filter($aligned)),
+			$feedback,
+		) as $item) {
+			$allowed[$item->candidate->id] = true;
+		}
+
+		$pageItems = [];
+		$consumed = 0;
+		for ($i = $offset; $i < $total && count($pageItems) < $limit; ++$i) {
+			++$consumed;
+			$item = $aligned[$i];
+			if ($item === null || !isset($allowed[$item->candidate->id])) {
+				continue;
+			}
+
+			$pageItems[] = $item;
+		}
+
+		$nextOffset = $offset + $consumed;
+
+		return new RecommendationPage(
+			$pageItems,
+			$nextOffset < $total ? $this->encodeCursor($snapshot->id, $nextOffset) : null,
+			$snapshot->id,
+			$snapshot->expiresAt,
+			true,
+			count($pageItems) < $limit,
+			RecommendationAlgorithm::VERSION,
+		);
 	}
 
 	/**
