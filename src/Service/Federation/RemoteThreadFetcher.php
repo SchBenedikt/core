@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Clock\Clock;
 use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Support\Time;
@@ -231,6 +232,7 @@ final class RemoteThreadFetcher
 				fetchedAt: Time::toSecondPrecision($this->clock->now()),
 				contentWarning: $contentWarning,
 				inReplyToId: $inReplyTo,
+				audience: $this->audience($document, $author),
 			);
 		} catch (InvalidArgumentException $exception) {
 			throw new RemoteThreadException('thread_invalid_document', $exception->getMessage());
@@ -342,6 +344,38 @@ final class RemoteThreadFetcher
 		}
 
 		return $nodes;
+	}
+
+	/**
+	 * The audience a thread document declares, without trusting it: public
+	 * wins, then the author's followers collection, otherwise unknown. The
+	 * service treats unknown as hidden from viewers without a follow edge.
+	 *
+	 * @param array<string, mixed> $document
+	 */
+	private function audience(array $document, string $authorId): ?Visibility
+	{
+		$public = 'https://www.w3.org/ns/activitystreams#Public';
+		$followers = rtrim($authorId, '/') . '/followers';
+		$recipients = [];
+
+		foreach (['to', 'cc', 'audience'] as $field) {
+			$value = $document[$field] ?? null;
+			foreach (is_array($value) ? $value : [$value] as $entry) {
+				if (is_string($entry)) {
+					$recipients[] = $entry;
+				}
+			}
+		}
+
+		if (in_array($public, $recipients, true)) {
+			return Visibility::Public;
+		}
+		if (in_array($followers, $recipients, true)) {
+			return Visibility::Followers;
+		}
+
+		return null;
 	}
 
 	private function firstId(mixed $value): ?string

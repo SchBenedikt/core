@@ -15,6 +15,7 @@ use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteThread;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use Psr\Log\LoggerInterface;
 
 use function array_fill_keys;
@@ -55,7 +56,12 @@ final class RemoteThreadService
 			throw new RemoteThreadNotFoundException('The remote post was not found.');
 		}
 
-		if ($this->following->find($localUserId, $target->actorId) === null) {
+		$followed = $this->following->find($localUserId, $target->actorId) !== null;
+
+		// A stored post with a verified public audience may be opened by any
+		// signed-in reader; followers-only and unknown audiences still require
+		// the follow edge.
+		if (!$followed && $target->audience !== Visibility::Public) {
 			throw new RemoteThreadNotFoundException('The remote post was not found.');
 		}
 
@@ -85,8 +91,8 @@ final class RemoteThreadService
 		$this->remember($fetched->post);
 
 		$blocked = array_fill_keys($this->blocks->actorIds($localUserId), true);
-		$ancestors = $this->ancestors($fetched->post, $blocked);
-		$replies = $this->replies($target->objectId, $fetched, $blocked);
+		$ancestors = $this->ancestors($fetched->post, $blocked, $followed);
+		$replies = $this->replies($target->objectId, $fetched, $blocked, $followed);
 
 		return new RemoteThread($fetched->post, array_reverse($ancestors), $replies);
 	}
@@ -96,7 +102,7 @@ final class RemoteThreadService
 	 *
 	 * @return list<RemoteThreadPost> ordered parent first, which the caller reverses
 	 */
-	private function ancestors(RemoteThreadPost $target, array $blocked): array
+	private function ancestors(RemoteThreadPost $target, array $blocked, bool $followed): array
 	{
 		$ancestors = [];
 		$seen = [$target->objectId => true];
@@ -126,6 +132,12 @@ final class RemoteThreadService
 				$this->remember($parent);
 			}
 
+			if (!$followed && $parent->audience !== Visibility::Public) {
+				// A reader without the follow edge only sees verified public
+				// context; anything else ends the visible chain.
+				break;
+			}
+
 			if (isset($blocked[$parent->authorId])) {
 				break;
 			}
@@ -146,6 +158,7 @@ final class RemoteThreadService
 		string $targetObjectId,
 		RemoteThreadFetchResult $fetched,
 		array $blocked,
+		bool $followed,
 	): array {
 		if ($this->fetcher->maxReplies() === 0) {
 			return [];
@@ -181,6 +194,7 @@ final class RemoteThreadService
 			if ($candidate->inReplyToId !== $targetObjectId
 				|| isset($seen[$candidate->objectId])
 				|| isset($blocked[$candidate->authorId])
+				|| (!$followed && $candidate->audience !== Visibility::Public)
 			) {
 				continue;
 			}

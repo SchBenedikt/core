@@ -22,6 +22,7 @@ $note = static function (
 	string $content,
 	string $published,
 	?string $inReplyTo = null,
+	array $to = [],
 ): array {
 	$object = [
 		'id' => $id,
@@ -32,6 +33,9 @@ $note = static function (
 	];
 	if ($inReplyTo !== null) {
 		$object['inReplyTo'] = $inReplyTo;
+	}
+	if ($to !== []) {
+		$object['to'] = $to;
 	}
 
 	return $object;
@@ -114,6 +118,73 @@ switch ($path) {
 			'root content',
 			'2026-11-11T10:00:00Z',
 		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/public-target':
+		$publicTarget = $note(
+			'https://remote.example/notes/public-target',
+			'bob',
+			'public target',
+			'2026-11-11T10:02:00Z',
+			'https://remote.example/notes/private-parent',
+			['https://www.w3.org/ns/activitystreams#Public'],
+		);
+		$publicTarget['replies'] = [
+			'type' => 'Collection',
+			'first' => 'http://thread.remote.example/thread/public-replies',
+		];
+		header('Content-Type: application/activity+json');
+		echo json_encode($publicTarget, JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/private-parent':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/private-parent',
+			'dave',
+			'followers-only parent',
+			'2026-11-11T10:01:00Z',
+			'https://remote.example/notes/root',
+			['https://remote.example/users/dave/followers'],
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/notes/followers-target':
+		header('Content-Type: application/activity+json');
+		echo json_encode($note(
+			'https://remote.example/notes/followers-target',
+			'bob',
+			'followers target',
+			'2026-11-11T10:02:00Z',
+			null,
+			['https://remote.example/users/bob/followers'],
+		), JSON_THROW_ON_ERROR);
+		return;
+
+	case '/thread/public-replies':
+		header('Content-Type: application/activity+json');
+		echo json_encode([
+			'id' => 'http://thread.remote.example/thread/public-replies',
+			'type' => 'OrderedCollection',
+			'orderedItems' => [
+				$note(
+					'https://remote.example/notes/public-reply',
+					'erin',
+					'public reply',
+					'2026-11-11T10:03:00Z',
+					'https://remote.example/notes/public-target',
+					['https://www.w3.org/ns/activitystreams#Public'],
+				),
+				$note(
+					'https://remote.example/notes/followers-reply',
+					'frank',
+					'followers-only reply',
+					'2026-11-11T10:04:00Z',
+					'https://remote.example/notes/public-target',
+					['https://remote.example/users/frank/followers'],
+				),
+			],
+		], JSON_THROW_ON_ERROR);
 		return;
 
 	case '/notes/blocked-target':
