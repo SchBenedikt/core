@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Service;
 
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowerRepository;
@@ -87,6 +88,7 @@ final class ReactionService
 		private readonly ?RemotePostRepository $remotePosts = null,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?RemoteActorFetcher $remoteActors = null,
+		private readonly ?ActorInboxResolver $actorInboxes = null,
 	) {
 	}
 
@@ -295,6 +297,19 @@ final class ReactionService
 	public function likeRemote(string $userId, string $objectId): array
 	{
 		$post = $this->remotePostFor($userId, $objectId);
+		$existing = $this->reactions->find(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Like,
+			null,
+		);
+		// Resolve the inbox before writing so an unreachable actor leaves no
+		// local reaction the peer never saw; an idempotent retry skips the
+		// fetch entirely.
+		$inbox = $existing === null && $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$reaction = new Reaction(
 			direction: ReactionDirection::Out,
 			subjectId: $userId,
@@ -307,8 +322,8 @@ final class ReactionService
 			createdAt: $this->now(),
 		);
 
-		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver($userId, $post->actorId, $this->activities->like($userId, $post->objectId));
+		if ($this->insertOutbound($reaction) && $inbox !== null) {
+			$this->pushDelivery($userId, $inbox, $this->activities->like($userId, $post->objectId));
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -322,6 +337,22 @@ final class ReactionService
 	public function unlikeRemote(string $userId, string $objectId): array
 	{
 		$post = $this->remotePostForUndo($userId, $objectId);
+		$stored = $this->reactions->find(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Like,
+			null,
+		);
+		if ($stored === null) {
+			return $this->remoteInteractionsFor($userId, $post);
+		}
+
+		// A failed Undo must leave the local like in place so a retry can
+		// still reach the peer, so the inbox resolves before the row goes.
+		$inbox = $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$removed = $this->reactions->remove(
 			ReactionDirection::Out,
 			$userId,
@@ -330,8 +361,8 @@ final class ReactionService
 			null,
 		);
 
-		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver($userId, $post->actorId, $this->activities->undoLike($userId, $post->objectId));
+		if ($removed && $inbox !== null) {
+			$this->pushDelivery($userId, $inbox, $this->activities->undoLike($userId, $post->objectId));
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -341,6 +372,16 @@ final class ReactionService
 	public function boostRemote(string $userId, string $objectId): array
 	{
 		$post = $this->remotePostFor($userId, $objectId);
+		$existing = $this->reactions->find(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Boost,
+			null,
+		);
+		$inbox = $existing === null && $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$createdAt = $this->now();
 		$reaction = new Reaction(
 			direction: ReactionDirection::Out,
@@ -354,8 +395,12 @@ final class ReactionService
 			createdAt: $createdAt,
 		);
 
-		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver($userId, $post->actorId, $this->activities->announceRemote($userId, $post->objectId, $reaction->activityId));
+		if ($this->insertOutbound($reaction) && $inbox !== null) {
+			$this->pushDelivery(
+				$userId,
+				$inbox,
+				$this->activities->announceRemote($userId, $post->objectId, $reaction->activityId),
+			);
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -366,10 +411,21 @@ final class ReactionService
 	{
 		$post = $this->remotePostForUndo($userId, $objectId);
 		$stored = $this->reactions->find(ReactionDirection::Out, $userId, $post->objectId, ReactionKind::Boost, null);
+		if ($stored === null) {
+			return $this->remoteInteractionsFor($userId, $post);
+		}
+
+		$inbox = $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$removed = $this->reactions->remove(ReactionDirection::Out, $userId, $post->objectId, ReactionKind::Boost, null);
 
-		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver($userId, $post->actorId, $this->activities->undoRemoteAnnounce($userId, $post->objectId, $stored?->activityId));
+		if ($removed && $inbox !== null) {
+			$this->pushDelivery(
+				$userId,
+				$inbox,
+				$this->activities->undoRemoteAnnounce($userId, $post->objectId, $stored->activityId),
+			);
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -384,6 +440,16 @@ final class ReactionService
 	{
 		$post = $this->remotePostFor($userId, $objectId);
 		$emoji = RemoteEmoji::forOutbound($emoji);
+		$existing = $this->reactions->find(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Emoji,
+			$emoji,
+		);
+		$inbox = $existing === null && $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$reaction = new Reaction(
 			direction: ReactionDirection::Out,
 			subjectId: $userId,
@@ -396,10 +462,10 @@ final class ReactionService
 			createdAt: $this->now(),
 		);
 
-		if ($this->insertOutbound($reaction) && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver(
+		if ($this->insertOutbound($reaction) && $inbox !== null) {
+			$this->pushDelivery(
 				$userId,
-				$post->actorId,
+				$inbox,
 				$this->activities->emojiReact($userId, $post->objectId, $emoji),
 			);
 		}
@@ -416,6 +482,20 @@ final class ReactionService
 	{
 		$post = $this->remotePostForUndo($userId, $objectId);
 		$emoji = RemoteEmoji::forOutbound($emoji);
+		$stored = $this->reactions->find(
+			ReactionDirection::Out,
+			$userId,
+			$post->objectId,
+			ReactionKind::Emoji,
+			$emoji,
+		);
+		if ($stored === null) {
+			return $this->remoteInteractionsFor($userId, $post);
+		}
+
+		$inbox = $this->mayDeliverRemoteInteraction($userId, $post->actorId)
+			? $this->remoteInbox($userId, $post->actorId)
+			: null;
 		$removed = $this->reactions->remove(
 			ReactionDirection::Out,
 			$userId,
@@ -424,10 +504,10 @@ final class ReactionService
 			$emoji,
 		);
 
-		if ($removed && $this->mayDeliverRemoteInteraction($userId, $post->actorId)) {
-			$this->deliver(
+		if ($removed && $inbox !== null) {
+			$this->pushDelivery(
 				$userId,
-				$post->actorId,
+				$inbox,
 				$this->activities->undoEmojiReact($userId, $post->objectId, $emoji),
 			);
 		}
@@ -723,43 +803,57 @@ final class ReactionService
 	}
 
 	/**
-	 * Queues one delivery to the stored inbox of a followed actor.
+	 * The inbox a remote interaction is delivered to.
 	 *
-	 * A missing edge means the follow was removed while the reaction was being
-	 * written; the local state stays and nothing is sent, because there is no
-	 * longer a target this account asked to talk to.
+	 * A stored follow edge wins because it was resolved by a signed fetch at
+	 * follow time. The host's inbox resolver signs its actor request for
+	 * peers that require authorized fetch and does not demand a signing key;
+	 * the full actor document is the fallback and also covers hosts without
+	 * an inbox resolver.
 	 *
-	 * @param array<string, mixed> $activity
+	 * @throws ReactionException when no usable inbox can be resolved
 	 */
-	private function deliver(string $userId, string $actorId, array $activity): void
+	private function remoteInbox(string $userId, string $actorId): string
 	{
 		$followed = $this->following->find($userId, $actorId);
 		$inbox = $followed?->inboxUrl;
-
-		if ($inbox === null || trim($inbox) === '') {
-			if ($this->remoteActors === null) {
-				throw new ReactionException(
-					'remote_delivery_unreachable',
-					'The remote author inbox cannot be resolved on this instance.',
-				);
-			}
-
-			try {
-				$actor = $this->remoteActors->fetch($actorId);
-			} catch (UnknownActorException $exception) {
-				throw new ReactionException('remote_delivery_unreachable', $exception->getMessage());
-			}
-
-			if ($actor->actorId !== $actorId || trim($actor->inboxUrl) === '') {
-				throw new ReactionException(
-					'remote_delivery_unreachable',
-					'The remote actor document did not name a usable inbox.',
-				);
-			}
-
-			$inbox = $actor->inboxUrl;
+		if (is_string($inbox) && trim($inbox) !== '') {
+			return trim($inbox);
 		}
 
+		$inbox = $this->actorInboxes?->inboxFor($actorId);
+		if (is_string($inbox) && trim($inbox) !== '') {
+			return trim($inbox);
+		}
+
+		if ($this->remoteActors === null) {
+			throw new ReactionException(
+				'remote_delivery_unreachable',
+				'The remote author inbox cannot be resolved on this instance.',
+			);
+		}
+
+		try {
+			$actor = $this->remoteActors->fetch($actorId);
+		} catch (UnknownActorException $exception) {
+			throw new ReactionException('remote_delivery_unreachable', $exception->getMessage());
+		}
+
+		if ($actor->actorId !== $actorId || trim($actor->inboxUrl) === '') {
+			throw new ReactionException(
+				'remote_delivery_unreachable',
+				'The remote actor document did not name a usable inbox.',
+			);
+		}
+
+		return $actor->inboxUrl;
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 */
+	private function pushDelivery(string $userId, string $inbox, array $activity): void
+	{
 		$this->queue->push(JobType::FEDERATION_DELIVER, [
 			'inbox' => $inbox,
 			'activity' => $activity,

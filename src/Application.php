@@ -1192,27 +1192,12 @@ final readonly class Application
 			$notificationThreadResolver,
 			$eventBroker,
 		);
-		$reactionService = new ReactionService(
-			$posts,
-			$favouriteRepository,
-			$reactionRepository,
-			$followers,
-			$followingRepository,
-			$blockRepository,
-			$activities,
-			$queue,
-			$clock,
-			$notificationService,
-			$muteRepository,
-			$remotePosts,
-			$inboundBlocks ?? new InMemoryInboundBlockRepository(),
-			$remoteActors,
-		);
 		$muteService = new MuteService($muteRepository, $clock);
 		$accountListService = new AccountListService($accountListRepository, $clock, $ids);
 		$followedHashtagService = new FollowedHashtagService($followedHashtagRepository, $clock);
 		$remotePostFactory = new RemotePostFactory($clock);
 		$targetGuard = new FederationTargetGuard($hostResolver, $moderationPolicy);
+		$actorInboxResolver ??= $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
 		if ($actorResolver !== null) {
 			// Even a host-provided resolver must not be asked to fetch a
 			// private actor URL on behalf of an inbound signature. Local
@@ -1294,7 +1279,23 @@ final readonly class Application
 		$followerService = new FollowerService($followers, $clock, $ids);
 		$followRequestService = $followRequests
 			?? new FollowRequestService($followers, $followerService, $activities, $queue);
-		$actorInboxResolver ??= $httpClient === null ? null : new HttpActorInboxResolver($httpClient, $targetGuard);
+		$reactionService = new ReactionService(
+			$posts,
+			$favouriteRepository,
+			$reactionRepository,
+			$followers,
+			$followingRepository,
+			$blockRepository,
+			$activities,
+			$queue,
+			$clock,
+			$notificationService,
+			$muteRepository,
+			$remotePosts,
+			$inboundBlocks ?? new InMemoryInboundBlockRepository(),
+			$remoteActors,
+			$actorInboxResolver,
+		);
 		$blockService = new BlockService(
 			$blockRepository,
 			$clock,

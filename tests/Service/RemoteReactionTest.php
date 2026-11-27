@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Service;
 
+use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\Block;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\Follower;
@@ -442,6 +443,48 @@ final class RemoteReactionTest extends TestCase
 		);
 	}
 
+	public function testAnUnreachableInboxRefusesTheLikeBeforeAnythingIsStored(): void
+	{
+		$this->following->remove('alice', self::ACTOR);
+		$service = $this->service();
+
+		try {
+			$service->likeRemote('alice', self::OBJECT);
+			self::fail('Expected the missing inbox to surface.');
+		} catch (ReactionException $exception) {
+			self::assertSame('remote_delivery_unreachable', $exception->reason);
+		}
+
+		self::assertNull(
+			$this->reactions->find(ReactionDirection::Out, 'alice', self::OBJECT, ReactionKind::Like, null),
+			'A like the peer can never see must not be stored.',
+		);
+		self::assertSame([], $this->queue->reserve(10, $this->clock->now()));
+	}
+
+	public function testTheInboxResolverDeliversWithoutAFullActorFetch(): void
+	{
+		$this->following->remove('alice', self::ACTOR);
+		$service = $this->service(actorInboxes: new class ('https://remote.example/users/bob', 'https://remote.example/users/bob/inbox') implements ActorInboxResolver {
+			public function __construct(
+				private readonly string $actorId,
+				private readonly string $inboxUrl,
+			) {
+			}
+
+			public function inboxFor(string $actorId): ?string
+			{
+				return $actorId === $this->actorId ? $this->inboxUrl : null;
+			}
+		});
+
+		$service->likeRemote('alice', self::OBJECT);
+
+		$jobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $jobs);
+		self::assertSame(self::INBOX, $jobs[0]->payload['inbox']);
+	}
+
 	public function testTheLikeIdIsStableAcrossARemoveAndRetry(): void
 	{
 		$service = $this->service();
@@ -506,6 +549,7 @@ final class RemoteReactionTest extends TestCase
 		?JobQueue $queue = null,
 		?InMemoryInboundBlockRepository $inboundBlocks = null,
 		?RemoteActorFetcher $remoteActors = null,
+		?ActorInboxResolver $actorInboxes = null,
 	): ReactionService
 	{
 		return new ReactionService(
@@ -522,6 +566,7 @@ final class RemoteReactionTest extends TestCase
 			remotePosts: $this->remotePosts,
 			inboundBlocks: $inboundBlocks,
 			remoteActors: $remoteActors,
+			actorInboxes: $actorInboxes,
 		);
 	}
 
