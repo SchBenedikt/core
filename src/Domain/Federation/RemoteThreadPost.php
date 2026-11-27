@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -39,6 +40,12 @@ final readonly class RemoteThreadPost
 		public DateTimeImmutable $fetchedAt,
 		public ?string $contentWarning = null,
 		public ?string $inReplyToId = null,
+		/**
+		 * The audience the origin addressed, when the document declares one.
+		 * It is not persisted: a cached node without it counts as unknown and
+		 * stays hidden from viewers without a follow edge.
+		 */
+		public ?Visibility $audience = null,
 	) {
 		if ($objectId === '' || $authorId === '' || $content === '') {
 			throw new InvalidArgumentException('A thread post needs an object, an author and content.');
@@ -70,6 +77,7 @@ final readonly class RemoteThreadPost
 			'content_warning' => $this->contentWarning,
 			'published_at' => Time::format($this->publishedAt),
 			'in_reply_to_id' => $this->inReplyToId,
+			'audience' => $this->audience?->value,
 		];
 	}
 }

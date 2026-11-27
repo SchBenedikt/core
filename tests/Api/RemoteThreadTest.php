@@ -18,6 +18,7 @@ use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Config\ArrayConfig;
@@ -336,6 +337,53 @@ final class RemoteThreadTest extends TestCase
 		self::assertContains('thread_timeout', $this->logger->reasons());
 	}
 
+	public function testAPublicAudienceTargetOpensWithoutTheFollowButContextStaysFiltered(): void
+	{
+		$this->remotePosts->insert($this->remotePost(
+			'https://remote.example/activities/create-public-target',
+			'https://remote.example/notes/public-target',
+			self::BOB,
+			Visibility::Public,
+		));
+
+		$response = $this->app()->handle($this->request(
+			'https://remote.example/activities/create-public-target',
+			'carol',
+		));
+
+		self::assertSame(200, $response->status);
+		$thread = $response->decodedBody()['thread'];
+		self::assertSame('https://remote.example/notes/public-target', $thread['post']['object_id']);
+
+		// The followers-only ancestor ends the visible chain and the
+		// followers-only reply is filtered for a reader without the follow.
+		self::assertSame([], $thread['ancestors']);
+		self::assertSame(
+			['https://remote.example/notes/public-reply'],
+			array_column($thread['replies'], 'object_id'),
+		);
+	}
+
+	public function testAFollowersAudienceTargetStillRequiresTheFollow(): void
+	{
+		$this->remotePosts->insert($this->remotePost(
+			'https://remote.example/activities/create-followers-target',
+			'https://remote.example/notes/followers-target',
+			self::BOB,
+			Visibility::Followers,
+		));
+
+		self::assertSame(404, $this->app()->handle($this->request(
+			'https://remote.example/activities/create-followers-target',
+			'carol',
+		))->status);
+
+		// The follower still sees the full context, restricted nodes included.
+		$response = $this->show($this->app(), 'https://remote.example/activities/create-followers-target');
+		self::assertSame(200, $response->status);
+		self::assertSame('followers target', $response->decodedBody()['thread']['post']['content']);
+	}
+
 	private function app(?ArrayConfig $config = null): Application
 	{
 		$config ??= new ArrayConfig([
@@ -372,8 +420,12 @@ final class RemoteThreadTest extends TestCase
 		return new Request('GET', $path, userId: $userId);
 	}
 
-	private function remotePost(string $activityId, string $objectId, string $actorId): RemotePost
-	{
+	private function remotePost(
+		string $activityId,
+		string $objectId,
+		string $actorId,
+		?Visibility $audience = null,
+	): RemotePost {
 		return new RemotePost(
 			activityId: $activityId,
 			objectId: $objectId,
@@ -382,6 +434,7 @@ final class RemoteThreadTest extends TestCase
 			content: 'stored target',
 			contentWarning: null,
 			publishedAt: Time::parse('2026-11-11T10:02:00Z'),
+			audience: $audience,
 		);
 	}
 }
