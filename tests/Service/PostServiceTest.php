@@ -417,6 +417,9 @@ final class PostServiceTest extends TestCase
 		self::assertSame('https://remote.example/notes/1', $post->remoteParentObjectId);
 		self::assertSame('https://remote.example/users/bob', $post->remoteParentAuthorId);
 		self::assertSame('https://remote.example/notes/1', $post->toArray()['remote_parent_object_id']);
+		// The API keeps reporting the effective parent under in_reply_to_id,
+		// whether it is a local post id or a remote object URL.
+		self::assertSame('https://remote.example/notes/1', $post->toArray()['in_reply_to_id']);
 		self::assertSame('https://remote.example/users/bob', $this->repository->find($post->id)?->remoteParentAuthorId);
 
 		$jobs = $this->queue->pending();

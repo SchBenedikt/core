@@ -53,7 +53,7 @@ final readonly class TimelineEntry
 			contentWarning: $post->contentWarning,
 			publishedAt: $post->publishedAt,
 			visibility: $post->visibility,
-			inReplyToId: $post->inReplyToId,
+			inReplyToId: $post->replyParentRef(),
 		);
 	}
 

@@ -205,7 +205,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
-					&& (!$hideReplies || $post->inReplyToId === null),
+					&& (!$hideReplies || $post->replyParentRef() === null),
 			)),
 			$limit,
 			$before,
@@ -228,7 +228,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
-					&& (!$hideReplies || $post->inReplyToId === null)
+					&& (!$hideReplies || $post->replyParentRef() === null)
 					&& in_array($hashtag, Hashtags::extract($post->content), true),
 			)),
 			$limit,
@@ -254,7 +254,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				static fn (Post $post): bool => !$post->isDeleted()
 					&& !$post->isArchived()
 					&& $post->visibility->mayListPublicly()
-					&& (!$hideReplies || $post->inReplyToId === null)
+					&& (!$hideReplies || $post->replyParentRef() === null)
 					&& array_intersect($hashtags, Hashtags::extract($post->content)) !== [],
 			)),
 			$limit,
@@ -338,7 +338,7 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 			static fn (Post $post): bool => !$post->isDeleted()
 				&& !$post->isArchived()
 				&& $post->visibility !== Visibility::Direct
-				&& (!$hideReplies || $post->inReplyToId === null)
+				&& (!$hideReplies || $post->replyParentRef() === null)
 				&& isset($authors[$post->authorId])
 				&& ($before === null || ($before instanceof TimelineCursor
 					? ($post->publishedAt < $before->publishedAt

@@ -500,11 +500,12 @@ final class AtprotoPublishService
 	 */
 	private function replyReference(Post $post, AtprotoAccount $account): ?AtprotoReplyRef
 	{
-		if ($post->inReplyToId === null) {
+		$parentRef = $post->replyParentRef();
+		if ($parentRef === null) {
 			return null;
 		}
 
-		$parent = $this->publications->findForPost($post->authorId, $post->inReplyToId, $account->did);
+		$parent = $this->publications->findForPost($post->authorId, $parentRef, $account->did);
 		if ($parent === null) {
 			throw new AtprotoPostRejectedException(AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED);
 		}
@@ -553,14 +554,16 @@ final class AtprotoPublishService
 			return AtprotoPostRejectedException::TEXT_TOO_LONG;
 		}
 
-		if ($post->inReplyToId !== null) {
+		$replyParentRef = $post->replyParentRef();
+		if ($replyParentRef !== null) {
 			if ($this->replies === null) {
 				return AtprotoPostRejectedException::REPLIES_UNSUPPORTED;
 			}
 
 			// Only a parent that was itself published to AT Protocol has a
-			// record to reply to; a local-only parent has no AT URI.
-			if ($this->publications->findForPost($post->authorId, $post->inReplyToId, $accountDid) === null) {
+			// record to reply to; a local-only or remote-federation parent has
+			// no AT URI.
+			if ($this->publications->findForPost($post->authorId, $replyParentRef, $accountDid) === null) {
 				return AtprotoPostRejectedException::REPLY_PARENT_NOT_PUBLISHED;
 			}
 		}

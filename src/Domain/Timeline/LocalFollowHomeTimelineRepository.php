@@ -124,7 +124,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 				if ($post === null || $post->isDeleted() || !$post->visibility->isPubliclyVisible()) {
 					continue;
 				}
-				if ($hideReplies && $post->inReplyToId !== null) {
+				if ($hideReplies && $post->replyParentRef() !== null) {
 					continue;
 				}
 
@@ -148,7 +148,7 @@ final readonly class LocalFollowHomeTimelineRepository implements HomeTimelineRe
 					publishedAt: $boost->createdAt,
 					visibility: $post->visibility,
 					boostedBy: $boost->userId,
-					inReplyToId: $post->inReplyToId,
+					inReplyToId: $post->replyParentRef(),
 				);
 				$entryIds[$boost->id] = true;
 				$representedObjects[$post->id] = true;
