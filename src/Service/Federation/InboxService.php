@@ -29,7 +29,9 @@ use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
 use AlohaSocial\Core\Domain\Moderation\ModerationPolicy;
+use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
@@ -318,7 +320,9 @@ final class InboxService
 			return;
 		}
 
-		$this->requireFollowedContent($actor);
+		if (!$this->isFollowed($actor)) {
+			$this->requireAddressedReply($actor, $activity);
+		}
 
 		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity, $actor->followersUrl);
 
@@ -351,11 +355,10 @@ final class InboxService
 	 */
 	private function handleUpdate(RemoteActor $actor, array $activity): void
 	{
-		$this->requireFollowedContent($actor);
-
 		$target = $this->remotePosts->findPostByObjectId(
 			$this->remotePostFactory->targetId($activity['object'] ?? null, 'Update'),
 		);
+		$this->requireStoredContentAccess($actor, $target);
 
 		if ($target === null) {
 			// The Create may still be in flight. Holding the edit is what
@@ -450,9 +453,11 @@ final class InboxService
 	 */
 	private function handleAnnounce(RemoteActor $actor, array $activity): void
 	{
-		$this->requireFollowedContent($actor);
-
 		$objectId = $this->remotePostFactory->targetId($activity['object'] ?? null, 'Announce');
+		if (!$this->isFollowed($actor)) {
+			$this->requireAddressedBoost($actor, $objectId);
+		}
+
 		$target = $this->remotePosts->findPostByObjectId($objectId);
 
 		$post = $this->remotePostFactory->fromAnnounce($actor->actorId, $activity, $target);
@@ -470,8 +475,8 @@ final class InboxService
 
 		$postId = $this->activities->postIdFromUrl($reply->inReplyToId);
 		$parent = $postId === null ? null : $this->posts->find($postId);
-		if ($parent === null || $parent->isDeleted() || $parent->isArchived()
-			|| !$parent->visibility->isPubliclyVisible() || !$this->shouldNotify($parent->authorId, $actor->actorId)
+		if ($parent === null || !$this->localPostVisibleTo($parent, $actor)
+			|| !$this->shouldNotify($parent->authorId, $actor->actorId)
 		) {
 			return;
 		}
@@ -487,8 +492,8 @@ final class InboxService
 
 		$postId = $this->activities->postIdFromUrl($objectId);
 		$post = $postId === null ? null : $this->posts->find($postId);
-		if ($post === null || $post->isDeleted() || $post->isArchived()
-			|| !$post->visibility->isPubliclyVisible() || !$this->shouldNotify($post->authorId, $actor->actorId)
+		if ($post === null || !$this->localPostVisibleTo($post, $actor)
+			|| !$this->shouldNotify($post->authorId, $actor->actorId)
 		) {
 			return;
 		}
@@ -523,20 +528,21 @@ final class InboxService
 
 	private function handleDelete(RemoteActor $actor, array $activity): void
 	{
-		$this->requireFollowedContent($actor);
-
 		$targetId = $this->remotePostFactory->targetId($activity['object'] ?? null, 'Delete');
 
 		if ($this->storyService?->hasObject($targetId) === true) {
+			$this->requireFollowedContent($actor);
 			$this->storyService->receiveDelete($actor->actorId, $targetId);
 
 			return;
 		}
 
 		// A peer can delete either a Create/Announce by activity id or the
-		// Note itself. The actor must own whichever row matches.
+		// Note itself. The actor must own whichever row matches; an unfollowed
+		// actor may only touch rows it owns, everything else keeps the gate.
 		$byActivity = $this->remotePosts->findByActivityId($targetId);
 		if ($byActivity !== null) {
+			$this->requireStoredContentAccess($actor, $byActivity);
 			if ($byActivity->actorId !== $actor->actorId) {
 				throw new InboxRejectedException(
 					'actor_mismatch',
@@ -555,11 +561,13 @@ final class InboxService
 
 		$post = $this->remotePosts->findPostByObjectId($targetId);
 		if ($post === null) {
+			$this->requireFollowedContent($actor);
 			// A Delete for something not stored is already satisfied; peers
 			// retry deliveries, and treating that as an error would loop.
 			return;
 		}
 
+		$this->requireStoredContentAccess($actor, $post);
 		if ($post->actorId !== $actor->actorId) {
 			throw new InboxRejectedException(
 				'actor_mismatch',
@@ -576,12 +584,125 @@ final class InboxService
 
 	private function requireFollowedContent(RemoteActor $actor): void
 	{
-		if ($this->following->localUserIdsForActor($actor->actorId) === []) {
+		if (!$this->isFollowed($actor)) {
 			throw new InboxRejectedException(
 				'not_followed',
 				'This actor is not followed by a local account.',
 			);
 		}
+	}
+
+	private function isFollowed(RemoteActor $actor): bool
+	{
+		return $this->following->localUserIdsForActor($actor->actorId) !== [];
+	}
+
+	/**
+	 * Content changes stay follow-gated, except that an actor may always
+	 * update or delete a row it owns: addressed replies and boosts can be
+	 * accepted without a follow edge, and their lifecycle must not depend on
+	 * one appearing later.
+	 */
+	private function requireStoredContentAccess(RemoteActor $actor, ?RemotePost $target): void
+	{
+		if ($this->isFollowed($actor) || ($target !== null && $target->actorId === $actor->actorId)) {
+			return;
+		}
+
+		throw new InboxRejectedException(
+			'not_followed',
+			'This actor is not followed by a local account.',
+		);
+	}
+
+	/**
+	 * A reply is addressed when its inReplyTo names something this instance
+	 * can verify: one of our own readable posts, or a cached remote post
+	 * whose stored audience is public. Anything else keeps the follow gate,
+	 * so unsolicited content still cannot be injected.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	private function requireAddressedReply(RemoteActor $actor, array $activity): void
+	{
+		$object = $activity['object'] ?? null;
+		$inReplyTo = is_array($object) ? $this->referenceTarget($object['inReplyTo'] ?? null) : null;
+
+		if ($inReplyTo !== null) {
+			$postId = $this->activities->postIdFromUrl($inReplyTo);
+			if ($postId !== null) {
+				$parent = $this->posts?->find($postId);
+				if ($parent !== null && $this->localPostVisibleTo($parent, $actor)) {
+					return;
+				}
+			} else {
+				$parent = $this->remotePosts->findPostByObjectId($inReplyTo);
+				if ($parent !== null && $parent->audience === Visibility::Public) {
+					return;
+				}
+			}
+		}
+
+		$this->requireFollowedContent($actor);
+	}
+
+	/**
+	 * A boost is addressed when it names a post this instance can verify,
+	 * under the same rules as an addressed reply.
+	 */
+	private function requireAddressedBoost(RemoteActor $actor, string $objectId): void
+	{
+		$postId = $this->activities->postIdFromUrl($objectId);
+		if ($postId !== null) {
+			$parent = $this->posts?->find($postId);
+			if ($parent !== null && $this->localPostVisibleTo($parent, $actor)) {
+				return;
+			}
+		} else {
+			$target = $this->remotePosts->findPostByObjectId($objectId);
+			if ($target !== null && $target->audience === Visibility::Public) {
+				return;
+			}
+		}
+
+		$this->requireFollowedContent($actor);
+	}
+
+	/**
+	 * Whether the actor may legitimately have seen this local post: it is
+	 * readable by link, or it is followers-only and the actor is an accepted
+	 * follower of the author. The author blocking the actor always denies.
+	 */
+	private function localPostVisibleTo(Post $post, RemoteActor $actor): bool
+	{
+		if ($post->isDeleted() || $post->isArchived()) {
+			return false;
+		}
+
+		if (!$post->visibility->isPubliclyVisible()
+			&& ($post->visibility !== Visibility::Followers
+				|| !$this->followers->isAcceptedFollower($post->authorId, $actor->actorId))
+		) {
+			return false;
+		}
+
+		return $this->blocks?->findByActor($post->authorId, $actor->actorId) === null;
+	}
+
+	/**
+	 * The same tolerated reference shape the post factory accepts, but
+	 * non-throwing: an unparseable target simply is not addressed.
+	 */
+	private function referenceTarget(mixed $value): ?string
+	{
+		$id = is_array($value) ? ($value['id'] ?? $value['@id'] ?? $value['href'] ?? null) : $value;
+		if (!is_string($id)) {
+			return null;
+		}
+
+		$id = trim($id);
+
+		return $id !== '' && mb_strlen($id) <= RemotePost::MAX_ID_LENGTH ? $id : null;
 	}
 
 	private function insertRemotePost(RemotePost $post): void
@@ -953,8 +1074,6 @@ final class InboxService
 	 */
 	private function undoAnnounce(RemoteActor $actor, array $announce): void
 	{
-		$this->requireFollowedContent($actor);
-
 		$actorId = $announce['actor'] ?? null;
 		if (!is_string($actorId) || $actorId !== $actor->actorId) {
 			throw new InboxRejectedException(
