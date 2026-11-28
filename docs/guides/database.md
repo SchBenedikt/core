@@ -71,6 +71,7 @@ Each table's definition lives next to its repository or adapter:
 - `src/Domain/Federation/RemotePollSchema.php` → `social_remote_poll` (peer-owned Question options and counts as JSON) and `social_remote_poll_vote` (one optimistic local vote per viewer, with its queue state)
 - `src/Domain/Federation/RemotePostSchema.php` → `social_remote_post` (including nullable `updated_at`, bounded `object_type` and optional `object_metadata` JSON) and `social_remote_post_attachment`
 - `src/Domain/Federation/PendingRemoteUpdateSchema.php` → `social_pending_remote_update` (bounded, expiring queue of `Update` activities whose post has not arrived yet)
+- `src/Domain/Federation/RemoteObjectTombstoneSchema.php` → `social_remote_object_tombstone` (owner-scoped, bounded, expiring record of remote objects an actor deleted, so a late Create, Update, backfill or thread fetch cannot resurrect them)
 - `src/Domain/Federation/RemoteThreadSchema.php` → `social_remote_thread_post`
 - `src/Domain/Federation/BlockSchema.php` → `social_block`
 - `src/Domain/Federation/InboundBlockSchema.php` → `social_inbound_block` (remote actor blocks per local account, with the owning Block activity URI)

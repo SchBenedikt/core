@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Service;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
 use AlohaSocial\Core\Platform\Http\HttpResponse;
@@ -179,6 +180,44 @@ final class RemoteOutboxBackfillTest extends TestCase
 		self::assertSame(2, $report->items);
 		self::assertSame(2, $report->stored);
 		self::assertNull($this->posts->findByActivityId('https://remote.example/activities/create-3'));
+	}
+
+	public function testAnAuthorTombstoneKeepsDeletedObjectsOutOfTheBackfill(): void
+	{
+		$tombstones = new InMemoryRemoteObjectTombstoneStore();
+		$clock = new FrozenClock(Time::parse('2026-11-11T12:00:00Z'));
+		$tombstones->record(
+			self::ACTOR,
+			'https://remote.example/notes/deleted',
+			'https://remote.example/activities/delete-1',
+			$clock->now(),
+		);
+		$service = new RemoteOutboxBackfill(
+			$this->http,
+			$this->posts,
+			new RemotePostFactory($clock),
+			$this->following,
+			tombstones: $tombstones,
+			clock: $clock,
+		);
+
+		$this->queue([
+			'type' => 'OrderedCollection',
+			'first' => [
+				'type' => 'OrderedCollectionPage',
+				'orderedItems' => [
+					$this->create('https://remote.example/activities/create-deleted', 'https://remote.example/notes/deleted', 'deleted'),
+					$this->create('https://remote.example/activities/create-live', 'https://remote.example/notes/live', 'live'),
+				],
+			],
+		]);
+
+		$report = $service->backfill(self::ACTOR, self::OUTBOX);
+
+		self::assertSame(1, $report->stored);
+		self::assertSame(1, $report->skipped);
+		self::assertNull($this->posts->findByActivityId('https://remote.example/activities/create-deleted'));
+		self::assertNotNull($this->posts->findByActivityId('https://remote.example/activities/create-live'));
 	}
 
 	/**

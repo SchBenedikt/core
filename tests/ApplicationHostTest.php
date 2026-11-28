@@ -40,6 +40,7 @@ use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectTombstoneSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePostSchema;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadSchema;
@@ -1399,6 +1400,7 @@ final class ApplicationHostTest extends TestCase
 		AccountMoveSchema::create($database);
 		RemotePostSchema::create($database);
 		PendingRemoteUpdateSchema::create($database);
+		RemoteObjectTombstoneSchema::create($database);
 		RemoteThreadSchema::create($database);
 		BlockSchema::create($database);
 	\AlohaSocial\Core\Domain\Federation\InboundBlockSchema::create($database);
