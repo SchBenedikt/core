@@ -53,13 +53,16 @@ final readonly class CreatePost
 	 * warning, language and local reply target, order-insensitive recipients
 	 * — and compares poll shape only: option titles, `multiple` and
 	 * `hide_totals`. Fields that legitimately differ between attempts stay
-	 * out: derived poll expiry, publication time and quote resolution (a
-	 * `quotedPostId` change under a reused key is not detected). A remote
-	 * reply target is compared by existence only, because the stored
-	 * `remoteParentObjectId` is the canonical object id, which need not be
-	 * byte-identical to the URL the client sent.
+	 * out: derived poll expiry and publication time. The quote target is
+	 * compared by canonical object id: callers resolve `quotedPostId`
+	 * through {@see PostService::quoteObjectIdOf()} first, and the raw
+	 * value still matches when it is itself the canonical id (a remote
+	 * object id passed verbatim). A remote reply target is compared by
+	 * existence only, because the stored `remoteParentObjectId` is the
+	 * canonical object id, which need not be byte-identical to the URL the
+	 * client sent.
 	 */
-	public function matchesPost(Post $post): bool
+	public function matchesPost(Post $post, ?string $resolvedQuotedObjectId = null): bool
 	{
 		$content = trim($this->content);
 		$warning = $this->contentWarning === null ? null : trim($this->contentWarning);
@@ -68,6 +71,8 @@ final readonly class CreatePost
 		$language = $language === '' ? null : $language;
 		$replyTo = $this->inReplyToId === null ? null : trim($this->inReplyToId);
 		$replyTo = $replyTo === '' ? null : $replyTo;
+		$quote = $this->quotedPostId === null ? null : trim($this->quotedPostId);
+		$quote = $quote === '' ? null : $quote;
 
 		if ($post->content !== $content
 			|| $post->visibility !== $this->visibility
@@ -92,6 +97,17 @@ final readonly class CreatePost
 				return false;
 			}
 		} elseif ($post->inReplyToId !== $replyTo || $post->remoteParentObjectId !== null) {
+			return false;
+		}
+
+		if ($quote === null) {
+			if ($post->quotedObjectId !== null) {
+				return false;
+			}
+		} elseif ($post->quotedObjectId === null
+			|| ($post->quotedObjectId !== $resolvedQuotedObjectId
+				&& $post->quotedObjectId !== $quote)
+		) {
 			return false;
 		}
 

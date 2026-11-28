@@ -164,7 +164,10 @@ final class CreatePostHandler implements Handler
 				throw $exception;
 			}
 
-			if (!$command->matchesPost($existing)) {
+			if (!$command->matchesPost(
+				$existing,
+				$this->posts->quoteObjectIdOf($quotedPostId),
+			)) {
 				throw new HttpException(
 					409,
 					'idempotency_conflict',

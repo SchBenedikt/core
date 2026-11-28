@@ -907,7 +907,10 @@ final class MastodonService
 				throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 			}
 
-			if (!$command->matchesPost($existing)) {
+			if (!$command->matchesPost(
+				$existing,
+				$this->postService->quoteObjectIdOf($quotedStatusId),
+			)) {
 				throw new MastodonRequestException(
 					409,
 					'idempotency_conflict',
