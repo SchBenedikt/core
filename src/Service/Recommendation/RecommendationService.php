@@ -88,6 +88,18 @@ final class RecommendationService
 
 	public const MAX_CURSOR_LENGTH = 2048;
 
+	/**
+	 * Stored signals stop influencing ranking after this window. The rows are
+	 * kept for export until the owner resets or withdraws consent.
+	 */
+	public const SIGNAL_RETENTION_SECONDS = 7776000;
+
+	/**
+	 * Passive impression/click events collapse into one stored row per
+	 * candidate inside this window; explicit interactions are never deduped.
+	 */
+	public const SIGNAL_NOISE_WINDOW_SECONDS = 86400;
+
 	public function __construct(
 		private readonly Config $config,
 		private readonly RecommendationCandidateSource $candidates,
@@ -141,6 +153,12 @@ final class RecommendationService
 		);
 		$this->store->savePreference($preference);
 
+		// Withdrawing behavioral consent erases the retained signals instead
+		// of merely muting them, so no derived influence survives the opt-out.
+		if ($current->behavioralConsent && !$preference->behavioralConsent) {
+			$this->store->deleteSignalsFor($userId);
+		}
+
 		return $preference;
 	}
 
@@ -187,7 +205,7 @@ final class RecommendationService
 			$userId,
 			$candidates,
 			$preference,
-			$this->store->signalsFor($userId, self::MAX_SIGNALS),
+			$this->signalsForFeed($userId, $preference, $now),
 			$feedback,
 			$now,
 		));
@@ -218,6 +236,22 @@ final class RecommendationService
 			throw new RecommendationConsentRequiredException();
 		}
 
+		$now = Time::toSecondPrecision($this->clock->now());
+
+		// Passive events are noisy: one impression or click per candidate per
+		// window is enough signal, repeats return the stored row unchanged.
+		if ($kind === RecommendationSignalKind::Impression || $kind === RecommendationSignalKind::Click) {
+			$existing = $this->store->recentSignal(
+				$userId,
+				$kind,
+				$candidateId,
+				$now->modify('-' . self::SIGNAL_NOISE_WINDOW_SECONDS . ' seconds'),
+			);
+			if ($existing !== null) {
+				return $existing;
+			}
+		}
+
 		if ($this->store->signalCount($userId) >= self::MAX_SIGNALS) {
 			throw new RecommendationLimitException();
 		}
@@ -227,7 +261,7 @@ final class RecommendationService
 			$userId,
 			$kind,
 			$candidateId,
-			Time::toSecondPrecision($this->clock->now()),
+			$now,
 		);
 		$this->store->appendSignal($signal);
 
@@ -518,6 +552,26 @@ final class RecommendationService
 		}
 
 		return $map;
+	}
+
+	/**
+	 * Signals that may influence ranking right now: none without consent, and
+	 * none older than the retention window.
+	 *
+	 * @return list<RecommendationSignal>
+	 */
+	private function signalsForFeed(string $userId, RecommendationPreference $preference, DateTimeImmutable $now): array
+	{
+		if (!$preference->behavioralConsent) {
+			return [];
+		}
+
+		$cutoff = $now->modify('-' . self::SIGNAL_RETENTION_SECONDS . ' seconds');
+
+		return array_values(array_filter(
+			$this->store->signalsFor($userId, self::MAX_SIGNALS),
+			static fn (RecommendationSignal $signal): bool => $signal->createdAt >= $cutoff,
+		));
 	}
 
 	private function snapshotId(): string

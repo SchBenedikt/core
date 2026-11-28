@@ -352,6 +352,117 @@ final class RecommendationServiceTest extends TestCase
 		self::assertFalse($service->preferences(self::ALICE)->behavioralConsent);
 	}
 
+	public function testMultipleSignalKindsRankWithoutErrorAndStayDeterministic(): void
+	{
+		$service = $this->service([
+			$this->candidate('local:signaled', 'bob', 'signaled post', $this->ago(5000)),
+			$this->candidate('local:plain', 'carol', 'plain post', $this->ago(10)),
+		]);
+		$service->updatePreferences(self::ALICE, ['behavioral_consent' => true]);
+		foreach ([
+			RecommendationSignalKind::Like,
+			RecommendationSignalKind::Like,
+			RecommendationSignalKind::Reply,
+			RecommendationSignalKind::Bookmark,
+			RecommendationSignalKind::Click,
+		] as $kind) {
+			$service->recordSignal(self::ALICE, $kind, 'local:signaled');
+		}
+
+		$first = $service->feed(self::ALICE, 10);
+		$signaled = null;
+		foreach ($first->items as $item) {
+			if ($item->candidate->id === 'local:signaled') {
+				$signaled = $item;
+			}
+		}
+
+		self::assertNotNull($signaled);
+		self::assertContains('signal:like', $signaled->reasons);
+		self::assertContains('signal:reply', $signaled->reasons);
+		self::assertContains('signal:bookmark', $signaled->reasons);
+		self::assertContains('signal:click', $signaled->reasons);
+		// Duplicate Like signals collapse to one reason and one score bump.
+		self::assertSame(1, count(array_keys($signaled->reasons, 'signal:like', true)));
+
+		// A repeated feed reproduces the identical order and scores.
+		$again = $service->feed(self::ALICE, 10);
+		self::assertSame(
+			array_map(static fn ($item): string => $item->candidate->id . ':' . $item->score, $first->items),
+			array_map(static fn ($item): string => $item->candidate->id . ':' . $item->score, $again->items),
+		);
+	}
+
+	public function testWithdrawingConsentErasesSignalsAndStopsTheirInfluence(): void
+	{
+		$service = $this->service([
+			$this->candidate('local:signaled', 'bob', 'signaled post', $this->ago(5000)),
+			$this->candidate('local:plain', 'carol', 'plain post', $this->ago(10)),
+		]);
+		$service->updatePreferences(self::ALICE, ['behavioral_consent' => true]);
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Like, 'local:signaled');
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Bookmark, 'local:signaled');
+
+		$withConsent = $service->feed(self::ALICE, 10);
+		self::assertSame('local:signaled', $withConsent->items[0]->candidate->id);
+
+		$service->updatePreferences(self::ALICE, ['behavioral_consent' => false]);
+
+		self::assertSame(0, $this->store->signalCount(self::ALICE));
+		$withoutConsent = $service->feed(self::ALICE, 10);
+		self::assertSame('local:plain', $withoutConsent->items[0]->candidate->id);
+		foreach ($withoutConsent->items as $item) {
+			self::assertEmpty(array_filter(
+				$item->reasons,
+				static fn (string $reason): bool => str_starts_with($reason, 'signal:'),
+			));
+		}
+	}
+
+	public function testSignalsOlderThanTheRetentionWindowNoLongerInfluenceRanking(): void
+	{
+		$service = $this->service([
+			$this->candidate('local:signaled', 'bob', 'signaled post', $this->ago(5000)),
+			$this->candidate('local:plain', 'carol', 'plain post', $this->ago(10)),
+		]);
+		$service->updatePreferences(self::ALICE, ['behavioral_consent' => true]);
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Like, 'local:signaled');
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Bookmark, 'local:signaled');
+
+		$this->clock->advance(RecommendationService::SIGNAL_RETENTION_SECONDS + 1);
+
+		$page = $service->feed(self::ALICE, 10);
+		self::assertSame('local:plain', $page->items[0]->candidate->id);
+		foreach ($page->items as $item) {
+			self::assertEmpty(array_filter(
+				$item->reasons,
+				static fn (string $reason): bool => str_starts_with($reason, 'signal:'),
+			));
+		}
+		// The rows are retained for export; only their influence expires.
+		self::assertSame(2, $this->store->signalCount(self::ALICE));
+	}
+
+	public function testPassiveSignalsCollapseInsideTheNoiseWindowButExplicitKindsDoNot(): void
+	{
+		$service = $this->service([$this->candidate('local:1', 'bob', 'one', $this->ago(10))]);
+		$service->updatePreferences(self::ALICE, ['behavioral_consent' => true]);
+
+		$first = $service->recordSignal(self::ALICE, RecommendationSignalKind::Impression, 'local:1');
+		$repeat = $service->recordSignal(self::ALICE, RecommendationSignalKind::Impression, 'local:1');
+		self::assertSame($first->id, $repeat->id);
+		self::assertSame(1, $this->store->signalCount(self::ALICE));
+
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Click, 'local:1');
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Like, 'local:1');
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Like, 'local:1');
+		self::assertSame(4, $this->store->signalCount(self::ALICE));
+
+		$this->clock->advance(RecommendationService::SIGNAL_NOISE_WINDOW_SECONDS + 1);
+		$service->recordSignal(self::ALICE, RecommendationSignalKind::Impression, 'local:1');
+		self::assertSame(5, $this->store->signalCount(self::ALICE));
+	}
+
 	public function testInvalidPreferencesAreRejected(): void
 	{
 		$service = $this->service([]);

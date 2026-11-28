@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Recommendation;
 
+use DateTimeImmutable;
+
 use function array_slice;
 use function usort;
 
@@ -87,6 +89,29 @@ final class InMemoryRecommendationRepository implements RecommendationRepository
 	public function signalCount(string $userId): int
 	{
 		return count($this->signals[$userId] ?? []);
+	}
+
+	public function recentSignal(
+		string $userId,
+		RecommendationSignalKind $kind,
+		string $candidateId,
+		DateTimeImmutable $since,
+	): ?RecommendationSignal {
+		$best = null;
+		foreach ($this->signals[$userId] ?? [] as $signal) {
+			if ($signal->kind !== $kind
+				|| $signal->candidateId !== $candidateId
+				|| $signal->createdAt < $since
+			) {
+				continue;
+			}
+
+			if ($best === null || [$signal->createdAt, $signal->id] > [$best->createdAt, $best->id]) {
+				$best = $signal;
+			}
+		}
+
+		return $best;
 	}
 
 	public function deleteSignalsFor(string $userId): void

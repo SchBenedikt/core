@@ -72,6 +72,31 @@ final class PdoRecommendationRepositoryTest extends TestCase
 		self::assertSame(1, $this->repository->signalCount('bob'));
 	}
 
+	public function testRecentSignalFindsOnlyTheNewestMatchingRowInsideTheWindow(): void
+	{
+		$at = Time::parse('2026-11-15T12:00:00Z');
+		$this->repository->appendSignal(new RecommendationSignal('old', 'alice', RecommendationSignalKind::Click, 'local:1', $at->modify('-2 days')));
+		$this->repository->appendSignal(new RecommendationSignal('mid', 'alice', RecommendationSignalKind::Click, 'local:1', $at->modify('-1 day')));
+		$this->repository->appendSignal(new RecommendationSignal('other-kind', 'alice', RecommendationSignalKind::Like, 'local:1', $at));
+		$this->repository->appendSignal(new RecommendationSignal('other-user', 'bob', RecommendationSignalKind::Click, 'local:1', $at));
+		$this->repository->appendSignal(new RecommendationSignal('other-candidate', 'alice', RecommendationSignalKind::Click, 'local:2', $at));
+
+		$recent = $this->repository->recentSignal(
+			'alice',
+			RecommendationSignalKind::Click,
+			'local:1',
+			$at->modify('-36 hours'),
+		);
+
+		self::assertSame('mid', $recent?->id);
+		self::assertNull($this->repository->recentSignal(
+			'alice',
+			RecommendationSignalKind::Click,
+			'local:1',
+			$at,
+		));
+	}
+
 	public function testResetOnlyRemovesTheOwnersRows(): void
 	{
 		$at = Time::parse('2026-11-15T12:00:00Z');
