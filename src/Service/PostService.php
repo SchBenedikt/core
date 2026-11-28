@@ -48,6 +48,7 @@ use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\LocalRelationshipService;
 use AlohaSocial\Core\Service\Search\SearchIndexer;
 use AlohaSocial\Core\Support\IdGenerator;
+use AlohaSocial\Core\Support\TextLength;
 use AlohaSocial\Core\Support\Time;
 use Closure;
 use Throwable;
@@ -897,7 +898,7 @@ final class PostService
 		// or poll has nothing to publish and is refused.
 		if (mb_strlen($content) === 0 && !$hasMedia) {
 			$errors['content'] = 'A post needs text or media.';
-		} elseif (mb_strlen($content) > self::MAX_CONTENT_LENGTH) {
+		} elseif (TextLength::mastodonWeighted($content) > self::MAX_CONTENT_LENGTH) {
 			$errors['content'] = 'A post may be at most ' . self::MAX_CONTENT_LENGTH . ' characters long.';
 		}
 

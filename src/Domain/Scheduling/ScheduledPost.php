@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Scheduling;
 
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Support\TextLength;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -68,7 +69,7 @@ final readonly class ScheduledPost
 			throw new InvalidArgumentException('A scheduled post needs content.');
 		}
 
-		if (mb_strlen($content) > self::MAX_CONTENT_LENGTH) {
+		if (TextLength::mastodonWeighted($content) > self::MAX_CONTENT_LENGTH) {
 			throw new InvalidArgumentException('The scheduled content is too long.');
 		}
 

@@ -28,6 +28,7 @@ use AlohaSocial\Core\Platform\Config\Config;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Service\Scheduling\ScheduledPublicationException;
 use AlohaSocial\Core\Support\IdGenerator;
+use AlohaSocial\Core\Support\TextLength;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Throwable;
@@ -436,7 +437,7 @@ final class ScheduledPostService
 		$errors = [];
 		if ($content === '') {
 			$errors['content'] = 'A scheduled post needs content.';
-		} elseif (mb_strlen($content) > PostService::MAX_CONTENT_LENGTH) {
+		} elseif (TextLength::mastodonWeighted($content) > PostService::MAX_CONTENT_LENGTH) {
 			$errors['content'] = 'The content is too long.';
 		}
 
