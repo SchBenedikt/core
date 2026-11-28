@@ -11,11 +11,14 @@ namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\BlockRepository;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteThread;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadPost;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use Psr\Log\LoggerInterface;
 
 use function array_fill_keys;
@@ -41,6 +44,8 @@ final class RemoteThreadService
 		private readonly BlockRepository $blocks,
 		private readonly RemoteThreadFetcher $fetcher,
 		private readonly LoggerInterface $logger,
+		private readonly ?RemoteObjectTombstoneStore $tombstones = null,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -132,6 +137,10 @@ final class RemoteThreadService
 				$this->remember($parent);
 			}
 
+			if ($this->isTombstoned($parent)) {
+				break;
+			}
+
 			if (!$followed && $parent->audience !== Visibility::Public) {
 				// A reader without the follow edge only sees verified public
 				// context; anything else ends the visible chain.
@@ -195,6 +204,7 @@ final class RemoteThreadService
 				|| isset($seen[$candidate->objectId])
 				|| isset($blocked[$candidate->authorId])
 				|| (!$followed && $candidate->audience !== Visibility::Public)
+				|| $this->isTombstoned($candidate)
 			) {
 				continue;
 			}
@@ -205,6 +215,24 @@ final class RemoteThreadService
 		}
 
 		return $replies;
+	}
+
+	/**
+	 * A fetched node its author deleted must not reappear as thread context:
+	 * the origin may still serve the object, but the verified tombstone says
+	 * it is gone.
+	 */
+	private function isTombstoned(RemoteThreadPost $post): bool
+	{
+		if ($this->tombstones === null) {
+			return false;
+		}
+
+		return $this->tombstones->isDeleted(
+			$post->authorId,
+			$post->objectId,
+			($this->clock ?? new SystemClock())->now(),
+		);
 	}
 
 	private function remember(RemoteThreadPost $post): void

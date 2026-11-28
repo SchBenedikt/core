@@ -12,8 +12,11 @@ namespace AlohaSocial\Core\Service\Federation;
 use AlohaSocial\Core\Domain\Federation\BlockedActorPolicy;
 use AlohaSocial\Core\Domain\Federation\FollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
+use AlohaSocial\Core\Platform\Clock\Clock;
+use AlohaSocial\Core\Platform\Clock\SystemClock;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Platform\Http\HttpClient;
 use AlohaSocial\Core\Platform\Http\HttpClientException;
@@ -52,6 +55,8 @@ final class RemoteOutboxBackfill
 		private readonly ?BlockedActorPolicy $blockedActors = null,
 		private readonly ?RemoteMediaService $remoteMedia = null,
 		private readonly ?LoggerInterface $logger = null,
+		private readonly ?RemoteObjectTombstoneStore $tombstones = null,
+		private readonly ?Clock $clock = null,
 	) {
 	}
 
@@ -183,6 +188,13 @@ final class RemoteOutboxBackfill
 			return 'skipped';
 		}
 
+		// An outbox is a snapshot, not a delivery log: it still lists objects
+		// the author deleted after publishing them. Owner-scoped tombstones
+		// keep those from being stored again.
+		if ($this->isTombstoned($post)) {
+			return 'skipped';
+		}
+
 		try {
 			$this->remotePosts->insert($post);
 		} catch (DatabaseException $exception) {
@@ -204,6 +216,35 @@ final class RemoteOutboxBackfill
 		$this->importMedia($post, $activity);
 
 		return 'stored';
+	}
+
+	/**
+	 * Whether the post's own author tombstoned the object or the activity
+	 * that carried it. A boost is checked against the announced author too:
+	 * the announcer's tombstones cannot suppress somebody else's object, but
+	 * the author's can.
+	 */
+	private function isTombstoned(RemotePost $post): bool
+	{
+		if ($this->tombstones === null) {
+			return false;
+		}
+
+		$now = ($this->clock ?? new SystemClock())->now();
+		$authors = [$post->actorId];
+		if ($post->objectAuthorId !== null) {
+			$authors[] = $post->objectAuthorId;
+		}
+
+		foreach ($authors as $author) {
+			if ($this->tombstones->isDeleted($author, $post->objectId, $now)
+				|| $this->tombstones->isDeleted($author, $post->activityId, $now)
+			) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

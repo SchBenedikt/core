@@ -25,6 +25,7 @@ use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
@@ -123,6 +124,7 @@ final class InboxService
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?MuteRepository $mutes = null,
 		private readonly ?RemotePostImporter $remoteImporter = null,
+		private readonly ?RemoteObjectTombstoneStore $remoteTombstones = null,
 	) {
 	}
 
@@ -337,6 +339,13 @@ final class InboxService
 
 		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity, $actor->followersUrl);
 
+		// A Delete that arrived before this Create — or a backfill surfacing
+		// an object the author already removed — must not resurrect it. The
+		// delivery is still accepted; there is simply nothing to store.
+		if ($this->isTombstoned($post->actorId, $post->objectId, $post->activityId)) {
+			return;
+		}
+
 		// A Create is idempotent by object, not only by activity id: the
 		// interaction cache may already hold a placeholder row for the same
 		// object, and a peer may retry with a fresh activity id. A
@@ -391,12 +400,21 @@ final class InboxService
 	 */
 	private function handleUpdate(RemoteActor $actor, array $activity): void
 	{
-		$target = $this->remotePosts->findPostByObjectId(
-			$this->remotePostFactory->targetId($activity['object'] ?? null, 'Update'),
-		);
+		$targetId = $this->remotePostFactory->targetId($activity['object'] ?? null, 'Update');
+		$target = $this->remotePosts->findPostByObjectId($targetId);
 		$this->requireStoredContentAccess($actor, $target);
 
 		if ($target === null) {
+			// An edit for a tombstoned object must not wait around for a
+			// Create that will never be stored.
+			if ($this->remoteTombstones?->isDeleted(
+				$actor->actorId,
+				$targetId,
+				Time::toSecondPrecision($this->clock->now()),
+			) === true) {
+				return;
+			}
+
 			// The Create may still be in flight. Holding the edit is what
 			// keeps an out-of-order pair from publishing superseded text. The
 			// factory validates ownership and content before anything is held.
@@ -503,6 +521,19 @@ final class InboxService
 		$target = $this->remotePosts->findPostByObjectId($objectId);
 
 		$post = $this->remotePostFactory->fromAnnounce($actor->actorId, $activity, $target);
+
+		// A boost must not smuggle back an object its author already deleted:
+		// the embedded author is verified content, so an owner-scoped
+		// tombstone still applies even though the announcer is somebody else.
+		$author = $post->objectAuthorId;
+		if ($author !== null && $this->remoteTombstones?->isDeleted(
+			$author,
+			$post->objectId,
+			Time::toSecondPrecision($this->clock->now()),
+		) === true) {
+			return;
+		}
+
 		$this->insertRemotePost($post);
 		$this->notifyForLocalReblog($objectId, $actor);
 
@@ -598,6 +629,8 @@ final class InboxService
 				Time::toSecondPrecision($this->clock->now()),
 			);
 
+			$this->recordTombstones($actor, $activity, [$targetId, $byActivity->objectId, $byActivity->activityId]);
+
 			return;
 		}
 
@@ -606,6 +639,10 @@ final class InboxService
 			$this->requireFollowedContent($actor);
 			// A Delete for something not stored is already satisfied; peers
 			// retry deliveries, and treating that as an error would loop.
+			// The tombstone is what stops a delayed Create or backfill from
+			// resurrecting the object later.
+			$this->recordTombstones($actor, $activity, [$targetId]);
+
 			return;
 		}
 
@@ -622,6 +659,46 @@ final class InboxService
 			$actor->actorId,
 			Time::toSecondPrecision($this->clock->now()),
 		);
+
+		$this->recordTombstones($actor, $activity, [$targetId, $post->objectId, $post->activityId]);
+	}
+
+	/**
+	 * @param array<string, mixed> $activity
+	 * @param list<string>         $identities object and activity ids the Delete covered
+	 */
+	private function recordTombstones(RemoteActor $actor, array $activity, array $identities): void
+	{
+		if ($this->remoteTombstones === null) {
+			return;
+		}
+
+		$activityId = $activity['id'] ?? null;
+		if (!is_string($activityId)) {
+			return;
+		}
+
+		$now = Time::toSecondPrecision($this->clock->now());
+		foreach ($identities as $identity) {
+			$this->remoteTombstones->record($actor->actorId, $identity, $activityId, $now);
+		}
+	}
+
+	/**
+	 * Whether the actor's own earlier Delete still bars this identity from
+	 * being stored. Both the object id and the activity id are checked: a
+	 * Delete may legitimately name either one.
+	 */
+	private function isTombstoned(string $actorId, string $objectId, string $activityId): bool
+	{
+		if ($this->remoteTombstones === null) {
+			return false;
+		}
+
+		$now = Time::toSecondPrecision($this->clock->now());
+
+		return $this->remoteTombstones->isDeleted($actorId, $objectId, $now)
+			|| $this->remoteTombstones->isDeleted($actorId, $activityId, $now);
 	}
 
 	private function requireFollowedContent(RemoteActor $actor): void
@@ -725,10 +802,27 @@ final class InboxService
 		}
 
 		try {
-			return $this->remoteImporter->ensure($objectId);
+			$post = $this->remoteImporter->ensure($objectId);
 		} catch (\Throwable) {
 			return null;
 		}
+
+		if ($post === null) {
+			return null;
+		}
+
+		// The importer is a host port and stores what it fetches, so the
+		// tombstone check happens here: an object its author deleted is
+		// removed again and treated as unknown.
+		$author = $post->objectAuthorId ?? $post->actorId;
+		$now = Time::toSecondPrecision($this->clock->now());
+		if ($this->remoteTombstones?->isDeleted($author, $objectId, $now) === true) {
+			$this->remotePosts->softDeletePostByObjectId($objectId, $post->actorId, $now);
+
+			return null;
+		}
+
+		return $post;
 	}
 
 	/**

@@ -251,12 +251,15 @@ use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\PdoMuteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryPendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\InMemoryRemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\PdoPendingRemoteUpdateStore;
+use AlohaSocial\Core\Domain\Federation\PdoRemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemotePollVoteRepository;
+use AlohaSocial\Core\Domain\Federation\RemoteObjectTombstoneStore;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
@@ -605,6 +608,7 @@ final readonly class Application
 		?FollowedHashtagRepository $followedHashtagRepository = null,
 		?PostRevisionRepository $postRevisions = null,
 		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
+		?RemoteObjectTombstoneStore $remoteObjectTombstones = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ScheduledPostRepository $scheduledPostRepository = null,
 		?FilterRuleRepository $filterRuleRepository = null,
@@ -692,6 +696,7 @@ final readonly class Application
 		$followedHashtagRepository ??= new InMemoryFollowedHashtagRepository();
 		$postRevisions ??= new InMemoryPostRevisionRepository();
 		$pendingRemoteUpdates ??= new InMemoryPendingRemoteUpdateStore();
+		$remoteObjectTombstones ??= new InMemoryRemoteObjectTombstoneStore();
 		$scheduledPostRepository ??= new InMemoryScheduledPostRepository();
 		$filterRuleRepository ??= new InMemoryFilterRuleRepository();
 		$remotePollRepository ??= new InMemoryRemotePollRepository();
@@ -749,6 +754,7 @@ final readonly class Application
 			followedHashtagRepository: $followedHashtagRepository,
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
+			remoteObjectTombstones: $remoteObjectTombstones,
 			scheduledPostRepository: $scheduledPostRepository,
 			filterRuleRepository: $filterRuleRepository,
 			remotePollRepository: $remotePollRepository,
@@ -869,6 +875,7 @@ final readonly class Application
 		?TransactionRunner $transactions = null,
 		?PostRevisionRepository $postRevisions = null,
 		?PendingRemoteUpdateStore $pendingRemoteUpdates = null,
+		?RemoteObjectTombstoneStore $remoteObjectTombstones = null,
 		?DpopResourceProofProvider $atprotoDpop = null,
 		?ReportRepository $reportRepository = null,
 		?ModerationActionRepository $moderationActions = null,
@@ -922,6 +929,7 @@ final readonly class Application
 		$followedHashtagRepository ??= new PdoFollowedHashtagRepository($database);
 		$postRevisions ??= new PdoPostRevisionRepository($database);
 		$pendingRemoteUpdates ??= new PdoPendingRemoteUpdateStore($database);
+		$remoteObjectTombstones ??= new PdoRemoteObjectTombstoneStore($database);
 
 		return self::assemble(
 			clock: $clock,
@@ -956,6 +964,7 @@ final readonly class Application
 			followedHashtagRepository: $followedHashtagRepository,
 			postRevisions: $postRevisions,
 			pendingRemoteUpdates: $pendingRemoteUpdates,
+			remoteObjectTombstones: $remoteObjectTombstones,
 			reportRepository: $reportRepository ?? new PdoReportRepository($database),
 			moderationActions: $moderationActions ?? new PdoModerationActionRepository($database),
 			heldPostRepository: $heldPostRepository ?? new PdoHeldPostRepository($database),
@@ -1055,6 +1064,7 @@ final readonly class Application
 		FollowedHashtagRepository $followedHashtagRepository,
 		PostRevisionRepository $postRevisions,
 		PendingRemoteUpdateStore $pendingRemoteUpdates,
+		RemoteObjectTombstoneStore $remoteObjectTombstones,
 		?BlobStore $blobStore,
 		ImageProcessor $imageProcessor,
 		?HostResolver $hostResolver,
@@ -1596,6 +1606,8 @@ final readonly class Application
 					$logger,
 				),
 				$logger,
+				$remoteObjectTombstones,
+				$clock,
 			)
 			: null;
 
@@ -1612,6 +1624,8 @@ final readonly class Application
 				$blockedActors,
 				$remoteMedia,
 				$logger,
+				tombstones: $remoteObjectTombstones,
+				clock: $clock,
 			);
 
 		// Inbound federation needs a way to resolve a key id, a client to
@@ -1649,6 +1663,7 @@ final readonly class Application
 				blocks: $blockRepository,
 				mutes: $muteRepository,
 				remoteImporter: $remotePostImporter,
+				remoteTombstones: $remoteObjectTombstones,
 			)
 			: null;
 

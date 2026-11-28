@@ -978,6 +978,133 @@ final class InboundTimelineTest extends TestCase
 		);
 	}
 
+	public function testADeleteBeforeItsCreateBlocksTheLateDelivery(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+
+		// The Delete names an object this instance never stored.
+		self::assertSame(202, $this->deliver($app, $this->delete(
+			'https://remote.example/activities/delete-early',
+			'https://remote.example/notes/deleted-early',
+		))->status);
+
+		// The delayed Create is accepted but stores nothing.
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-late',
+			'https://remote.example/notes/deleted-early',
+			'returned from the dead',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/deleted-early'));
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+	}
+
+	public function testADeleteNamingTheCreateActivityIdBlocksTheCreate(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+
+		// Some peers delete by activity id rather than object id.
+		self::assertSame(202, $this->deliver($app, [
+			'id' => 'https://remote.example/activities/delete-by-activity',
+			'type' => 'Delete',
+			'actor' => self::BOB,
+			'object' => 'https://remote.example/activities/create-by-activity',
+		])->status);
+
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-by-activity',
+			'https://remote.example/notes/deleted-by-activity',
+			'returned from the dead',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/deleted-by-activity'));
+	}
+
+	public function testADeleteAfterCreateBlocksARedeliveryWithAFreshActivityId(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-then-delete',
+			'https://remote.example/notes/then-deleted',
+			'gone soon',
+			'2026-11-11T10:01:00Z',
+		))->status);
+		self::assertSame(202, $this->deliver($app, $this->delete(
+			'https://remote.example/activities/delete-known',
+			'https://remote.example/notes/then-deleted',
+		))->status);
+
+		// A peer that never saw the Delete retries the Create under a new
+		// activity id; the tombstone still applies.
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-again',
+			'https://remote.example/notes/then-deleted',
+			'gone soon',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/then-deleted'));
+	}
+
+	public function testAnUpdateForADeleteBeforeCreateObjectIsNotHeldForLater(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+
+		self::assertSame(202, $this->deliver($app, $this->delete(
+			'https://remote.example/activities/delete-then-update',
+			'https://remote.example/notes/update-after-delete',
+		))->status);
+		self::assertSame(202, $this->deliver($app, $this->update(
+			'https://remote.example/activities/update-tombstoned',
+			'https://remote.example/notes/update-after-delete',
+			'edited after delete',
+			'2026-11-11T10:05:00Z',
+		))->status);
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-after-update',
+			'https://remote.example/notes/update-after-delete',
+			'original text',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertSame([], $this->feed($app)->decodedBody()['posts']);
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/update-after-delete'));
+	}
+
+	public function testADeleteCannotSuppressAnotherActorsObject(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+		$localNoteId = $this->localPost($app, 'public');
+
+		// Bob deletes an object id he does not own; only his own scope is
+		// tombstoned.
+		self::assertSame(202, $this->deliver($app, $this->delete(
+			'https://remote.example/activities/bob-deletes-carols',
+			'https://remote.example/notes/carols-note',
+		))->status);
+
+		$carolCreate = $this->create(
+			'https://remote.example/activities/carol-create',
+			'https://remote.example/notes/carols-note',
+			'carol original',
+			'2026-11-11T10:01:00Z',
+			self::CAROL,
+		);
+		$carolCreate['object']['inReplyTo'] = $localNoteId;
+		self::assertSame(202, $this->deliverCarol($app, $carolCreate)->status);
+
+		self::assertNotNull($remotePosts->findPostByObjectId('https://remote.example/notes/carols-note'));
+	}
+
 	private function app(
 		?InMemoryFollowingRepository $following = null,
 		?BlockedActorPolicy $blockedActors = null,
