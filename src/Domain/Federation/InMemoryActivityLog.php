@@ -23,33 +23,41 @@ final class InMemoryActivityLog implements ActivityLog
 	public const RETENTION_SECONDS = 86400;
 
 	/**
-	 * @var array<string, DateTimeImmutable>
+	 * @var array<string, array{expires_at: DateTimeImmutable, digest: ?string}>
 	 */
-	private array $expiresAt = [];
+	private array $entries = [];
 
-	public function claim(string $activityId, DateTimeImmutable $now): bool
+	public function claim(string $activityId, DateTimeImmutable $now, ?string $digest = null): bool
 	{
 		$this->prune($now);
 
-		if (isset($this->expiresAt[$activityId])) {
+		if (isset($this->entries[$activityId])) {
 			return false;
 		}
 
-		$this->expiresAt[$activityId] = $now->modify('+' . self::RETENTION_SECONDS . ' seconds');
+		$this->entries[$activityId] = [
+			'expires_at' => $now->modify('+' . self::RETENTION_SECONDS . ' seconds'),
+			'digest' => $digest,
+		];
 
 		return true;
 	}
 
+	public function digest(string $activityId): ?string
+	{
+		return $this->entries[$activityId]['digest'] ?? null;
+	}
+
 	public function release(string $activityId): void
 	{
-		unset($this->expiresAt[$activityId]);
+		unset($this->entries[$activityId]);
 	}
 
 	private function prune(DateTimeImmutable $now): void
 	{
-		foreach ($this->expiresAt as $activityId => $expiresAt) {
-			if ($expiresAt <= $now) {
-				unset($this->expiresAt[$activityId]);
+		foreach ($this->entries as $activityId => $entry) {
+			if ($entry['expires_at'] <= $now) {
+				unset($this->entries[$activityId]);
 			}
 		}
 	}
