@@ -22,7 +22,7 @@ use DateTimeImmutable;
 final class PdoModerationActionRepository implements ModerationActionRepository
 {
 	private const COLUMNS = 'id, kind, target, report_id, moderator_id, note, created_at,'
-		. ' reversed_at, reversed_by, reversal_note';
+		. ' reversed_at, reversed_by, reversal_note, public_comment';
 
 	public function __construct(
 		private readonly Connection $db,
@@ -34,7 +34,7 @@ final class PdoModerationActionRepository implements ModerationActionRepository
 		$this->db->execute(
 			'INSERT INTO ' . ModerationActionSchema::TABLE
 			. ' (' . self::COLUMNS . ') VALUES (:id, :kind, :target, :report_id, :moderator_id, :note,'
-			. ' :created_at, :reversed_at, :reversed_by, :reversal_note)',
+			. ' :created_at, :reversed_at, :reversed_by, :reversal_note, :public_comment)',
 			[
 				'id' => $action->id,
 				'kind' => $action->kind->value,
@@ -46,6 +46,7 @@ final class PdoModerationActionRepository implements ModerationActionRepository
 				'reversed_at' => $action->reversedAt === null ? null : Time::format($action->reversedAt),
 				'reversed_by' => $action->reversedBy,
 				'reversal_note' => $action->reversalNote,
+				'public_comment' => $action->publicComment,
 			],
 		);
 	}
@@ -139,6 +140,7 @@ final class PdoModerationActionRepository implements ModerationActionRepository
 			reversedAt: $row['reversed_at'] === null ? null : Time::parse((string) $row['reversed_at']),
 			reversedBy: $row['reversed_by'] === null ? null : (string) $row['reversed_by'],
 			reversalNote: $row['reversal_note'] === null ? null : (string) $row['reversal_note'],
+			publicComment: $row['public_comment'] === null ? null : (string) $row['public_comment'],
 		);
 	}
 }

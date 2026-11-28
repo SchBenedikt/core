@@ -116,6 +116,33 @@ final class PdoModerationRepositoryTest extends TestCase
 		self::assertSame('appeal accepted', $actions->historyFor('https://remote.example/users/bob')[0]->reversalNote);
 	}
 
+	public function testPublicCommentPersistsAndSurvivesReversal(): void
+	{
+		$actions = new PdoModerationActionRepository($this->db);
+		$action = new ModerationAction(
+			id: 'action-public',
+			kind: ModerationActionKind::BlockDomain,
+			target: 'remote.example',
+			reportId: null,
+			moderatorId: 'mod-1',
+			note: 'private investigation detail',
+			createdAt: Time::parse('2026-11-14T10:00:00Z'),
+			publicComment: 'Repeated spam and ban evasion.',
+		);
+
+		$actions->insert($action);
+		$stored = $actions->find('action-public');
+		self::assertSame('Repeated spam and ban evasion.', $stored?->publicComment);
+		self::assertSame('private investigation detail', $stored?->note);
+		self::assertSame('Repeated spam and ban evasion.', $stored?->toArray()['public_comment']);
+
+		$actions->reverse('action-public', 'mod-2', 'appeal accepted', Time::parse('2026-11-14T11:00:00Z'));
+		self::assertSame(
+			'Repeated spam and ban evasion.',
+			$actions->historyFor('remote.example')[0]->publicComment,
+		);
+	}
+
 	public function testDomainPolicyIsDerivedFromStoredActions(): void
 	{
 		$actions = new PdoModerationActionRepository($this->db);
