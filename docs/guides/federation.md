@@ -207,8 +207,13 @@ votes live in a separate table and are added when the poll is presented, so a
 later peer update cannot double-count them.
 
 The neutral API is `GET /api/v1/remote-polls/{id}` and
-`POST /api/v1/remote-polls/{id}/votes` with `choices` as option positions. A
-vote is refused after `endTime` or `closed`, for an unknown option, for more
+`POST /api/v1/remote-polls/{id}/votes` with `choices` as option positions.
+Reading and voting follow the same audience rule as remote posts: the
+imported Question keeps the audience its post row was verified with, so a
+public poll is open to everyone, a followers-only or unknown-audience poll
+requires an accepted follow of its author, a block in either direction
+hides it, and a refused viewer gets `not_found` rather than a hint that the
+poll exists. A vote is refused after `endTime` or `closed`, for an unknown option, for more
 than one option in a single-choice poll and for a second, different vote by
 the same account. An identical retry is idempotent. The stored vote is
 optimistic: `delivery` is `queued` once one signed `Create(Note)` per choice
