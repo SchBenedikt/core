@@ -327,7 +327,13 @@ final class InboxService
 		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity, $actor->followersUrl);
 
 		if ($this->remotePolls !== null && is_array($object) && $post->objectType === RemoteObjectType::Question) {
-			$this->remotePolls->importQuestion($post, $object, $post->activityId, Time::toSecondPrecision($this->clock->now()));
+			$this->remotePolls->importQuestion(
+				$post,
+				$object,
+				$post->activityId,
+				Time::toSecondPrecision($this->clock->now()),
+				$this->remotePostFactory->sourceRevision($activity),
+			);
 		}
 
 		$this->persistRemotePostAndStreamEvent($post, $activity);
@@ -403,7 +409,13 @@ final class InboxService
 
 			$object = $activity['object'] ?? null;
 			if ($this->remotePolls !== null && is_array($object) && $post->objectType->value === 'question') {
-				$this->remotePolls->importQuestion($post, $object, $post->activityId, $updatedAt);
+				$this->remotePolls->importQuestion(
+					$post,
+					$object,
+					$post->activityId,
+					Time::toSecondPrecision($this->clock->now()),
+					$updatedAt,
+				);
 			}
 
 			if ($this->eventBroker === null) {

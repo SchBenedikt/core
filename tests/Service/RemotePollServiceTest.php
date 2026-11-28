@@ -227,15 +227,17 @@ final class RemotePollServiceTest extends TestCase
 	public function testClosingAPollIsIdempotent(): void
 	{
 		$this->import($this->question());
+		$afterEnd = Time::parse('2026-12-02T00:00:00Z');
 
-		self::assertTrue($this->service->close('https://remote.example/questions/1', $this->clock->now()));
-		self::assertFalse($this->service->close('https://remote.example/questions/1', $this->clock->now()));
+		self::assertTrue($this->service->close('https://remote.example/questions/1', $afterEnd));
+		self::assertFalse($this->service->close('https://remote.example/questions/1', $afterEnd));
 		self::assertTrue($this->service->present('https://remote.example/questions/1', null)['closed']);
 	}
 
 	public function testTheCloseJobMarksAnImportedPollClosed(): void
 	{
 		$this->import($this->question());
+		$this->clock->set(Time::parse('2026-12-02T00:00:00Z'));
 
 		$handler = new \AlohaSocial\Core\Service\Federation\RemotePollCloseHandler($this->service, $this->clock);
 		$handler->handle(new Job('close-1', JobType::POLL_CLOSE, ['object_id' => 'https://remote.example/questions/1'], $this->clock->now()));
@@ -324,10 +326,53 @@ final class RemotePollServiceTest extends TestCase
 		$this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now());
 	}
 
+	public function testAnOlderRevisionArrivingLateCannotRollBackANewerOne(): void
+	{
+		$v1 = $this->question();
+		$v1['endTime'] = '2026-11-20T00:00:00Z';
+		$this->import($v1, Time::parse('2026-11-11T09:00:00Z'));
+
+		$v2 = $this->question();
+		$v2['endTime'] = '2026-12-01T00:00:00Z';
+		$this->import($v2, Time::parse('2026-11-11T11:00:00Z'));
+
+		// The stale first revision is delivered after the newer one; receive
+		// order must not decide which view wins.
+		$this->import($v1, Time::parse('2026-11-11T10:00:00Z'));
+
+		$poll = $this->polls->find('https://remote.example/questions/1');
+		self::assertNotNull($poll);
+		self::assertEquals(Time::parse('2026-12-01T00:00:00Z'), $poll->endsAt);
+		self::assertEquals(Time::parse('2026-11-11T11:00:00Z'), $poll->updatedAt);
+	}
+
+	public function testAStaleCloseJobCannotCloseAPollWhoseDeadlineWasExtended(): void
+	{
+		$v1 = $this->question();
+		$v1['endTime'] = '2026-11-11T12:00:00Z';
+		$this->import($v1, Time::parse('2026-11-11T09:00:00Z'));
+
+		$v2 = $this->question();
+		$v2['endTime'] = '2026-11-13T00:00:00Z';
+		$this->import($v2, Time::parse('2026-11-11T10:30:00Z'));
+
+		// The job scheduled for the first deadline fires after the extension.
+		self::assertFalse($this->service->close(
+			'https://remote.example/questions/1',
+			Time::parse('2026-11-11T13:00:00Z'),
+		));
+		self::assertNull($this->polls->find('https://remote.example/questions/1')?->closedAt);
+
+		self::assertTrue($this->service->close(
+			'https://remote.example/questions/1',
+			Time::parse('2026-11-13T00:00:01Z'),
+		));
+	}
+
 	/**
 	 * @param array<string, mixed> $question
 	 */
-	private function import(array $question): \AlohaSocial\Core\Domain\Federation\RemotePoll
+	private function import(array $question, ?\DateTimeImmutable $revisedAt = null): \AlohaSocial\Core\Domain\Federation\RemotePoll
 	{
 		$factory = new RemotePostFactory($this->clock);
 		$post = $factory->fromCreate(self::ACTOR, [
@@ -343,6 +388,7 @@ final class RemotePollServiceTest extends TestCase
 			$question,
 			'https://remote.example/activities/1',
 			$this->clock->now(),
+			$revisedAt,
 		);
 	}
 

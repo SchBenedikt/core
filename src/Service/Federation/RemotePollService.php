@@ -80,21 +80,29 @@ final class RemotePollService
 	 * same stable reasons the rest of the inbox uses.
 	 *
 	 * @param array<string, mixed> $object
+	 * @param DateTimeImmutable $observedAt when the activity reached this instance
+	 * @param DateTimeImmutable|null $revisedAt the peer's revision marker; receive time when the peer reports none
 	 */
-	public function importQuestion(RemotePost $post, array $object, string $activityId, DateTimeImmutable $now): RemotePoll
-	{
-		$poll = $this->parse($object, $post->actorId, $activityId, $now);
+	public function importQuestion(
+		RemotePost $post,
+		array $object,
+		string $activityId,
+		DateTimeImmutable $observedAt,
+		?DateTimeImmutable $revisedAt = null,
+	): RemotePoll {
+		$revisedAt ??= $observedAt;
+		$poll = $this->parse($object, $post->actorId, $activityId, $revisedAt);
 		$existing = $this->polls->find($poll->objectId);
 
-		// A retransmitted older Create must not roll back a newer Update or a
-		// locally computed close.
+		// A retransmitted older revision must not roll back a newer one or a
+		// locally computed close, no matter when each delivery arrived.
 		if ($existing !== null && $poll->updatedAt < $existing->updatedAt) {
 			return $existing;
 		}
 
 		$this->polls->upsert($poll);
 
-		if ($poll->closedAt === null && $poll->endsAt !== null && $poll->endsAt > $now) {
+		if ($poll->closedAt === null && $poll->endsAt !== null && $poll->endsAt > $observedAt) {
 			try {
 				$this->queue?->push(JobType::POLL_CLOSE, ['object_id' => $poll->objectId], $poll->endsAt);
 			} catch (Throwable) {
@@ -111,7 +119,7 @@ final class RemotePollService
 	 *
 	 * @throws InboxRejectedException
 	 */
-	private function parse(array $object, string $actorId, string $activityId, DateTimeImmutable $now): RemotePoll
+	private function parse(array $object, string $actorId, string $activityId, DateTimeImmutable $revisedAt): RemotePoll
 	{
 		$objectId = $object['id'] ?? null;
 		if (!is_string($objectId) || trim($objectId) === '' || mb_strlen($objectId) > RemotePost::MAX_ID_LENGTH) {
@@ -175,7 +183,7 @@ final class RemotePollService
 				endsAt: $this->timestamp($object['endTime'] ?? null, 'endTime'),
 				closedAt: $this->timestamp($object['closed'] ?? null, 'closed'),
 				votersCount: $votersCount,
-				updatedAt: Time::toSecondPrecision($now),
+				updatedAt: Time::toSecondPrecision($revisedAt),
 			);
 		} catch (InvalidArgumentException $exception) {
 			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
@@ -449,7 +457,10 @@ final class RemotePollService
 	public function close(string $objectId, DateTimeImmutable $now): bool
 	{
 		$poll = $this->polls->find($objectId);
-		if ($poll === null || $poll->closedAt !== null) {
+		// A close job is bound to the deadline it was scheduled for: when a
+		// newer revision extended `endsAt` past now, the job is stale and the
+		// poll stays open. `isClosed` also covers a peer-reported `closed`.
+		if ($poll === null || !$poll->isClosed($now)) {
 			return false;
 		}
 

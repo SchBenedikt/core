@@ -442,6 +442,22 @@ final class RemotePostFactory
 	}
 
 	/**
+	 * The peer's revision marker for an activity's embedded object.
+	 *
+	 * Creates and Updates order against the same value: the object's
+	 * `updated`, else the activity's `published`, else the local clock when
+	 * the peer reports no timestamp at all.
+	 *
+	 * @param array<string, mixed> $activity
+	 */
+	public function sourceRevision(array $activity): DateTimeImmutable
+	{
+		$object = $activity['object'] ?? null;
+
+		return $this->updatedAt(is_array($object) ? $object : [], $activity['published'] ?? null);
+	}
+
+	/**
 	 * The peer's version marker for an update.
 	 *
 	 * `updated` is the ActivityStreams property for a modified object. A peer
