@@ -187,6 +187,18 @@ final class InMemoryScheduledPostRepository implements ScheduledPostRepository
 		return true;
 	}
 
+	public function update(ScheduledPost $post): bool
+	{
+		$row = $this->rows[$post->id] ?? null;
+		if ($row === null || $row->state !== ScheduledPostState::Scheduled) {
+			return false;
+		}
+
+		$this->rows[$post->id] = $post;
+
+		return true;
+	}
+
 	public function cancel(string $id): bool
 	{
 		$row = $this->rows[$id] ?? null;

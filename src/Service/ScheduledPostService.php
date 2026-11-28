@@ -99,61 +99,7 @@ final class ScheduledPostService
 		$scheduledAt = Time::toSecondPrecision($scheduledAt);
 		$this->validateTime($scheduledAt, $now);
 
-		$content = trim($command->content);
-		$warning = $command->contentWarning === null ? null : trim($command->contentWarning);
-		if ($warning === '') {
-			$warning = null;
-		}
-		$language = $command->language === null ? null : trim($command->language);
-		if ($language === '') {
-			$language = null;
-		}
-
-		$errors = [];
-		if ($content === '') {
-			$errors['content'] = 'A scheduled post needs content.';
-		} elseif (mb_strlen($content) > PostService::MAX_CONTENT_LENGTH) {
-			$errors['content'] = 'The content is too long.';
-		}
-
-		if ($warning !== null && mb_strlen($warning) > PostService::MAX_CONTENT_WARNING_LENGTH) {
-			$errors['content_warning'] = 'The content warning is too long.';
-		}
-		if ($language !== null && (strlen($language) > 35
-			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
-		) {
-			$errors['language'] = 'language must be a valid BCP 47 language tag.';
-		}
-
-		if (count($command->attachmentIds) > ScheduledPost::MAX_ATTACHMENTS) {
-			$errors['attachment_ids'] = 'A post has too many attachments.';
-		}
-
-		if ($command->visibility === Visibility::Direct && $command->recipientIds === []) {
-			$errors['recipient_ids'] = 'A direct post needs at least one recipient.';
-		}
-
-		if ($command->visibility !== Visibility::Direct && $command->recipientIds !== []) {
-			$errors['recipient_ids'] = 'Recipients are only used by direct posts.';
-		}
-
-		if ($poll !== null && $poll->expiresAt !== null && $poll->expiresAt <= $scheduledAt) {
-			$errors['poll'] = 'The poll expires before the scheduled publication time.';
-		}
-
-		$attachments = $command->attachmentIds === []
-			? []
-			: $this->attachments->findMany($command->attachmentIds);
-		foreach ($command->attachmentIds as $attachmentId) {
-			$attachment = $attachments[$attachmentId] ?? null;
-			if ($attachment === null || $attachment->ownerId !== $authorId) {
-				$errors['attachment_ids'] = 'Every attachment must exist and belong to this account.';
-			}
-		}
-
-		if ($errors !== []) {
-			throw new ValidationException($errors);
-		}
+		[$content, $warning, $language] = $this->validateWrite($authorId, $command, $poll, $scheduledAt);
 
 		$this->enforceQuota($authorId, $now);
 
@@ -231,6 +177,69 @@ final class ScheduledPostService
 	private static function pollFingerprint(?ScheduledPoll $poll): ?string
 	{
 		return $poll === null ? null : json_encode($poll->toArray());
+	}
+
+	/**
+	 * Replaces the whole write payload of a pending schedule.
+	 *
+	 * The reserved post id, author and creation time stay: an edit changes
+	 * what will be published, never which post it becomes. The same payload
+	 * rules as {@see schedule()} apply, but the daily quota does not — the
+	 * row was already counted when it was created. A `null` time keeps the
+	 * stored one.
+	 *
+	 * @throws ScheduledPostNotFoundException
+	 * @throws ScheduledPostConflictException when publication already started
+	 * @throws ValidationException
+	 */
+	public function update(
+		string $authorId,
+		string $id,
+		CreatePost $command,
+		?ScheduledPoll $poll,
+		?DateTimeImmutable $scheduledAt = null,
+	): ScheduledPost {
+		$existing = $this->findOwned($authorId, $id);
+		if ($existing->state !== ScheduledPostState::Scheduled) {
+			throw new ScheduledPostConflictException($id);
+		}
+
+		$now = $this->now();
+		$scheduledAt = Time::toSecondPrecision($scheduledAt ?? $existing->scheduledAt);
+		$this->validateTime($scheduledAt, $now);
+
+		[$content, $warning, $language] = $this->validateWrite($authorId, $command, $poll, $scheduledAt);
+
+		$updated = new ScheduledPost(
+			id: $existing->id,
+			authorId: $existing->authorId,
+			postId: $existing->postId,
+			content: $content,
+			visibility: $command->visibility,
+			scheduledAt: $scheduledAt,
+			createdAt: $existing->createdAt,
+			contentWarning: $warning,
+			attachmentIds: $command->attachmentIds,
+			recipientIds: $command->recipientIds,
+			inReplyToId: $command->inReplyToId,
+			language: $language,
+			poll: $poll,
+		);
+
+		if (!$this->scheduled->update($updated)) {
+			throw new ScheduledPostConflictException($id);
+		}
+
+		if ($scheduledAt != $existing->scheduledAt) {
+			$this->queue->push(
+				JobType::SCHEDULED_POST_PUBLISH,
+				['scheduled_post_id' => $id],
+				$scheduledAt,
+				JobSubject::account($existing->authorId),
+			);
+		}
+
+		return $this->scheduled->find($id) ?? $updated;
 	}
 
 	/**
@@ -398,6 +407,79 @@ final class ScheduledPostService
 		}
 
 		$this->scheduled->markPublished($id, $now);
+	}
+
+	/**
+	 * Normalizes and validates a write payload. Returns the trimmed content,
+	 * content warning and language the stored row must carry.
+	 *
+	 * @return array{0: string, 1: ?string, 2: ?string}
+	 *
+	 * @throws ValidationException
+	 */
+	private function validateWrite(
+		string $authorId,
+		CreatePost $command,
+		?ScheduledPoll $poll,
+		DateTimeImmutable $scheduledAt,
+	): array {
+		$content = trim($command->content);
+		$warning = $command->contentWarning === null ? null : trim($command->contentWarning);
+		if ($warning === '') {
+			$warning = null;
+		}
+		$language = $command->language === null ? null : trim($command->language);
+		if ($language === '') {
+			$language = null;
+		}
+
+		$errors = [];
+		if ($content === '') {
+			$errors['content'] = 'A scheduled post needs content.';
+		} elseif (mb_strlen($content) > PostService::MAX_CONTENT_LENGTH) {
+			$errors['content'] = 'The content is too long.';
+		}
+
+		if ($warning !== null && mb_strlen($warning) > PostService::MAX_CONTENT_WARNING_LENGTH) {
+			$errors['content_warning'] = 'The content warning is too long.';
+		}
+		if ($language !== null && (strlen($language) > 35
+			|| preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/D', $language) !== 1)
+		) {
+			$errors['language'] = 'language must be a valid BCP 47 language tag.';
+		}
+
+		if (count($command->attachmentIds) > ScheduledPost::MAX_ATTACHMENTS) {
+			$errors['attachment_ids'] = 'A post has too many attachments.';
+		}
+
+		if ($command->visibility === Visibility::Direct && $command->recipientIds === []) {
+			$errors['recipient_ids'] = 'A direct post needs at least one recipient.';
+		}
+
+		if ($command->visibility !== Visibility::Direct && $command->recipientIds !== []) {
+			$errors['recipient_ids'] = 'Recipients are only used by direct posts.';
+		}
+
+		if ($poll !== null && $poll->expiresAt !== null && $poll->expiresAt <= $scheduledAt) {
+			$errors['poll'] = 'The poll expires before the scheduled publication time.';
+		}
+
+		$attachments = $command->attachmentIds === []
+			? []
+			: $this->attachments->findMany($command->attachmentIds);
+		foreach ($command->attachmentIds as $attachmentId) {
+			$attachment = $attachments[$attachmentId] ?? null;
+			if ($attachment === null || $attachment->ownerId !== $authorId) {
+				$errors['attachment_ids'] = 'Every attachment must exist and belong to this account.';
+			}
+		}
+
+		if ($errors !== []) {
+			throw new ValidationException($errors);
+		}
+
+		return [$content, $warning, $language];
 	}
 
 	/**

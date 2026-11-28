@@ -78,6 +78,14 @@ interface ScheduledPostRepository
 	public function reschedule(string $id, DateTimeImmutable $scheduledAt): bool;
 
 	/**
+	 * Replaces the whole write payload of a pending row — content, audience,
+	 * attachments, reply target, poll and time — keeping id, author, reserved
+	 * post id and creation time. False when the row is no longer pending, so
+	 * a publication that already started always wins the race.
+	 */
+	public function update(ScheduledPost $post): bool;
+
+	/**
 	 * Cancels a pending row. False when it is no longer pending, which is how
 	 * a publication that already started wins the race.
 	 */

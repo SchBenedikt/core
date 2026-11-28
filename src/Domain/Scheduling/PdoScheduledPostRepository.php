@@ -215,6 +215,30 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 		) > 0;
 	}
 
+	public function update(ScheduledPost $post): bool
+	{
+		return $this->db->execute(
+			'UPDATE ' . ScheduledPostSchema::TABLE
+			. ' SET content = :content, content_warning = :content_warning, visibility = :visibility,'
+			. ' language = :language, attachment_ids = :attachment_ids, recipient_ids = :recipient_ids,'
+			. ' in_reply_to_id = :in_reply_to_id, scheduled_at = :scheduled_at, poll = :poll'
+			. ' WHERE id = :id AND state = :scheduled',
+			[
+				'content' => $post->content,
+				'content_warning' => $post->contentWarning,
+				'visibility' => $post->visibility->value,
+				'language' => $post->language,
+				'attachment_ids' => $this->encodeList($post->attachmentIds),
+				'recipient_ids' => $this->encodeList($post->recipientIds),
+				'in_reply_to_id' => $post->inReplyToId,
+				'scheduled_at' => Time::format($post->scheduledAt),
+				'poll' => $post->poll === null ? null : $this->encodePoll($post->poll),
+				'id' => $post->id,
+				'scheduled' => ScheduledPostState::Scheduled->value,
+			],
+		) > 0;
+	}
+
 	public function cancel(string $id): bool
 	{
 		return $this->db->execute(
