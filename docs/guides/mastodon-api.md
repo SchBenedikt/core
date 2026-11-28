@@ -1020,12 +1020,16 @@ re-reads that row and returns the same status instead of inserting a second
 one. There is no extra idempotency table and no cleanup job. The key is
 scoped to the user, so two users may use the same client key.
 
-Repeating a key with different content returns the original status, as an
-idempotency key should. Poll rows are part of the same transaction and are
-returned from the original post on a retry, so they are not duplicated. A
-failed validation or storage attempt writes no row and no delivery job; a later
-retry may succeed. Keys are meant to be unique per logical write, not per
-request body.
+Repeating a key with a different payload is refused with `409
+idempotency_conflict` instead of silently returning the original status. The
+comparison covers content, visibility, spoiler text, media, recipients,
+language, reply target and poll shape; fields that legitimately differ
+between attempts (derived poll expiry, quote resolution) are ignored, so a
+quoted-status change under a reused key is not detected. Poll rows are part
+of the same transaction and are returned from the original post on a retry,
+so they are not duplicated. A failed validation or storage attempt writes no
+row and no delivery job; a later retry may succeed. Keys are meant to be
+unique per logical write, not per request body.
 
 ## Pagination
 
