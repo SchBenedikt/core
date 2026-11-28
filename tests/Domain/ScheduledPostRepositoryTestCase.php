@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Tests\Domain;
 
+use AlohaSocial\Core\Domain\Post\PollOption;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPoll;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPost;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostState;
@@ -43,6 +45,43 @@ abstract class ScheduledPostRepositoryTestCase extends TestCase
 		self::assertSame(['attachment-1'], $found->attachmentIds);
 		self::assertSame(ScheduledPostState::Scheduled, $found->state);
 		self::assertSame('2026-11-11T10:10:00Z', Time::format($found->scheduledAt));
+	}
+
+	public function testThePollSpecSurvivesStorage(): void
+	{
+		$repository = $this->repository();
+		$post = $this->scheduled();
+		$poll = new ScheduledPoll(
+			options: [new PollOption('Yes'), new PollOption('No')],
+			multiple: true,
+			hideTotals: true,
+			expiresInSeconds: 7200,
+		);
+		$repository->insert(new ScheduledPost(
+			id: $post->id,
+			authorId: $post->authorId,
+			postId: $post->postId,
+			content: $post->content,
+			visibility: $post->visibility,
+			scheduledAt: $post->scheduledAt,
+			createdAt: $post->createdAt,
+			poll: $poll,
+		));
+
+		$found = $repository->find('schedule-1')?->poll;
+		self::assertNotNull($found);
+		self::assertTrue($found->multiple);
+		self::assertTrue($found->hideTotals);
+		self::assertSame(7200, $found->expiresInSeconds);
+		self::assertNull($found->expiresAt);
+		self::assertSame(['Yes', 'No'], array_map(
+			static fn (PollOption $option): string => $option->title,
+			$found->options,
+		));
+
+		// The spec resolves against the publication time, not storage time.
+		$resolved = $found->resolve(Time::parse('2026-11-11T10:10:00Z'));
+		self::assertSame('2026-11-11T12:10:00Z', Time::format($resolved->expiresAt));
 	}
 
 	public function testTheReservedPostIdCannotBeUsedTwice(): void

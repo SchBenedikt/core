@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Service;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPoll;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPost;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostConflictException;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostIdempotencyConflictException;
@@ -31,6 +32,7 @@ use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use Throwable;
 
+use function json_encode;
 use function max;
 use function min;
 use function sort;
@@ -86,8 +88,13 @@ final class ScheduledPostService
 	 * @throws ValidationException when the time, the quota or the content is refused
 	 * @throws DatabaseException   when the row cannot be stored
 	 */
-	public function schedule(string $authorId, CreatePost $command, DateTimeImmutable $scheduledAt, ?string $id = null): ScheduledPost
-	{
+	public function schedule(
+		string $authorId,
+		CreatePost $command,
+		DateTimeImmutable $scheduledAt,
+		?string $id = null,
+		?ScheduledPoll $poll = null,
+	): ScheduledPost {
 		$now = $this->now();
 		$scheduledAt = Time::toSecondPrecision($scheduledAt);
 		$this->validateTime($scheduledAt, $now);
@@ -130,6 +137,10 @@ final class ScheduledPostService
 			$errors['recipient_ids'] = 'Recipients are only used by direct posts.';
 		}
 
+		if ($poll !== null && $poll->expiresAt !== null && $poll->expiresAt <= $scheduledAt) {
+			$errors['poll'] = 'The poll expires before the scheduled publication time.';
+		}
+
 		$attachments = $command->attachmentIds === []
 			? []
 			: $this->attachments->findMany($command->attachmentIds);
@@ -159,6 +170,7 @@ final class ScheduledPostService
 			recipientIds: $command->recipientIds,
 			inReplyToId: $command->inReplyToId,
 			language: $language,
+			poll: $poll,
 		);
 
 		try {
@@ -212,7 +224,13 @@ final class ScheduledPostService
 			&& $existing->attachmentIds === $retry->attachmentIds
 			&& $existingRecipients === $retryRecipients
 			&& $existing->inReplyToId === $retry->inReplyToId
-			&& $existing->scheduledAt == $retry->scheduledAt;
+			&& $existing->scheduledAt == $retry->scheduledAt
+			&& self::pollFingerprint($existing->poll) === self::pollFingerprint($retry->poll);
+	}
+
+	private static function pollFingerprint(?ScheduledPoll $poll): ?string
+	{
+		return $poll === null ? null : json_encode($poll->toArray());
 	}
 
 	/**
@@ -347,6 +365,7 @@ final class ScheduledPostService
 				recipientIds: $claimed->recipientIds,
 				inReplyToId: $claimed->inReplyToId,
 				language: $claimed->language,
+				poll: $claimed->poll?->resolve($now),
 			));
 		} catch (DatabaseException $exception) {
 			// The reserved id is the publication guard. A duplicate means a

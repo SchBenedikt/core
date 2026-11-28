@@ -24,10 +24,10 @@ use InvalidArgumentException;
  * with the primary key instead of creating a copy.
  *
  * The command fields are the same ones {@see \AlohaSocial\Core\Service\CreatePost}
- * accepts, minus the poll (a poll's options and expiry are fixed at
- * publication, so a relative expiry cannot be scheduled). They are stored as
- * JSON lists for the two id sets because a scheduled row is input, not a
- * canonical relationship.
+ * accepts. A poll is stored as a {@see ScheduledPoll} spec, not a resolved
+ * {@see \AlohaSocial\Core\Domain\Post\Poll}: its expiry stays relative until
+ * publication. The two id lists are stored as JSON lists for the same
+ * reason — a scheduled row is input, not a canonical relationship.
  */
 final readonly class ScheduledPost
 {
@@ -58,6 +58,7 @@ final readonly class ScheduledPost
 		public ?string $failureReason = null,
 		public ?DateTimeImmutable $leaseUntil = null,
 		public ?string $language = null,
+		public ?ScheduledPoll $poll = null,
 	) {
 		if ($id === '' || $authorId === '' || $postId === '') {
 			throw new InvalidArgumentException('A scheduled post needs an id, an author and a reserved post id.');
@@ -146,6 +147,7 @@ final readonly class ScheduledPost
 			failureReason: $failureReason,
 			leaseUntil: $leaseUntil,
 			language: $this->language,
+			poll: $this->poll,
 		);
 	}
 
@@ -174,6 +176,7 @@ final readonly class ScheduledPost
 			'state' => $this->state->toApiValue(),
 			'published_at' => $this->publishedAt === null ? null : Time::format($this->publishedAt),
 			'failure_reason' => $this->failureReason,
+			'poll' => $this->poll?->toArray(),
 		];
 	}
 }

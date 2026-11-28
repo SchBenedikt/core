@@ -237,6 +237,97 @@ final class ScheduledPostApiTest extends TestCase
 		self::assertSame($scheduled['id'], $list->decodedBody()[0]['id']);
 	}
 
+	public function testAMastodonScheduledPollIsStoredAndPublished(): void
+	{
+		$response = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			body: json_encode([
+				'status' => 'Scheduled poll',
+				'visibility' => 'public',
+				'scheduled_at' => $this->in(900),
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_in' => 3600,
+					'multiple' => false,
+					'hide_totals' => true,
+				],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(200, $response->status, (string) json_encode($response->decodedBody()));
+		$poll = $response->decodedBody()['params']['poll'];
+		self::assertSame(['Yes', 'No'], $poll['options']);
+		self::assertSame(3600, $poll['expires_in']);
+		self::assertTrue($poll['hide_totals']);
+
+		$this->clock->advance(900);
+		self::assertSame(1, $this->app->worker->runOnce());
+
+		$post = $this->app->posts->get($this->publicTimeline()[0]['id']);
+		self::assertNotNull($post?->poll);
+		self::assertCount(2, $post->poll->options);
+		self::assertTrue($post->poll->hideTotals);
+		// expires_in counts from publication (10:15), not from scheduling (10:00).
+		self::assertSame('2026-11-11T11:15:00Z', Time::format($post->poll->expiresAt));
+	}
+
+	public function testAScheduledPollCannotExpireBeforeItsPublication(): void
+	{
+		$response = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/mastodon/v1/statuses',
+			body: json_encode([
+				'status' => 'Too early poll',
+				'visibility' => 'public',
+				'scheduled_at' => $this->in(900),
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_at' => $this->in(600),
+				],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+			scopes: ['write:statuses'],
+		));
+
+		self::assertSame(422, $response->status);
+		self::assertSame(0, $this->postCount());
+	}
+
+	public function testAScheduledPollIdempotencyKeyRejectsADifferentPoll(): void
+	{
+		$body = [
+			'status' => 'Keyed poll',
+			'visibility' => 'public',
+			'scheduled_at' => $this->in(900),
+			'poll' => [
+				'options' => ['Yes', 'No'],
+				'expires_in' => 3600,
+			],
+		];
+		$send = function (array $payload) {
+			return $this->app->handle(new Request(
+				method: 'POST',
+				path: '/api/mastodon/v1/statuses',
+				body: json_encode($payload, JSON_THROW_ON_ERROR),
+				headers: ['idempotency-key' => 'poll-key-1'],
+				userId: 'alice',
+				scopes: ['write:statuses'],
+			));
+		};
+
+		self::assertSame(200, $send($body)->status);
+		self::assertSame(200, $send($body)->status);
+
+		$changed = $body;
+		$changed['poll']['options'] = ['Yes', 'Maybe', 'No'];
+		$conflict = $send($changed);
+		self::assertSame(409, $conflict->status);
+		self::assertSame('idempotency_conflict', $conflict->decodedBody()['error']['code']);
+	}
+
 	public function testAFailedPublicationIsRecordedAndDeadLettered(): void
 	{
 		$parent = $this->parentPost();
