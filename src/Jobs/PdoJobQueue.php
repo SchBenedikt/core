@@ -18,6 +18,9 @@ use JsonException;
 use Throwable;
 use UnexpectedValueException;
 
+use function get_class;
+use function substr;
+
 /**
  * The durable job queue in SQL.
  *
@@ -159,12 +162,14 @@ final class PdoJobQueue implements JobQueue
 	{
 		$this->db->execute(
 			'UPDATE ' . JobSchema::TABLE
-			. ' SET attempts = :attempts, reserved_at = NULL, dead_at = :now'
+			. ' SET attempts = :attempts, reserved_at = NULL, dead_at = :now,'
+			. ' last_error = :last_error'
 			. ' WHERE id = :id AND reserved_at IS NOT NULL AND dead_at IS NULL',
 			[
 				'id' => $job->id,
 				'attempts' => $job->attempts + 1,
 				'now' => Time::format($now),
+				'last_error' => self::errorLabel($error),
 			],
 		);
 	}
@@ -176,12 +181,14 @@ final class PdoJobQueue implements JobQueue
 		if ($attempts >= self::MAX_ATTEMPTS) {
 			$this->db->execute(
 				'UPDATE ' . JobSchema::TABLE
-				. ' SET attempts = :attempts, reserved_at = NULL, dead_at = :now'
+				. ' SET attempts = :attempts, reserved_at = NULL, dead_at = :now,'
+				. ' last_error = :last_error'
 				. ' WHERE id = :id',
 				[
 					'id' => $job->id,
 					'attempts' => $attempts,
 					'now' => Time::format($now),
+					'last_error' => self::errorLabel($error),
 				],
 			);
 
@@ -197,12 +204,13 @@ final class PdoJobQueue implements JobQueue
 		$this->db->execute(
 			'UPDATE ' . JobSchema::TABLE
 			. ' SET attempts = :attempts, available_at = :available_at,'
-			. ' reserved_at = NULL, dead_at = NULL'
+			. ' reserved_at = NULL, dead_at = NULL, last_error = :last_error'
 			. ' WHERE id = :id',
 			[
 				'id' => $job->id,
 				'attempts' => $attempts,
 				'available_at' => Time::format($availableAt),
+				'last_error' => self::errorLabel($error),
 			],
 		);
 	}
@@ -220,6 +228,16 @@ final class PdoJobQueue implements JobQueue
 		return (int) $this->db->fetchValue(
 			'SELECT COUNT(*) FROM ' . JobSchema::TABLE . ' WHERE dead_at IS NOT NULL',
 		);
+	}
+
+	/**
+	 * Sanitized outcome stored on the row: the exception class and a
+	 * truncated message. Handler errors describe the failure, never job
+	 * payloads or credentials, and stay inside the VARCHAR(200) column.
+	 */
+	private static function errorLabel(Throwable $error): string
+	{
+		return substr(get_class($error) . ': ' . $error->getMessage(), 0, 200);
 	}
 
 	/**

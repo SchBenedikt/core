@@ -19,6 +19,7 @@ use AlohaSocial\Core\Support\RandomIdGenerator;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
 use AlohaSocial\Core\Support\Time;
 use PDO;
+use RuntimeException;
 
 /**
  * The shared queue contract against a real SQLite file, plus the restart
@@ -70,6 +71,56 @@ final class PdoJobQueueTest extends JobQueueTestCase
 		$after = new PdoJobQueue($this->connection(), $this->clock, new RandomIdGenerator());
 		self::assertSame(0, $after->pendingCount());
 		self::assertSame([], $after->reserve(10, $this->clock->now()));
+	}
+
+	public function testDeadLetterRecordsASanitizedLastError(): void
+	{
+		$this->queue->push('deliver', []);
+		$reserved = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(1, $reserved);
+
+		$this->queue->deadLetter(
+			$reserved[0],
+			new RuntimeException('remote inbox rejected the activity'),
+			$this->clock->now(),
+		);
+
+		$error = $this->connection()->fetchValue(
+			'SELECT last_error FROM ' . JobSchema::TABLE . ' WHERE id = :id',
+			['id' => $reserved[0]->id],
+		);
+		self::assertSame('RuntimeException: remote inbox rejected the activity', $error);
+	}
+
+	public function testTerminalFailRecordsLastErrorAndRetryKeepsItVisible(): void
+	{
+		$this->queue->push('deliver', []);
+		$reserved = $this->queue->reserve(10, $this->clock->now());
+
+		$this->queue->fail($reserved[0], new RuntimeException('first failure'), $this->clock->now());
+		$error = $this->connection()->fetchValue(
+			'SELECT last_error FROM ' . JobSchema::TABLE . ' WHERE id = :id',
+			['id' => $reserved[0]->id],
+		);
+		self::assertSame('RuntimeException: first failure', $error);
+	}
+
+	public function testLastErrorIsTruncatedToTheColumnWidth(): void
+	{
+		$this->queue->push('deliver', []);
+		$reserved = $this->queue->reserve(10, $this->clock->now());
+
+		$this->queue->deadLetter(
+			$reserved[0],
+			new RuntimeException(str_repeat('x', 500)),
+			$this->clock->now(),
+		);
+
+		$error = (string) $this->connection()->fetchValue(
+			'SELECT last_error FROM ' . JobSchema::TABLE . ' WHERE id = :id',
+			['id' => $reserved[0]->id],
+		);
+		self::assertSame(200, strlen($error));
 	}
 
 	public function testAFailedJobIsRetriedAfterAFreshConnection(): void
