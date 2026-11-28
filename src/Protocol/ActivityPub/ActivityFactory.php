@@ -658,22 +658,24 @@ final class ActivityFactory
 	/**
 	 * The Like id of one local account on one object.
 	 *
-	 * Derived from the pair, so a retried favourite re-sends the identical
-	 * activity and a later Undo can name the Like without a second id table.
+	 * Without `$at` the id is derived from the pair, which keeps legacy rows
+	 * and their Undo addressable. A timestamp makes each new lifecycle —
+	 * like, undo, like again — a distinct activity id, so a receiver's replay
+	 * log cannot swallow the second Like as a retransmission.
 	 */
-	public function likeId(string $localUserId, string $objectId): string
+	public function likeId(string $localUserId, string $objectId, ?DateTimeImmutable $at = null): string
 	{
-		return $this->interactionId('likes', $localUserId, $objectId, '');
+		return $this->interactionId('likes', $localUserId, $objectId, $at?->format('U.u') ?? '');
 	}
 
 	/**
 	 * @return array<string, mixed>
 	 */
-	public function like(string $localUserId, string $objectId): array
+	public function like(string $localUserId, string $objectId, ?string $activityId = null): array
 	{
 		return [
 			'@context' => self::CONTEXT,
-			'id' => $this->likeId($localUserId, $objectId),
+			'id' => $activityId ?? $this->likeId($localUserId, $objectId),
 			'type' => 'Like',
 			'actor' => $this->actorId($localUserId),
 			'object' => $objectId,
@@ -681,16 +683,22 @@ final class ActivityFactory
 	}
 
 	/**
+	 * @param ?string $likeActivityId the stored Like's activity id; the Undo
+	 *                               embeds it unchanged and derives its own id
+	 *                               from it, so each lifecycle stays unique
+	 *
 	 * @return array<string, mixed>
 	 */
-	public function undoLike(string $localUserId, string $objectId): array
+	public function undoLike(string $localUserId, string $objectId, ?string $likeActivityId = null): array
 	{
+		$likeActivityId ??= $this->likeId($localUserId, $objectId);
+
 		return [
 			'@context' => self::CONTEXT,
-			'id' => $this->likeId($localUserId, $objectId) . '/undo',
+			'id' => $likeActivityId . '/undo',
 			'type' => 'Undo',
 			'actor' => $this->actorId($localUserId),
-			'object' => $this->like($localUserId, $objectId),
+			'object' => $this->like($localUserId, $objectId, $likeActivityId),
 		];
 	}
 
@@ -728,9 +736,9 @@ final class ActivityFactory
 		];
 	}
 
-	public function reactionId(string $localUserId, string $objectId, string $emoji): string
+	public function reactionId(string $localUserId, string $objectId, string $emoji, ?DateTimeImmutable $at = null): string
 	{
-		return $this->interactionId('reactions', $localUserId, $objectId, $emoji);
+		return $this->interactionId('reactions', $localUserId, $objectId, $emoji . ($at?->format('U.u') ?? ''));
 	}
 
 	/**
@@ -739,11 +747,11 @@ final class ActivityFactory
 	 *
 	 * @return array<string, mixed>
 	 */
-	public function emojiReact(string $localUserId, string $objectId, string $emoji): array
+	public function emojiReact(string $localUserId, string $objectId, string $emoji, ?string $activityId = null): array
 	{
 		return [
 			'@context' => self::CONTEXT,
-			'id' => $this->reactionId($localUserId, $objectId, $emoji),
+			'id' => $activityId ?? $this->reactionId($localUserId, $objectId, $emoji),
 			'type' => 'EmojiReact',
 			'actor' => $this->actorId($localUserId),
 			'object' => $objectId,
@@ -752,16 +760,22 @@ final class ActivityFactory
 	}
 
 	/**
+	 * @param ?string $reactionActivityId the stored EmojiReact's activity id;
+	 *                                    the Undo embeds it unchanged and
+	 *                                    derives its own id from it
+	 *
 	 * @return array<string, mixed>
 	 */
-	public function undoEmojiReact(string $localUserId, string $objectId, string $emoji): array
+	public function undoEmojiReact(string $localUserId, string $objectId, string $emoji, ?string $reactionActivityId = null): array
 	{
+		$reactionActivityId ??= $this->reactionId($localUserId, $objectId, $emoji);
+
 		return [
 			'@context' => self::CONTEXT,
-			'id' => $this->reactionId($localUserId, $objectId, $emoji) . '/undo',
+			'id' => $reactionActivityId . '/undo',
 			'type' => 'Undo',
 			'actor' => $this->actorId($localUserId),
-			'object' => $this->emojiReact($localUserId, $objectId, $emoji),
+			'object' => $this->emojiReact($localUserId, $objectId, $emoji, $reactionActivityId),
 		];
 	}
 

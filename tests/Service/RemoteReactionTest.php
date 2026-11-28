@@ -115,7 +115,9 @@ final class RemoteReactionTest extends TestCase
 		self::assertSame('Like', $jobs[0]->payload['activity']['type']);
 		self::assertSame('https://social.example/@alice#main-key', $jobs[0]->payload['key_id']);
 		self::assertSame(self::OBJECT, $jobs[0]->payload['activity']['object']);
-		self::assertSame($this->activities->likeId('alice', self::OBJECT), $jobs[0]->payload['activity']['id']);
+		$stored = $this->reactions->find(ReactionDirection::Out, 'alice', self::OBJECT, ReactionKind::Like, null);
+		self::assertNotNull($stored);
+		self::assertSame($stored->activityId, $jobs[0]->payload['activity']['id']);
 	}
 
 	public function testLikingTwiceDoesNotQueueASecondLike(): void
@@ -130,6 +132,13 @@ final class RemoteReactionTest extends TestCase
 	{
 		$service = $this->service();
 		$service->likeRemote('alice', self::OBJECT);
+		$likeActivityId = $this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			self::OBJECT,
+			ReactionKind::Like,
+			null,
+		)?->activityId;
 		$this->queue->reserve(10, $this->clock->now());
 
 		$interaction = $service->unlikeRemote('alice', self::OBJECT);
@@ -141,7 +150,8 @@ final class RemoteReactionTest extends TestCase
 		self::assertCount(1, $jobs);
 		self::assertSame('Undo', $jobs[0]->payload['activity']['type']);
 		self::assertSame('Like', $jobs[0]->payload['activity']['object']['type']);
-		self::assertSame($this->activities->likeId('alice', self::OBJECT), $jobs[0]->payload['activity']['object']['id']);
+		self::assertSame($likeActivityId, $jobs[0]->payload['activity']['object']['id']);
+		self::assertSame($likeActivityId . '/undo', $jobs[0]->payload['activity']['id']);
 	}
 
 	public function testUnlikingAnAbsentLikeSendsNothing(): void
@@ -485,14 +495,35 @@ final class RemoteReactionTest extends TestCase
 		self::assertSame(self::INBOX, $jobs[0]->payload['inbox']);
 	}
 
-	public function testTheLikeIdIsStableAcrossARemoveAndRetry(): void
+	public function testEachLikeLifecycleGetsItsOwnActivityId(): void
 	{
 		$service = $this->service();
-		$first = $this->activities->likeId('alice', self::OBJECT);
 
 		$service->likeRemote('alice', self::OBJECT);
+		$firstLikeId = $this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			self::OBJECT,
+			ReactionKind::Like,
+			null,
+		)?->activityId;
+
 		$service->unlikeRemote('alice', self::OBJECT);
+		$this->clock->advance(1);
 		$service->likeRemote('alice', self::OBJECT);
+		$secondLikeId = $this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			self::OBJECT,
+			ReactionKind::Like,
+			null,
+		)?->activityId;
+
+		self::assertNotNull($firstLikeId);
+		self::assertNotNull($secondLikeId);
+		// The whole point: the receiver's replay log must see two different
+		// activities, not one id it already accepted.
+		self::assertNotSame($firstLikeId, $secondLikeId);
 
 		$jobs = $this->queue->reserve(10, $this->clock->now());
 		self::assertCount(3, $jobs);
@@ -503,7 +534,47 @@ final class RemoteReactionTest extends TestCase
 			$likeActivities[] = $activity['type'] === 'Like' ? $activity['id'] : $activity['object']['id'];
 		}
 
-		self::assertSame([$first, $first, $first], $likeActivities);
+		self::assertSame([$firstLikeId, $firstLikeId, $secondLikeId], $likeActivities);
+	}
+
+	public function testEachEmojiReactLifecycleGetsItsOwnActivityId(): void
+	{
+		$service = $this->service();
+
+		$service->reactToRemote('alice', self::OBJECT, '❤');
+		$firstId = $this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			self::OBJECT,
+			ReactionKind::Emoji,
+			'❤',
+		)?->activityId;
+
+		$service->unreactFromRemote('alice', self::OBJECT, '❤');
+		$this->clock->advance(1);
+		$service->reactToRemote('alice', self::OBJECT, '❤');
+		$secondId = $this->reactions->find(
+			ReactionDirection::Out,
+			'alice',
+			self::OBJECT,
+			ReactionKind::Emoji,
+			'❤',
+		)?->activityId;
+
+		self::assertNotNull($firstId);
+		self::assertNotNull($secondId);
+		self::assertNotSame($firstId, $secondId);
+
+		$jobs = $this->queue->reserve(10, $this->clock->now());
+		self::assertCount(3, $jobs);
+
+		$ids = [];
+		foreach ($jobs as $job) {
+			$activity = $job->payload['activity'];
+			$ids[] = $activity['type'] === 'EmojiReact' ? $activity['id'] : $activity['object']['id'];
+		}
+
+		self::assertSame([$firstId, $firstId, $secondId], $ids);
 	}
 
 	public function testAPublicRemotePostReadDoesNotNeedAFollow(): void

@@ -343,12 +343,15 @@ final class ReactionService
 			kind: ReactionKind::Like,
 			emoji: null,
 			iconUrl: null,
-			activityId: $this->activities->likeId($userId, $post->objectId),
+			// Each lifecycle gets its own activity id: a Like→Undo→Like
+			// sequence must not look like a retransmission to the peer's
+			// replay log. The raw clock keeps sub-second toggles distinct.
+			activityId: $this->activities->likeId($userId, $post->objectId, $this->clock->now()),
 			createdAt: $this->now(),
 		);
 
 		if ($this->insertOutbound($reaction) && $inbox !== null) {
-			$this->pushDelivery($userId, $inbox, $this->activities->like($userId, $post->objectId));
+			$this->pushDelivery($userId, $inbox, $this->activities->like($userId, $post->objectId, $reaction->activityId));
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -387,7 +390,7 @@ final class ReactionService
 		);
 
 		if ($removed && $inbox !== null) {
-			$this->pushDelivery($userId, $inbox, $this->activities->undoLike($userId, $post->objectId));
+			$this->pushDelivery($userId, $inbox, $this->activities->undoLike($userId, $post->objectId, $stored->activityId));
 		}
 
 		return $this->remoteInteractionsFor($userId, $post);
@@ -483,7 +486,7 @@ final class ReactionService
 			kind: ReactionKind::Emoji,
 			emoji: $emoji,
 			iconUrl: null,
-			activityId: $this->activities->reactionId($userId, $post->objectId, $emoji),
+			activityId: $this->activities->reactionId($userId, $post->objectId, $emoji, $this->clock->now()),
 			createdAt: $this->now(),
 		);
 
@@ -491,7 +494,7 @@ final class ReactionService
 			$this->pushDelivery(
 				$userId,
 				$inbox,
-				$this->activities->emojiReact($userId, $post->objectId, $emoji),
+				$this->activities->emojiReact($userId, $post->objectId, $emoji, $reaction->activityId),
 			);
 		}
 
@@ -533,7 +536,7 @@ final class ReactionService
 			$this->pushDelivery(
 				$userId,
 				$inbox,
-				$this->activities->undoEmojiReact($userId, $post->objectId, $emoji),
+				$this->activities->undoEmojiReact($userId, $post->objectId, $emoji, $stored->activityId),
 			);
 		}
 
