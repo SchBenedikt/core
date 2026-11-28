@@ -14,6 +14,7 @@ use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPost;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostConflictException;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPostIdempotencyConflictException;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostNotFoundException;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostState;
@@ -32,6 +33,7 @@ use Throwable;
 
 use function max;
 use function min;
+use function sort;
 use function trim;
 
 /**
@@ -84,7 +86,7 @@ final class ScheduledPostService
 	 * @throws ValidationException when the time, the quota or the content is refused
 	 * @throws DatabaseException   when the row cannot be stored
 	 */
-	public function schedule(string $authorId, CreatePost $command, DateTimeImmutable $scheduledAt): ScheduledPost
+	public function schedule(string $authorId, CreatePost $command, DateTimeImmutable $scheduledAt, ?string $id = null): ScheduledPost
 	{
 		$now = $this->now();
 		$scheduledAt = Time::toSecondPrecision($scheduledAt);
@@ -145,7 +147,7 @@ final class ScheduledPostService
 		$this->enforceQuota($authorId, $now);
 
 		$scheduled = new ScheduledPost(
-			id: $this->ids->generate(),
+			id: $id ?? $this->ids->generate(),
 			authorId: $authorId,
 			postId: $this->ids->generate(),
 			content: $content,
@@ -159,7 +161,27 @@ final class ScheduledPostService
 			language: $language,
 		);
 
-		$this->scheduled->insert($scheduled);
+		try {
+			$this->scheduled->insert($scheduled);
+		} catch (DatabaseException $exception) {
+			// A caller-chosen id (client idempotency key) may already name a
+			// row. An identical payload replays the stored schedule without a
+			// second publish job; a different one is an explicit conflict.
+			if ($id === null) {
+				throw $exception;
+			}
+
+			$existing = $this->scheduled->find($id);
+			if ($existing === null) {
+				throw $exception;
+			}
+			if (!$this->sameScheduledPayload($existing, $scheduled)) {
+				throw new ScheduledPostIdempotencyConflictException($id);
+			}
+
+			return $existing;
+		}
+
 		$this->queue->push(
 			JobType::SCHEDULED_POST_PUBLISH,
 			['scheduled_post_id' => $scheduled->id],
@@ -168,6 +190,29 @@ final class ScheduledPostService
 		);
 
 		return $scheduled;
+	}
+
+	/**
+	 * True when a retried schedule carries the same payload. Both rows are
+	 * already normalized by this method, so the comparison is exact; the
+	 * publish job and post id are runtime details, not payload.
+	 */
+	private function sameScheduledPayload(ScheduledPost $existing, ScheduledPost $retry): bool
+	{
+		$existingRecipients = $existing->recipientIds;
+		$retryRecipients = $retry->recipientIds;
+		sort($existingRecipients);
+		sort($retryRecipients);
+
+		return $existing->authorId === $retry->authorId
+			&& $existing->content === $retry->content
+			&& $existing->visibility === $retry->visibility
+			&& $existing->contentWarning === $retry->contentWarning
+			&& $existing->language === $retry->language
+			&& $existing->attachmentIds === $retry->attachmentIds
+			&& $existingRecipients === $retryRecipients
+			&& $existing->inReplyToId === $retry->inReplyToId
+			&& $existing->scheduledAt == $retry->scheduledAt;
 	}
 
 	/**

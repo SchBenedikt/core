@@ -601,6 +601,48 @@ final class MastodonApiTest extends TestCase
 		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
 	}
 
+	public function testAScheduledStatusRetryWithTheSameIdempotencyKeyDoesNotDuplicate(): void
+	{
+		$app = $this->app();
+		$fields = [
+			'status' => 'later body',
+			'scheduled_at' => '2026-11-11T11:00:00Z',
+		];
+		$first = $this->createStatus($app, $fields, ['Idempotency-Key' => 'sched-key']);
+		$second = $this->createStatus($app, $fields, ['Idempotency-Key' => 'sched-key']);
+
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame(200, $second->status, json_encode($second->decodedBody()));
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+
+		$list = $app->handle(new Request(
+			method: 'GET',
+			path: MastodonApiConfig::DEFAULT_PREFIX . '/scheduled_statuses',
+			userId: 'alice',
+			scopes: ['read:statuses'],
+		));
+		self::assertCount(1, $list->decodedBody());
+	}
+
+	public function testAScheduledStatusIdempotencyKeyWithADifferentPayloadIsAConflict(): void
+	{
+		$app = $this->app();
+		$first = $this->createStatus(
+			$app,
+			['status' => 'first', 'scheduled_at' => '2026-11-11T11:00:00Z'],
+			['Idempotency-Key' => 'sched-conflict'],
+		);
+		$second = $this->createStatus(
+			$app,
+			['status' => 'second', 'scheduled_at' => '2026-11-11T11:00:00Z'],
+			['Idempotency-Key' => 'sched-conflict'],
+		);
+
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame(409, $second->status);
+		self::assertSame('idempotency_conflict', $second->decodedBody()['error']['code'] ?? null);
+	}
+
 	public function testPaginationUsesTheStatusIdAndReturnsALink(): void
 	{
 		$app = $this->app();

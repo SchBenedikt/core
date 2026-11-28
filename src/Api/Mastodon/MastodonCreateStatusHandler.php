@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Api\Mastodon;
 
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPostIdempotencyConflictException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Service\CreatePost;
@@ -147,20 +148,37 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 				throw new MastodonRequestException(422, 'validation_failed', 'scheduled_at must be an ISO 8601 timestamp.');
 			}
 
-			return $this->respond(fn (): array => $this->scheduledPresenter->present($this->scheduled->schedule(
-				$userId,
-				new CreatePost(
-					authorId: $userId,
-					content: $content,
-					visibility: $visibility,
-					contentWarning: $spoiler === null || trim($spoiler) === '' ? null : trim($spoiler),
-					attachmentIds: $ids,
-					inReplyToId: $inReplyToId,
-					recipientIds: $recipientIds,
-					language: $language,
-				),
-				$scheduledAt,
-			)));
+			$scheduledId = $idempotencyKey === ''
+				? null
+				: 'mastodon-scheduled-' . substr(hash('sha256', $userId . "\0" . $idempotencyKey), 0, 32);
+
+			return $this->respond(function () use ($userId, $content, $visibility, $spoiler, $ids, $inReplyToId, $recipientIds, $language, $scheduledAt, $scheduledId): array {
+				try {
+					$scheduled = $this->scheduled->schedule(
+						$userId,
+						new CreatePost(
+							authorId: $userId,
+							content: $content,
+							visibility: $visibility,
+							contentWarning: $spoiler === null || trim($spoiler) === '' ? null : trim($spoiler),
+							attachmentIds: $ids,
+							inReplyToId: $inReplyToId,
+							recipientIds: $recipientIds,
+							language: $language,
+						),
+						$scheduledAt,
+						$scheduledId,
+					);
+				} catch (ScheduledPostIdempotencyConflictException) {
+					throw new MastodonRequestException(
+						409,
+						'idempotency_conflict',
+						'This Idempotency-Key was already used for a different scheduled status.',
+					);
+				}
+
+				return $this->scheduledPresenter->present($scheduled);
+			});
 		}
 
 		return $this->respond(fn (): array => $this->mastodon->createStatus(
