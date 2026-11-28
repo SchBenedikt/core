@@ -1234,7 +1234,9 @@ so validation, ownership, soft deletion and delivery are identical to
 `/api/v1/posts`. A valid `poll` is
 written in the same transaction as its post; invalid options or expiry are
 `422 validation_failed` and leave no status. `Idempotency-Key` makes a retry
-return the same status, including its poll, instead of inserting a duplicate.
+return the same status, including its poll, instead of inserting a duplicate;
+a retry whose payload differs from the stored status is `409
+idempotency_conflict`.
 
 The poll routes also accept an imported ActivityPub Question URL as `{id}`
 (URL-encoded into one path segment). Remote Questions can be read and voted

@@ -906,10 +906,96 @@ final class MastodonService
 				throw new MastodonRequestException(404, 'not_found', 'Status not found.');
 			}
 
+			if (!$this->sameStatusPayload(
+				$existing,
+				$content,
+				$visibility,
+				$spoilerText,
+				$mediaIds,
+				$inReplyToId,
+				$recipientIds,
+				$language,
+				$pollModel,
+			)) {
+				throw new MastodonRequestException(
+					409,
+					'idempotency_conflict',
+					'This Idempotency-Key was already used for a different status.',
+				);
+			}
+
 			$post = $existing;
 		}
 
 		return $this->presenter->status($post, $userId);
+	}
+
+	/**
+	 * True when a repeated `Idempotency-Key` carries the same status payload.
+	 *
+	 * The comparison normalizes exactly like {@see PostService::create()}
+	 * (trimmed content, warning, language and reply target) and deliberately
+	 * ignores fields that legitimately differ between attempts: the derived
+	 * poll expiry, quote resolution and publication time. A quoted-status
+	 * change under a reused key is therefore not detected.
+	 *
+	 * @param list<string> $mediaIds
+	 * @param list<string> $recipientIds
+	 */
+	private function sameStatusPayload(
+		Post $existing,
+		string $content,
+		Visibility $visibility,
+		?string $spoilerText,
+		array $mediaIds,
+		?string $inReplyToId,
+		array $recipientIds,
+		?string $language,
+		?Poll $poll,
+	): bool {
+		$warning = $spoilerText === null ? null : trim($spoilerText);
+		$normalizedLanguage = $language === null ? null : trim($language);
+		$normalizedReplyTo = $inReplyToId === null ? null : trim($inReplyToId);
+
+		if ($existing->content !== trim($content)
+			|| $existing->visibility !== $visibility
+			|| $existing->contentWarning !== $warning
+			|| $existing->attachmentIds !== $mediaIds
+			|| $existing->inReplyToId !== $normalizedReplyTo
+			|| $existing->language !== $normalizedLanguage
+		) {
+			return false;
+		}
+
+		$existingRecipients = $existing->recipientIds;
+		$requestedRecipients = $recipientIds;
+		sort($existingRecipients);
+		sort($requestedRecipients);
+		if ($existingRecipients !== $requestedRecipients) {
+			return false;
+		}
+
+		if (($existing->poll === null) !== ($poll === null)) {
+			return false;
+		}
+		if ($existing->poll === null || $poll === null) {
+			return true;
+		}
+
+		$existingPoll = $existing->poll;
+		if ($existingPoll->multiple !== $poll->multiple
+			|| $existingPoll->hideTotals !== $poll->hideTotals
+			|| count($existingPoll->options) !== count($poll->options)
+		) {
+			return false;
+		}
+		foreach ($existingPoll->options as $index => $option) {
+			if ($option->title !== $poll->options[$index]->title) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	public function deleteStatus(string $userId, string $postId): void

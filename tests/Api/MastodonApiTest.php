@@ -555,6 +555,52 @@ final class MastodonApiTest extends TestCase
 		self::assertCount(1, $timeline->decodedBody());
 	}
 
+	public function testAnIdempotencyKeyWithADifferentPayloadIsAConflict(): void
+	{
+		$app = $this->app();
+		$first = $this->createStatus(
+			$app,
+			['status' => 'original body'],
+			['Idempotency-Key' => 'conflict-key'],
+		);
+		$second = $this->createStatus(
+			$app,
+			['status' => 'different body'],
+			['Idempotency-Key' => 'conflict-key'],
+		);
+
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame(409, $second->status);
+		self::assertSame('idempotency_conflict', $second->decodedBody()['error']['code'] ?? null);
+
+		$timeline = $app->handle(new Request(
+			'GET',
+			MastodonApiConfig::DEFAULT_PREFIX . '/timelines/public',
+		));
+		self::assertCount(1, $timeline->decodedBody());
+	}
+
+	public function testAnIdempotencyKeyComparingPayloadsNormalizesLikeCreation(): void
+	{
+		$app = $this->app();
+		$fields = [
+			'status' => '  padded body  ',
+			'language' => 'en',
+		];
+		$first = $this->createStatus($app, $fields, ['Idempotency-Key' => 'normalize-key']);
+		// A retry may carry the same semantic payload with different padding;
+		// PostService trims on create, so the fingerprint must too.
+		$second = $this->createStatus(
+			$app,
+			['status' => 'padded body', 'language' => ' en '],
+			['Idempotency-Key' => 'normalize-key'],
+		);
+
+		self::assertSame(200, $first->status, json_encode($first->decodedBody()));
+		self::assertSame(200, $second->status, json_encode($second->decodedBody()));
+		self::assertSame($first->decodedBody()['id'], $second->decodedBody()['id']);
+	}
+
 	public function testPaginationUsesTheStatusIdAndReturnsALink(): void
 	{
 		$app = $this->app();
