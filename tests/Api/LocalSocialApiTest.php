@@ -226,6 +226,41 @@ final class LocalSocialApiTest extends TestCase
 		self::assertSame('idempotency_conflict', $unquoted->decodedBody()['error']['code']);
 	}
 
+	public function testPostCreationWithAnIdempotencyKeyAfterDeletionReportsNotFound(): void
+	{
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Idempotency-Key' => 'native-key-deleted',
+		];
+		$body = json_encode(['content' => 'soon gone'], JSON_THROW_ON_ERROR);
+		$created = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+		self::assertSame(201, $created->status);
+		$postId = $created->decodedBody()['post']['id'];
+
+		$deleted = $this->app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . rawurlencode($postId),
+			userId: 'alice',
+		));
+		self::assertSame(204, $deleted->status);
+
+		$retried = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+		self::assertSame(404, $retried->status);
+		self::assertSame('not_found', $retried->decodedBody()['error']['code']);
+	}
+
 	public function testProfileAndFollowRejectUnknownUnauthenticatedAndSelfTargets(): void
 	{
 		self::assertSame(404, $this->app->handle(
