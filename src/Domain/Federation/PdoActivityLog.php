@@ -15,6 +15,8 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use Throwable;
 
+use function is_string;
+
 /**
  * The replay guard in SQL.
  *
@@ -40,7 +42,7 @@ final class PdoActivityLog implements ActivityLog
 		}
 	}
 
-	public function claim(string $activityId, DateTimeImmutable $now): bool
+	public function claim(string $activityId, DateTimeImmutable $now, ?string $digest = null): bool
 	{
 		if ($activityId === '') {
 			throw new InvalidArgumentException('An activity id must not be empty.');
@@ -58,11 +60,12 @@ final class PdoActivityLog implements ActivityLog
 
 		try {
 			$this->db->execute(
-				'INSERT INTO ' . ActivityLogSchema::TABLE . ' (activity_id, seen_at)'
-				. ' VALUES (:activity_id, :seen_at)',
+				'INSERT INTO ' . ActivityLogSchema::TABLE . ' (activity_id, seen_at, digest)'
+				. ' VALUES (:activity_id, :seen_at, :digest)',
 				[
 					'activity_id' => $activityId,
 					'seen_at' => Time::format($now),
+					'digest' => $digest,
 				],
 			);
 
@@ -81,6 +84,16 @@ final class PdoActivityLog implements ActivityLog
 
 			throw $exception;
 		}
+	}
+
+	public function digest(string $activityId): ?string
+	{
+		$value = $this->db->fetchValue(
+			'SELECT digest FROM ' . ActivityLogSchema::TABLE . ' WHERE activity_id = :activity_id',
+			['activity_id' => $activityId],
+		);
+
+		return is_string($value) ? $value : null;
 	}
 
 	public function release(string $activityId): void

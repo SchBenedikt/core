@@ -121,8 +121,8 @@ final class InboundTimelineTest extends TestCase
 			'first remote post',
 			'2026-11-11T10:01:00Z',
 		));
-		self::assertSame(400, $duplicate->status);
-		self::assertSame('replayed_activity', $duplicate->decodedBody()['error']['code']);
+		// An identical retry of a processed activity is an idempotent success.
+		self::assertSame(202, $duplicate->status);
 		self::assertCount(2, $this->feed($app)->decodedBody()['posts']);
 
 		self::assertSame(202, $this->deliver($app, $this->delete(

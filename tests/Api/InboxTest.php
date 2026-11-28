@@ -348,20 +348,36 @@ final class InboxTest extends TestCase
 		self::assertSame(self::INBOX, $this->http->requests[0]['url']);
 	}
 
-	public function testAReplayedActivityIsRefusedAndChangesNothing(): void
+	public function testAnIdenticalRetryIsAcceptedWithoutSideEffects(): void
 	{
 		$follow = $this->follow();
 
 		self::assertSame(202, $this->deliver($follow)->status);
 		$this->app->worker->runOnce();
 
-		$replay = $this->deliver($follow);
+		$retry = $this->deliver($follow);
 
-		self::assertSame(400, $replay->status);
-		self::assertSame('replayed_activity', $replay->decodedBody()['error']['code']);
+		self::assertSame(202, $retry->status);
+		self::assertSame('accepted', $retry->decodedBody()['status']);
 		self::assertSame(1, $this->app->followers->count('alice'));
 		self::assertSame(0, $this->app->queue->pendingCount());
 		self::assertCount(1, $this->http->requests);
+	}
+
+	public function testAConflictingReuseOfAClaimedActivityIdIsRefused(): void
+	{
+		$follow = $this->follow();
+
+		self::assertSame(202, $this->deliver($follow)->status);
+
+		$conflict = $this->follow(object: 'https://localhost:8080/@mallory');
+		$conflict['id'] = $follow['id'];
+
+		$response = $this->deliver($conflict);
+
+		self::assertSame(400, $response->status);
+		self::assertSame('replayed_activity', $response->decodedBody()['error']['code']);
+		self::assertSame(1, $this->app->followers->count('alice'));
 	}
 
 	public function testASecondFollowWithANewIdIsIdempotent(): void

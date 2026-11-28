@@ -54,6 +54,7 @@ use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Support\Time;
 use Throwable;
 
+use function hash;
 use function in_array;
 use function is_string;
 
@@ -175,7 +176,8 @@ final class InboxService
 			);
 		}
 
-		$claimed = $this->replay->claim($activityId, $this->clock->now());
+		$digest = hash('sha256', $body);
+		$claimed = $this->replay->claim($activityId, $this->clock->now(), $digest);
 		if (!$claimed) {
 			// A duplicate Accept/Reject is a retry of the same response. It
 			// must not be treated as a new state transition, but it is safe
@@ -196,6 +198,13 @@ final class InboxService
 			if ($type === 'Like' || $type === 'EmojiReact' || $type === 'Undo' || $type === 'Block' || $type === 'Flag'
 				|| $type === 'Move'
 			) {
+				return;
+			}
+
+			// An identical retry of an already-processed activity is a no-op:
+			// the peer never saw our acceptance and delivers the same bytes
+			// again. A different payload under a claimed id is a conflict.
+			if ($this->replay->digest($activityId) === $digest) {
 				return;
 			}
 

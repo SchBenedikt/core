@@ -55,4 +55,21 @@ abstract class ActivityLogTestCase extends TestCase
 			),
 		);
 	}
+
+	public function testThePayloadDigestSurvivesWithTheClaim(): void
+	{
+		$log = $this->log();
+		$now = Time::parse('2026-11-11T10:00:00Z');
+
+		self::assertNull($log->digest('activity-1'));
+		self::assertTrue($log->claim('activity-1', $now, 'digest-a'));
+		self::assertSame('digest-a', $log->digest('activity-1'));
+
+		// A refused duplicate claim never overwrites the stored digest.
+		self::assertFalse($log->claim('activity-1', $now->modify('+1 second'), 'digest-b'));
+		self::assertSame('digest-a', $log->digest('activity-1'));
+
+		$log->release('activity-1');
+		self::assertNull($log->digest('activity-1'));
+	}
 }

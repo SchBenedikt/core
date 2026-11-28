@@ -22,6 +22,18 @@ final class ActivityLogSchema
 	public const TABLE = 'social_activity_log';
 
 	/**
+	 * Columns an existing installation has to add to keep up with this schema.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN digest VARCHAR(64) NULL',
+		];
+	}
+
+	/**
 	 * @return list<string>
 	 */
 	public static function statements(): array
@@ -29,7 +41,8 @@ final class ActivityLogSchema
 		return [
 			'CREATE TABLE ' . self::TABLE . ' ('
 			. ' activity_id VARCHAR(512) NOT NULL PRIMARY KEY,'
-			. ' seen_at VARCHAR(20) NOT NULL'
+			. ' seen_at VARCHAR(20) NOT NULL,'
+			. ' digest VARCHAR(64) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_seen ON ' . self::TABLE . ' (seen_at)',
 		];

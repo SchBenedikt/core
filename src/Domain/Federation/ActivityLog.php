@@ -22,9 +22,19 @@ use DateTimeImmutable;
 interface ActivityLog
 {
 	/**
+	 * @param string|null $digest fingerprint of the accepted payload, kept so
+	 *                            an identical retry can be told apart from a
+	 *                            conflicting reuse of the same activity id
+	 *
 	 * @return bool true when the id was not seen before and is now claimed
 	 */
-	public function claim(string $activityId, DateTimeImmutable $now): bool;
+	public function claim(string $activityId, DateTimeImmutable $now, ?string $digest = null): bool;
+
+	/**
+	 * The payload digest stored with a claim, or null when the id was never
+	 * claimed or the claim predates digest recording.
+	 */
+	public function digest(string $activityId): ?string;
 
 	/**
 	 * Gives a claim back, for a request that could not be handled.
