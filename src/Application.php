@@ -260,6 +260,7 @@ use AlohaSocial\Core\Domain\Federation\PdoRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\PdoRemoteThreadRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\RemoteThreadRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
@@ -627,6 +628,7 @@ final readonly class Application
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
 		?ActorInboxResolver $actorInboxResolver = null,
+		?RemotePostImporter $remotePostImporter = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -769,6 +771,7 @@ final readonly class Application
 			accountMoveRepository: $accountMoveRepository,
 			remoteActors: $remoteActors,
 			actorInboxResolver: $actorInboxResolver,
+			remotePostImporter: $remotePostImporter,
 			atprotoEventSource: $atprotoEventSource,
 			atprotoInbound: $atprotoInbound,
 			atprotoModeration: $atprotoModeration,
@@ -882,6 +885,7 @@ final readonly class Application
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
 		?ActorInboxResolver $actorInboxResolver = null,
+		?RemotePostImporter $remotePostImporter = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -967,6 +971,7 @@ final readonly class Application
 			accountMoveRepository: $accountMoveRepository ?? new PdoAccountMoveRepository($database),
 			remoteActors: $remoteActors,
 			actorInboxResolver: $actorInboxResolver,
+			remotePostImporter: $remotePostImporter,
 			atprotoEventSource: $atprotoEventSource,
 			atprotoInbound: $atprotoInbound ?? new PdoAtprotoInboundRepository($database),
 			atprotoModeration: $atprotoModeration,
@@ -1092,6 +1097,7 @@ final readonly class Application
 		?AccountMoveRepository $accountMoveRepository = null,
 		?RemoteActorFetcher $remoteActors = null,
 		?ActorInboxResolver $actorInboxResolver = null,
+		?RemotePostImporter $remotePostImporter = null,
 		?AtprotoEventSource $atprotoEventSource = null,
 		?AtprotoInboundRepository $atprotoInbound = null,
 		?AtprotoModerationPolicy $atprotoModeration = null,
@@ -1411,6 +1417,7 @@ final readonly class Application
 			remoteAccess: new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
 			remoteActors: $remoteActors,
 			actorInboxes: $actorInboxResolver,
+			remoteImporter: $remotePostImporter,
 		);
 		$mediaCollectionService ??= new MediaCollectionService(
 			$mediaCollectionRepository,

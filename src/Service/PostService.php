@@ -17,6 +17,7 @@ use AlohaSocial\Core\Domain\Federation\MentionTarget;
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
 use AlohaSocial\Core\Domain\Federation\RemoteActorFetcher;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Media\AttachmentRepository;
 use AlohaSocial\Core\Domain\Moderation\HeldPost;
@@ -103,6 +104,7 @@ final class PostService
 		private readonly ?RemotePostAccess $remoteAccess = null,
 		private readonly ?RemoteActorFetcher $remoteActors = null,
 		private readonly ?ActorInboxResolver $actorInboxes = null,
+		private readonly ?RemotePostImporter $remoteImporter = null,
 	) {
 	}
 
@@ -637,6 +639,16 @@ final class PostService
 	private function remoteParentFor(string $objectId, string $authorId): RemotePost
 	{
 		$post = $this->remotePosts?->findPostByObjectId($objectId);
+		if ($post === null && $this->remoteImporter !== null) {
+			// The target may simply not be cached yet: the host can fetch it
+			// from its origin. A failed or refused fetch keeps the same
+			// not-visible answer as an unknown object.
+			try {
+				$post = $this->remoteImporter->ensure($objectId);
+			} catch (Throwable) {
+				$post = null;
+			}
+		}
 		if ($post === null) {
 			throw new ValidationException([
 				'in_reply_to_id' => 'The reply target does not exist or is not visible to this account.',
