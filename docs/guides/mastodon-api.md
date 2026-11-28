@@ -18,6 +18,8 @@ Locally implemented (core):
 - `GET /timelines/tag/{tag}`
 - `GET /statuses/{id}`
 - `GET /statuses/{id}/context`
+- `POST /statuses/{id}/translate`
+- `GET /instance/translation_languages`
 - `GET /polls/{id}`
 - `POST /polls/{id}/votes`
 - `POST /statuses`
@@ -247,6 +249,8 @@ issues tokens and does not know a Mastodon OAuth app or client secret.
 | `GET {prefix}/timelines/public` | no | — | 60 / 60 s |
 | `GET {prefix}/statuses/{id}` | no | — | 120 / 60 s |
 | `GET {prefix}/statuses/{id}/context` | no | — | 60 / 60 s |
+| `POST {prefix}/statuses/{id}/translate` | yes | — | 30 / 60 s |
+| `GET {prefix}/instance/translation_languages` | no | — | 120 / 60 s |
 | `GET {prefix}/polls/{id}` | no | — | 120 / 60 s |
 | `POST {prefix}/polls/{id}/votes` | yes | `write:statuses` | 30 / 900 s |
 | `POST {prefix}/statuses` | yes | `write:statuses` | 30 / 900 s |
@@ -728,6 +732,18 @@ Status payloads now expose `replies_count`, `reblogs_count` and `reblogged`.
 The reply count is the number of live direct replies; deleted replies are
 excluded. A reblog is also readable by its boost id through `GET
 /statuses/{id}`, which returns the same nested wrapper.
+
+`POST /statuses/{id}/translate` accepts a form or JSON `target_lang` and
+returns `{"content": "<p>…</p>"}` in the Glitch-soc shape. It requires
+authentication, resolves the post through the same visibility check as
+`GET /statuses/{id}` (an invisible post is the same `404 not_found`), and only
+translates **local** statuses — a remote object id is also `404`. Without a
+host-supplied `TranslationProvider` the route answers `503
+translation_unavailable`, an unadvertised `target_lang` is `422
+unsupported_language`, and a provider failure is `502 translation_failed`.
+`GET /instance/translation_languages` advertises the provider's language list
+and is an empty array when no provider is configured. Translations are cached
+per post revision, so an edit can never serve a stale result.
 
 In the core API the same write is `POST /api/v1/posts/{id}/boost` (201 on a new
 boost, 200 on a repeat) and `DELETE /api/v1/posts/{id}/boost` (204, idempotent).

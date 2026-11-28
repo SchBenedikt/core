@@ -7,7 +7,7 @@ and versioned under `/api/v1` except the liveness probe, the protocol
 endpoints (`/inbox`, `/inbox/shared`, `/@{handle}`, `/@{handle}/featured`,
 `/@{handle}/collections`, `/.well-known/webfinger`)
 and the optional, disabled-by-default Mastodon compatibility prefix (which
-defaults to `/api/mastodon/v1`). There are 245 routes in total; 59 use the
+defaults to `/api/mastodon/v1`). There are 249 routes in total; 61 use the
 compatibility prefix.
 
 The top-level `version` in the JSON export is the **export format** version
@@ -162,11 +162,13 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `xrpc.sync.getBlob` | `GET` | `/xrpc/com.atproto.sync.getBlob` | no | 120 / 60 s |
 | `xrpc.sync.listBlobs` | `GET` | `/xrpc/com.atproto.sync.listBlobs` | no | 120 / 60 s |
 | `mastodon.instance` | `GET` | `/api/mastodon/v1/instance` | no | 120 / 60 s |
+| `mastodon.instance.translation_languages` | `GET` | `/api/mastodon/v1/instance/translation_languages` | no | 120 / 60 s |
 | `mastodon.media.upload` | `POST` | `/api/mastodon/v1/media` | yes, `write:media` | 20 / 900 s |
 | `mastodon.media.update` | `PUT` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.media.delete` | `DELETE` | `/api/mastodon/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `mastodon.statuses.show` | `GET` | `/api/mastodon/v1/statuses/{id}` | no | 120 / 60 s |
 | `mastodon.statuses.context` | `GET` | `/api/mastodon/v1/statuses/{id}/context` | no | 60 / 60 s |
+| `mastodon.statuses.translate` | `POST` | `/api/mastodon/v1/statuses/{id}/translate` | yes | 30 / 60 s |
 | `mastodon.polls.show` | `GET` | `/api/mastodon/v1/polls/{id}` | no | 120 / 60 s |
 | `mastodon.polls.vote` | `POST` | `/api/mastodon/v1/polls/{id}/votes` | yes, `write:statuses` | 30 / 900 s |
 | `mastodon.statuses.create` | `POST` | `/api/mastodon/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
@@ -225,6 +227,8 @@ see the [compatibility matrix](../guides/host-integration.md#compatibility).
 | `compat.mastodon.media.delete` | `DELETE` | `/api/v1/media/{id}` | yes, `write:media` | 30 / 900 s |
 | `compat.mastodon.statuses.show` | `GET` | `/api/v1/statuses/{id}` | no | 120 / 60 s |
 | `compat.mastodon.statuses.context` | `GET` | `/api/v1/statuses/{id}/context` | no | 60 / 60 s |
+| `compat.mastodon.statuses.translate` | `POST` | `/api/v1/statuses/{id}/translate` | yes | 30 / 60 s |
+| `compat.mastodon.instance.translation_languages` | `GET` | `/api/v1/instance/translation_languages` | no | 120 / 60 s |
 | `compat.mastodon.statuses.create` | `POST` | `/api/v1/statuses` | yes, `write:statuses` | 30 / 900 s |
 | `compat.mastodon.statuses.update` | `PUT` | `/api/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |
 | `compat.mastodon.statuses.delete` | `DELETE` | `/api/v1/statuses/{id}` | yes, `write:statuses` | 30 / 900 s |

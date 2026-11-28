@@ -136,6 +136,8 @@ use AlohaSocial\Core\Api\SearchHandler;
 use AlohaSocial\Core\Api\TrendsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonTranslateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonTranslationLanguagesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnmuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
@@ -365,6 +367,7 @@ use AlohaSocial\Core\Domain\Collection\PdoMediaCollectionRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostPinRepository;
 use AlohaSocial\Core\Domain\Post\PdoPostPinRepository;
 use AlohaSocial\Core\Domain\Post\PostPinRepository;
+use AlohaSocial\Core\Domain\Translation\TranslationProvider;
 use AlohaSocial\Core\Service\Collection\MediaCollectionService;
 use AlohaSocial\Core\Service\PinService;
 use AlohaSocial\Core\Http\HandlerMap;
@@ -493,6 +496,7 @@ use AlohaSocial\Core\Service\Moderation\ModerationService;
 use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\QuoteService;
 use AlohaSocial\Core\Service\TimelineService;
+use AlohaSocial\Core\Service\Translation\TranslationService;
 use AlohaSocial\Core\Security\OpenSslSecretBox;
 use AlohaSocial\Core\Security\SecretBox;
 use AlohaSocial\Core\Support\IdGenerator;
@@ -645,6 +649,7 @@ final readonly class Application
 		?AtprotoInteractionRepository $atprotoInteractionRepository = null,
 		?EventBroker $eventBroker = null,
 		?ConversationMarkerRepository $conversationMarkers = null,
+		?TranslationProvider $translationProvider = null,
 	): self {
 		$clock ??= new SystemClock();
 		$config ??= new ArrayConfig([
@@ -801,6 +806,7 @@ final readonly class Application
 			debug: $debug,
 			atprotoDpop: $atprotoDpop,
 			inboundBlocks: $inboundBlocks,
+			translationProvider: $translationProvider,
 		);
 	}
 
@@ -889,6 +895,7 @@ final readonly class Application
 		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 		?EventBroker $eventBroker = null,
 		?ConversationMarkerRepository $conversationMarkers = null,
+		?TranslationProvider $translationProvider = null,
 	): self {
 		$clock ??= new SystemClock();
 		$pds = PdsConfig::enabled($config)
@@ -1001,6 +1008,7 @@ final readonly class Application
 			pds: $pds,
 			accountDataRepository: new PdoAccountDataRepository($database),
 			inboundBlocks: $inboundBlocks,
+			translationProvider: $translationProvider,
 		);
 	}
 
@@ -1104,6 +1112,7 @@ final readonly class Application
 		?AtprotoFollowRepository $atprotoFollowRepository = null,
 		?AtprotoInteractionTargetPolicy $atprotoRemoteTargetPolicy = null,
 		?EventBroker $eventBroker = null,
+		?TranslationProvider $translationProvider = null,
 	): self {
 		// A delivery target requires something that can sign and something
 		// that can reach the peer. Failing here beats queueing a job that can
@@ -1497,6 +1506,7 @@ final readonly class Application
 		}
 		$timelines = new TimelineService($posts, $homeTimeline, $moderationPolicy);
 		$conversationService = new ConversationService($postService, $posts, $conversationMarkers);
+		$translationService = new TranslationService($postService, $translationProvider);
 		// Remote actor lookup and media fetching require the bounded client and
 		// the host resolver. An unbounded HTTP client is never used for these.
 		$resolver = $hostResolver ?? new DnsHostResolver();
@@ -1535,6 +1545,7 @@ final readonly class Application
 			$remotePosts,
 			$remoteActorSearch,
 			$followRequestService,
+			$translationService,
 		);
 		$blockedActors ??= new NoBlockedActors();
 		$followPolicy ??= new AcceptAllFollows();
@@ -1799,6 +1810,8 @@ final readonly class Application
 			->with(MastodonHashtagTimelineHandler::class, static fn (): MastodonHashtagTimelineHandler => new MastodonHashtagTimelineHandler($mastodonService))
 			->with(MastodonHomeTimelineHandler::class, static fn (): MastodonHomeTimelineHandler => new MastodonHomeTimelineHandler($mastodonService))
 			->with(MastodonStatusHandler::class, static fn (): MastodonStatusHandler => new MastodonStatusHandler($mastodonService))
+			->with(MastodonTranslateStatusHandler::class, static fn (): MastodonTranslateStatusHandler => new MastodonTranslateStatusHandler($mastodonService))
+			->with(MastodonTranslationLanguagesHandler::class, static fn (): MastodonTranslationLanguagesHandler => new MastodonTranslationLanguagesHandler($mastodonService))
 			->with(MastodonStatusContextHandler::class, static fn (): MastodonStatusContextHandler => new MastodonStatusContextHandler($mastodonService))
 			->with(MastodonReblogStatusHandler::class, static fn (): MastodonReblogStatusHandler => new MastodonReblogStatusHandler($mastodonService))
 			->with(MastodonUnreblogStatusHandler::class, static fn (): MastodonUnreblogStatusHandler => new MastodonUnreblogStatusHandler($mastodonService))
