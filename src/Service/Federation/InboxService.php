@@ -25,6 +25,7 @@ use AlohaSocial\Core\Domain\Federation\PendingRemoteUpdateStore;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Federation\RemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\UnknownActorException;
@@ -120,6 +121,7 @@ final class InboxService
 		private readonly ?PostRepository $posts = null,
 		private readonly ?BlockRepository $blocks = null,
 		private readonly ?MuteRepository $mutes = null,
+		private readonly ?RemotePostImporter $remoteImporter = null,
 	) {
 	}
 
@@ -325,6 +327,25 @@ final class InboxService
 		}
 
 		$post = $this->remotePostFactory->fromCreate($actor->actorId, $activity, $actor->followersUrl);
+
+		// A Create is idempotent by object, not only by activity id: the
+		// interaction cache may already hold a placeholder row for the same
+		// object, and a peer may retry with a fresh activity id. A
+		// cache-filled row (its activity id is the object id itself) gives
+		// way to the delivered activity; an already stored post makes this
+		// delivery a retransmission.
+		$existing = $this->remotePosts->findPostByObjectId($post->objectId);
+		if ($existing !== null && $existing->actorId === $post->actorId) {
+			if ($existing->activityId !== $post->objectId) {
+				return;
+			}
+
+			$this->remotePosts->softDeletePostByObjectId(
+				$post->objectId,
+				$post->actorId,
+				Time::toSecondPrecision($this->clock->now()),
+			);
+		}
 
 		if ($this->remotePolls !== null && is_array($object) && $post->objectType === RemoteObjectType::Question) {
 			$this->remotePolls->importQuestion(
@@ -648,7 +669,8 @@ final class InboxService
 					return;
 				}
 			} else {
-				$parent = $this->remotePosts->findPostByObjectId($inReplyTo);
+				$parent = $this->remotePosts->findPostByObjectId($inReplyTo)
+					?? $this->importRemoteTarget($inReplyTo);
 				if ($parent !== null && $parent->audience === Visibility::Public) {
 					return;
 				}
@@ -671,13 +693,33 @@ final class InboxService
 				return;
 			}
 		} else {
-			$target = $this->remotePosts->findPostByObjectId($objectId);
+			$target = $this->remotePosts->findPostByObjectId($objectId)
+				?? $this->importRemoteTarget($objectId);
 			if ($target !== null && $target->audience === Visibility::Public) {
 				return;
 			}
 		}
 
 		$this->requireFollowedContent($actor);
+	}
+
+	/**
+	 * A reply or boost addressed to a remote object the store does not know
+	 * yet still counts as addressed when the object can be fetched from its
+	 * origin and proves a public audience. The import is best-effort: any
+	 * failure leaves the target unknown and the follow gate decides.
+	 */
+	private function importRemoteTarget(string $objectId): ?RemotePost
+	{
+		if ($this->remoteImporter === null) {
+			return null;
+		}
+
+		try {
+			return $this->remoteImporter->ensure($objectId);
+		} catch (\Throwable) {
+			return null;
+		}
 	}
 
 	/**
