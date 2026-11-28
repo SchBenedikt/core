@@ -25,6 +25,12 @@ final readonly class ModerationAction
 
 	public const MAX_NOTE_LENGTH = 2000;
 
+	/**
+	 * The public reason is what a `domain_blocks`-style listing may publish;
+	 * it is deliberately shorter than the private moderator note.
+	 */
+	public const MAX_PUBLIC_COMMENT_LENGTH = 500;
+
 	public function __construct(
 		public string $id,
 		public ModerationActionKind $kind,
@@ -36,6 +42,7 @@ final readonly class ModerationAction
 		public ?DateTimeImmutable $reversedAt = null,
 		public ?string $reversedBy = null,
 		public ?string $reversalNote = null,
+		public ?string $publicComment = null,
 	) {
 		if ($id === '' || mb_strlen($id) > 64) {
 			throw new InvalidArgumentException('A moderation action needs a bounded id.');
@@ -51,6 +58,10 @@ final readonly class ModerationAction
 
 		if ($note !== null && mb_strlen($note) > self::MAX_NOTE_LENGTH) {
 			throw new InvalidArgumentException('A moderation note is too long.');
+		}
+
+		if ($publicComment !== null && mb_strlen($publicComment) > self::MAX_PUBLIC_COMMENT_LENGTH) {
+			throw new InvalidArgumentException('A public moderation comment is too long.');
 		}
 
 		if (($reversedAt === null) !== ($reversedBy === null)) {
@@ -79,6 +90,7 @@ final readonly class ModerationAction
 			'reversed_at' => $this->reversedAt === null ? null : Time::format($this->reversedAt),
 			'reversed_by' => $this->reversedBy,
 			'reversal_note' => $this->reversalNote,
+			'public_comment' => $this->publicComment,
 		];
 	}
 }

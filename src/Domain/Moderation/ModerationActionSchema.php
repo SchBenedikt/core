@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Moderation;
 
 use AlohaSocial\Core\Platform\Db\Connection;
+use AlohaSocial\Core\Platform\Db\SchemaUpgrade;
 
 /**
  * Durable actor/domain policy actions.
@@ -37,7 +38,8 @@ final class ModerationActionSchema
 			. ' created_at VARCHAR(20) NOT NULL,'
 			. ' reversed_at VARCHAR(20) NULL,'
 			. ' reversed_by VARCHAR(255) NULL,'
-			. ' reversal_note TEXT NULL'
+			. ' reversal_note TEXT NULL,'
+			. ' public_comment VARCHAR(500) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_active ON ' . self::TABLE . ' (kind, target, reversed_at)',
 			'CREATE INDEX ' . self::TABLE . '_target ON ' . self::TABLE . ' (target, created_at)',
@@ -49,5 +51,25 @@ final class ModerationActionSchema
 		foreach (self::statements() as $statement) {
 			$connection->execute($statement);
 		}
+	}
+
+	/**
+	 * Older installations lack `public_comment`. The method is idempotent,
+	 * so a retried migration is safe.
+	 */
+	public static function upgrade(Connection $connection): void
+	{
+		if (!SchemaUpgrade::tableExists($connection, self::TABLE)) {
+			self::create($connection);
+
+			return;
+		}
+
+		SchemaUpgrade::addColumnIfMissing(
+			$connection,
+			self::TABLE,
+			'public_comment',
+			'VARCHAR(500) NULL',
+		);
 	}
 }

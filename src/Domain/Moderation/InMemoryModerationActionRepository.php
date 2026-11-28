@@ -93,6 +93,7 @@ final class InMemoryModerationActionRepository implements ModerationActionReposi
 			reversedAt: $at,
 			reversedBy: $moderatorId,
 			reversalNote: $note,
+			publicComment: $action->publicComment,
 		);
 
 		return true;
