@@ -22,6 +22,7 @@ use function is_array;
 use function is_bool;
 use function is_int;
 use function is_string;
+use function trim;
 
 /**
  * A poll specification stored on a scheduled post.
@@ -110,6 +111,68 @@ final readonly class ScheduledPoll
 			'expires_in' => $this->expiresInSeconds,
 			'expires_at' => $this->expiresAt === null ? null : Time::format($this->expiresAt),
 		];
+	}
+
+	/**
+	 * Parses the API shape — `options` as a list of titles, `multiple`,
+	 * `hide_totals` and exactly one of `expires_in`/`expires_at` — into a
+	 * spec. Anything malformed is an {@see InvalidArgumentException}; the
+	 * caller maps it to a field error.
+	 *
+	 * @param array<string, mixed> $data
+	 */
+	public static function fromInput(array $data): self
+	{
+		$rawOptions = $data['options'] ?? null;
+		if (!is_array($rawOptions) || !array_is_list($rawOptions)) {
+			throw new InvalidArgumentException('poll.options must be a list of option titles.');
+		}
+
+		$options = [];
+		foreach ($rawOptions as $raw) {
+			if (!is_string($raw) || trim($raw) === '') {
+				throw new InvalidArgumentException('poll.options must contain non-empty strings.');
+			}
+
+			$options[] = new PollOption($raw);
+		}
+
+		$multiple = $data['multiple'] ?? false;
+		if (!is_bool($multiple)) {
+			throw new InvalidArgumentException('poll.multiple must be a boolean.');
+		}
+
+		$hideTotals = $data['hide_totals'] ?? false;
+		if (!is_bool($hideTotals)) {
+			throw new InvalidArgumentException('poll.hide_totals must be a boolean.');
+		}
+
+		$expiresIn = $data['expires_in'] ?? null;
+		if ($expiresIn !== null && !is_int($expiresIn)) {
+			throw new InvalidArgumentException('poll.expires_in must be an integer number of seconds.');
+		}
+
+		$expiresAt = null;
+		$rawExpiresAt = $data['expires_at'] ?? null;
+		if ($rawExpiresAt !== null) {
+			if (!is_string($rawExpiresAt)) {
+				throw new InvalidArgumentException('poll.expires_at must be an ISO 8601 timestamp.');
+			}
+
+			try {
+				$expiresAt = Time::parseIso8601($rawExpiresAt);
+			} catch (\Throwable) {
+				throw new InvalidArgumentException('poll.expires_at must be an ISO 8601 timestamp.');
+			}
+		}
+
+		return new self(
+			options: $options,
+			multiple: $multiple,
+			hideTotals: $hideTotals,
+			expiresInSeconds: $expiresIn,
+			expiresAt: $expiresAt,
+		);
 	}
 
 	/**

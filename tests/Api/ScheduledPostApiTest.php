@@ -13,6 +13,7 @@ use AlohaSocial\Core\Application;
 use AlohaSocial\Core\Domain\Federation\InMemoryActivityLog;
 use AlohaSocial\Core\Domain\Federation\InMemoryActorDirectory;
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Domain\Scheduling\InMemoryScheduledPostRepository;
 use AlohaSocial\Core\Domain\Scheduling\ScheduledPostRepository;
 use AlohaSocial\Core\Jobs\JobType;
@@ -144,6 +145,94 @@ final class ScheduledPostApiTest extends TestCase
 		$this->clock->advance(1200);
 		$this->app->worker->runOnce();
 		self::assertSame(1, $this->postCount());
+	}
+
+	public function testAnEditReplacesThePayloadAndStillPublishesOnce(): void
+	{
+		$id = $this->create('Before', $this->in(600))->decodedBody()['scheduled_post']['id'];
+
+		$edited = $this->app->handle(new Request(
+			method: 'PATCH',
+			path: '/api/v1/scheduled-posts/' . $id,
+			body: json_encode([
+				'content' => 'After',
+				'visibility' => 'unlisted',
+				'poll' => [
+					'options' => ['Yes', 'No'],
+					'expires_in' => 3600,
+				],
+			], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(200, $edited->status, (string) json_encode($edited->decodedBody()));
+		$stored = $edited->decodedBody()['scheduled_post'];
+		self::assertSame('After', $stored['content']);
+		self::assertSame('unlisted', $stored['visibility']);
+		self::assertSame(['Yes', 'No'], $stored['poll']['options']);
+		self::assertSame(3600, $stored['poll']['expires_in']);
+
+		$this->clock->advance(600);
+		$this->app->worker->runOnce();
+
+		$postId = $this->scheduled->find($id)?->postId;
+		self::assertNotNull($postId);
+		$post = $this->app->posts->get($postId);
+		self::assertSame('After', $post->content);
+		self::assertSame(Visibility::Unlisted, $post->visibility);
+		self::assertNotNull($post->poll);
+	}
+
+	public function testAnEditCanClearThePollAndKeepTheRest(): void
+	{
+		$id = $this->create('With poll', $this->in(600), [
+			'poll' => ['options' => ['A', 'B'], 'expires_in' => 3600],
+		])->decodedBody()['scheduled_post']['id'];
+
+		$edited = $this->app->handle(new Request(
+			method: 'PATCH',
+			path: '/api/v1/scheduled-posts/' . $id,
+			body: json_encode(['poll' => null], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(200, $edited->status);
+		$stored = $edited->decodedBody()['scheduled_post'];
+		self::assertSame('With poll', $stored['content']);
+		self::assertNull($stored['poll']);
+	}
+
+	public function testAnEditAfterPublicationStartedIsRefused(): void
+	{
+		$id = $this->create('Done', $this->in(600))->decodedBody()['scheduled_post']['id'];
+
+		$this->clock->advance(600);
+		$this->app->worker->runOnce();
+
+		$edited = $this->app->handle(new Request(
+			method: 'PATCH',
+			path: '/api/v1/scheduled-posts/' . $id,
+			body: json_encode(['content' => 'Too late'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(409, $edited->status);
+		self::assertSame('Done', $this->publicTimeline()[0]['content']);
+	}
+
+	public function testAnEditIsValidatedLikeACreate(): void
+	{
+		$id = $this->create('Valid', $this->in(600))->decodedBody()['scheduled_post']['id'];
+
+		$edited = $this->app->handle(new Request(
+			method: 'PATCH',
+			path: '/api/v1/scheduled-posts/' . $id,
+			body: json_encode(['content' => '   '], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(422, $edited->status);
+		self::assertSame('Valid', $this->show($id)->decodedBody()['scheduled_post']['content']);
 	}
 
 	public function testALeadTimeBelowTheMinimumIsRefused(): void

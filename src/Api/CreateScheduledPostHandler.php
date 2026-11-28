@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Api;
 
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPoll;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
@@ -18,8 +19,10 @@ use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\ScheduledPostService;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Support\Time;
+use InvalidArgumentException;
 use Throwable;
 
+use function array_key_exists;
 use function is_array;
 use function is_string;
 use function trim;
@@ -80,6 +83,19 @@ final class CreateScheduledPostHandler implements Handler
 			throw HttpException::validationFailed(['visibility' => 'visibility must be a string.']);
 		}
 
+		$poll = null;
+		if (array_key_exists('poll', $body) && $body['poll'] !== null) {
+			if (!is_array($body['poll'])) {
+				throw HttpException::validationFailed(['poll' => 'poll must be an object or null.']);
+			}
+
+			try {
+				$poll = ScheduledPoll::fromInput($body['poll']);
+			} catch (InvalidArgumentException $exception) {
+				throw HttpException::validationFailed(['poll' => $exception->getMessage()]);
+			}
+		}
+
 		try {
 			$visibility = Visibility::fromString($rawVisibility);
 		} catch (Throwable) {
@@ -106,6 +122,7 @@ final class CreateScheduledPostHandler implements Handler
 					language: $language,
 				),
 				$scheduledAt,
+				poll: $poll,
 			);
 		} catch (ValidationException $exception) {
 			throw HttpException::validationFailed($exception->fields(), $exception->getMessage());

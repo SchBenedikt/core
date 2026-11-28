@@ -183,6 +183,75 @@ abstract class ScheduledPostRepositoryTestCase extends TestCase
 		);
 	}
 
+	public function testAnEditReplacesThePayloadButKeepsIdentity(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->scheduled());
+
+		$existing = $repository->find('schedule-1');
+		self::assertNotNull($existing);
+
+		$poll = new ScheduledPoll(
+			options: [new PollOption('Yes'), new PollOption('No')],
+			multiple: false,
+			hideTotals: false,
+			expiresInSeconds: 3600,
+		);
+		$edited = new ScheduledPost(
+			id: $existing->id,
+			authorId: $existing->authorId,
+			postId: $existing->postId,
+			content: 'Edited hello',
+			visibility: Visibility::Unlisted,
+			scheduledAt: Time::parse('2026-11-12T09:00:00Z'),
+			createdAt: $existing->createdAt,
+			contentWarning: 'Edited warning',
+			attachmentIds: [],
+			language: 'de',
+			poll: $poll,
+		);
+
+		self::assertTrue($repository->update($edited));
+
+		$found = $repository->find('schedule-1');
+		self::assertNotNull($found);
+		self::assertSame('Edited hello', $found->content);
+		self::assertSame(Visibility::Unlisted, $found->visibility);
+		self::assertSame('post-1', $found->postId);
+		self::assertSame('2026-11-11T10:00:00Z', Time::format($found->createdAt));
+		self::assertSame('Edited warning', $found->contentWarning);
+		self::assertSame([], $found->attachmentIds);
+		self::assertSame('de', $found->language);
+		self::assertSame('2026-11-12T09:00:00Z', Time::format($found->scheduledAt));
+		self::assertNotNull($found->poll);
+		self::assertSame(3600, $found->poll->expiresInSeconds);
+	}
+
+	public function testAnEditLosesAgainstPublication(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->scheduled());
+
+		$existing = $repository->find('schedule-1');
+		self::assertNotNull($existing);
+
+		$repository->markPublished('schedule-1', Time::parse('2026-11-11T10:10:00Z'));
+		$repository->cancel('schedule-1');
+
+		$edited = new ScheduledPost(
+			id: $existing->id,
+			authorId: $existing->authorId,
+			postId: $existing->postId,
+			content: 'Too late',
+			visibility: $existing->visibility,
+			scheduledAt: $existing->scheduledAt,
+			createdAt: $existing->createdAt,
+		);
+
+		self::assertFalse($repository->update($edited));
+		self::assertSame('Scheduled hello', $repository->find('schedule-1')?->content);
+	}
+
 	public function testTheQuotaCountsEveryCreatedRow(): void
 	{
 		$repository = $this->repository();
