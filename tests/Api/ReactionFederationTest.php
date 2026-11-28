@@ -275,6 +275,68 @@ final class ReactionFederationTest extends TestCase
 		self::assertSame(['🎉' => 1], $this->emojiCounts($post));
 	}
 
+	public function testAMisskeyLikeWithAnEmojiReactionIsAnEmojiNotAFavourite(): void
+	{
+		$post = $this->post();
+		$activity = $this->like($post);
+		$activity['_misskey_reaction'] = '🎉';
+
+		self::assertSame(202, $this->deliver($activity)->status);
+
+		self::assertSame(0, $this->likeCount($post));
+		self::assertSame(['🎉' => 1], $this->emojiCounts($post));
+	}
+
+	public function testAMisskeyLikeWithACustomShortcodeIsStoredAsText(): void
+	{
+		$post = $this->post();
+		$activity = $this->like($post);
+		$activity['_misskey_reaction'] = ':blobcat@misskey.example:';
+
+		self::assertSame(202, $this->deliver($activity)->status);
+		self::assertSame([':blobcat@misskey.example:' => 1], $this->emojiCounts($post));
+
+		$stored = $this->reactions->findByActivityId($activity['id']);
+		self::assertNotNull($stored);
+		self::assertFalse($stored->hasSafeIcon());
+	}
+
+	public function testUndoOfAMisskeyLikeRemovesTheEmojiReaction(): void
+	{
+		$post = $this->post();
+		$activity = $this->like($post);
+		$activity['_misskey_reaction'] = '🎉';
+		self::assertSame(202, $this->deliver($activity)->status);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-misskey-1',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => $activity,
+		];
+
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame([], $this->emojiCounts($post));
+	}
+
+	public function testUndoByIdOfAMisskeyLikeRemovesTheEmojiReaction(): void
+	{
+		$post = $this->post();
+		$activity = $this->like($post);
+		$activity['_misskey_reaction'] = '🎉';
+		self::assertSame(202, $this->deliver($activity)->status);
+
+		$undo = [
+			'id' => 'https://remote.example/activities/undo-misskey-2',
+			'type' => 'Undo',
+			'actor' => self::ACTOR,
+			'object' => $activity['id'],
+		];
+
+		self::assertSame(202, $this->deliver($undo)->status);
+		self::assertSame([], $this->emojiCounts($post));
+	}
+
 	public function testACustomEmojiWithoutAVerifiedTagIsRefused(): void
 	{
 		$post = $this->post();

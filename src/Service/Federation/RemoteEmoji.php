@@ -91,6 +91,44 @@ final class RemoteEmoji
 	}
 
 	/**
+	 * The emoji a Misskey-style `Like` carries in `_misskey_reaction`.
+	 *
+	 * Misskey (and forks) encode an emoji reaction as a plain Like with the
+	 * emoji in a namespaced field instead of an EmojiReact. Three spellings
+	 * are in the wild. Unlike {@see fromActivity()} a `:shortcode:` is
+	 * accepted as text even without a verified Emoji tag: Misskey does not
+	 * tag Like reactions, and the stored value is only ever rendered as a
+	 * label — the icon stays null unless a real tag verifies it, so no
+	 * unverified remote image is ever requested.
+	 *
+	 * @param array<string, mixed> $activity
+	 *
+	 * @return array{emoji: string, icon_url: ?string}|null null when the
+	 *         activity carries no usable reaction value
+	 */
+	public static function misskeyReaction(array $activity): ?array
+	{
+		$raw = $activity['_misskey_reaction']
+			?? $activity['misskey:_misskey_reaction']
+			?? $activity['https://misskey-hub.net/ns#_misskey_reaction']
+			?? null;
+		if (!is_string($raw)) {
+			return null;
+		}
+
+		$value = trim($raw);
+		if ($value === '' || mb_strlen($value) > self::MAX_LENGTH) {
+			return null;
+		}
+
+		if (preg_match(self::SHORTCODE, $value) === 1) {
+			return ['emoji' => $value, 'icon_url' => self::iconFor($activity, $value)];
+		}
+
+		return self::isUnicodeEmoji($value) ? ['emoji' => $value, 'icon_url' => null] : null;
+	}
+
+	/**
 	 * @throws ReactionException when the value cannot be sent by this instance
 	 */
 	public static function forOutbound(string $emoji): string

@@ -101,6 +101,16 @@ final class ReactionService
 	 */
 	public function receiveLike(RemoteActor $actor, array $activity): void
 	{
+		// Misskey and forks encode an emoji reaction as a Like carrying
+		// `_misskey_reaction`; it is an Emoji reaction, not a favourite, so
+		// the counts stay separate.
+		$misskey = RemoteEmoji::misskeyReaction($activity);
+		if ($misskey !== null) {
+			$this->storeInbound($actor, $activity, ReactionKind::Emoji, $misskey['emoji'], $misskey['icon_url']);
+
+			return;
+		}
+
 		$this->storeInbound($actor, $activity, ReactionKind::Like, null, null);
 	}
 
@@ -125,6 +135,21 @@ final class ReactionService
 	 */
 	public function undoLike(RemoteActor $actor, array|string $object): void
 	{
+		// An Undo of a Misskey-style reaction still names the Like type; the
+		// stored row is an Emoji reaction. Rows written before this mapping
+		// existed are plain Likes, so a kind mismatch falls back to Like.
+		if (is_array($object) && RemoteEmoji::misskeyReaction($object) !== null) {
+			try {
+				$this->undo($actor, $object, ReactionKind::Emoji);
+
+				return;
+			} catch (InboxRejectedException $exception) {
+				if ($exception->reason !== 'invalid_activity') {
+					throw $exception;
+				}
+			}
+		}
+
 		$this->undo($actor, $object, ReactionKind::Like);
 	}
 
@@ -646,7 +671,13 @@ final class ReactionService
 
 		if (is_array($object)) {
 			$expected = $kind === ReactionKind::Like ? 'Like' : 'EmojiReact';
-			if (($object['type'] ?? null) !== $expected) {
+			$embeddedType = $object['type'] ?? null;
+			// Misskey wraps emoji reactions in Like activities, so the Undo of
+			// one still says "Like" while the stored row is an Emoji reaction.
+			$misskey = $kind === ReactionKind::Emoji ? RemoteEmoji::misskeyReaction($object) : null;
+			if ($embeddedType !== $expected
+				&& !($misskey !== null && $embeddedType === 'Like')
+			) {
 				throw new InboxRejectedException('invalid_activity', 'The Undo does not embed a ' . $expected . '.');
 			}
 
@@ -666,8 +697,11 @@ final class ReactionService
 			}
 
 			if ($stored === null) {
-				$emoji = $kind === ReactionKind::Emoji && is_string($object['content'] ?? null)
-					? trim($object['content'])
+				$content = $object['content'] ?? null;
+				$emoji = $kind === ReactionKind::Emoji
+					? (is_string($content) && trim($content) !== ''
+						? trim($content)
+						: $misskey['emoji'] ?? null)
 					: null;
 				$stored = $this->reactions->find(
 					ReactionDirection::In,
