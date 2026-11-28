@@ -38,6 +38,7 @@ use InvalidArgumentException;
 use Throwable;
 
 use function array_is_list;
+use function array_map;
 use function array_unique;
 use function array_values;
 use function count;
@@ -105,6 +106,17 @@ final class RemotePollService
 			return $existing;
 		}
 
+		// Local ballots are positional. Once any exist, a revision that
+		// reorders, removes or adds option titles would silently
+		// reinterpret them, so the option list is frozen: the revision is
+		// refused and the stored question stays.
+		if ($existing !== null
+			&& $this->optionTitles($existing) !== $this->optionTitles($poll)
+			&& $this->votes->countsFor($existing->objectId) !== []
+		) {
+			return $existing;
+		}
+
 		// A revision without an addressing signal must not widen or narrow
 		// the stored audience: keep the last verified claim.
 		if ($poll->audience === null && $existing?->audience !== null) {
@@ -115,7 +127,15 @@ final class RemotePollService
 
 		if ($poll->closedAt === null && $poll->endsAt !== null && $poll->endsAt > $observedAt) {
 			try {
-				$this->queue?->push(JobType::POLL_CLOSE, ['object_id' => $poll->objectId], $poll->endsAt);
+				// Every revision schedules its own close; coalesce them into
+				// the latest deadline so repeated Updates cannot pile up jobs.
+				$this->queue?->cancelBySubject(JobSubject::poll($poll->objectId));
+				$this->queue?->push(
+					JobType::POLL_CLOSE,
+					['object_id' => $poll->objectId],
+					$poll->endsAt,
+					JobSubject::poll($poll->objectId),
+				);
 			} catch (Throwable) {
 				// The poll is stored; a missing close job only delays the
 				// stored marker, and `isClosed()` still uses the end time.
@@ -206,6 +226,17 @@ final class RemotePollService
 		} catch (InvalidArgumentException $exception) {
 			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
 		}
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function optionTitles(RemotePoll $poll): array
+	{
+		return array_map(
+			static fn (RemotePollOption $option): string => $option->title,
+			$poll->options,
+		);
 	}
 
 	private function timestamp(mixed $value, string $field): ?DateTimeImmutable
