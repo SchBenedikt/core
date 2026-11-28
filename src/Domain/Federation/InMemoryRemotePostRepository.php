@@ -42,6 +42,11 @@ final class InMemoryRemotePostRepository implements RemotePostRepository, Remote
 		$this->posts[$post->activityId] = $post;
 	}
 
+	public function upsert(RemotePost $post): void
+	{
+		$this->posts[$post->activityId] = $post;
+	}
+
 	public function findByActivityId(string $activityId): ?RemotePost
 	{
 		return $this->posts[$activityId] ?? null;

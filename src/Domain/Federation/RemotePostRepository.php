@@ -28,6 +28,14 @@ interface RemotePostRepository
 	public function insert(RemotePost $post): void;
 
 	/**
+	 * Inserts the post or replaces the row sharing its activity id, clearing
+	 * a tombstone. Used when a delivered object supersedes a placeholder or
+	 * resurrects a row an earlier delivery retired; retransmission control
+	 * stays with the caller.
+	 */
+	public function upsert(RemotePost $post): void;
+
+	/**
 	 * Looks up a row including a soft-deleted one, for duplicate detection.
 	 */
 	public function findByActivityId(string $activityId): ?RemotePost;

@@ -46,23 +46,7 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 				. ' VALUES (:activity_id, :object_id, :object_author_id, :actor_id, :kind,'
 				. ' :object_type, :object_metadata, :quoted_object_id, :in_reply_to_id, :audience, :content, :content_warning,'
 				. ' :published_at, :updated_at, :deleted_at)',
-				[
-					'activity_id' => $post->activityId,
-					'object_id' => $post->objectId,
-					'object_author_id' => $post->objectAuthorId,
-					'actor_id' => $post->actorId,
-					'kind' => $post->kind->value,
-					'object_type' => $post->objectType->value,
-					'object_metadata' => $post->metadata?->toJson(),
-					'quoted_object_id' => $post->quotedObjectId,
-					'in_reply_to_id' => $post->inReplyToId,
-					'audience' => $post->audience?->value,
-					'content' => $post->content,
-					'content_warning' => $post->contentWarning,
-					'published_at' => Time::format($post->publishedAt),
-					'updated_at' => $post->updatedAt === null ? null : Time::format($post->updatedAt),
-					'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
-				],
+				$this->parameters($post),
 			);
 		} catch (Throwable $exception) {
 			if ($exception instanceof DatabaseException) {
@@ -71,6 +55,71 @@ final class PdoRemotePostRepository implements RemotePostRepository, RemoteDomai
 
 			throw new DatabaseException('The remote post could not be stored.', 0, $exception);
 		}
+	}
+
+	public function upsert(RemotePost $post): void
+	{
+		$parameters = $this->parameters($post);
+
+		if ($this->findByActivityId($post->activityId) !== null) {
+			$this->update($post->activityId, $parameters);
+
+			return;
+		}
+
+		try {
+			$this->insert($post);
+		} catch (DatabaseException) {
+			// A concurrent request may have inserted the same activity id
+			// between the lookup and this insert; refresh that row instead.
+			if ($this->findByActivityId($post->activityId) === null) {
+				throw new DatabaseException('The remote post could not be stored.');
+			}
+
+			$this->update($post->activityId, $parameters);
+		}
+	}
+
+	/**
+	 * @return array<string, string|int|null>
+	 */
+	private function parameters(RemotePost $post): array
+	{
+		return [
+			'activity_id' => $post->activityId,
+			'object_id' => $post->objectId,
+			'object_author_id' => $post->objectAuthorId,
+			'actor_id' => $post->actorId,
+			'kind' => $post->kind->value,
+			'object_type' => $post->objectType->value,
+			'object_metadata' => $post->metadata?->toJson(),
+			'quoted_object_id' => $post->quotedObjectId,
+			'in_reply_to_id' => $post->inReplyToId,
+			'audience' => $post->audience?->value,
+			'content' => $post->content,
+			'content_warning' => $post->contentWarning,
+			'published_at' => Time::format($post->publishedAt),
+			'updated_at' => $post->updatedAt === null ? null : Time::format($post->updatedAt),
+			'deleted_at' => $post->deletedAt === null ? null : Time::format($post->deletedAt),
+		];
+	}
+
+	/**
+	 * @param array<string, string|int|null> $parameters
+	 */
+	private function update(string $activityId, array $parameters): void
+	{
+		$this->db->execute(
+			'UPDATE ' . RemotePostSchema::TABLE
+			. ' SET object_id = :object_id, object_author_id = :object_author_id,'
+			. ' actor_id = :actor_id, kind = :kind, object_type = :object_type,'
+			. ' object_metadata = :object_metadata, quoted_object_id = :quoted_object_id,'
+			. ' in_reply_to_id = :in_reply_to_id, audience = :audience, content = :content,'
+			. ' content_warning = :content_warning, published_at = :published_at,'
+			. ' updated_at = :updated_at, deleted_at = :deleted_at'
+			. ' WHERE activity_id = :activity_id',
+			['activity_id' => $activityId, ...$parameters],
+		);
 	}
 
 	public function findByActivityId(string $activityId): ?RemotePost
