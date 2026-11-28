@@ -47,6 +47,8 @@ final class JobSchema
 
 	private const SUBJECT_ID_DEFINITION = 'VARCHAR(255) NULL';
 
+	private const LAST_ERROR_DEFINITION = 'VARCHAR(200) NULL';
+
 	private const DUE_INDEX_COLUMNS = 'available_at, id';
 
 	private const DEAD_INDEX_COLUMNS = 'dead_at';
@@ -68,7 +70,8 @@ final class JobSchema
 			. ' reserved_at ' . self::RESERVED_AT_DEFINITION . ','
 			. ' dead_at ' . self::DEAD_AT_DEFINITION . ','
 			. ' subject_type ' . self::SUBJECT_TYPE_DEFINITION . ','
-			. ' subject_id ' . self::SUBJECT_ID_DEFINITION
+			. ' subject_id ' . self::SUBJECT_ID_DEFINITION . ','
+			. ' last_error ' . self::LAST_ERROR_DEFINITION
 			. ')',
 			'CREATE INDEX ' . self::DUE_INDEX . ' ON ' . self::TABLE
 			. ' (' . self::DUE_INDEX_COLUMNS . ')',
@@ -113,6 +116,12 @@ final class JobSchema
 			self::TABLE,
 			'subject_id',
 			self::SUBJECT_ID_DEFINITION,
+		);
+		SchemaUpgrade::addColumnIfMissing(
+			$connection,
+			self::TABLE,
+			'last_error',
+			self::LAST_ERROR_DEFINITION,
 		);
 		SchemaUpgrade::createIndexIfMissing(
 			$connection,
