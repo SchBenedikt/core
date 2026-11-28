@@ -1314,6 +1314,7 @@ final readonly class Application
 			$actorInboxResolver,
 			$clock,
 			$inboundBlocks,
+			$followers,
 		);
 		$quoteService = new QuoteService(
 			$posts,

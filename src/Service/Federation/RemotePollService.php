@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Service\Federation;
 
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
+use AlohaSocial\Core\Domain\Federation\FollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\InboundBlockRepository;
@@ -22,7 +23,9 @@ use AlohaSocial\Core\Domain\Federation\RemotePost;
 use AlohaSocial\Core\Domain\Federation\RemoteObjectType;
 use AlohaSocial\Core\Domain\Post\PollVote;
 use AlohaSocial\Core\Domain\Post\PollVoteRepository;
+use AlohaSocial\Core\Domain\Post\Post;
 use AlohaSocial\Core\Domain\Post\PostRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Jobs\JobQueue;
 use AlohaSocial\Core\Jobs\JobSubject;
 use AlohaSocial\Core\Jobs\JobType;
@@ -70,6 +73,7 @@ final class RemotePollService
 		private readonly ?ActorInboxResolver $inboxes,
 		private readonly Clock $clock,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
+		private readonly ?FollowerRepository $followers = null,
 	) {
 	}
 
@@ -388,6 +392,8 @@ final class RemotePollService
 			return false;
 		}
 
+		$this->requireVoteAudience($post, $actor);
+
 		$poll = $post->poll;
 		if ($poll->isExpired($now)) {
 			throw new InboxRejectedException('poll_ended', 'This poll has ended.');
@@ -441,6 +447,32 @@ final class RemotePollService
 		}
 
 		return true;
+	}
+
+	/**
+	 * A remote ballot may only answer a poll its author would show the actor.
+	 *
+	 * Public and unlisted polls accept any signed choice. A followers-only
+	 * poll needs an accepted follow edge from the actor to the author, and a
+	 * direct poll never federates a ballot because direct recipients are
+	 * local accounts only. Without a follower store the restricted cases
+	 * fail closed.
+	 */
+	private function requireVoteAudience(Post $post, RemoteActor $actor): void
+	{
+		if ($post->visibility === Visibility::Public || $post->visibility === Visibility::Unlisted) {
+			return;
+		}
+
+		$allowed = false;
+		if ($post->visibility === Visibility::Followers && $this->followers !== null) {
+			$edge = $this->followers->findByActor($post->authorId, $actor->actorId);
+			$allowed = $edge !== null && $edge->state->isAccepted();
+		}
+
+		if (!$allowed) {
+			throw new InboxRejectedException('not_authorized', 'This actor may not vote in this poll.');
+		}
 	}
 
 	/**
