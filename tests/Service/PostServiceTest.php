@@ -199,6 +199,19 @@ final class PostServiceTest extends TestCase
 		self::assertSame(PostService::MAX_CONTENT_LENGTH, mb_strlen($post->content));
 	}
 
+	public function testUrlLengthIsWeightedLikeMastodonClients(): void
+	{
+		// Raw length exceeds the limit, but the URL weighs only the
+		// advertised characters_reserved_per_url, so the post fits.
+		$content = str_repeat('a', PostService::MAX_CONTENT_LENGTH - 24)
+			. ' https://example.com/' . str_repeat('b', 60);
+		self::assertGreaterThan(PostService::MAX_CONTENT_LENGTH, mb_strlen($content));
+
+		$post = $this->service()->create(new CreatePost('alice', $content));
+
+		self::assertSame($content, $post->content);
+	}
+
 	public function testRejectsAContentWarningAboveTheLimit(): void
 	{
 		try {
