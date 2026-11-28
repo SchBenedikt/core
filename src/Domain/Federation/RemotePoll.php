@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -49,6 +50,7 @@ final readonly class RemotePoll
 		public ?DateTimeImmutable $closedAt,
 		public int $votersCount,
 		public DateTimeImmutable $updatedAt,
+		public ?Visibility $audience = null,
 	) {
 		if ($objectId === '' || $actorId === '' || $activityId === '') {
 			throw new InvalidArgumentException('A remote poll needs an object, an actor and an activity.');
@@ -111,6 +113,27 @@ final readonly class RemotePoll
 	}
 
 	/**
+	 * The same question with a different audience claim. Used when a newer
+	 * revision carries no addressing signal and the stored one must survive.
+	 */
+	public function withAudience(?Visibility $audience): self
+	{
+		return new self(
+			objectId: $this->objectId,
+			actorId: $this->actorId,
+			activityId: $this->activityId,
+			title: $this->title,
+			options: $this->options,
+			multiple: $this->multiple,
+			endsAt: $this->endsAt,
+			closedAt: $this->closedAt,
+			votersCount: $this->votersCount,
+			updatedAt: $this->updatedAt,
+			audience: $audience,
+		);
+	}
+
+	/**
 	 * @return array{
 	 *     object_id: string,
 	 *     actor_id: string,
@@ -121,7 +144,8 @@ final readonly class RemotePoll
 	 *     closed_at: ?string,
 	 *     votes_count: int,
 	 *     voters_count: int,
-	 *     updated_at: string
+	 *     updated_at: string,
+	 *     audience: ?string
 	 * }
 	 */
 	public function toArray(): array
@@ -140,6 +164,7 @@ final readonly class RemotePoll
 			'votes_count' => $this->votesCount(),
 			'voters_count' => $this->votersCount,
 			'updated_at' => Time::format($this->updatedAt),
+			'audience' => $this->audience?->value,
 		];
 	}
 }
