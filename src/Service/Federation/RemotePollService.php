@@ -233,7 +233,7 @@ final class RemotePollService
 	{
 		$poll = $this->find($objectId);
 		$now = $this->clock->now();
-		$localCounts = $this->votes->countsFor($objectId);
+		$localCounts = $this->votes->pendingCountsFor($objectId, $poll->updatedAt);
 		$own = $viewerId === null ? null : $this->votes->find($objectId, $viewerId);
 
 		$options = [];

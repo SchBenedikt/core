@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Federation;
 
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 
 final class InMemoryRemotePollVoteRepository implements RemotePollVoteRepository
 {
@@ -55,6 +57,27 @@ final class InMemoryRemotePollVoteRepository implements RemotePollVoteRepository
 		$counts = [];
 		foreach ($this->votes as $vote) {
 			if ($vote->objectId !== $objectId) {
+				continue;
+			}
+
+			foreach ($vote->positions as $position) {
+				$counts[$position] = ($counts[$position] ?? 0) + 1;
+			}
+		}
+
+		return $counts;
+	}
+
+	public function pendingCountsFor(string $objectId, DateTimeImmutable $peerRevisionAt): array
+	{
+		$revision = Time::toSecondPrecision($peerRevisionAt);
+		$counts = [];
+		foreach ($this->votes as $vote) {
+			if ($vote->objectId !== $objectId) {
+				continue;
+			}
+
+			if ($vote->queued && $vote->createdAt < $revision) {
 				continue;
 			}
 

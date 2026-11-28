@@ -43,6 +43,34 @@ abstract class RemotePollVoteRepositoryTestCase extends TestCase
 		$repository->insert(new RemotePollVote('poll-1', 'alice', [1], Time::parse('2026-11-11T10:01:00Z')));
 	}
 
+	public function testPendingCountsOnlyCoverVotesThePeerRevisionCannotInclude(): void
+	{
+		$repository = $this->repository();
+		$revision = Time::parse('2026-11-11T10:30:00Z');
+
+		// Queued before the revision: the peer's totals may already hold it.
+		$repository->insert(new RemotePollVote('poll-1', 'alice', [0], Time::parse('2026-11-11T10:00:00Z')));
+		$repository->markQueued('poll-1', 'alice');
+
+		// Never queued: the peer cannot know it.
+		$repository->insert(new RemotePollVote('poll-1', 'bob', [1], Time::parse('2026-11-11T10:45:00Z')));
+
+		// Queued but created after the revision: still pending.
+		$repository->insert(new RemotePollVote('poll-1', 'carol', [1], Time::parse('2026-11-11T10:45:00Z')));
+		$repository->markQueued('poll-1', 'carol');
+
+		self::assertSame([1 => 2], $repository->pendingCountsFor('poll-1', $revision));
+
+		// A revision after every queued vote still cannot hide the unqueued one.
+		self::assertSame([1 => 1], $repository->pendingCountsFor('poll-1', Time::parse('2026-11-11T11:00:00Z')));
+
+		// A revision older than every vote leaves all of them pending.
+		self::assertSame(
+			[0 => 1, 1 => 2],
+			$repository->pendingCountsFor('poll-1', Time::parse('2026-11-11T09:00:00Z')),
+		);
+	}
+
 	public function testMarkQueuedIsVisible(): void
 	{
 		$repository = $this->repository();

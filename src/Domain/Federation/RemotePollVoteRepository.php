@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use DateTimeImmutable;
+
 /**
  * Local votes on remote Questions.
  *
@@ -36,4 +38,19 @@ interface RemotePollVoteRepository
 	 * @return array<int, int> position => number of local votes
 	 */
 	public function countsFor(string $objectId): array;
+
+	/**
+	 * Per-position totals of the local votes a peer snapshot cannot reflect.
+	 *
+	 * The peer's reported counts are authoritative for the revision they were
+	 * published with. A vote created after that revision — or one whose
+	 * delivery was never queued — is still pending and must be overlaid;
+	 * a queued vote older than the revision may already sit inside the
+	 * peer's totals, so counting it again would double it. A vote stamped
+	 * in the same second as the revision still counts as pending: the peer
+	 * cannot have processed a delivery that did not exist yet.
+	 *
+	 * @return array<int, int> position => number of pending local votes
+	 */
+	public function pendingCountsFor(string $objectId, DateTimeImmutable $peerRevisionAt): array;
 }
