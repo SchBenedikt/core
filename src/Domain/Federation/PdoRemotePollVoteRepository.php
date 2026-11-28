@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Domain\Federation;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 use JsonException;
 use Throwable;
 
@@ -82,6 +83,30 @@ final class PdoRemotePollVoteRepository implements RemotePollVoteRepository
 			['object_id' => $objectId],
 		);
 
+		return $this->countPositions($rows);
+	}
+
+	public function pendingCountsFor(string $objectId, DateTimeImmutable $peerRevisionAt): array
+	{
+		$rows = $this->db->fetchAll(
+			'SELECT positions FROM ' . RemotePollSchema::VOTE_TABLE
+			. ' WHERE object_id = :object_id AND (queued = 0 OR created_at >= :revised_at)',
+			[
+				'object_id' => $objectId,
+				'revised_at' => Time::format($peerRevisionAt),
+			],
+		);
+
+		return $this->countPositions($rows);
+	}
+
+	/**
+	 * @param list<array<string, mixed>> $rows
+	 *
+	 * @return array<int, int>
+	 */
+	private function countPositions(array $rows): array
+	{
 		$counts = [];
 		foreach ($rows as $row) {
 			try {

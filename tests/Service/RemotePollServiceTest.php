@@ -241,6 +241,33 @@ final class RemotePollServiceTest extends TestCase
 		self::assertTrue($this->service->present('https://remote.example/questions/1', null)['closed']);
 	}
 
+	public function testPeerCountsAreNotDoubledByAnAlreadyReflectedLocalVote(): void
+	{
+		$this->import($this->question());
+		$this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+
+		// The origin publishes a revision whose totals already include the
+		// delivered vote; overlaying it again would count alice twice.
+		$updated = $this->question();
+		$updated['oneOf'][0]['replies']['totalItems'] = 1;
+		$this->import($updated, Time::parse('2026-11-11T11:00:00Z'));
+
+		$poll = $this->service->present('https://remote.example/questions/1', 'alice');
+		self::assertSame(1, $poll['options'][0]['votes_count']);
+		self::assertSame([0], $poll['own_votes']);
+	}
+
+	public function testAPendingLocalVoteStillCountsWhenThePeerSnapshotPredatesIt(): void
+	{
+		$this->import($this->question(), Time::parse('2026-11-11T09:00:00Z'));
+		$this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+
+		$poll = $this->service->present('https://remote.example/questions/1', 'alice');
+		// The peer reports 3 votes on option one; alice's pending vote overlays it.
+		self::assertSame(4, $poll['options'][0]['votes_count']);
+		self::assertSame(5, $poll['votes_count']);
+	}
+
 	public function testTheCloseJobMarksAnImportedPollClosed(): void
 	{
 		$this->import($this->question());
