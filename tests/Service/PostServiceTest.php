@@ -23,6 +23,7 @@ use AlohaSocial\Core\Domain\Federation\MentionResolver;
 use AlohaSocial\Core\Domain\Federation\MentionTarget;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
 use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Media\Attachment;
 use AlohaSocial\Core\Domain\Media\InMemoryAttachmentRepository;
@@ -463,6 +464,52 @@ final class PostServiceTest extends TestCase
 			->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/missing'));
 	}
 
+	public function testRemoteReplyImportsAnUncachedParentThroughTheImporter(): void
+	{
+		$importer = new class ($this->remoteParent()) implements RemotePostImporter {
+			/** @var list<string> */
+			public array $asked = [];
+
+			public function __construct(private readonly RemotePost $post)
+			{
+			}
+
+			public function ensure(string $objectId): ?RemotePost
+			{
+				$this->asked[] = $objectId;
+
+				return $this->post;
+			}
+		};
+
+		$post = $this->service(
+			remotePosts: new InMemoryRemotePostRepository(),
+			remoteActors: $this->remoteActorFetcher(),
+			remoteImporter: $importer,
+		)->create(new CreatePost('alice', 'hi there', inReplyToId: 'https://remote.example/notes/1'));
+
+		self::assertSame('https://remote.example/notes/1', $post->remoteParentObjectId);
+		self::assertSame('https://remote.example/users/bob', $post->remoteParentAuthorId);
+		self::assertSame(['https://remote.example/notes/1'], $importer->asked);
+	}
+
+	public function testRemoteReplyToAnUncachedParentRejectsWhenTheImportFails(): void
+	{
+		$importer = new class implements RemotePostImporter {
+			public function ensure(string $objectId): ?RemotePost
+			{
+				throw new \RuntimeException('origin unreachable');
+			}
+		};
+
+		$this->expectException(ValidationException::class);
+
+		$this->service(
+			remotePosts: new InMemoryRemotePostRepository(),
+			remoteImporter: $importer,
+		)->create(new CreatePost('alice', 'hi', inReplyToId: 'https://remote.example/notes/missing'));
+	}
+
 	public function testRemoteReplyToADeletedParentIsRejected(): void
 	{
 		$remotePosts = new InMemoryRemotePostRepository();
@@ -577,6 +624,7 @@ final class PostServiceTest extends TestCase
 		?InMemoryFollowingRepository $following = null,
 		?InMemoryRemoteActorFetcher $remoteActors = null,
 		?ActorInboxResolver $actorInboxes = null,
+		?RemotePostImporter $remoteImporter = null,
 	): PostService {
 		return new PostService(
 			$this->repository,
@@ -597,6 +645,7 @@ final class PostServiceTest extends TestCase
 			),
 			remoteActors: $remoteActors,
 			actorInboxes: $actorInboxes,
+			remoteImporter: $remoteImporter,
 		);
 	}
 
