@@ -10,6 +10,9 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
+use AlohaSocial\Core\Domain\Federation\Follower;
+use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
@@ -58,6 +61,8 @@ final class RemotePollServiceTest extends TestCase
 
 	private InMemoryInboundBlockRepository $inboundBlocks;
 
+	private InMemoryFollowerRepository $followers;
+
 	private RemotePollService $service;
 
 	protected function setUp(): void
@@ -69,6 +74,7 @@ final class RemotePollServiceTest extends TestCase
 		$this->polls = new InMemoryRemotePollRepository();
 		$this->votes = new InMemoryRemotePollVoteRepository();
 		$this->inboundBlocks = new InMemoryInboundBlockRepository();
+		$this->followers = new InMemoryFollowerRepository();
 
 		$this->service = new RemotePollService(
 			$this->polls,
@@ -85,6 +91,7 @@ final class RemotePollServiceTest extends TestCase
 			},
 			$this->clock,
 			$this->inboundBlocks,
+			$this->followers,
 		);
 	}
 
@@ -297,6 +304,51 @@ final class RemotePollServiceTest extends TestCase
 		self::assertSame(1, $poll->options[1]->votesCount);
 	}
 
+	public function testAFollowersOnlyPollNeedsAnAcceptedFollow(): void
+	{
+		$post = $this->localPoll('post-1', visibility: Visibility::Followers);
+		$this->posts->insert($post);
+
+		try {
+			$this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now());
+			self::fail('A stranger must not vote in a followers-only poll.');
+		} catch (InboxRejectedException $exception) {
+			self::assertSame('not_authorized', $exception->reason);
+		}
+
+		$this->followers->insert(new Follower(
+			id: 'f-1',
+			localUserId: 'alice',
+			actorId: self::ACTOR,
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+			state: FollowState::Pending,
+		));
+
+		try {
+			$this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now());
+			self::fail('A pending follow must not authorize a vote.');
+		} catch (InboxRejectedException $exception) {
+			self::assertSame('not_authorized', $exception->reason);
+		}
+
+		self::assertTrue($this->followers->updateState('f-1', 'alice', FollowState::Pending, FollowState::Accepted));
+
+		self::assertTrue($this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now()));
+		self::assertNotNull($this->localVotes->find('post-1', self::ACTOR));
+	}
+
+	public function testADirectPollNeverAcceptsARemoteBallot(): void
+	{
+		$post = $this->localPoll('post-1', visibility: Visibility::Direct);
+		$this->posts->insert($post);
+
+		$this->expectException(InboxRejectedException::class);
+		$this->expectExceptionMessage('may not vote');
+
+		$this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now());
+	}
+
 	public function testAReplyToAPostWithoutAPollIsNotAVote(): void
 	{
 		$this->posts->insert(new Post(
@@ -364,13 +416,13 @@ final class RemotePollServiceTest extends TestCase
 		];
 	}
 
-	private function localPoll(string $id, ?\DateTimeImmutable $expiresAt = null, bool $multiple = false): Post
+	private function localPoll(string $id, ?\DateTimeImmutable $expiresAt = null, bool $multiple = false, Visibility $visibility = Visibility::Public): Post
 	{
 		return new Post(
 			id: $id,
 			authorId: 'alice',
 			content: 'Vote',
-			visibility: Visibility::Public,
+			visibility: $visibility,
 			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
 			poll: new Poll(
 				options: [new PollOption('Yes'), new PollOption('No')],
