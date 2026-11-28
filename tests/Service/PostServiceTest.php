@@ -43,6 +43,7 @@ use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\PostService;
+use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Service\ValidationException;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\FixedInboxResolver;
@@ -454,6 +455,32 @@ final class PostServiceTest extends TestCase
 		$jobs = $this->queue->pending();
 		self::assertCount(1, $jobs);
 		self::assertSame('https://remote.example/inbox', $jobs[0]->payload['inbox']);
+	}
+
+	public function testEditingARemoteReplyDeliversTheUpdateToTheParentAuthor(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$remotePosts->insert($this->remoteParent());
+		$service = $this->service(
+			remotePosts: $remotePosts,
+			remoteActors: $this->remoteActorFetcher(),
+		);
+
+		$post = $service->create(
+			new CreatePost('alice', 'hi there', inReplyToId: 'https://remote.example/notes/1'),
+		);
+
+		$service->edit('alice', $post->id, new UpdatePost(content: 'edited reply'));
+
+		$updates = array_values(array_filter(
+			$this->queue->pending(),
+			static fn ($job): bool => ($job->payload['activity']['type'] ?? null) === 'Update',
+		));
+		self::assertCount(1, $updates);
+		self::assertSame('https://remote.example/inbox', $updates[0]->payload['inbox']);
+		$object = $updates[0]->payload['activity']['object'];
+		self::assertSame('https://remote.example/notes/1', $object['inReplyTo']);
+		self::assertContains('https://remote.example/users/bob', $object['cc']);
 	}
 
 	public function testRemoteReplyToAnUnknownParentIsRejectedLikeAMissingLocalOne(): void
