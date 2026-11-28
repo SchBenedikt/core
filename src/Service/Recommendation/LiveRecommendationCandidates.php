@@ -21,6 +21,7 @@ use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use DateTimeImmutable;
 
 use function array_values;
+use function mb_strtolower;
 
 /**
  * Rehydrates recommendation candidates from the canonical stores.
@@ -87,7 +88,7 @@ final class LiveRecommendationCandidates implements RecommendationCandidateRefre
 			$post->content,
 			$post->contentWarning,
 			$post->publishedAt,
-			$post->language === null ? [] : [$post->language],
+			$post->language === null ? [] : [mb_strtolower($post->language)],
 		);
 	}
 

@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Recommendation;
 
+use AlohaSocial\Core\Domain\Interaction\ReactionSchema;
+use AlohaSocial\Core\Domain\Post\BoostSchema;
+use AlohaSocial\Core\Domain\Post\FavouriteSchema;
 use AlohaSocial\Core\Domain\Post\PostSchema;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Db\Connection;
@@ -17,6 +20,7 @@ use DateTimeImmutable;
 
 use function array_slice;
 use function max;
+use function mb_strtolower;
 use function min;
 use function usort;
 
@@ -38,10 +42,19 @@ final class PdoRecommendationCandidateSource implements RecommendationCandidateS
 	{
 		$limit = max(1, min(self::MAX_CANDIDATES, $limit));
 
+		// Engagement is a bounded provenance count over the local tables:
+		// favourites, boosts, stored reactions and non-deleted replies. Remote
+		// candidates keep engagement 0 rather than inventing peer numbers.
 		$local = $this->db->fetchAll(
-			'SELECT id, author_id, content, content_warning, published_at FROM ' . PostSchema::TABLE
-			. ' WHERE visibility = :visibility AND deleted_at IS NULL AND archived_at IS NULL'
-			. ' ORDER BY published_at DESC, id DESC LIMIT ' . $limit,
+			'SELECT p.id, p.author_id, p.content, p.content_warning, p.published_at, p.language,'
+			. ' (SELECT COUNT(*) FROM ' . FavouriteSchema::TABLE . ' f WHERE f.post_id = p.id)'
+			. ' + (SELECT COUNT(*) FROM ' . BoostSchema::TABLE . ' b WHERE b.post_id = p.id)'
+			. ' + (SELECT COUNT(*) FROM ' . ReactionSchema::TABLE . ' r WHERE r.local_post_id = p.id)'
+			. ' + (SELECT COUNT(*) FROM ' . PostSchema::TABLE . ' c'
+			. ' WHERE c.in_reply_to_id = p.id AND c.deleted_at IS NULL) AS engagement'
+			. ' FROM ' . PostSchema::TABLE . ' p'
+			. ' WHERE p.visibility = :visibility AND p.deleted_at IS NULL AND p.archived_at IS NULL'
+			. ' ORDER BY p.published_at DESC, p.id DESC LIMIT ' . $limit,
 			['visibility' => Visibility::Public->value],
 		);
 
@@ -67,6 +80,8 @@ final class PdoRecommendationCandidateSource implements RecommendationCandidateS
 				$row['content_warning'] === null ? null : (string) $row['content_warning'],
 				Time::parse((string) $row['published_at']),
 				Visibility::Public,
+				$row['language'] === null ? [] : [mb_strtolower((string) $row['language'])],
+				(int) $row['engagement'],
 			);
 		}
 
