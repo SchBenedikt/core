@@ -21,6 +21,17 @@ interface RecommendationSignalRepository
 	 */
 	public function signalsFor(string $userId, int $limit = 1000): array;
 
+	/**
+	 * The newest stored signal for one owner/kind/candidate pair recorded at
+	 * or after `$since`, or null. Used to collapse noisy repeated events.
+	 */
+	public function recentSignal(
+		string $userId,
+		RecommendationSignalKind $kind,
+		string $candidateId,
+		\DateTimeImmutable $since,
+	): ?RecommendationSignal;
+
 	public function signalCount(string $userId): int;
 
 	public function deleteSignalsFor(string $userId): void;

@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Domain\Recommendation;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 use JsonException;
 use Throwable;
 
@@ -211,6 +212,27 @@ final class PdoRecommendationRepository implements RecommendationRepository
 		);
 
 		return (int) $value;
+	}
+
+	public function recentSignal(
+		string $userId,
+		RecommendationSignalKind $kind,
+		string $candidateId,
+		DateTimeImmutable $since,
+	): ?RecommendationSignal {
+		$row = $this->db->fetchOne(
+			'SELECT ' . self::SIGNAL_COLUMNS . ' FROM ' . RecommendationSchema::SIGNAL_TABLE
+			. ' WHERE user_id = :user_id AND kind = :kind AND candidate_id = :candidate_id'
+			. ' AND created_at >= :since ORDER BY created_at DESC, id DESC LIMIT 1',
+			[
+				'user_id' => $userId,
+				'kind' => $kind->value,
+				'candidate_id' => $candidateId,
+				'since' => Time::format($since),
+			],
+		);
+
+		return $row === null ? null : $this->hydrateSignal($row);
 	}
 
 	public function deleteSignalsFor(string $userId): void

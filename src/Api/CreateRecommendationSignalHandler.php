@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Api;
 
 use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidate;
+use AlohaSocial\Core\Domain\Recommendation\RecommendationCandidateKind;
 use AlohaSocial\Core\Domain\Recommendation\RecommendationSignalKind;
 use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
@@ -21,6 +22,7 @@ use AlohaSocial\Core\Service\Recommendation\RecommendationLimitException;
 use AlohaSocial\Core\Service\Recommendation\RecommendationService;
 
 use function is_string;
+use function str_starts_with;
 
 /**
  * `POST /api/v1/recommendations/signals`
@@ -48,6 +50,8 @@ final class CreateRecommendationSignalHandler implements Handler
 		$fields = [];
 		if (!is_string($candidateId) || $candidateId === '' || strlen($candidateId) > RecommendationCandidate::MAX_ID_LENGTH) {
 			$fields['candidate_id'] = 'A valid candidate id is required.';
+		} elseif (!self::hasCandidatePrefix($candidateId)) {
+			$fields['candidate_id'] = 'A candidate id must carry a known kind prefix.';
 		}
 
 		$kind = is_string($rawKind) ? RecommendationSignalKind::tryFrom($rawKind) : null;
@@ -70,5 +74,16 @@ final class CreateRecommendationSignalHandler implements Handler
 		}
 
 		return Response::json(['signal' => $signal->toArray()], 201, ['Cache-Control' => 'private, no-store']);
+	}
+
+	private static function hasCandidatePrefix(string $candidateId): bool
+	{
+		foreach (RecommendationCandidateKind::cases() as $kind) {
+			if (str_starts_with($candidateId, $kind->value . ':')) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

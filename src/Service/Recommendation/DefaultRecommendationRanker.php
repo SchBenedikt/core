@@ -47,7 +47,7 @@ final class DefaultRecommendationRanker implements RecommendationRanker
 	): array {
 		$signalCounts = [];
 		foreach ($signals as $signal) {
-			$signalCounts[$signal->candidateId][] = $signal->kind;
+			$signalCounts[$signal->candidateId][$signal->kind->value] = $signal->kind;
 		}
 
 		$items = [];
@@ -74,7 +74,7 @@ final class DefaultRecommendationRanker implements RecommendationRanker
 				$reasons[] = 'engagement';
 			}
 
-			foreach (array_unique($signalCounts[$candidate->id] ?? []) as $kind) {
+			foreach ($signalCounts[$candidate->id] ?? [] as $kind) {
 				$score += match ($kind) {
 					RecommendationSignalKind::Like,
 					RecommendationSignalKind::Repost,
