@@ -20,6 +20,10 @@ use AlohaSocial\Core\Domain\Federation\InMemoryMuteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePostRepository;
 use AlohaSocial\Core\Domain\Federation\Mute;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostImporter;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
 use AlohaSocial\Core\Platform\Clock\FrozenClock;
@@ -712,6 +716,123 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
 	}
 
+	public function testAnUnfollowedReplyToAnUncachedPublicParentIsAcceptedThroughTheImporter(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(
+			new InMemoryFollowingRepository(),
+			remotePosts: $remotePosts,
+			remotePostImporter: $this->importer($remotePosts, Visibility::Public),
+		);
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-imported-parent',
+			'https://remote.example/notes/reply-imported-parent',
+			'nested reply',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = 'https://elsewhere.example/notes/parent';
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(202, $response->status, $response->body);
+
+		$stored = $remotePosts->findPostByObjectId('https://remote.example/notes/reply-imported-parent');
+		self::assertNotNull($stored);
+		self::assertSame('https://elsewhere.example/notes/parent', $stored->inReplyToId);
+	}
+
+	public function testAnUnfollowedReplyToAnUncachedParentStaysRefusedWithoutAPublicAudience(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(
+			new InMemoryFollowingRepository(),
+			remotePosts: $remotePosts,
+			remotePostImporter: $this->importer($remotePosts, Visibility::Followers),
+		);
+
+		$reply = $this->create(
+			'https://remote.example/activities/reply-private-parent',
+			'https://remote.example/notes/reply-private-parent',
+			'should not land',
+			'2026-11-11T10:01:00Z',
+		);
+		$reply['object']['inReplyTo'] = 'https://elsewhere.example/notes/private-parent';
+
+		$response = $this->deliver($app, $reply);
+		self::assertSame(403, $response->status);
+		self::assertSame('not_followed', $response->decodedBody()['error']['code']);
+		self::assertNull($remotePosts->findPostByObjectId('https://remote.example/notes/reply-private-parent'));
+	}
+
+	public function testAnUnfollowedBoostOfAnUncachedPublicRemotePostIsAcceptedThroughTheImporter(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(
+			new InMemoryFollowingRepository(),
+			remotePosts: $remotePosts,
+			remotePostImporter: $this->importer($remotePosts, Visibility::Public),
+		);
+
+		$response = $this->deliver($app, [
+			'id' => 'https://remote.example/activities/boost-imported',
+			'type' => 'Announce',
+			'actor' => self::BOB,
+			'object' => 'https://elsewhere.example/notes/boost-target',
+		]);
+
+		self::assertSame(202, $response->status, $response->body);
+		self::assertNotNull(
+			$remotePosts->findByActivityId('https://remote.example/activities/boost-imported'),
+		);
+	}
+
+	public function testACreateForAnImportedPlaceholderReplacesItWithTheDeliveredActivity(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$importer = $this->importer($remotePosts, Visibility::Public, self::BOB);
+		$importer->ensure('https://remote.example/notes/delivered-later');
+
+		$app = $this->app(remotePosts: $remotePosts, remotePostImporter: $importer);
+
+		$response = $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-delivered-later',
+			'https://remote.example/notes/delivered-later',
+			'the real delivery',
+			'2026-11-11T10:01:00Z',
+		));
+		self::assertSame(202, $response->status, $response->body);
+
+		$stored = $remotePosts->findPostByObjectId('https://remote.example/notes/delivered-later');
+		self::assertNotNull($stored);
+		self::assertSame('https://remote.example/activities/create-delivered-later', $stored->activityId);
+		self::assertSame('the real delivery', $stored->content);
+	}
+
+	public function testASecondCreateForTheSameObjectIsAnIdempotentNoOp(): void
+	{
+		$remotePosts = new InMemoryRemotePostRepository();
+		$app = $this->app(remotePosts: $remotePosts);
+
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-once',
+			'https://remote.example/notes/once',
+			'only once',
+			'2026-11-11T10:01:00Z',
+		))->status);
+		self::assertSame(202, $this->deliver($app, $this->create(
+			'https://remote.example/activities/create-twice',
+			'https://remote.example/notes/once',
+			'only once',
+			'2026-11-11T10:01:00Z',
+		))->status);
+
+		self::assertNull($remotePosts->findByActivityId('https://remote.example/activities/create-twice'));
+		self::assertSame(
+			'https://remote.example/activities/create-once',
+			$remotePosts->findPostByObjectId('https://remote.example/notes/once')?->activityId,
+		);
+	}
+
 	public function testAnUnfollowedReplyToABlockedAuthorsPostIsRefused(): void
 	{
 		$blocks = new InMemoryBlockRepository();
@@ -864,6 +985,7 @@ final class InboundTimelineTest extends TestCase
 		?InMemoryBlockRepository $blockRepository = null,
 		?InMemoryMuteRepository $muteRepository = null,
 		?InMemoryRemotePostRepository $remotePosts = null,
+		?RemotePostImporter $remotePostImporter = null,
 	): Application {
 		return Application::inMemory(
 			clock: $this->clock,
@@ -890,6 +1012,7 @@ final class InboundTimelineTest extends TestCase
 			muteRepository: $muteRepository,
 			eventBroker: $events,
 			remotePostRepository: $remotePosts,
+			remotePostImporter: $remotePostImporter,
 		);
 	}
 
@@ -1039,6 +1162,39 @@ final class InboundTimelineTest extends TestCase
 				'type' => 'Tombstone',
 			],
 		];
+	}
+
+	private function importer(
+		InMemoryRemotePostRepository $posts,
+		Visibility $audience,
+		string $author = self::CAROL,
+	): RemotePostImporter {
+		return new class ($posts, $audience, $author) implements RemotePostImporter {
+			public function __construct(
+				private readonly InMemoryRemotePostRepository $posts,
+				private readonly Visibility $audience,
+				private readonly string $author,
+			) {
+			}
+
+			public function ensure(string $objectId): ?RemotePost
+			{
+				$post = new RemotePost(
+					activityId: $objectId,
+					objectId: $objectId,
+					actorId: $this->author,
+					kind: RemotePostKind::Post,
+					content: 'imported remote post',
+					contentWarning: null,
+					publishedAt: new \DateTimeImmutable('2026-11-11T09:00:00Z'),
+					objectAuthorId: $this->author,
+					audience: $this->audience,
+				);
+				$this->posts->insert($post);
+
+				return $post;
+			}
+		};
 	}
 
 	private function follow(string $localUserId, string $actorId): void

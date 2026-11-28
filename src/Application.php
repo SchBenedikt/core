@@ -1648,6 +1648,7 @@ final readonly class Application
 				posts: $posts,
 				blocks: $blockRepository,
 				mutes: $muteRepository,
+				remoteImporter: $remotePostImporter,
 			)
 			: null;
 
