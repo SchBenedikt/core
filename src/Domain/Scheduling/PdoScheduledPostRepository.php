@@ -17,6 +17,7 @@ use JsonException;
 use PDOException;
 
 use function array_map;
+use function is_array;
 use function json_decode;
 use function json_encode;
 
@@ -46,10 +47,10 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 				'INSERT INTO ' . ScheduledPostSchema::TABLE
 				. ' (id, author_id, post_id, content, content_warning, visibility, language, attachment_ids,'
 				. ' recipient_ids, in_reply_to_id, scheduled_at, created_at, state, lease_until,'
-				. ' published_at, failure_reason)'
+				. ' published_at, failure_reason, poll)'
 				. ' VALUES (:id, :author_id, :post_id, :content, :content_warning, :visibility, :language,'
 				. ' :attachment_ids, :recipient_ids, :in_reply_to_id, :scheduled_at, :created_at,'
-				. ' :state, NULL, NULL, NULL)',
+				. ' :state, NULL, NULL, NULL, :poll)',
 				[
 					'id' => $post->id,
 					'author_id' => $post->authorId,
@@ -64,6 +65,7 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 					'scheduled_at' => Time::format($post->scheduledAt),
 					'created_at' => Time::format($post->createdAt),
 					'state' => $post->state->value,
+					'poll' => $post->poll === null ? null : $this->encodePoll($post->poll),
 				],
 			);
 		} catch (PDOException $exception) {
@@ -238,6 +240,33 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 		}
 	}
 
+	private function encodePoll(ScheduledPoll $poll): string
+	{
+		try {
+			return json_encode($poll->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+		} catch (JsonException) {
+			return '{}';
+		}
+	}
+
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	private function decodePoll(?string $encoded): ?array
+	{
+		if ($encoded === null || $encoded === '') {
+			return null;
+		}
+
+		try {
+			$decoded = json_decode($encoded, true, 16, JSON_THROW_ON_ERROR);
+		} catch (JsonException) {
+			return null;
+		}
+
+		return is_array($decoded) ? $decoded : null;
+	}
+
 	/**
 	 * @return list<string>
 	 */
@@ -289,6 +318,7 @@ final class PdoScheduledPostRepository implements ScheduledPostRepository
 			failureReason: $row['failure_reason'] === null ? null : (string) $row['failure_reason'],
 			leaseUntil: $row['lease_until'] === null ? null : Time::parse((string) $row['lease_until']),
 			language: ($row['language'] ?? null) === null ? null : (string) $row['language'],
+			poll: ScheduledPoll::fromArray($this->decodePoll($row['poll'] ?? null)),
 		);
 	}
 }

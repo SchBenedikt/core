@@ -36,7 +36,7 @@ final class MastodonScheduledStatusPresenter
 				'sensitive' => $scheduled->contentWarning !== null,
 				'visibility' => $this->visibility($scheduled->visibility),
 				'spoiler_text' => $scheduled->contentWarning ?? '',
-				'poll' => null,
+				'poll' => $scheduled->poll?->toArray(),
 				'in_reply_to_id' => $scheduled->inReplyToId,
 			],
 			'media_attachments' => [],

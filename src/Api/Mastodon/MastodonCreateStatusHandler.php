@@ -134,10 +134,6 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 				throw new MastodonRequestException(422, 'validation_failed', 'Scheduling is not configured.');
 			}
 
-			if ($poll !== null) {
-				throw new MastodonRequestException(422, 'validation_failed', 'A poll cannot be scheduled.');
-			}
-
 			if ($quotedStatusId !== null) {
 				throw new MastodonRequestException(422, 'validation_failed', 'A scheduled status cannot quote another status.');
 			}
@@ -152,7 +148,9 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 				? null
 				: 'mastodon-scheduled-' . substr(hash('sha256', $userId . "\0" . $idempotencyKey), 0, 32);
 
-			return $this->respond(function () use ($userId, $content, $visibility, $spoiler, $ids, $inReplyToId, $recipientIds, $language, $scheduledAt, $scheduledId): array {
+			$pollSpec = $poll === null ? null : $this->mastodon->scheduledPollSpec($poll);
+
+			return $this->respond(function () use ($userId, $content, $visibility, $spoiler, $ids, $inReplyToId, $recipientIds, $language, $scheduledAt, $scheduledId, $pollSpec): array {
 				try {
 					$scheduled = $this->scheduled->schedule(
 						$userId,
@@ -168,6 +166,7 @@ final class MastodonCreateStatusHandler extends MastodonHandler
 						),
 						$scheduledAt,
 						$scheduledId,
+						$pollSpec,
 					);
 				} catch (ScheduledPostIdempotencyConflictException) {
 					throw new MastodonRequestException(

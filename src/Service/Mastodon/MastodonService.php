@@ -42,6 +42,7 @@ use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\PostRepository;
 use AlohaSocial\Core\Domain\Post\PostSearchRepository;
 use AlohaSocial\Core\Domain\Post\Visibility;
+use AlohaSocial\Core\Domain\Scheduling\ScheduledPoll;
 use AlohaSocial\Core\Domain\Search\RemoteActorSearch;
 use AlohaSocial\Core\Domain\Search\RemoteHandle;
 use AlohaSocial\Core\Domain\Search\RemoteSearchException;
@@ -2927,6 +2928,27 @@ final class MastodonService
 	 */
 	private function pollFromInput(array $input): Poll
 	{
+		return $this->pollSpecFromInput($input)->resolve($this->now());
+	}
+
+	/**
+	 * The raw Mastodon `poll` parameter as an unresolved spec.
+	 *
+	 * A scheduled status keeps `expires_in` relative: the poll's lifetime
+	 * starts when the post is published, not when it is queued.
+	 *
+	 * @param array<string, mixed> $input
+	 */
+	public function scheduledPollSpec(array $input): ScheduledPoll
+	{
+		return $this->pollSpecFromInput($input);
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 */
+	private function pollSpecFromInput(array $input): ScheduledPoll
+	{
 		$rawOptions = $input['options'] ?? null;
 		if (!is_array($rawOptions) || !array_is_list($rawOptions)) {
 			throw new MastodonRequestException(422, 'validation_failed', 'poll options must be a list.');
@@ -2966,18 +2988,25 @@ final class MastodonService
 			);
 		}
 
-		return new Poll(
+		[$expiresIn, $expiresAt] = $this->pollExpirySpec($input);
+
+		return new ScheduledPoll(
 			options: $options,
 			multiple: $this->pollBoolean($input['multiple'] ?? false, 'multiple'),
 			hideTotals: $this->pollBoolean($input['hide_totals'] ?? false, 'hide_totals'),
-			expiresAt: $this->pollExpiry($input),
+			expiresInSeconds: $expiresIn,
+			expiresAt: $expiresAt,
 		);
 	}
 
 	/**
+	 * Exactly one expiry form, validated but not yet resolved against a
+	 * publication time.
+	 *
 	 * @param array<string, mixed> $input
+	 * @return array{?int, ?DateTimeImmutable}
 	 */
-	private function pollExpiry(array $input): DateTimeImmutable
+	private function pollExpirySpec(array $input): array
 	{
 		$now = $this->now();
 		$expiresIn = $input['expires_in'] ?? null;
@@ -3000,7 +3029,7 @@ final class MastodonService
 				);
 			}
 
-			return $now->modify('+' . $seconds . ' seconds');
+			return [$seconds, null];
 		}
 
 		$expiresAt = $input['expires_at'] ?? null;
@@ -3025,7 +3054,7 @@ final class MastodonService
 				);
 			}
 
-			return $parsed;
+			return [null, $parsed];
 		}
 
 		throw new MastodonRequestException(

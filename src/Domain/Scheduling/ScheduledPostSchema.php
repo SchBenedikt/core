@@ -45,11 +45,25 @@ final class ScheduledPostSchema
 			. ' state VARCHAR(16) NOT NULL,'
 			. ' lease_until VARCHAR(20) NULL,'
 			. ' published_at VARCHAR(20) NULL,'
-			. ' failure_reason VARCHAR(500) NULL'
+			. ' failure_reason VARCHAR(500) NULL,'
+			. ' poll TEXT NULL'
 			. ')',
 			'CREATE UNIQUE INDEX ' . self::TABLE . '_post ON ' . self::TABLE . ' (post_id)',
 			'CREATE INDEX ' . self::TABLE . '_author ON ' . self::TABLE . ' (author_id, created_at, id)',
 			'CREATE INDEX ' . self::TABLE . '_due ON ' . self::TABLE . ' (state, scheduled_at, id)',
+		];
+	}
+
+	/**
+	 * Columns added after the table first shipped. Hosts apply these to
+	 * installations that already have `social_scheduled_post`.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN poll TEXT NULL',
 		];
 	}
 

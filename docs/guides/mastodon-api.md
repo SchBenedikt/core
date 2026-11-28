@@ -204,8 +204,10 @@ A status write with `scheduled_at` (`POST /statuses`) stores a
 cancel it. Only the owner can see a schedule; the neutral routes are
 `/api/v1/scheduled-posts`.
 
-A schedule needs at least five minutes of lead time (configurable), counts
-against a per-account daily quota and may not contain a poll. Nothing is
+A schedule needs at least five minutes of lead time (configurable) and counts
+against a per-account daily quota. A `poll` parameter is stored unresolved:
+`expires_in` counts from the moment the post is published, and an absolute
+`expires_at` must lie after the scheduled time. Nothing is
 federated, published or given a public URL before the due time; a worker then
 publishes it through the normal post path exactly once. A failed publication
 keeps the row as `failed` with a reason and is visible to the owner.
