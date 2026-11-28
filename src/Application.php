@@ -1324,6 +1324,7 @@ final readonly class Application
 			$clock,
 			$inboundBlocks,
 			$followers,
+			new RemotePostAccess($followingRepository, $blockRepository, $inboundBlocks),
 		);
 		$quoteService = new QuoteService(
 			$posts,

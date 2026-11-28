@@ -36,6 +36,7 @@ final class InMemoryRemotePollRepository implements RemotePollRepository
 				closedAt: $existing->closedAt,
 				votersCount: $poll->votersCount,
 				updatedAt: $poll->updatedAt,
+				audience: $poll->audience,
 			);
 		}
 
@@ -65,6 +66,7 @@ final class InMemoryRemotePollRepository implements RemotePollRepository
 			closedAt: $closedAt,
 			votersCount: $poll->votersCount,
 			updatedAt: $poll->updatedAt,
+			audience: $poll->audience,
 		);
 
 		return true;

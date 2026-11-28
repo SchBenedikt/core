@@ -10,9 +10,13 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Tests\Service;
 
 use AlohaSocial\Core\Domain\Federation\ActorInboxResolver;
+use AlohaSocial\Core\Domain\Federation\Block;
+use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\Follower;
 use AlohaSocial\Core\Domain\Federation\FollowState;
+use AlohaSocial\Core\Domain\Federation\InMemoryBlockRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryFollowerRepository;
+use AlohaSocial\Core\Domain\Federation\InMemoryFollowingRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryRemotePollVoteRepository;
 use AlohaSocial\Core\Domain\Federation\InMemoryInboundBlockRepository;
@@ -20,6 +24,8 @@ use AlohaSocial\Core\Domain\Federation\InboxRejectedException;
 use AlohaSocial\Core\Domain\Federation\RemoteActor;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
 use AlohaSocial\Core\Domain\Federation\RemotePollVoteRepository;
+use AlohaSocial\Core\Domain\Federation\RemotePost;
+use AlohaSocial\Core\Domain\Federation\RemotePostKind;
 use AlohaSocial\Core\Domain\Post\InMemoryPollVoteRepository;
 use AlohaSocial\Core\Domain\Post\InMemoryPostRepository;
 use AlohaSocial\Core\Domain\Post\Poll;
@@ -34,6 +40,7 @@ use AlohaSocial\Core\Platform\Config\ArrayConfig;
 use AlohaSocial\Core\Protocol\ActivityPub\ActivityFactory;
 use AlohaSocial\Core\Service\Federation\RemotePollException;
 use AlohaSocial\Core\Service\Federation\RemotePollService;
+use AlohaSocial\Core\Service\Federation\RemotePostAccess;
 use AlohaSocial\Core\Service\Federation\RemotePostFactory;
 use AlohaSocial\Core\Support\Time;
 use AlohaSocial\Core\Tests\Support\SequenceIdGenerator;
@@ -63,6 +70,10 @@ final class RemotePollServiceTest extends TestCase
 
 	private InMemoryFollowerRepository $followers;
 
+	private InMemoryFollowingRepository $following;
+
+	private InMemoryBlockRepository $blocks;
+
 	private RemotePollService $service;
 
 	protected function setUp(): void
@@ -75,6 +86,8 @@ final class RemotePollServiceTest extends TestCase
 		$this->votes = new InMemoryRemotePollVoteRepository();
 		$this->inboundBlocks = new InMemoryInboundBlockRepository();
 		$this->followers = new InMemoryFollowerRepository();
+		$this->following = new InMemoryFollowingRepository();
+		$this->blocks = new InMemoryBlockRepository();
 
 		$this->service = new RemotePollService(
 			$this->polls,
@@ -92,6 +105,7 @@ final class RemotePollServiceTest extends TestCase
 			$this->clock,
 			$this->inboundBlocks,
 			$this->followers,
+			new RemotePostAccess($this->following, $this->blocks, $this->inboundBlocks),
 		);
 	}
 
@@ -448,17 +462,102 @@ final class RemotePollServiceTest extends TestCase
 		));
 	}
 
+	public function testAFollowersOnlyPollRequiresAnAcceptedFollow(): void
+	{
+		$poll = $this->import($this->question(), to: [self::ACTOR . '/followers']);
+
+		self::assertSame(Visibility::Followers, $poll->audience);
+		self::assertSame(
+			Visibility::Followers,
+			$this->polls->find('https://remote.example/questions/1')?->audience,
+		);
+
+		foreach ([null, 'alice', 'carol'] as $viewerId) {
+			try {
+				$this->service->present('https://remote.example/questions/1', $viewerId);
+				self::fail('A followers-only poll must not be readable without an accepted follow.');
+			} catch (RemotePollException $exception) {
+				self::assertSame('not_found', $exception->reason);
+			}
+		}
+
+		try {
+			$this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+			self::fail('A followers-only poll must not accept votes without an accepted follow.');
+		} catch (RemotePollException $exception) {
+			self::assertSame('not_found', $exception->reason);
+		}
+
+		$this->following->insert(new FollowedActor(
+			id: 'follow-1',
+			localUserId: 'alice',
+			actorId: self::ACTOR,
+			inboxUrl: 'https://remote.example/users/bob/inbox',
+			followedAt: $this->clock->now(),
+		));
+
+		$presented = $this->service->present('https://remote.example/questions/1', 'alice');
+		self::assertSame('Lunch?', $presented['title']);
+
+		$voted = $this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+		self::assertSame([0], $voted['own_votes']);
+	}
+
+	public function testABlockHidesEvenAPublicPoll(): void
+	{
+		$this->import($this->question());
+		$this->blocks->insert(new Block('block-1', 'alice', self::ACTOR, $this->clock->now()));
+
+		try {
+			$this->service->present('https://remote.example/questions/1', 'alice');
+			self::fail('A blocked actor’s poll must stay hidden.');
+		} catch (RemotePollException $exception) {
+			self::assertSame('not_found', $exception->reason);
+		}
+	}
+
+	public function testARevisionWithoutAudienceSignalKeepsTheStoredAudience(): void
+	{
+		$this->import($this->question(), to: [self::ACTOR . '/followers']);
+
+		// A later delivery whose post row carries no audience claim must not
+		// silently widen the stored followers-only poll to unknown-or-public.
+		$bare = new RemotePost(
+			activityId: 'https://remote.example/activities/2',
+			objectId: 'https://remote.example/questions/1',
+			actorId: self::ACTOR,
+			kind: RemotePostKind::Post,
+			content: 'Lunch?',
+			contentWarning: null,
+			publishedAt: $this->clock->now(),
+		);
+		$this->service->importQuestion(
+			$bare,
+			$this->question(),
+			'https://remote.example/activities/2',
+			$this->clock->now(),
+			Time::parse('2026-11-11T11:00:00Z'),
+		);
+
+		$poll = $this->polls->find('https://remote.example/questions/1');
+		self::assertNotNull($poll);
+		self::assertSame(Visibility::Followers, $poll->audience);
+	}
+
 	/**
 	 * @param array<string, mixed> $question
 	 */
-	private function import(array $question, ?\DateTimeImmutable $revisedAt = null): \AlohaSocial\Core\Domain\Federation\RemotePoll
-	{
+	private function import(
+		array $question,
+		?\DateTimeImmutable $revisedAt = null,
+		?array $to = null,
+	): \AlohaSocial\Core\Domain\Federation\RemotePoll {
 		$factory = new RemotePostFactory($this->clock);
 		$post = $factory->fromCreate(self::ACTOR, [
 			'id' => 'https://remote.example/activities/1',
 			'type' => 'Create',
 			'actor' => self::ACTOR,
-			'to' => ['https://www.w3.org/ns/activitystreams#Public'],
+			'to' => $to ?? ['https://www.w3.org/ns/activitystreams#Public'],
 			'object' => $question,
 		]);
 

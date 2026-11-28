@@ -45,14 +45,40 @@ final class RemotePostAccess
 
 	public function viewerMayRead(RemotePost $post, ?string $viewerId): bool
 	{
-		if ($post->deletedAt !== null || $post->audience === Visibility::Direct) {
+		if ($post->deletedAt !== null) {
 			return false;
 		}
 
-		$authorId = $post->objectAuthorId ?? $post->actorId;
+		return $this->audienceAllows(
+			$post->audience,
+			$post->objectAuthorId ?? $post->actorId,
+			$viewerId,
+			[$post->actorId],
+		);
+	}
+
+	/**
+	 * The same read rule for stored remote content that is not a post row,
+	 * like a Question poll: public and unlisted audiences are open,
+	 * followers-only and unknown audiences require an accepted follow of the
+	 * author, direct is refused, and a block in either direction hides the
+	 * content. `$actorIds` names additional actors whose blocks also apply —
+	 * for a boost that is the boosting actor next to the author.
+	 *
+	 * @param list<string> $actorIds
+	 */
+	public function audienceAllows(
+		?Visibility $audience,
+		string $authorId,
+		?string $viewerId,
+		array $actorIds = [],
+	): bool {
+		if ($audience === Visibility::Direct) {
+			return false;
+		}
 
 		if ($viewerId !== null) {
-			foreach ([$post->actorId, $authorId] as $actorId) {
+			foreach ([$authorId, ...$actorIds] as $actorId) {
 				if ($this->blocks?->findByActor($viewerId, $actorId) !== null
 					|| $this->inboundBlocks?->isBlocked($viewerId, $actorId) === true
 				) {
@@ -61,7 +87,7 @@ final class RemotePostAccess
 			}
 		}
 
-		if ($post->audience === Visibility::Public || $post->audience === Visibility::Unlisted) {
+		if ($audience === Visibility::Public || $audience === Visibility::Unlisted) {
 			return true;
 		}
 

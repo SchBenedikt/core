@@ -74,6 +74,7 @@ final class RemotePollService
 		private readonly Clock $clock,
 		private readonly ?InboundBlockRepository $inboundBlocks = null,
 		private readonly ?FollowerRepository $followers = null,
+		private readonly ?RemotePostAccess $access = null,
 	) {
 	}
 
@@ -95,13 +96,19 @@ final class RemotePollService
 		?DateTimeImmutable $revisedAt = null,
 	): RemotePoll {
 		$revisedAt ??= $observedAt;
-		$poll = $this->parse($object, $post->actorId, $activityId, $revisedAt);
+		$poll = $this->parse($object, $post->actorId, $activityId, $revisedAt, $post->audience);
 		$existing = $this->polls->find($poll->objectId);
 
 		// A retransmitted older revision must not roll back a newer one or a
 		// locally computed close, no matter when each delivery arrived.
 		if ($existing !== null && $poll->updatedAt < $existing->updatedAt) {
 			return $existing;
+		}
+
+		// A revision without an addressing signal must not widen or narrow
+		// the stored audience: keep the last verified claim.
+		if ($poll->audience === null && $existing?->audience !== null) {
+			$poll = $poll->withAudience($existing->audience);
 		}
 
 		$this->polls->upsert($poll);
@@ -123,7 +130,13 @@ final class RemotePollService
 	 *
 	 * @throws InboxRejectedException
 	 */
-	private function parse(array $object, string $actorId, string $activityId, DateTimeImmutable $revisedAt): RemotePoll
+	private function parse(
+		array $object,
+		string $actorId,
+		string $activityId,
+		DateTimeImmutable $revisedAt,
+		?Visibility $audience = null,
+	): RemotePoll
 	{
 		$objectId = $object['id'] ?? null;
 		if (!is_string($objectId) || trim($objectId) === '' || mb_strlen($objectId) > RemotePost::MAX_ID_LENGTH) {
@@ -188,6 +201,7 @@ final class RemotePollService
 				closedAt: $this->timestamp($object['closed'] ?? null, 'closed'),
 				votersCount: $votersCount,
 				updatedAt: Time::toSecondPrecision($revisedAt),
+				audience: $audience,
 			);
 		} catch (InvalidArgumentException $exception) {
 			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
@@ -232,6 +246,9 @@ final class RemotePollService
 	public function present(string $objectId, ?string $viewerId): array
 	{
 		$poll = $this->find($objectId);
+		if (!$this->viewerMayRead($poll, $viewerId)) {
+			throw RemotePollException::notFound();
+		}
 		$now = $this->clock->now();
 		$localCounts = $this->votes->pendingCountsFor($objectId, $poll->updatedAt);
 		$own = $viewerId === null ? null : $this->votes->find($objectId, $viewerId);
@@ -279,6 +296,9 @@ final class RemotePollService
 		if ($this->inboundBlocks?->isBlocked($userId, $poll->actorId) === true) {
 			throw RemotePollException::blockedActor();
 		}
+		if (!$this->viewerMayRead($poll, $userId)) {
+			throw RemotePollException::notFound();
+		}
 		if ($poll->isClosed($now)) {
 			throw RemotePollException::ended();
 		}
@@ -310,6 +330,20 @@ final class RemotePollService
 		}
 
 		return $this->present($objectId, $userId);
+	}
+
+	/**
+	 * The per-viewer read rule shared with remote posts. Without a wired
+	 * access policy only verified public audiences stay readable — the
+	 * fail-closed direction for a host that did not configure one.
+	 */
+	private function viewerMayRead(RemotePoll $poll, ?string $viewerId): bool
+	{
+		if ($this->access === null) {
+			return $poll->audience === Visibility::Public || $poll->audience === Visibility::Unlisted;
+		}
+
+		return $this->access->audienceAllows($poll->audience, $poll->actorId, $viewerId);
 	}
 
 	/**

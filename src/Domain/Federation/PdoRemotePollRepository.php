@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace AlohaSocial\Core\Domain\Federation;
 
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
@@ -48,6 +49,7 @@ final class PdoRemotePollRepository implements RemotePollRepository
 			'closed_at' => $poll->closedAt === null ? null : Time::format($poll->closedAt),
 			'voters_count' => $poll->votersCount,
 			'updated_at' => Time::format($poll->updatedAt),
+			'audience' => $poll->audience?->value,
 		];
 
 		try {
@@ -56,7 +58,8 @@ final class PdoRemotePollRepository implements RemotePollRepository
 				. ' actor_id = :actor_id, activity_id = :activity_id, title = :title,'
 				. ' options = :options, multiple = :multiple, ends_at = :ends_at,'
 				. ' closed_at = COALESCE(closed_at, :closed_at),'
-				. ' voters_count = :voters_count, updated_at = :updated_at'
+				. ' voters_count = :voters_count, updated_at = :updated_at,'
+				. ' audience = :audience'
 				. ' WHERE object_id = :object_id',
 				$parameters,
 			);
@@ -68,9 +71,9 @@ final class PdoRemotePollRepository implements RemotePollRepository
 			$this->db->execute(
 				'INSERT INTO ' . RemotePollSchema::TABLE
 				. ' (object_id, actor_id, activity_id, title, options, multiple, ends_at, closed_at,'
-				. ' voters_count, updated_at)'
+				. ' voters_count, updated_at, audience)'
 				. ' VALUES (:object_id, :actor_id, :activity_id, :title, :options, :multiple, :ends_at,'
-				. ' :closed_at, :voters_count, :updated_at)',
+				. ' :closed_at, :voters_count, :updated_at, :audience)',
 				$parameters,
 			);
 		} catch (Throwable $exception) {
@@ -82,7 +85,8 @@ final class PdoRemotePollRepository implements RemotePollRepository
 					. ' actor_id = :actor_id, activity_id = :activity_id, title = :title,'
 					. ' options = :options, multiple = :multiple, ends_at = :ends_at,'
 					. ' closed_at = COALESCE(closed_at, :closed_at),'
-					. ' voters_count = :voters_count, updated_at = :updated_at'
+					. ' voters_count = :voters_count, updated_at = :updated_at,'
+					. ' audience = :audience'
 					. ' WHERE object_id = :object_id',
 					$parameters,
 				);
@@ -161,6 +165,7 @@ final class PdoRemotePollRepository implements RemotePollRepository
 			closedAt: $row['closed_at'] === null ? null : Time::parse((string) $row['closed_at']),
 			votersCount: (int) $row['voters_count'],
 			updatedAt: Time::parse((string) $row['updated_at']),
+			audience: Visibility::tryFrom((string) ($row['audience'] ?? '')),
 		);
 	}
 }

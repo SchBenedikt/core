@@ -41,7 +41,8 @@ final class RemotePollSchema
 			. ' ends_at VARCHAR(20) NULL,'
 			. ' closed_at VARCHAR(20) NULL,'
 			. ' voters_count INTEGER NOT NULL DEFAULT 0,'
-			. ' updated_at VARCHAR(20) NOT NULL'
+			. ' updated_at VARCHAR(20) NOT NULL,'
+			. ' audience VARCHAR(16) NULL'
 			. ')',
 			'CREATE INDEX ' . self::TABLE . '_closure ON ' . self::TABLE . ' (ends_at)',
 			'CREATE TABLE ' . self::VOTE_TABLE . ' ('
@@ -53,6 +54,19 @@ final class RemotePollSchema
 			. ' PRIMARY KEY (object_id, user_id)'
 			. ')',
 			'CREATE INDEX ' . self::VOTE_TABLE . '_user ON ' . self::VOTE_TABLE . ' (user_id, created_at)',
+		];
+	}
+
+	/**
+	 * Columns added after the table first shipped. Hosts apply these to
+	 * installations that already have `social_remote_poll`.
+	 *
+	 * @return list<string>
+	 */
+	public static function upgradeStatements(): array
+	{
+		return [
+			'ALTER TABLE ' . self::TABLE . ' ADD COLUMN audience VARCHAR(16) NULL',
 		];
 	}
 

@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Tests\Domain;
 use AlohaSocial\Core\Domain\Federation\RemotePoll;
 use AlohaSocial\Core\Domain\Federation\RemotePollOption;
 use AlohaSocial\Core\Domain\Federation\RemotePollRepository;
+use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Support\Time;
 use PHPUnit\Framework\TestCase;
 
@@ -82,10 +83,25 @@ abstract class RemotePollRepositoryTestCase extends TestCase
 		self::assertNotNull($repository->find('https://remote.example/questions/1')?->closedAt);
 	}
 
+	public function testTheAudienceSurvivesTheRoundTrip(): void
+	{
+		$repository = $this->repository();
+		$repository->upsert($this->poll(audience: Visibility::Followers));
+
+		self::assertSame(
+			Visibility::Followers,
+			$repository->find('https://remote.example/questions/1')?->audience,
+		);
+	}
+
 	/**
 	 * @param list<RemotePollOption>|null $options
 	 */
-	private function poll(bool $multiple = false, ?array $options = null): RemotePoll
+	private function poll(
+		bool $multiple = false,
+		?array $options = null,
+		?Visibility $audience = null,
+	): RemotePoll
 	{
 		return new RemotePoll(
 			objectId: 'https://remote.example/questions/1',
@@ -102,6 +118,7 @@ abstract class RemotePollRepositoryTestCase extends TestCase
 			closedAt: null,
 			votersCount: 4,
 			updatedAt: Time::parse('2026-11-11T10:00:00Z'),
+			audience: $audience,
 		);
 	}
 }
