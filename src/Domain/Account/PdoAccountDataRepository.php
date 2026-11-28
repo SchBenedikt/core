@@ -22,6 +22,7 @@ use AlohaSocial\Core\Domain\Federation\FollowedActor;
 use AlohaSocial\Core\Domain\Federation\FollowState;
 use AlohaSocial\Core\Domain\Federation\FollowerSchema;
 use AlohaSocial\Core\Domain\Federation\FollowingSchema;
+use AlohaSocial\Core\Domain\Federation\InboundBlockSchema;
 use AlohaSocial\Core\Domain\Federation\MuteSchema;
 use AlohaSocial\Core\Domain\Federation\RemotePollSchema;
 use AlohaSocial\Core\Domain\Filter\FilterSchema;
@@ -205,6 +206,11 @@ final class PdoAccountDataRepository implements AccountDataRepository
 			'delete' => 'local_user_id = :user',
 			'order' => 'local_user_id, actor_id',
 		],
+		InboundBlockSchema::TABLE => [
+			'export' => 'local_user_id = :user',
+			'delete' => 'local_user_id = :user',
+			'order' => 'local_user_id, actor_id',
+		],
 		MuteSchema::TABLE => [
 			'export' => 'user_id = :user',
 			'delete' => 'user_id = :user',
@@ -371,6 +377,7 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		FollowingSchema::TABLE,
 		FollowerSchema::TABLE,
 		BlockSchema::TABLE,
+		InboundBlockSchema::TABLE,
 		MuteSchema::TABLE,
 		FollowedHashtagSchema::TABLE,
 		FilterSchema::TABLE,
@@ -382,6 +389,31 @@ final class PdoAccountDataRepository implements AccountDataRepository
 		// select through it, so deleting it earlier would leave them behind.
 		PostSchema::TABLE,
 	];
+
+	/**
+	 * Every table this repository exports and deletes rows from for one
+	 * account, including the PDS tables erased through the user's identities.
+	 * Hosts use this to prove their own schema is fully classified for
+	 * account erasure.
+	 *
+	 * @return list<string>
+	 */
+	public static function erasedTables(): array
+	{
+		$tables = array_merge(array_keys(self::TABLES), [
+			PdsSchema::IDENTITY_TABLE,
+			PdsSchema::KEY_TABLE,
+			PdsSchema::RECORD_TABLE,
+			PdsSchema::COMMIT_TABLE,
+			PdsSchema::BLOCK_TABLE,
+			PdsSchema::PLC_TABLE,
+			PdsSchema::BLOB_TABLE,
+			PdsSchema::EVENT_TABLE,
+		]);
+		sort($tables);
+
+		return $tables;
+	}
 
 	public function __construct(
 		private readonly Connection $database,
