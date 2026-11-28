@@ -22,4 +22,14 @@ interface PollVoteCounter
 	 * @throws \AlohaSocial\Core\Platform\Db\DatabaseException when the post or option no longer exists
 	 */
 	public function incrementPollVote(PollVote $vote): void;
+
+	/**
+	 * Advances the counters for one position appended to an existing vote.
+	 *
+	 * The option counter and the poll vote total grow by one; the voter
+	 * count stays, because the voter already has a ballot.
+	 *
+	 * @throws \AlohaSocial\Core\Platform\Db\DatabaseException when the post or option no longer exists
+	 */
+	public function addPollVotePosition(string $postId, int $position): void;
 }

@@ -12,6 +12,7 @@ namespace AlohaSocial\Core\Domain\Post;
 use AlohaSocial\Core\Platform\Db\Connection;
 use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Support\Time;
+use DateTimeImmutable;
 use PDOException;
 
 use function array_map;
@@ -19,6 +20,7 @@ use function array_values;
 use function count;
 use function explode;
 use function implode;
+use function in_array;
 
 /**
  * Per-user poll votes in SQL.
@@ -87,45 +89,131 @@ final class PdoPollVoteRepository implements PollVoteRepository
 	{
 		try {
 			$this->db->transaction(function () use ($vote): void {
-				$this->db->execute(
-					'INSERT INTO ' . PollSchema::VOTE_TABLE
-					. ' (post_id, user_id, positions, created_at)'
-					. ' VALUES (:post_id, :user_id, :positions, :created_at)',
-					[
-						'post_id' => $vote->postId,
-						'user_id' => $vote->userId,
-						'positions' => implode(',', $vote->positions),
-						'created_at' => Time::format($vote->createdAt),
-					],
-				);
-
-				foreach ($vote->positions as $position) {
-					$updated = $this->db->execute(
-						'UPDATE ' . PollSchema::OPTION_TABLE
-						. ' SET votes_count = votes_count + 1'
-						. ' WHERE post_id = :post_id AND position = :position',
-						['post_id' => $vote->postId, 'position' => $position],
-					);
-					if ($updated !== 1) {
-						throw new DatabaseException('The poll option no longer exists.');
-					}
-				}
-
-				$updated = $this->db->execute(
-					'UPDATE ' . PollSchema::TABLE
-					. ' SET votes_count = votes_count + :votes, voters_count = voters_count + 1'
-					. ' WHERE post_id = :post_id',
-					[
-						'post_id' => $vote->postId,
-						'votes' => count($vote->positions),
-					],
-				);
-				if ($updated !== 1) {
-					throw new DatabaseException('The poll no longer exists.');
-				}
+				$this->storeNewVote($vote);
 			});
 		} catch (PDOException $exception) {
 			throw new DatabaseException('The poll vote could not be stored.', 0, $exception);
+		}
+	}
+
+	public function addPosition(string $postId, string $userId, int $position, DateTimeImmutable $votedAt): PollVote
+	{
+		// The positions column doubles as the compare-and-swap token: a
+		// concurrent append changes it, the guarded update then affects no
+		// row, and the attempt retries against the fresh ballot. The bound
+		// keeps a pathological writer from looping forever.
+		for ($attempt = 0; $attempt < 4; $attempt++) {
+			try {
+				$vote = $this->db->transaction(
+					function () use ($postId, $userId, $position, $votedAt): ?PollVote {
+						$existing = $this->find($postId, $userId);
+						if ($existing !== null && in_array($position, $existing->positions, true)) {
+							return $existing;
+						}
+
+						$positions = $existing === null
+							? [$position]
+							: [...$existing->positions, $position];
+						$vote = new PollVote(
+							$postId,
+							$userId,
+							$positions,
+							$existing?->createdAt ?? $votedAt,
+						);
+
+						if ($existing === null) {
+							$this->storeNewVote($vote);
+
+							return $vote;
+						}
+
+						$updated = $this->db->execute(
+							'UPDATE ' . PollSchema::VOTE_TABLE . ' SET positions = :positions'
+							. ' WHERE post_id = :post_id AND user_id = :user_id AND positions = :previous',
+							[
+								'positions' => implode(',', $vote->positions),
+								'post_id' => $postId,
+								'user_id' => $userId,
+								'previous' => implode(',', $existing->positions),
+							],
+						);
+						if ($updated !== 1) {
+							return null;
+						}
+
+						$updated = $this->db->execute(
+							'UPDATE ' . PollSchema::OPTION_TABLE
+							. ' SET votes_count = votes_count + 1'
+							. ' WHERE post_id = :post_id AND position = :position',
+							['post_id' => $postId, 'position' => $position],
+						);
+						if ($updated !== 1) {
+							throw new DatabaseException('The poll option no longer exists.');
+						}
+
+						$updated = $this->db->execute(
+							'UPDATE ' . PollSchema::TABLE
+							. ' SET votes_count = votes_count + 1 WHERE post_id = :post_id',
+							['post_id' => $postId],
+						);
+						if ($updated !== 1) {
+							throw new DatabaseException('The poll no longer exists.');
+						}
+
+						return $vote;
+					},
+				);
+			} catch (PDOException $exception) {
+				// A concurrent first vote can win the insert race; the retry
+				// re-reads the row and merges into it.
+				$vote = null;
+			}
+
+			if ($vote !== null) {
+				return $vote;
+			}
+		}
+
+		throw new DatabaseException('The poll vote changed concurrently and could not be settled.');
+	}
+
+	private function storeNewVote(PollVote $vote): void
+	{
+		$this->db->execute(
+			'INSERT INTO ' . PollSchema::VOTE_TABLE
+			. ' (post_id, user_id, positions, created_at)'
+			. ' VALUES (:post_id, :user_id, :positions, :created_at)',
+			[
+				'post_id' => $vote->postId,
+				'user_id' => $vote->userId,
+				'positions' => implode(',', $vote->positions),
+				'created_at' => Time::format($vote->createdAt),
+			],
+		);
+
+		foreach ($vote->positions as $position) {
+			$updated = $this->db->execute(
+				'UPDATE ' . PollSchema::OPTION_TABLE
+				. ' SET votes_count = votes_count + 1'
+				. ' WHERE post_id = :post_id AND position = :position',
+				['post_id' => $vote->postId, 'position' => $position],
+			);
+			if ($updated !== 1) {
+				throw new DatabaseException('The poll option no longer exists.');
+			}
+		}
+
+		$updated = $this->db->execute(
+			'UPDATE ' . PollSchema::TABLE
+			. ' SET votes_count = votes_count + :votes, voters_count = voters_count + 1'
+			. ' WHERE post_id = :post_id',
+			[
+				'post_id' => $vote->postId,
+				'votes' => count($vote->positions),
+			],
+		);
+		if ($updated !== 1) {
+			throw new DatabaseException('The poll no longer exists.');
 		}
 	}
 

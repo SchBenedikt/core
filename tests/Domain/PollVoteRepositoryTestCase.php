@@ -127,6 +127,73 @@ abstract class PollVoteRepositoryTestCase extends TestCase
 		self::assertSame(0, $this->storedPoll()?->votesCount);
 	}
 
+	public function testAddPositionAppendsADistinctChoiceWithoutANewVoter(): void
+	{
+		$this->seedPoll('p1', true);
+		$repository = $this->repository();
+		$at = Time::parse('2026-11-11T10:00:00Z');
+
+		$first = $repository->addPosition('p1', 'alice', 0, $at);
+		self::assertSame([0], $first->positions);
+
+		$second = $repository->addPosition('p1', 'alice', 2, Time::parse('2026-11-11T10:05:00Z'));
+		self::assertSame([0, 2], $second->positions);
+		self::assertEquals($first->createdAt, $second->createdAt);
+
+		$poll = $this->storedPoll();
+		self::assertNotNull($poll);
+		self::assertSame(2, $poll->votesCount);
+		self::assertSame(1, $poll->votersCount);
+		self::assertSame(1, $poll->options[0]->votesCount);
+		self::assertSame(0, $poll->options[1]->votesCount);
+		self::assertSame(1, $poll->options[2]->votesCount);
+	}
+
+	public function testAddPositionWithAnExistingChoiceIsANoOp(): void
+	{
+		$this->seedPoll('p1', true);
+		$repository = $this->repository();
+		$repository->insert($this->vote('p1', 'alice', [0]));
+
+		$vote = $repository->addPosition('p1', 'alice', 0, Time::parse('2026-11-11T10:05:00Z'));
+
+		self::assertSame([0], $vote->positions);
+		$poll = $this->storedPoll();
+		self::assertNotNull($poll);
+		self::assertSame(1, $poll->votesCount);
+		self::assertSame(1, $poll->votersCount);
+		self::assertSame(1, $poll->options[0]->votesCount);
+	}
+
+	public function testAddPositionForAnUnknownPollOrOptionIsNotStored(): void
+	{
+		$this->seedPoll();
+		$repository = $this->repository();
+		$at = Time::parse('2026-11-11T10:05:00Z');
+
+		try {
+			$repository->addPosition('missing', 'alice', 0, $at);
+			self::fail('A position for a missing poll must fail.');
+		} catch (DatabaseException) {
+			// The counter update reports the missing poll.
+		}
+
+		$repository->addPosition('p1', 'alice', 0, $at);
+
+		try {
+			$repository->addPosition('p1', 'alice', 3, $at);
+			self::fail('A position for a missing option must fail.');
+		} catch (DatabaseException) {
+			// The counter update reports the missing option.
+		}
+
+		self::assertSame([0], $repository->find('p1', 'alice')?->positions);
+		$poll = $this->storedPoll();
+		self::assertNotNull($poll);
+		self::assertSame(1, $poll->votesCount);
+		self::assertSame(1, $poll->options[0]->votesCount);
+	}
+
 	private function vote(string $postId, string $userId, array $positions): PollVote
 	{
 		return new PollVote(

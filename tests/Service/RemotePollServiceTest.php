@@ -275,6 +275,28 @@ final class RemotePollServiceTest extends TestCase
 		$this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'No'), $this->clock->now());
 	}
 
+	public function testADistinctChoiceExtendsAMultipleChoiceBallot(): void
+	{
+		$post = $this->localPoll('post-1', multiple: true);
+		$this->posts->insert($post);
+
+		self::assertTrue($this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now()));
+		self::assertTrue($this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'No'), $this->clock->now()));
+		// A replayed choice stays a no-op and does not count twice.
+		self::assertTrue($this->service->recordInboundVote($this->remoteActor(), $this->voteNote('post-1', 'Yes'), $this->clock->now()));
+
+		$vote = $this->localVotes->find('post-1', self::ACTOR);
+		self::assertNotNull($vote);
+		self::assertSame([0, 1], $vote->positions);
+
+		$poll = $this->posts->find('post-1')?->poll;
+		self::assertNotNull($poll);
+		self::assertSame(2, $poll->votesCount);
+		self::assertSame(1, $poll->votersCount);
+		self::assertSame(1, $poll->options[0]->votesCount);
+		self::assertSame(1, $poll->options[1]->votesCount);
+	}
+
 	public function testAReplyToAPostWithoutAPollIsNotAVote(): void
 	{
 		$this->posts->insert(new Post(
@@ -342,7 +364,7 @@ final class RemotePollServiceTest extends TestCase
 		];
 	}
 
-	private function localPoll(string $id, ?\DateTimeImmutable $expiresAt = null): Post
+	private function localPoll(string $id, ?\DateTimeImmutable $expiresAt = null, bool $multiple = false): Post
 	{
 		return new Post(
 			id: $id,
@@ -352,7 +374,7 @@ final class RemotePollServiceTest extends TestCase
 			publishedAt: Time::parse('2026-11-11T09:00:00Z'),
 			poll: new Poll(
 				options: [new PollOption('Yes'), new PollOption('No')],
-				multiple: false,
+				multiple: $multiple,
 				hideTotals: false,
 				expiresAt: $expiresAt ?? Time::parse('2026-12-01T12:00:00Z'),
 			),

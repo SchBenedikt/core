@@ -408,11 +408,27 @@ final class RemotePollService
 
 		$existing = $this->localVotes->find($post->id, $actor->actorId);
 		if ($existing !== null) {
-			if ($existing->positions === [$position]) {
+			if (in_array($position, $existing->positions, true)) {
 				return true;
 			}
 
-			throw new InboxRejectedException('already_voted', 'This actor already voted in this poll.');
+			if (!$poll->multiple) {
+				throw new InboxRejectedException('already_voted', 'This actor already voted in this poll.');
+			}
+
+			// A multiple-choice poll takes one signed choice per activity,
+			// so a second distinct choice extends the ballot instead of
+			// conflicting with the first.
+			try {
+				$this->localVotes->addPosition($post->id, $actor->actorId, $position, $now);
+			} catch (Throwable) {
+				$existing = $this->localVotes->find($post->id, $actor->actorId);
+				if ($existing === null || !in_array($position, $existing->positions, true)) {
+					throw new InboxRejectedException('already_voted', 'This actor already voted in this poll.');
+				}
+			}
+
+			return true;
 		}
 
 		try {
