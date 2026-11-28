@@ -113,6 +113,59 @@ final class LocalSocialApiTest extends TestCase
 		self::assertSame('de', $response->decodedBody()['post']['language']);
 	}
 
+	public function testPostCreationWithAnIdempotencyKeyReplaysTheSamePost(): void
+	{
+		$body = json_encode(['content' => 'retry me'], JSON_THROW_ON_ERROR);
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Idempotency-Key' => 'native-key-1',
+		];
+		$first = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+		$second = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $first->status);
+		self::assertSame(201, $second->status);
+		self::assertSame($first->decodedBody()['post']['id'], $second->decodedBody()['post']['id']);
+	}
+
+	public function testPostCreationWithAnIdempotencyKeyAndADifferentPayloadConflicts(): void
+	{
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Idempotency-Key' => 'native-key-2',
+		];
+		$first = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: json_encode(['content' => 'original'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+		$second = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: json_encode(['content' => 'changed'], JSON_THROW_ON_ERROR),
+			userId: 'alice',
+		));
+
+		self::assertSame(201, $first->status);
+		self::assertSame(409, $second->status);
+		self::assertSame('idempotency_conflict', $second->decodedBody()['error']['code']);
+	}
+
 	public function testProfileAndFollowRejectUnknownUnauthenticatedAndSelfTargets(): void
 	{
 		self::assertSame(404, $this->app->handle(
