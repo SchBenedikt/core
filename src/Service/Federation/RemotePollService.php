@@ -127,7 +127,15 @@ final class RemotePollService
 
 		if ($poll->closedAt === null && $poll->endsAt !== null && $poll->endsAt > $observedAt) {
 			try {
-				$this->queue?->push(JobType::POLL_CLOSE, ['object_id' => $poll->objectId], $poll->endsAt);
+				// Every revision schedules its own close; coalesce them into
+				// the latest deadline so repeated Updates cannot pile up jobs.
+				$this->queue?->cancelBySubject(JobSubject::poll($poll->objectId));
+				$this->queue?->push(
+					JobType::POLL_CLOSE,
+					['object_id' => $poll->objectId],
+					$poll->endsAt,
+					JobSubject::poll($poll->objectId),
+				);
 			} catch (Throwable) {
 				// The poll is stored; a missing close job only delays the
 				// stored marker, and `isClosed()` still uses the end time.

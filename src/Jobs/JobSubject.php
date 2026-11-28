@@ -25,6 +25,8 @@ final readonly class JobSubject
 {
 	public const ACCOUNT = 'account';
 
+	public const POLL = 'poll';
+
 	public function __construct(
 		public string $type,
 		public string $id,
@@ -37,6 +39,11 @@ final readonly class JobSubject
 	public static function account(string $userId): self
 	{
 		return new self(self::ACCOUNT, $userId);
+	}
+
+	public static function poll(string $objectId): self
+	{
+		return new self(self::POLL, $objectId);
 	}
 
 	public function isAccount(): bool

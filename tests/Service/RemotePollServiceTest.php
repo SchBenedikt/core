@@ -516,6 +516,34 @@ final class RemotePollServiceTest extends TestCase
 		self::assertEquals(Time::parse('2026-12-02T00:00:00Z'), $poll->endsAt);
 	}
 
+	public function testRepeatedRevisionsCoalesceIntoOneCloseJob(): void
+	{
+		$v1 = $this->question();
+		$v1['endTime'] = '2026-11-20T00:00:00Z';
+		$this->import($v1, Time::parse('2026-11-11T09:00:00Z'));
+
+		$v2 = $this->question();
+		$v2['endTime'] = '2026-11-21T00:00:00Z';
+		$this->import($v2, Time::parse('2026-11-11T10:00:00Z'));
+
+		$v3 = $this->question();
+		$v3['endTime'] = '2026-11-22T00:00:00Z';
+		$this->import($v3, Time::parse('2026-11-11T11:00:00Z'));
+
+		// Only due jobs are reservable; move past the latest deadline.
+		$this->clock->advance(2_000_000);
+
+		$closeJobs = 0;
+		foreach ($this->queue->reserve(10, $this->clock->now()) as $job) {
+			if ($job->type === JobType::POLL_CLOSE) {
+				$closeJobs++;
+				self::assertSame('2026-11-22T00:00:00Z', Time::format($job->availableAt));
+			}
+		}
+
+		self::assertSame(1, $closeJobs);
+	}
+
 	public function testAFollowersOnlyPollRequiresAnAcceptedFollow(): void
 	{
 		$poll = $this->import($this->question(), to: [self::ACTOR . '/followers']);
