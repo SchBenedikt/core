@@ -433,19 +433,37 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 
 	public function incrementPollVote(PollVote $vote): void
 	{
-		$post = $this->posts[$vote->postId] ?? null;
+		$deltas = [];
+		foreach ($vote->positions as $position) {
+			$deltas[$position] = ($deltas[$position] ?? 0) + 1;
+		}
+
+		$this->applyPollVoteDelta($vote->postId, $deltas, count($vote->positions), 1);
+	}
+
+	public function addPollVotePosition(string $postId, int $position): void
+	{
+		$this->applyPollVoteDelta($postId, [$position => 1], 1, 0);
+	}
+
+	/**
+	 * @param array<int, int> $deltas option position to added votes
+	 */
+	private function applyPollVoteDelta(string $postId, array $deltas, int $votesDelta, int $votersDelta): void
+	{
+		$post = $this->posts[$postId] ?? null;
 		if ($post === null || $post->poll === null) {
 			throw new DatabaseException('The poll no longer exists.');
 		}
 
 		$poll = $post->poll;
 		$counts = array_fill(0, count($poll->options), 0);
-		foreach ($vote->positions as $position) {
+		foreach ($deltas as $position => $delta) {
 			if (!isset($poll->options[$position])) {
 				throw new DatabaseException('The poll option no longer exists.');
 			}
 
-			$counts[$position]++;
+			$counts[$position] += $delta;
 		}
 
 		$options = [];
@@ -467,8 +485,8 @@ final class InMemoryPostRepository implements PostRepository, PostSearchReposito
 				multiple: $poll->multiple,
 				hideTotals: $poll->hideTotals,
 				expiresAt: $poll->expiresAt,
-				votesCount: $poll->votesCount + count($vote->positions),
-				votersCount: $poll->votersCount + 1,
+				votesCount: $poll->votesCount + $votesDelta,
+				votersCount: $poll->votersCount + $votersDelta,
 			),
 			recipientIds: $post->recipientIds,
 			inReplyToId: $post->inReplyToId,

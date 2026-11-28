@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Domain\Post;
 
 use AlohaSocial\Core\Platform\Db\DatabaseException;
+use DateTimeImmutable;
 
 use function array_values;
+use function in_array;
 
 /**
  * Per-user poll votes in memory, for tests, the demo and tools.
@@ -60,6 +62,31 @@ final class InMemoryPollVoteRepository implements PollVoteRepository
 
 		$this->counter?->incrementPollVote($vote);
 		$this->votes[$key] = $vote;
+	}
+
+	public function addPosition(string $postId, string $userId, int $position, DateTimeImmutable $votedAt): PollVote
+	{
+		$key = $this->key($postId, $userId);
+		$existing = $this->votes[$key] ?? null;
+		if ($existing !== null && in_array($position, $existing->positions, true)) {
+			return $existing;
+		}
+
+		$positions = $existing === null ? [$position] : [...$existing->positions, $position];
+		$vote = new PollVote($postId, $userId, $positions, $existing?->createdAt ?? $votedAt);
+
+		if ($existing === null) {
+			$this->insert($vote);
+
+			return $vote;
+		}
+
+		// The counter runs before the ballot changes, so a failed update
+		// cannot leave appended positions behind without matching counts.
+		$this->counter?->addPollVotePosition($postId, $position);
+		$this->votes[$key] = $vote;
+
+		return $vote;
 	}
 
 	private function key(string $postId, string $userId): string
