@@ -286,6 +286,47 @@ final class PostService
 	}
 
 	/**
+	 * The stored row regardless of deletion state, or null when absent.
+	 *
+	 * Idempotent-replay paths need the raw row: a retried key whose post was
+	 * deleted must surface as "gone", not as the storage failure that made
+	 * the lookup necessary in the first place.
+	 */
+	public function findStored(string $postId): ?Post
+	{
+		return $this->posts->find($postId);
+	}
+
+	/**
+	 * The canonical object id a `quotedPostId` resolves to, for
+	 * idempotent-replay comparison in {@see CreatePost::matchesPost()}.
+	 *
+	 * Identity only: unlike {@see QuoteService::prepare()} this skips the
+	 * visibility and block checks, because a retry must fingerprint the same
+	 * target the original write used even when the target has since become
+	 * unreadable. Null means the command carries no quote or the target no
+	 * longer resolves; callers treat an unresolvable quote as a mismatch
+	 * unless the stored id equals the raw value.
+	 */
+	public function quoteObjectIdOf(?string $quotedPostId): ?string
+	{
+		$quotedPostId = $quotedPostId === null ? null : trim($quotedPostId);
+		if ($quotedPostId === null || $quotedPostId === '') {
+			return null;
+		}
+
+		$local = $this->posts->find($quotedPostId);
+		if ($local !== null) {
+			return $this->activities->noteIdFor($local->id);
+		}
+
+		$remote = $this->remotePosts?->findPostByObjectId($quotedPostId)
+			?? $this->remotePosts?->findByActivityId($quotedPostId);
+
+		return $remote?->objectId;
+	}
+
+	/**
 	 * Reads a post as a particular viewer.
 	 *
 	 * A post that is not publicly visible must not be readable just because

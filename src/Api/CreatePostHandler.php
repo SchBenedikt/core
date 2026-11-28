@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Api;
 
 use AlohaSocial\Core\Domain\Post\Post;
-use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Http\ApiVersion;
@@ -158,13 +157,19 @@ final class CreatePostHandler implements Handler
 				throw $exception;
 			}
 
-			try {
-				$existing = $this->posts->get($postId);
-			} catch (PostNotFoundException) {
+			$existing = $this->posts->findStored($postId);
+			if ($existing === null) {
 				throw $exception;
 			}
 
-			if (!$command->matchesPost($existing)) {
+			if ($existing->isDeleted()) {
+				throw HttpException::notFound('This post no longer exists.');
+			}
+
+			if (!$command->matchesPost(
+				$existing,
+				$this->posts->quoteObjectIdOf($quotedPostId),
+			)) {
 				throw new HttpException(
 					409,
 					'idempotency_conflict',

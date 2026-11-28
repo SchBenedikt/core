@@ -166,6 +166,101 @@ final class LocalSocialApiTest extends TestCase
 		self::assertSame('idempotency_conflict', $second->decodedBody()['error']['code']);
 	}
 
+	public function testPostCreationWithAnIdempotencyKeyFingerprintsTheQuoteTarget(): void
+	{
+		$first = $this->createPost('alice', 'quote me');
+		$second = $this->createPost('alice', 'quote me too');
+		$firstId = $first->decodedBody()['post']['id'];
+		$secondId = $second->decodedBody()['post']['id'];
+
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Idempotency-Key' => 'native-key-quote',
+		];
+		$body = json_encode([
+			'content' => 'a quote',
+			'quoted_post_id' => $firstId,
+		], JSON_THROW_ON_ERROR);
+
+		$created = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'bob',
+		));
+		self::assertSame(201, $created->status);
+		$quoteId = $created->decodedBody()['post']['id'];
+
+		$replayed = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'bob',
+		));
+		self::assertSame(201, $replayed->status);
+		self::assertSame($quoteId, $replayed->decodedBody()['post']['id']);
+
+		$retargeted = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: json_encode([
+				'content' => 'a quote',
+				'quoted_post_id' => $secondId,
+			], JSON_THROW_ON_ERROR),
+			userId: 'bob',
+		));
+		self::assertSame(409, $retargeted->status);
+		self::assertSame('idempotency_conflict', $retargeted->decodedBody()['error']['code']);
+
+		$unquoted = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: json_encode(['content' => 'a quote'], JSON_THROW_ON_ERROR),
+			userId: 'bob',
+		));
+		self::assertSame(409, $unquoted->status);
+		self::assertSame('idempotency_conflict', $unquoted->decodedBody()['error']['code']);
+	}
+
+	public function testPostCreationWithAnIdempotencyKeyAfterDeletionReportsNotFound(): void
+	{
+		$headers = [
+			'Content-Type' => 'application/json',
+			'Idempotency-Key' => 'native-key-deleted',
+		];
+		$body = json_encode(['content' => 'soon gone'], JSON_THROW_ON_ERROR);
+		$created = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+		self::assertSame(201, $created->status);
+		$postId = $created->decodedBody()['post']['id'];
+
+		$deleted = $this->app->handle(new Request(
+			method: 'DELETE',
+			path: '/api/v1/posts/' . rawurlencode($postId),
+			userId: 'alice',
+		));
+		self::assertSame(204, $deleted->status);
+
+		$retried = $this->app->handle(new Request(
+			method: 'POST',
+			path: '/api/v1/posts',
+			headers: $headers,
+			body: $body,
+			userId: 'alice',
+		));
+		self::assertSame(404, $retried->status);
+		self::assertSame('not_found', $retried->decodedBody()['error']['code']);
+	}
+
 	public function testProfileAndFollowRejectUnknownUnauthenticatedAndSelfTargets(): void
 	{
 		self::assertSame(404, $this->app->handle(
