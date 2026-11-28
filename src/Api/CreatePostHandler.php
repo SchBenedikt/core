@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace AlohaSocial\Core\Api;
 
 use AlohaSocial\Core\Domain\Post\Post;
+use AlohaSocial\Core\Domain\Post\PostNotFoundException;
 use AlohaSocial\Core\Domain\Post\Visibility;
 use AlohaSocial\Core\Exceptions\ConfigurationException;
 use AlohaSocial\Core\Http\ApiVersion;
@@ -17,6 +18,7 @@ use AlohaSocial\Core\Http\Handler;
 use AlohaSocial\Core\Http\HttpException;
 use AlohaSocial\Core\Http\Request;
 use AlohaSocial\Core\Http\Response;
+use AlohaSocial\Core\Platform\Db\DatabaseException;
 use AlohaSocial\Core\Service\CreatePost;
 use AlohaSocial\Core\Service\MediaService;
 use AlohaSocial\Core\Service\PostHeldException;
@@ -24,7 +26,10 @@ use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ValidationException;
 use InvalidArgumentException;
 
+use function hash;
 use function is_string;
+use function substr;
+use function trim;
 
 /**
  * `POST /api/v1/posts`
@@ -114,18 +119,25 @@ final class CreatePostHandler implements Handler
 			throw HttpException::validationFailed(['visibility' => $exception->getMessage()]);
 		}
 
+		$idempotencyKey = trim((string) $request->header('idempotency-key'));
+		$postId = $idempotencyKey === ''
+			? null
+			: 'idem-' . substr(hash('sha256', $userId . "\0" . $idempotencyKey), 0, 32);
+		$command = new CreatePost(
+			authorId: $userId,
+			content: $content,
+			visibility: $visibility,
+			contentWarning: $contentWarning,
+			attachmentIds: $attachmentIds,
+			postId: $postId,
+			recipientIds: $recipientIds,
+			inReplyToId: $inReplyToId,
+			quotedPostId: $quotedPostId,
+			language: $language,
+		);
+
 		try {
-			$post = $this->posts->create(new CreatePost(
-				authorId: $userId,
-				content: $content,
-				visibility: $visibility,
-				contentWarning: $contentWarning,
-				attachmentIds: $attachmentIds,
-				recipientIds: $recipientIds,
-				inReplyToId: $inReplyToId,
-				quotedPostId: $quotedPostId,
-				language: $language,
-			));
+			$post = $this->posts->create($command);
 		} catch (PostHeldException $exception) {
 			return Response::json([
 				'held' => true,
@@ -137,6 +149,30 @@ final class CreatePostHandler implements Handler
 			// There are followers to deliver to but no instance URL to build
 			// the activity from: a server problem, not a client one.
 			throw new HttpException(503, 'instance_not_configured', $exception->getMessage());
+		} catch (DatabaseException $exception) {
+			// A repeated Idempotency-Key maps to the same deterministic post
+			// id. The row already exists: replay it when the payload matches,
+			// refuse the retry when it does not, and let a real storage
+			// failure propagate.
+			if ($postId === null) {
+				throw $exception;
+			}
+
+			try {
+				$existing = $this->posts->get($postId);
+			} catch (PostNotFoundException) {
+				throw $exception;
+			}
+
+			if (!$command->matchesPost($existing)) {
+				throw new HttpException(
+					409,
+					'idempotency_conflict',
+					'This Idempotency-Key was already used for a different post.',
+				);
+			}
+
+			return $this->respond($existing);
 		}
 
 		return $this->respond($post);

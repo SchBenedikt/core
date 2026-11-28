@@ -20,6 +20,12 @@ boosts from local accounts the reader follows.
 Validation lives in `PostService::validate()` and returns one message per
 field, which the API exposes as `error.fields`.
 
+An optional `Idempotency-Key` header makes a client retry safe: the core
+derives a deterministic post id from the account and the key, so a repeated
+request returns the stored post instead of writing a second one. Reusing a
+key with a different payload is `409 idempotency_conflict`. The key is scoped
+to the account, so two accounts may use the same client key.
+
 A `direct` post is local-only. Its `recipient_ids` name local accounts, not
 remote inboxes; the author and those recipients can read it, and it is never
 delivered to followers or remote actors. An empty recipient list, the author as
