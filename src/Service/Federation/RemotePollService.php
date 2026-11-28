@@ -38,6 +38,7 @@ use InvalidArgumentException;
 use Throwable;
 
 use function array_is_list;
+use function array_map;
 use function array_unique;
 use function array_values;
 use function count;
@@ -102,6 +103,17 @@ final class RemotePollService
 		// A retransmitted older revision must not roll back a newer one or a
 		// locally computed close, no matter when each delivery arrived.
 		if ($existing !== null && $poll->updatedAt < $existing->updatedAt) {
+			return $existing;
+		}
+
+		// Local ballots are positional. Once any exist, a revision that
+		// reorders, removes or adds option titles would silently
+		// reinterpret them, so the option list is frozen: the revision is
+		// refused and the stored question stays.
+		if ($existing !== null
+			&& $this->optionTitles($existing) !== $this->optionTitles($poll)
+			&& $this->votes->countsFor($existing->objectId) !== []
+		) {
 			return $existing;
 		}
 
@@ -206,6 +218,17 @@ final class RemotePollService
 		} catch (InvalidArgumentException $exception) {
 			throw new InboxRejectedException('invalid_activity', $exception->getMessage());
 		}
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function optionTitles(RemotePoll $poll): array
+	{
+		return array_map(
+			static fn (RemotePollOption $option): string => $option->title,
+			$poll->options,
+		);
 	}
 
 	private function timestamp(mixed $value, string $field): ?DateTimeImmutable

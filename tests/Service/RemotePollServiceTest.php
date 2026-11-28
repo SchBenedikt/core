@@ -462,6 +462,60 @@ final class RemotePollServiceTest extends TestCase
 		));
 	}
 
+	public function testARevisionThatReordersOptionsIsRefusedOnceALocalVoteExists(): void
+	{
+		$this->import($this->question());
+		$this->service->vote('alice', 'https://remote.example/questions/1', [0], $this->clock->now());
+
+		$reordered = $this->question();
+		$reordered['oneOf'] = array_reverse($reordered['oneOf']);
+		$reordered['endTime'] = '2026-12-02T00:00:00Z';
+
+		$poll = $this->import($reordered, Time::parse('2026-11-11T11:00:00Z'));
+
+		// Position 0 still means Pizza: the stored ballot is not reinterpreted.
+		self::assertSame('Pizza', $poll->optionTitle(0));
+		self::assertEquals(Time::parse('2026-12-01T12:00:00Z'), $poll->endsAt);
+	}
+
+	public function testARevisionThatRemovesAnOptionIsRefusedOnceALocalVoteExists(): void
+	{
+		$this->import($this->question());
+		$this->service->vote('alice', 'https://remote.example/questions/1', [1], $this->clock->now());
+
+		$shrunk = $this->question();
+		$shrunk['oneOf'] = [$shrunk['oneOf'][0]];
+		$shrunk['oneOf'][] = ['type' => 'Note', 'name' => 'Pasta', 'replies' => ['type' => 'Collection', 'totalItems' => 0]];
+		$shrunk['endTime'] = '2026-12-02T00:00:00Z';
+
+		$poll = $this->import($shrunk, Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(['Pizza', 'Sushi'], array_map(
+			static fn ($option): string => $option->title,
+			$poll->options,
+		));
+	}
+
+	public function testARevisionMayChangeOptionsBeforeAnyLocalVote(): void
+	{
+		$this->import($this->question());
+
+		$changed = $this->question();
+		$changed['oneOf'] = [
+			['type' => 'Note', 'name' => 'Pizza', 'replies' => ['type' => 'Collection', 'totalItems' => 9]],
+			['type' => 'Note', 'name' => 'Pasta', 'replies' => ['type' => 'Collection', 'totalItems' => 2]],
+		];
+		$changed['endTime'] = '2026-12-02T00:00:00Z';
+
+		$poll = $this->import($changed, Time::parse('2026-11-11T11:00:00Z'));
+
+		self::assertSame(['Pizza', 'Pasta'], array_map(
+			static fn ($option): string => $option->title,
+			$poll->options,
+		));
+		self::assertEquals(Time::parse('2026-12-02T00:00:00Z'), $poll->endsAt);
+	}
+
 	public function testAFollowersOnlyPollRequiresAnAcceptedFollow(): void
 	{
 		$poll = $this->import($this->question(), to: [self::ACTOR . '/followers']);
