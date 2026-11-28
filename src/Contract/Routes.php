@@ -172,6 +172,8 @@ use AlohaSocial\Core\Api\Mastodon\MastodonRemoveListAccountsHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonSearchHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusContextHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonTranslateStatusHandler;
+use AlohaSocial\Core\Api\Mastodon\MastodonTranslationLanguagesHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnfollowAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnmuteAccountHandler;
 use AlohaSocial\Core\Api\Mastodon\MastodonUnreblogStatusHandler;
@@ -1307,6 +1309,24 @@ final class Routes
 				requiresAuth: false,
 				rateLimit: '60/60',
 				summary: 'Visible ancestors and direct replies of one local status.',
+			),
+			new Route(
+				name: 'mastodon.statuses.translate',
+				method: 'POST',
+				path: $mastodon . '/statuses/{id}/translate',
+				handler: MastodonTranslateStatusHandler::class,
+				requiresAuth: true,
+				rateLimit: '30/60',
+				summary: 'Translate one visible local status into a provider-supported language.',
+			),
+			new Route(
+				name: 'mastodon.instance.translation_languages',
+				method: 'GET',
+				path: $mastodon . '/instance/translation_languages',
+				handler: MastodonTranslationLanguagesHandler::class,
+				requiresAuth: false,
+				rateLimit: '120/60',
+				summary: 'Languages advertised by the configured translation provider.',
 			),
 			new Route(
 				name: 'mastodon.statuses.create',

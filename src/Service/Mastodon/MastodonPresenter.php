@@ -735,7 +735,7 @@ final class MastodonPresenter
 		};
 	}
 
-	private function html(string $content): string
+	public function html(string $content): string
 	{
 		$escaped = htmlspecialchars(
 			str_replace(["\r\n", "\r"], "\n", $content),

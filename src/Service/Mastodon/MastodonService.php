@@ -78,6 +78,10 @@ use AlohaSocial\Core\Service\PostService;
 use AlohaSocial\Core\Service\ReactionException;
 use AlohaSocial\Core\Service\ReactionService;
 use AlohaSocial\Core\Service\TimelineService;
+use AlohaSocial\Core\Service\Translation\TranslationFailedException;
+use AlohaSocial\Core\Service\Translation\TranslationService;
+use AlohaSocial\Core\Service\Translation\TranslationUnavailableException;
+use AlohaSocial\Core\Service\Translation\UnsupportedTranslationLanguageException;
 use AlohaSocial\Core\Service\UpdatePost;
 use AlohaSocial\Core\Support\Time;
 use DateTimeImmutable;
@@ -148,6 +152,7 @@ final class MastodonService
 		private readonly ?RemotePostRepository $remotePosts = null,
 		private readonly ?RemoteActorSearch $remoteAccountSearch = null,
 		private readonly ?FollowRequestService $followRequests = null,
+		private readonly ?TranslationService $translation = null,
 	) {
 	}
 
@@ -543,6 +548,52 @@ final class MastodonService
 		}
 
 		return $this->presenter->status($this->visiblePost($postId, $viewerId), $viewerId);
+	}
+
+	/**
+	 * Languages the configured translation provider advertises, in the
+	 * Mastodon `translation_languages` shape. Empty when no provider exists.
+	 *
+	 * @return list<array{code: string, name: string}>
+	 */
+	public function translationLanguages(): array
+	{
+		$this->requireEnabled();
+
+		return $this->translation?->languages() ?? [];
+	}
+
+	/**
+	 * `POST /statuses/{id}/translate` in the Glitch-soc shape.
+	 *
+	 * Only local statuses are translated in this slice; remote object ids get
+	 * the same 404 as an unknown status so the response reveals nothing.
+	 *
+	 * @return array{content: string}
+	 */
+	public function translateStatus(string $postId, string $targetLanguage, ?string $viewerId): array
+	{
+		$this->requireEnabled();
+		if ($this->isRemoteObjectTarget($postId)) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		}
+		if ($this->translation === null) {
+			throw new MastodonRequestException(503, 'translation_unavailable', 'Translation is not configured on this instance.');
+		}
+
+		try {
+			$result = $this->translation->translate($postId, $targetLanguage, $viewerId);
+		} catch (PostNotFoundException) {
+			throw new MastodonRequestException(404, 'not_found', 'Status not found.');
+		} catch (UnsupportedTranslationLanguageException $exception) {
+			throw new MastodonRequestException(422, 'unsupported_language', $exception->getMessage());
+		} catch (TranslationFailedException) {
+			throw new MastodonRequestException(502, 'translation_failed', 'The translation provider failed.');
+		} catch (TranslationUnavailableException) {
+			throw new MastodonRequestException(503, 'translation_unavailable', 'Translation is not configured on this instance.');
+		}
+
+		return ['content' => $this->presenter->html($result['content'])];
 	}
 
 	/**
