@@ -353,16 +353,26 @@ final class InboxService
 		// way to the delivered activity; an already stored post makes this
 		// delivery a retransmission.
 		$existing = $this->remotePosts->findPostByObjectId($post->objectId);
+		$replacePlaceholder = false;
 		if ($existing !== null && $existing->actorId === $post->actorId) {
 			if ($existing->activityId !== $post->objectId) {
 				return;
 			}
 
-			$this->remotePosts->softDeletePostByObjectId(
-				$post->objectId,
-				$post->actorId,
-				Time::toSecondPrecision($this->clock->now()),
-			);
+			if ($post->activityId === $existing->activityId) {
+				// Some software addresses the Create and its object with one
+				// URI, so the delivered activity id is the placeholder's
+				// primary key. Tombstoning it first would make the insert
+				// conflict with its own row and reject every retry; replace
+				// the row in place instead.
+				$replacePlaceholder = true;
+			} else {
+				$this->remotePosts->softDeletePostByObjectId(
+					$post->objectId,
+					$post->actorId,
+					Time::toSecondPrecision($this->clock->now()),
+				);
+			}
 		}
 
 		if ($this->remotePolls !== null && is_array($object) && $post->objectType === RemoteObjectType::Question) {
@@ -375,7 +385,7 @@ final class InboxService
 			);
 		}
 
-		$this->persistRemotePostAndStreamEvent($post, $activity);
+		$this->persistRemotePostAndStreamEvent($post, $activity, $replacePlaceholder);
 		$this->notifyForLocalReply($post, $actor);
 
 		// Import after the post is durable. The importer isolates every
@@ -862,27 +872,42 @@ final class InboxService
 		return $id !== '' && mb_strlen($id) <= RemotePost::MAX_ID_LENGTH ? $id : null;
 	}
 
-	private function insertRemotePost(RemotePost $post): void
+	private function insertRemotePost(RemotePost $post, bool $replace = false): void
 	{
+		if ($replace) {
+			$this->remotePosts->upsert($post);
+
+			return;
+		}
+
 		try {
 			$this->remotePosts->insert($post);
 		} catch (DatabaseException $exception) {
-			if ($this->remotePosts->findByActivityId($post->activityId) !== null) {
+			$stored = $this->remotePosts->findByActivityId($post->activityId);
+			if ($stored === null) {
+				throw $exception;
+			}
+
+			if ($stored->deletedAt === null) {
 				throw new InboxRejectedException(
 					'replayed_activity',
 					'This activity has already been accepted.',
 				);
 			}
 
-			throw $exception;
+			// A tombstoned row under this activity id is a placeholder an
+			// earlier delivery retired, or a post deleted before owner
+			// tombstones existed. The peer is delivering the object live, so
+			// replace the row instead of rejecting every retry as a replay.
+			$this->remotePosts->upsert($post);
 		}
 	}
 
 	/** @param array<string, mixed> $activity */
-	private function persistRemotePostAndStreamEvent(RemotePost $post, array $activity): void
+	private function persistRemotePostAndStreamEvent(RemotePost $post, array $activity, bool $replace = false): void
 	{
-		$persist = function () use ($post, $activity): void {
-			$this->insertRemotePost($post);
+		$persist = function () use ($post, $activity, $replace): void {
+			$this->insertRemotePost($post, $replace);
 			if ($this->eventBroker === null) {
 				return;
 			}

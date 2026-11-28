@@ -30,6 +30,11 @@ final class FailingRemotePostLinkRepository implements RemotePostRepository
 		$this->inner->insert($post);
 	}
 
+	public function upsert(RemotePost $post): void
+	{
+		$this->inner->upsert($post);
+	}
+
 	public function findByActivityId(string $activityId): ?RemotePost
 	{
 		return $this->inner->findByActivityId($activityId);

@@ -808,6 +808,60 @@ final class InboundTimelineTest extends TestCase
 		self::assertSame('the real delivery', $stored->content);
 	}
 
+	public function testACreateSharingThePlaceholderActivityIdReplacesItInPlace(): void
+	{
+		// Mastodon addresses the Create and its object with one URI, so the
+		// delivered activity id is the placeholder's primary key.
+		$remotePosts = new InMemoryRemotePostRepository();
+		$importer = $this->importer($remotePosts, Visibility::Public, self::BOB);
+		$importer->ensure('https://remote.example/notes/same-id');
+
+		$app = $this->app(remotePosts: $remotePosts, remotePostImporter: $importer);
+
+		$response = $this->deliver($app, $this->create(
+			'https://remote.example/notes/same-id',
+			'https://remote.example/notes/same-id',
+			'the real delivery',
+			'2026-11-11T10:01:00Z',
+		));
+		self::assertSame(202, $response->status, $response->body);
+
+		$stored = $remotePosts->findPostByObjectId('https://remote.example/notes/same-id');
+		self::assertNotNull($stored);
+		self::assertSame('https://remote.example/notes/same-id', $stored->activityId);
+		self::assertSame('the real delivery', $stored->content);
+		self::assertNull($stored->deletedAt);
+	}
+
+	public function testACreateRevivesAPlaceholderRetiredByAnEarlierDelivery(): void
+	{
+		// The pre-fix inbox tombstoned the placeholder and then conflicted
+		// with its own row, leaving a deleted row that rejected every retry.
+		$remotePosts = new InMemoryRemotePostRepository();
+		$importer = $this->importer($remotePosts, Visibility::Public, self::BOB);
+		$importer->ensure('https://remote.example/notes/retired');
+		$remotePosts->softDeletePostByObjectId(
+			'https://remote.example/notes/retired',
+			self::BOB,
+			new \DateTimeImmutable('2026-11-11T10:00:00Z'),
+		);
+
+		$app = $this->app(remotePosts: $remotePosts, remotePostImporter: $importer);
+
+		$response = $this->deliver($app, $this->create(
+			'https://remote.example/notes/retired',
+			'https://remote.example/notes/retired',
+			'the real delivery',
+			'2026-11-11T10:01:00Z',
+		));
+		self::assertSame(202, $response->status, $response->body);
+
+		$stored = $remotePosts->findPostByObjectId('https://remote.example/notes/retired');
+		self::assertNotNull($stored);
+		self::assertSame('the real delivery', $stored->content);
+		self::assertNull($stored->deletedAt);
+	}
+
 	public function testASecondCreateForTheSameObjectIsAnIdempotentNoOp(): void
 	{
 		$remotePosts = new InMemoryRemotePostRepository();

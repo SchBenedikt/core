@@ -47,6 +47,21 @@ abstract class RemotePostRepositoryTestCase extends TestCase
 		self::assertNull($repository->findByActivityId('missing'));
 	}
 
+	public function testUpsertReplacesTheRowAndClearsATombstone(): void
+	{
+		$repository = $this->repository();
+		$repository->insert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T10:00:00Z'));
+		$repository->softDeleteByActivityId('activity-1', 'bob', Time::parse('2026-11-11T11:00:00Z'));
+
+		$repository->upsert($this->remote('activity-1', 'note-1', 'bob', '2026-11-11T12:00:00Z'));
+
+		$found = $repository->findByActivityId('activity-1');
+		self::assertNotNull($found);
+		self::assertSame('2026-11-11T12:00:00Z', Time::format($found->publishedAt));
+		self::assertNull($found->deletedAt);
+		self::assertNotNull($repository->findPostByObjectId('note-1'));
+	}
+
 	public function testTypedMetadataSurvivesStorage(): void
 	{
 		$repository = $this->repository();
